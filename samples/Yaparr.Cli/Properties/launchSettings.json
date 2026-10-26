@@ -1,0 +1,33 @@
+﻿{
+  "$schema": "https://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "alice (local room)": {
+      "commandName": "Project",
+      "commandLineArgs": "--local --history alice room debug-lobby"
+    },
+    "bob (local room)": {
+      "commandName": "Project",
+      "commandLineArgs": "--local --history bob room debug-lobby"
+    },
+    "carol (local room)": {
+      "commandName": "Project",
+      "commandLineArgs": "--local --history carol room debug-lobby"
+    },
+    "alice (local private room)": {
+      "commandName": "Project",
+      "commandLineArgs": "--local alice private AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+    },
+    "bob (local private room)": {
+      "commandName": "Project",
+      "commandLineArgs": "--local bob private AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+    },
+    "dave (local, waits for a DM)": {
+      "commandName": "Project",
+      "commandLineArgs": "--local dave wait"
+    },
+    "debug-lobby (real DHT)": {
+      "commandName": "Project",
+      "commandLineArgs": "debug-user room yaparr-debug-lobby"
+    }
+  }
+}

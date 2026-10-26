@@ -1,0 +1,12 @@
+﻿<Solution>
+  <Folder Name="/samples/">
+    <Project Path="samples/Yaparr.Cli/Yaparr.Cli.csproj" />
+    <Project Path="samples/Yaparr.Wpf/Yaparr.Wpf.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Yaparr/Yaparr.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Yaparr.Tests/Yaparr.Tests.csproj" />
+  </Folder>
+</Solution>
