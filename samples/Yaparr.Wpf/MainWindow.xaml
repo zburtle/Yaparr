@@ -24,6 +24,8 @@
             <MenuItem Header="_Network">
                 <MenuItem Header="_VPN…" Click="Vpn_Click" />
                 <MenuItem Header="_TURN relay…" Click="Turn_Click" />
+                <Separator />
+                <MenuItem Header="_Check connection…" Click="CheckNetwork_Click" />
             </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem Header="Check for _updates…" Click="CheckUpdates_Click" />
@@ -81,7 +83,13 @@
                     <Button x:Name="SendButton" DockPanel.Dock="Right" Content="Send" Width="70" Margin="6,0,0,0" IsEnabled="False" Click="Send_Click" />
                     <TextBox x:Name="InputBox" Padding="4" IsEnabled="False" KeyDown="InputBox_KeyDown" />
                 </DockPanel>
-                <ListBox x:Name="MessageList" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                <ListBox x:Name="MessageList" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         PreviewMouseRightButtonDown="MessageList_RightClick" ContextMenuOpening="MessageList_ContextMenuOpening">
+                    <ListBox.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="_Retry sending" Click="RetryMessage_Click" />
+                        </ContextMenu>
+                    </ListBox.ContextMenu>
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <TextBlock x:Name="Line" Text="{Binding Display}" TextWrapping="Wrap" />
@@ -93,6 +101,9 @@
                                 <DataTrigger Binding="{Binding Kind}" Value="missed">
                                     <Setter TargetName="Line" Property="Foreground" Value="SlateGray" />
                                     <Setter TargetName="Line" Property="FontStyle" Value="Italic" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Kind}" Value="failed">
+                                    <Setter TargetName="Line" Property="Foreground" Value="Firebrick" />
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding Kind}" Value="mine">
                                     <Setter TargetName="Line" Property="Foreground" Value="SteelBlue" />
@@ -115,15 +126,20 @@
                         <DataTemplate>
                             <DockPanel LastChildFill="True">
                                 <Ellipse x:Name="Dot" DockPanel.Dock="Left" Width="9" Height="9" Margin="0,0,6,0" Fill="Gray" VerticalAlignment="Center" />
-                                <TextBlock x:Name="State" DockPanel.Dock="Right" Margin="8,0,0,0" Text="offline" Foreground="Gray" />
+                                <TextBlock x:Name="State" DockPanel.Dock="Right" Margin="8,0,0,0" Text="{Binding StateText}" Foreground="Gray" />
                                 <TextBlock x:Name="Label" Text="{Binding Display}" TextTrimming="CharacterEllipsis" Foreground="Gray" />
                             </DockPanel>
                             <DataTemplate.Triggers>
                                 <DataTrigger Binding="{Binding Online}" Value="True">
                                     <Setter TargetName="Dot" Property="Fill" Value="SeaGreen" />
-                                    <Setter TargetName="State" Property="Text" Value="online" />
                                     <Setter TargetName="State" Property="Foreground" Value="SeaGreen" />
                                     <Setter TargetName="Label" Property="Foreground" Value="Black" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Link}" Value="NotResponding">
+                                    <Setter TargetName="State" Property="Foreground" Value="DarkOrange" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Link}" Value="Reconnecting">
+                                    <Setter TargetName="State" Property="Foreground" Value="DarkOrange" />
                                 </DataTrigger>
                             </DataTemplate.Triggers>
                         </DataTemplate>

@@ -193,6 +193,8 @@ public partial class MainWindow : Window
         });
         _node.NetworkStatusChanged += _ => UI(UpdateStatus);
         Microsoft.Win32.SystemEvents.PowerModeChanged += OnPowerModeChanged;
+        _linkTimer.Tick += (_, _) => RefreshPeers();
+        _linkTimer.Start();
         _node.VpnStateChanged += _ => UI(UpdateStatus);
         _node.PeerConnected += p => UI(() => { Remember(p); RefreshPeers(); UpdateStatus(); });
         _node.PeerDisconnected += p => UI(() => { Remember(p); RefreshPeers(p.Id); UpdateStatus(); });
@@ -213,8 +215,11 @@ public partial class MainWindow : Window
         }
     }
 
+    private readonly System.Windows.Threading.DispatcherTimer _linkTimer = new() { Interval = TimeSpan.FromSeconds(3) };
+
     private void Shutdown()
     {
+        _linkTimer.Stop();
         Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         _cts.Cancel();
         var node = _node;
@@ -293,6 +298,31 @@ public partial class MainWindow : Window
         if (source is ListBoxItem item) item.IsSelected = true;
     }
 
+    private void MessageList_RightClick(object sender, MouseButtonEventArgs e)
+    {
+        var source = e.OriginalSource as DependencyObject;
+        while (source != null && source is not ListBoxItem) source = System.Windows.Media.VisualTreeHelper.GetParent(source);
+        if (source is ListBoxItem item) item.IsSelected = true;
+    }
+
+    private void MessageList_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+    {
+        if (MessageList.SelectedItem is not MessageVm { CanRetry: true }) e.Handled = true;
+    }
+
+    private void RetryMessage_Click(object sender, RoutedEventArgs e)
+    {
+        if (_selected is { Retry: { } retry } && MessageList.SelectedItem is MessageVm { CanRetry: true, Id: { } id }) retry(id);
+    }
+
+    private async void CheckNetwork_Click(object sender, RoutedEventArgs e)
+    {
+        if (_node == null) return;
+        var dialog = new NetworkCheckDialog(_node) { Owner = this };
+        dialog.Show();
+        await dialog.RunAsync();
+    }
+
     private void ConversationList_ContextMenuOpening(object sender, ContextMenuEventArgs e)
     {
         if (_selected is not { IsRoom: true }) e.Handled = true;
@@ -366,8 +396,9 @@ public partial class MainWindow : Window
     {
         if (_roomConversations.TryGetValue(room, out var existing)) { ConversationList.SelectedItem = existing; return existing; }
 
-        var conv = new ConversationVm(title, isRoom: true, room.SendAsync) { Invite = invite };
+        var conv = new ConversationVm(title, isRoom: true, room.SendAsync, room.Retry) { Invite = invite };
         _roomConversations[room] = conv;
+        room.DeliveryChanged += s => UI(() => conv.ApplyDelivery(s));
 
         room.MessageReceived += m => UI(() => OnMessage(conv, ToVm(m)));
         room.MemberJoined += p => UI(() => { Remember(p); RefreshPeers(); conv.Add(MessageVm.System($"{p.DisplayName} joined")); });
@@ -420,10 +451,10 @@ public partial class MainWindow : Window
         }
         if (changed) _data.SaveSettings(_settings);
 
-        var online = live.Values.Select(p => new PeerVm(p.Id.Value, p.DisplayName, true, now, p.IsRelayed));
+        var online = live.Values.Select(p => new PeerVm(p.Id.Value, p.DisplayName, true, now, p.IsRelayed, _node.GetLink(p.Id)));
         var offline = _settings.KnownPeers
             .Where(k => !live.ContainsKey(k.Id) && k.Id != _node.Id.Value)
-            .Select(k => new PeerVm(k.Id, string.IsNullOrWhiteSpace(k.Name) ? k.Id[..8] : k.Name, false, k.LastSeen));
+            .Select(k => new PeerVm(k.Id, string.IsNullOrWhiteSpace(k.Name) ? k.Id[..8] : k.Name, false, k.LastSeen, false, _node.GetLink(new PeerId(k.Id))));
         var people = online.Concat(offline)
             .OrderByDescending(p => p.Online)
             .ThenBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase)
@@ -465,7 +496,8 @@ public partial class MainWindow : Window
                 return tcs.Task;
             }
             var title = (chat.Peer?.DisplayName ?? chat.PeerId.Short) + " (direct)";
-            conv = new ConversationVm(title, isRoom: false, chat.SendAsync);
+            conv = new ConversationVm(title, isRoom: false, chat.SendAsync, chat.Retry);
+            chat.DeliveryChanged += s => UI(() => conv.ApplyDelivery(s));
             _directConversations[chat.PeerId] = conv;
         }
 
@@ -484,7 +516,7 @@ public partial class MainWindow : Window
     private MessageVm ToVm(ChatMessage m)
     {
         Remember(m.From);
-        return new(m.Timestamp, m.From.DisplayName, m.Text, m.IsCatchUp, IsMine: _node != null && m.From.Id == _node.Id, Id: m.Id);
+        return new(m.Timestamp, m.From.DisplayName, m.Text, m.IsCatchUp, isMine: _node != null && m.From.Id == _node.Id, id: m.Id);
     }
 
     private void OnMessage(ConversationVm conv, MessageVm message)
@@ -514,9 +546,9 @@ public partial class MainWindow : Window
 
         try
         {
-            await conv.Send(text);
+            var id = await conv.Send(text);
             InputBox.Clear();
-            conv.Add(new MessageVm(DateTimeOffset.Now, _node.DisplayName, text, IsMine: true));
+            conv.Add(new MessageVm(DateTimeOffset.Now, _node.DisplayName, text, isMine: true, id: id));
             ScrollToEnd();
         }
         catch (InvalidOperationException ex)

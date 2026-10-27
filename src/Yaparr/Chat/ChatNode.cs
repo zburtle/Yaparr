@@ -67,7 +67,7 @@ public sealed class ChatNodeOptions
     public Action<string>? Log { get; init; }
 }
 
-public sealed class ChatNode : IDisposable
+public sealed partial class ChatNode : IDisposable
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
@@ -439,6 +439,7 @@ public sealed class ChatNode : IDisposable
             {
                 await d.AnnounceAsync(room.Topic, ct).ConfigureAwait(false);
                 var found = await d.FindPeersAsync(room.Topic, ct).ConfigureAwait(false);
+                if (found.Any(IsSomeoneElse) && d is not LocalServiceDiscovery) _lastFoundAt = Environment.TickCount64;
                 _options.Log?.Invoke($"room '{room.Name}' via {d.GetType().Name}: {found.Count} endpoint(s){(found.Count > 0 ? ": " + string.Join(", ", found) : "")}");
                 if (_options.TargetConnections <= 0)
                 {
@@ -1113,6 +1114,14 @@ public sealed class ChatNode : IDisposable
             foreach (var key in _candidates.OrderBy(kv => kv.Value.Seen).Take(_candidates.Count - MaxCandidates).Select(kv => kv.Key).ToList())
                 _candidates.TryRemove(key, out _);
         return candidate;
+    }
+
+    // Discovery also returns our own announcement; that does not count as finding anyone.
+    private bool IsSomeoneElse(IPEndPoint endPoint)
+    {
+        if (endPoint.Port == _mux.LocalPort && IPAddress.IsLoopback(endPoint.Address)) return false;
+        var status = NetworkStatus;
+        return !endPoint.Equals(status.Nat.PublicEndPoint) && !endPoint.Equals(status.Mapping?.ExternalEndPoint) && !endPoint.Equals(status.Relay);
     }
 
     private bool IsBackedOff(string key, long now) => _backoff.TryGetValue(key, out var until) && now < until;

@@ -109,3 +109,25 @@ public class PeerCacheTests
         finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
     }
 }
+
+public class ConnectionStateTests
+{
+    [Fact]
+    public async Task Check_reports_nobody_found_then_connected_and_peers_are_linked_directly()
+    {
+        var hub = new InMemoryDiscoveryHub();
+        using var a = TestUtil.NewNode(hub, "a");
+        using var b = TestUtil.NewNode(hub, "b");
+        var ra = await a.JoinRoomAsync("Check");
+
+        var alone = await a.CheckNetworkAsync();
+        Assert.Contains(alone.Items, i => i.Title == "Nobody else found yet");
+
+        await b.JoinRoomAsync("Check");
+        await TestUtil.WaitFor(() => ra.Members.Count == 1);
+        var together = await a.CheckNetworkAsync();
+        Assert.Contains(together.Items, i => i.Title.StartsWith("Connected to 1 person") && i.Level == CheckLevel.Ok);
+        Assert.Equal(PeerLink.Direct, a.GetLink(b.Id));
+        Assert.Equal(PeerLink.Offline, a.GetLink(Yaparr.Identity.PeerIdentity.Generate().Id));
+    }
+}

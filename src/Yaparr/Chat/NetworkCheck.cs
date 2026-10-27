@@ -1,0 +1,134 @@
+using Yaparr.Identity;
+using Yaparr.Transport;
+using Yaparr.Vpn;
+
+namespace Yaparr.Chat;
+
+public enum CheckLevel { Ok, Info, Warning, Problem }
+
+public sealed record CheckItem(CheckLevel Level, string Title, string Detail);
+
+public sealed record NetworkCheckReport(IReadOnlyList<CheckItem> Items)
+{
+    public CheckLevel Overall => Items.Count == 0 ? CheckLevel.Info : Items.Max(i => i.Level);
+
+    public string Summary => Overall switch
+    {
+        CheckLevel.Problem => "There is a problem that will stop some people from connecting.",
+        CheckLevel.Warning => "Mostly working, but some connections may fail.",
+        _ => "Everything looks fine.",
+    };
+}
+
+public enum PeerLink
+{
+    /// <summary>Not connected and not being retried.</summary>
+    Offline,
+    /// <summary>Connected straight to the other person.</summary>
+    Direct,
+    /// <summary>Connected through another member who forwards traffic.</summary>
+    Relayed,
+    /// <summary>The connection dropped and Yaparr is trying again.</summary>
+    Reconnecting,
+    /// <summary>Connected, but the last message was not confirmed.</summary>
+    NotResponding,
+}
+
+public sealed partial class ChatNode
+{
+    private long _lastFoundAt;
+
+    /// <summary>How Yaparr currently reaches one person.</summary>
+    public PeerLink GetLink(PeerId peer)
+    {
+        if (_peers.TryGetValue(peer, out var state))
+        {
+            if (_outbox.Values.Any(o => o.Last is { State: DeliveryState.NotDelivered or DeliveryState.PartlyDelivered }
+                                       && (o.DirectPeer == peer || (o.Room != null && o.Targets.Contains(peer) && !o.Acked.Contains(peer)))))
+                return PeerLink.NotResponding;
+            return state.Connection.IsRelayed ? PeerLink.Relayed : PeerLink.Direct;
+        }
+        return _redial.ContainsKey(peer) ? PeerLink.Reconnecting : PeerLink.Offline;
+    }
+
+    /// <summary>
+    /// Looks at the network again and explains in plain words what works and what does not.
+    /// </summary>
+    public async Task<NetworkCheckReport> CheckNetworkAsync(CancellationToken ct = default)
+    {
+        Start();
+        await RefreshNetworkAsync(ct).ConfigureAwait(false);
+        var items = new List<CheckItem>();
+        var status = NetworkStatus;
+        var turn = _turnOptions;
+        bool vpnUp = VpnState == VpnState.Connected;
+
+        if (!TraversalEnabled)
+        {
+            items.Add(new(CheckLevel.Info, "Network checks are off", "Port mapping and NAT detection are disabled in network.json."));
+        }
+        else if (status.Nat.Type == NatType.Unknown && !vpnUp)
+        {
+            items.Add(new(CheckLevel.Problem, "Cannot reach the internet",
+                "No reply from the STUN servers. Check that you are online and that your firewall allows Yaparr to use UDP."));
+        }
+        else
+        {
+            switch (status.Nat.Type)
+            {
+                case NatType.Open:
+                case NatType.EndpointIndependent:
+                    items.Add(new(CheckLevel.Ok, "Other people can reach you", status.Nat.Describe()));
+                    break;
+                case NatType.Symmetric when vpnUp || status.Relay != null || status.Mapping != null:
+                    items.Add(new(CheckLevel.Ok, "Your router is strict, but a workaround is active",
+                        vpnUp ? "The VPN gives peers a stable address." : status.Relay != null ? "A relay carries your traffic." : "A port mapping is open on your router."));
+                    break;
+                case NatType.Symmetric:
+                    items.Add(new(CheckLevel.Warning, "Your router makes direct connections hard",
+                        "It uses a different public address for every destination (symmetric NAT). People on other networks will usually not be able to connect. Turn on the VPN or a TURN relay from the Network menu."));
+                    break;
+                default:
+                    items.Add(new(CheckLevel.Info, "Network type", status.Nat.Describe()));
+                    break;
+            }
+
+            items.Add(status.Mapping != null
+                ? new(CheckLevel.Ok, "Router port is open", $"{status.Mapping.Method} opened port {status.Mapping.ExternalEndPoint.Port}.")
+                : vpnUp
+                    ? new(CheckLevel.Info, "Router port", "Not used while the VPN is connected.")
+                    : new(CheckLevel.Info, "Router port", "Your router did not open a port automatically (UPnP and NAT-PMP are off or unsupported)."));
+        }
+
+        if (VpnState == VpnState.Connecting)
+            items.Add(new(CheckLevel.Warning, "VPN is connecting", "No reply from the VPN server yet. Check the server address and keys."));
+        else if (vpnUp)
+            items.Add(new(CheckLevel.Ok, "VPN connected", "Yaparr's traffic goes through the VPN. Other apps are not affected."));
+
+        if (turn is { Enabled: true })
+            items.Add(status.Relay != null
+                ? new(CheckLevel.Ok, "TURN relay active", $"Relay at {status.Relay}.")
+                : new(CheckLevel.Warning, "TURN relay is not working",
+                    "Yaparr could not get a relay from the server. Check the address, username and password, and that the server is reachable."));
+
+        if (!_rooms.IsEmpty)
+        {
+            int connected = _peers.Count;
+            bool foundRecently = _lastFoundAt != 0 && Environment.TickCount64 - _lastFoundAt < 120_000;
+            if (connected > 0)
+            {
+                int relayed = _peers.Values.Count(p => p.Connection.IsRelayed);
+                items.Add(new(CheckLevel.Ok, $"Connected to {connected} {(connected == 1 ? "person" : "people")}",
+                    relayed > 0 ? $"{relayed} through other members." : "All directly."));
+            }
+            else if (foundRecently)
+                items.Add(new(CheckLevel.Warning, "People were found but none connected",
+                    "Their addresses were found, but connecting failed. A strict router or firewall on either side is the usual cause."));
+            else
+                items.Add(new(CheckLevel.Info, "Nobody else found yet",
+                    "Discovery found no one in your rooms. Make sure the other person is online and has joined the same room or used the same invite."));
+        }
+
+        return new NetworkCheckReport(items);
+    }
+}
