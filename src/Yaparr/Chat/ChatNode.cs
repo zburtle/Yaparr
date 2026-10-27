@@ -55,6 +55,12 @@ public sealed class ChatNodeOptions
 
     public TimeSpan MaxHistoryAge { get; init; } = TimeSpan.FromDays(7);
 
+    /// <summary>How long to wait for a recipient to confirm a message before reporting it as not delivered.</summary>
+    public TimeSpan AckTimeout { get; init; } = TimeSpan.FromSeconds(15);
+
+    /// <summary>How long an unconfirmed message is kept for re-sending when its recipient reconnects.</summary>
+    public TimeSpan ResendWindow { get; init; } = TimeSpan.FromMinutes(10);
+
     public Action<string>? Log { get; init; }
 }
 
@@ -119,6 +125,8 @@ public sealed class ChatNode : IDisposable
     private readonly ConcurrentDictionary<string, Candidate> _candidates = new();
     private readonly ConcurrentDictionary<string, long> _backoff = new();
     private readonly ConcurrentDictionary<string, byte> _pinned = new();
+    private readonly ConcurrentDictionary<string, Outgoing> _outbox = new();
+    private readonly ConcurrentDictionary<string, long> _seenDirect = new();
     private bool _started;
     private PortMapper? _mapper;
     private TurnClient? _turn;
@@ -211,6 +219,7 @@ public sealed class ChatNode : IDisposable
         var peerTopic = Topics.ForPeer(Id);
         foreach (var d in _discoveries)
             _ = RunLoopAsync(() => d.AnnounceAsync(peerTopic, _cts.Token), $"peer announce ({d.GetType().Name})");
+        _ = Task.Run(OutboxLoopAsync);
         if (_options.Vpn != null || TraversalEnabled)
             _ = Task.Run(() => StartNetworkAsync(_cts.Token));
     }
@@ -425,13 +434,118 @@ public sealed class ChatNode : IDisposable
         })).ConfigureAwait(false);
     }
 
-    internal void SendRoomMessage(ChatRoom room, string text)
+    internal string SendRoomMessage(ChatRoom room, string text)
     {
         var message = SignedMessage.Create(_identity, room.Key, _options.DisplayName, text, NextTimestamp());
         room.History.TryAdd(message);
         _options.Log?.Invoke($"sending a message in '{room.Name}' to {room.MemberStates.Count} member(s)");
-        foreach (var member in room.MemberStates.Values)
+        var members = room.MemberStates.Values.ToList();
+        var outgoing = new Outgoing(message.Id) { Room = room, Signed = message, SentAt = Environment.TickCount64 };
+        foreach (var member in members) outgoing.Targets.Add(member.Id);
+        _outbox[message.Id] = outgoing;
+        foreach (var member in members)
             Send(member.Connection, new Wire { Type = Wire.Message, Room = RefTo(room, member), Msgs = new[] { message } });
+        PublishDelivery(outgoing);
+        return message.Id;
+    }
+
+    private sealed class Outgoing
+    {
+        public Outgoing(string id) => Id = id;
+        public string Id { get; }
+        public ChatRoom? Room { get; init; }
+        public StoredMessage? Signed { get; init; }
+        public PeerId? DirectPeer { get; init; }
+        public Wire? DirectWire { get; init; }
+        public long SentAt;
+        public readonly HashSet<PeerId> Targets = new();
+        public readonly HashSet<PeerId> Acked = new();
+        public DeliveryStatus? Last;
+    }
+
+    private void PublishDelivery(Outgoing o)
+    {
+        DeliveryStatus status;
+        lock (o)
+        {
+            int total = o.Targets.Count;
+            int delivered = o.Targets.Count(o.Acked.Contains);
+            var state = total == 0 ? DeliveryState.Queued
+                : delivered == total ? DeliveryState.Delivered
+                : Environment.TickCount64 - o.SentAt < _options.AckTimeout.TotalMilliseconds ? DeliveryState.Sending
+                : delivered == 0 ? DeliveryState.NotDelivered : DeliveryState.PartlyDelivered;
+            status = new DeliveryStatus(o.Id, state, delivered, total);
+            if (status == o.Last) return;
+            o.Last = status;
+        }
+        if (o.Room != null) o.Room.RaiseDelivery(status);
+        else if (o.DirectPeer is { } peer && _directChats.TryGetValue(peer, out var chat)) chat.RaiseDelivery(status);
+    }
+
+    private async Task OutboxLoopAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(_cts.Token).ConfigureAwait(false))
+            {
+                long now = Environment.TickCount64;
+                foreach (var o in _outbox.Values)
+                {
+                    PublishDelivery(o);
+                    if (now - o.SentAt > _options.ResendWindow.TotalMilliseconds) _outbox.TryRemove(o.Id, out _);
+                }
+                long cutoff = now - 600_000;
+                foreach (var kv in _seenDirect.Where(kv => kv.Value < cutoff).ToList()) _seenDirect.TryRemove(kv.Key, out _);
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private void ResendTo(PeerState peer, Func<Outgoing, bool> applies, Func<Outgoing, Wire> build)
+    {
+        foreach (var o in _outbox.Values)
+        {
+            if (!applies(o)) continue;
+            lock (o)
+            {
+                // Only people who were meant to get it. Newcomers learn older messages through history sync, if enabled.
+                if (o.Last?.State == DeliveryState.Delivered || o.Acked.Contains(peer.Id) || !o.Targets.Contains(peer.Id)) continue;
+            }
+            Send(peer.Connection, build(o));
+            PublishDelivery(o);
+        }
+    }
+
+    internal void RetryMessage(string messageId)
+    {
+        if (!_outbox.TryGetValue(messageId, out var o)) return;
+        List<PeerId> pending;
+        lock (o)
+        {
+            o.SentAt = Environment.TickCount64;
+            pending = o.Targets.Where(t => !o.Acked.Contains(t)).ToList();
+        }
+        foreach (var id in pending)
+            if (_peers.TryGetValue(id, out var peer))
+                Send(peer.Connection, o.Room != null
+                    ? new Wire { Type = Wire.Message, Room = RefTo(o.Room, peer), Msgs = new[] { o.Signed! } }
+                    : o.DirectWire!);
+        PublishDelivery(o);
+    }
+
+    private void OnAck(PeerState peer, Wire wire)
+    {
+        if (wire.Have == null) return;
+        ChatRoom? room = null;
+        if (wire.Room != null && (room = ResolveRoom(peer, wire.Room)) == null) return;
+        foreach (var id in wire.Have.Take(200))
+        {
+            if (!_outbox.TryGetValue(id, out var o)) continue;
+            if (room != null ? o.Room != room : o.DirectPeer != peer.Id) continue;
+            lock (o) { o.Targets.Add(peer.Id); o.Acked.Add(peer.Id); }
+            PublishDelivery(o);
+        }
     }
 
     private long _lastTimestamp;
@@ -463,6 +577,17 @@ public sealed class ChatNode : IDisposable
 
     private void OnGroupMessage(PeerState peer, ChatRoom room, StoredMessage[] messages, bool live)
     {
+        var received = new List<string>();
+        try { ProcessGroupMessages(peer, room, messages, live, received); }
+        finally
+        {
+            if (received.Count > 0)
+                Send(peer.Connection, new Wire { Type = Wire.Ack, Room = RefTo(room, peer), Have = received.ToArray() });
+        }
+    }
+
+    private void ProcessGroupMessages(PeerState peer, ChatRoom room, StoredMessage[] messages, bool live, List<string> received)
+    {
         foreach (var m in messages.Take(live ? 1 : 100))
         {
             if (!IsValidPeerId(m.From)) continue;
@@ -472,6 +597,7 @@ public sealed class ChatNode : IDisposable
                 _options.Log?.Invoke($"dropped a message from {new PeerId(m.From).Short} in '{room.Name}': bad signature, or its clock is more than 5 minutes ahead of ours");
                 continue;
             }
+            received.Add(m.Id);
             bool fresh = live && m.Ts >= DateTimeOffset.UtcNow.Subtract(LiveWindow).ToUnixTimeMilliseconds();
             if (!room.History.TryAdd(m)) continue;
             _options.Log?.Invoke($"message from {new PeerId(m.From).Short} in '{room.Name}' via {peer.Id.Short}{(fresh ? "" : " (catch-up)")}");
@@ -618,6 +744,7 @@ public sealed class ChatNode : IDisposable
         if (!wasIndirect) room.RaiseJoined(peer.Info);
         AfterMembershipChange(room);
         SendPresenceTo(room, peer, includeCache: true);
+        ResendTo(peer, o => o.Room == room, o => new Wire { Type = Wire.Message, Room = RefTo(room, peer), Msgs = new[] { o.Signed! } });
 
         if (_options.SyncHistory)
         {
@@ -661,10 +788,16 @@ public sealed class ChatNode : IDisposable
 
     internal PeerInfo? GetPeerInfo(PeerId id) => _peers.TryGetValue(id, out var p) ? p.Info : null;
 
-    internal void SendDirectMessage(PeerId peer, string text)
+    internal string SendDirectMessage(PeerId peer, string text)
     {
         if (!_peers.TryGetValue(peer, out var state)) throw new InvalidOperationException($"Not connected to {peer.Short}.");
-        Send(state.Connection, NewMessage(text, room: null));
+        var wire = NewMessage(text, room: null);
+        var outgoing = new Outgoing(wire.Id!) { DirectPeer = peer, DirectWire = wire, SentAt = Environment.TickCount64 };
+        outgoing.Targets.Add(peer);
+        _outbox[wire.Id!] = outgoing;
+        Send(state.Connection, wire);
+        PublishDelivery(outgoing);
+        return wire.Id!;
     }
 
     private void OnConnectionEstablished(PeerConnection conn)
@@ -676,6 +809,7 @@ public sealed class ChatNode : IDisposable
         _peers[state.Id] = state;
         foreach (var room in _rooms.Values)
             if (room.MemberStates.ContainsKey(state.Id)) room.MemberStates[state.Id] = state;
+        ResendTo(state, o => o.DirectPeer == state.Id, o => o.DirectWire!);
         _options.Log?.Invoke(isNew
             ? $"connected to {state.Id.Short} at {conn.RemoteEndPoint}"
             : $"switched to a new connection to {state.Id.Short} at {conn.RemoteEndPoint}");
@@ -740,6 +874,10 @@ public sealed class ChatNode : IDisposable
                     if (peer.Declares(RefFrom(room, peer))) OnPeerEntersRoom(peer, room);
                 break;
 
+            case Wire.Ack:
+                OnAck(peer, wire);
+                break;
+
             case Wire.Join when wire.Room != null:
                 peer.AddRoom(wire.Room);
                 if (ResolveRoom(peer, wire.Room) is { } joined) OnPeerEntersRoom(peer, joined);
@@ -772,6 +910,8 @@ public sealed class ChatNode : IDisposable
                 break;
 
             case Wire.Message when wire.Room == null && wire.Text != null && wire.Id != null:
+                Send(conn, new Wire { Type = Wire.Ack, Have = new[] { wire.Id } });
+                if (!_seenDirect.TryAdd(peer.Id.Value + wire.Id, Environment.TickCount64)) break;
                 var msg = new ChatMessage(peer.Info, null, wire.Id, wire.Text, DateTimeOffset.FromUnixTimeMilliseconds(wire.Ts));
                 bool existed = _directChats.ContainsKey(peer.Id);
                 var chat = GetDirectChat(peer.Id);

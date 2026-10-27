@@ -50,18 +50,20 @@ public sealed class ChatRoom
     public event Action<ChatMessage>? MessageReceived;
     public event Action<PeerInfo>? MemberJoined;
     public event Action<PeerInfo>? MemberLeft;
+    public event Action<DeliveryStatus>? DeliveryChanged;
 
-    public Task SendAsync(string text)
-    {
-        _node.SendRoomMessage(this, text);
-        return Task.CompletedTask;
-    }
+    /// <summary>Sends a message and returns its id, which <see cref="DeliveryChanged"/> reports on.</summary>
+    public Task<string> SendAsync(string text) => Task.FromResult(_node.SendRoomMessage(this, text));
+
+    /// <summary>Sends an unconfirmed message again to the members who have not confirmed it.</summary>
+    public void Retry(string messageId) => _node.RetryMessage(messageId);
 
     public Task LeaveAsync() => _node.LeaveRoomAsync(this);
 
     internal void RaiseMessage(ChatMessage m) => MessageReceived?.Invoke(m);
     internal void RaiseJoined(PeerInfo p) => MemberJoined?.Invoke(p);
     internal void RaiseLeft(PeerInfo p) => MemberLeft?.Invoke(p);
+    internal void RaiseDelivery(DeliveryStatus s) => DeliveryChanged?.Invoke(s);
 }
 
 public sealed class DirectChat
@@ -79,12 +81,12 @@ public sealed class DirectChat
     public bool IsConnected => Peer != null;
 
     public event Action<ChatMessage>? MessageReceived;
+    public event Action<DeliveryStatus>? DeliveryChanged;
 
-    public Task SendAsync(string text)
-    {
-        _node.SendDirectMessage(PeerId, text);
-        return Task.CompletedTask;
-    }
+    public Task<string> SendAsync(string text) => Task.FromResult(_node.SendDirectMessage(PeerId, text));
+
+    public void Retry(string messageId) => _node.RetryMessage(messageId);
 
     internal void RaiseMessage(ChatMessage m) => MessageReceived?.Invoke(m);
+    internal void RaiseDelivery(DeliveryStatus s) => DeliveryChanged?.Invoke(s);
 }

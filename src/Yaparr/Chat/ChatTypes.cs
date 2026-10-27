@@ -14,6 +14,22 @@ public static class ChannelIds
 
 public sealed record PeerInfo(PeerId Id, string DisplayName, IPEndPoint? EndPoint, bool IsRelayed = false);
 
+public enum DeliveryState
+{
+    /// <summary>Sent; waiting for the other side to confirm.</summary>
+    Sending,
+    /// <summary>Every connected recipient confirmed receipt.</summary>
+    Delivered,
+    /// <summary>Some recipients confirmed, others did not within the timeout.</summary>
+    PartlyDelivered,
+    /// <summary>Nobody confirmed within the timeout. It is re-sent automatically when the peer reconnects, or on retry.</summary>
+    NotDelivered,
+    /// <summary>Nobody was connected to receive it. It is handed over when someone connects.</summary>
+    Queued,
+}
+
+public sealed record DeliveryStatus(string MessageId, DeliveryState State, int Delivered, int Total);
+
 public sealed record ChatMessage(PeerInfo From, string? Room, string Id, string Text, DateTimeOffset Timestamp, bool IsCatchUp = false);
 
 public static class Topics
@@ -40,7 +56,7 @@ internal sealed class Wire
     public StoredPresence[]? Pres { get; set; }
     public int Deg { get; set; }
 
-    public const string Hello = "hi", Join = "join", Leave = "leave", Message = "msg", Introduce = "peers", Sync = "sync", History = "hist", Links = "links", Presence = "pres";
+    public const string Ack = "ack", Hello = "hi", Join = "join", Leave = "leave", Message = "msg", Introduce = "peers", Sync = "sync", History = "hist", Links = "links", Presence = "pres";
 }
 
 internal sealed class WirePeer
