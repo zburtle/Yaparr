@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
@@ -122,6 +122,7 @@ public sealed class ChatNode : IDisposable
     private bool _started;
     private PortMapper? _mapper;
     private TurnClient? _turn;
+    private TurnOptions? _turnOptions;
     private WireGuardTunnel? _tunnel;
     private readonly SemaphoreSlim _networkGate = new(1, 1);
 
@@ -143,6 +144,7 @@ public sealed class ChatNode : IDisposable
     public ChatNode(ChatNodeOptions? options = null)
     {
         _options = options ?? new ChatNodeOptions();
+        _turnOptions = _options.Traversal.Turn;
         _ownsIdentity = _options.Identity == null;
         _identity = _options.Identity ?? PeerIdentity.Generate();
         _mux = new UdpMux(_options.ListenPort) { Log = _options.Log };
@@ -271,6 +273,15 @@ public sealed class ChatNode : IDisposable
         }
     }
 
+    public TurnOptions? Turn => _turnOptions;
+
+    public async Task ConfigureTurnAsync(TurnOptions? turn, CancellationToken ct = default)
+    {
+        _turnOptions = turn;
+        Start();
+        await RefreshNetworkAsync(ct).ConfigureAwait(false);
+    }
+
     private async Task RefreshNetworkAsync(CancellationToken ct)
     {
         if (!TraversalEnabled) return;
@@ -284,6 +295,7 @@ public sealed class ChatNode : IDisposable
         try
         {
             var traversal = _options.Traversal;
+            var turnOptions = _turnOptions;
             PortMapping? mapping = null;
             _turn?.Dispose();
             _turn = null;
@@ -299,7 +311,7 @@ public sealed class ChatNode : IDisposable
             PublishNetwork(new NetworkStatus(nat, mapping, null, vpn));
 
             bool needRelay = mapping == null && nat.Type is NatType.Symmetric or NatType.Unknown;
-            if (traversal.Turn is { Enabled: true } turn && (needRelay || turn.Always))
+            if (turnOptions is { Enabled: true } turn && (needRelay || turn.Always))
             {
                 _turn = new TurnClient(_mux, turn, _options.Log);
                 if (await _turn.AllocateAsync(ct).ConfigureAwait(false))
