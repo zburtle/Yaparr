@@ -13,6 +13,7 @@ public sealed class PeerNetwork : IDisposable
     private readonly PeerIdentity _identity;
     private readonly UdpMux _mux;
     private readonly PeerNetworkOptions _options;
+    private readonly byte[] _instance = System.Security.Cryptography.RandomNumberGenerator.GetBytes(PeerConnection.InstanceIdLength);
     private readonly ConcurrentDictionary<IPEndPoint, PeerConnection> _byEndPoint = new();
     private readonly ConcurrentDictionary<PeerId, PeerConnection> _byPeer = new();
     private readonly ConcurrentDictionary<PeerId, PeerConnection> _relayed = new();
@@ -55,7 +56,7 @@ public sealed class PeerNetwork : IDisposable
         if (_byEndPoint.TryGetValue(endPoint, out var existing) && existing.State != ConnectionState.Closed) return existing;
         if (_endpointOwner.TryGetValue(endPoint, out var owner) && _byPeer.TryGetValue(owner, out var live) &&
             live.State == ConnectionState.Established && (expected == null || expected == owner)) return live;
-        var conn = new PeerConnection(_identity, endPoint, expected, (packet, to) => _mux.Send(packet, to), _options);
+        var conn = new PeerConnection(_identity, endPoint, expected, (packet, to) => _mux.Send(packet, to), _options, _instance);
         Hook(conn);
         _byEndPoint[endPoint] = conn;
         return conn;
@@ -76,7 +77,7 @@ public sealed class PeerNetwork : IDisposable
     private PeerConnection CreateRelayed(PeerConnection relay, PeerId relayId, PeerId target)
     {
         var conn = new PeerConnection(_identity, relay.RemoteEndPoint, target,
-            (packet, _) => SendViaRelay(relay, target, packet), _options, relayedVia: relayId);
+            (packet, _) => SendViaRelay(relay, target, packet), _options, _instance, relayedVia: relayId);
         Hook(conn);
         _relayed[target] = conn;
         return conn;
@@ -159,7 +160,7 @@ public sealed class PeerNetwork : IDisposable
 
         if (_options.AcceptIncoming && packet.Span[1] == 1)
         {
-            var inbound = new PeerConnection(_identity, from, null, (p, to) => _mux.Send(p, to), _options);
+            var inbound = new PeerConnection(_identity, from, null, (p, to) => _mux.Send(p, to), _options, _instance);
             Hook(inbound);
             _byEndPoint[from] = inbound;
             inbound.OnDatagram(packet.Span);
@@ -181,14 +182,13 @@ public sealed class PeerNetwork : IDisposable
         ConnectionEstablished?.Invoke(conn);
     }
 
-    private bool Prefer(PeerConnection candidate, PeerConnection current)
+    private static bool Prefer(PeerConnection candidate, PeerConnection current)
     {
         if (candidate.IsRelayed != current.IsRelayed) return !candidate.IsRelayed;
         if (Environment.TickCount64 - current.LastReceivedAt > 15_000) return true;
-        // A connection that appears well after the current one is almost always the peer coming back
-        // (restart, new network path) while the old session is dead but not yet timed out. Duplicate dials
-        // made at the same moment are established within moments of each other and fall through to the tie-break.
-        if (candidate.EstablishedAt - current.EstablishedAt > _options.NewerSessionWinsAfter.TotalMilliseconds) return true;
+        // A different app run of the same peer: the old session belongs to a process that no longer exists.
+        if (candidate.RemoteInstance != null && current.RemoteInstance != null
+            && !candidate.RemoteInstance.AsSpan().SequenceEqual(current.RemoteInstance)) return true;
         return candidate.SessionId.AsSpan().SequenceCompareTo(current.SessionId) < 0;
     }
 

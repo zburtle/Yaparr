@@ -123,7 +123,7 @@ public class RestartTests
     [Fact]
     public async Task A_restarted_peer_replaces_its_dead_session_instead_of_being_rejected()
     {
-        var options = new PeerNetworkOptions { HelloInterval = TimeSpan.FromMilliseconds(100), NewerSessionWinsAfter = TimeSpan.FromMilliseconds(300) };
+        var options = new PeerNetworkOptions { HelloInterval = TimeSpan.FromMilliseconds(100) };
         using var a = PeerIdentity.Generate();
         using var bId = PeerIdentity.Generate();
         using var aMux = new UdpMux();
@@ -152,5 +152,27 @@ public class RestartTests
             await TestUtil.WaitFor(() => aNet.Get(bId.Id) is { State: ConnectionState.Established } c && c.RemoteEndPoint.Equals(expected));
             bNet1.Dispose();
         }
+    }
+
+    [Fact]
+    public async Task Data_that_is_never_acknowledged_closes_the_connection()
+    {
+        var options = new PeerNetworkOptions { HelloInterval = TimeSpan.FromMilliseconds(100), UnackedTimeout = TimeSpan.FromSeconds(1) };
+        using var aId = PeerIdentity.Generate();
+        using var bId = PeerIdentity.Generate();
+        using var aMux = new UdpMux();
+        using var bMux = new UdpMux();
+        using var aNet = new PeerNetwork(aId, aMux, options);
+        using var bNet = new PeerNetwork(bId, bMux, options);
+        aMux.Start(); bMux.Start();
+
+        var conn = aNet.Connect(new IPEndPoint(IPAddress.Loopback, bMux.LocalPort), bId.Id);
+        await conn.WhenEstablished.WaitAsync(TimeSpan.FromSeconds(5));
+
+        bMux.Dispose();
+        conn.SendReliable(1, new byte[] { 1, 2, 3 });
+
+        await TestUtil.WaitFor(() => conn.State == ConnectionState.Closed);
+        Assert.Contains("acknowledge", conn.CloseReason);
     }
 }

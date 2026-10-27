@@ -14,7 +14,7 @@ public sealed class PeerNetworkOptions
     public TimeSpan HelloInterval { get; init; } = TimeSpan.FromMilliseconds(300);
     public TimeSpan KeepAliveInterval { get; init; } = TimeSpan.FromSeconds(10);
     public TimeSpan IdleTimeout { get; init; } = TimeSpan.FromSeconds(35);
-    public TimeSpan NewerSessionWinsAfter { get; init; } = TimeSpan.FromSeconds(5);
+    public TimeSpan UnackedTimeout { get; init; } = TimeSpan.FromSeconds(15);
     public bool AcceptIncoming { get; init; } = true;
 }
 
@@ -25,8 +25,9 @@ public sealed class PeerConnection : IDisposable
     internal const byte Magic = 0xA7;
     private const byte PacketHello = 1, PacketData = 2;
     private const byte FrameUnreliable = 1, FrameReliable = 2, FrameAck = 3, FramePing = 4, FrameClose = 5;
-    private const byte ProtocolVersion = 1;
-    private static readonly byte[] HelloContext = Encoding.ASCII.GetBytes("yaparr-hello-v1");
+    private const byte ProtocolVersion = 2;
+    private static readonly byte[] HelloContext = Encoding.ASCII.GetBytes("yaparr-hello-v2");
+    public const int InstanceIdLength = 8;
 
     public const int MaxUnreliablePayload = 1100;
 
@@ -37,6 +38,7 @@ public sealed class PeerConnection : IDisposable
     private readonly PeerNetworkOptions _options;
     private readonly ECDiffieHellman _eph = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
     private readonly byte[] _ephPublic;
+    private readonly byte[] _instance;
     private readonly Dictionary<byte, ReliableChannel> _channels = new();
     private readonly TaskCompletionSource<PeerConnection> _established = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -44,9 +46,10 @@ public sealed class PeerConnection : IDisposable
     private byte[]? _remoteEph;
     private long _startedAt, _lastHelloSent, _lastSent, _lastReceived;
 
-    internal PeerConnection(PeerIdentity local, IPEndPoint remote, PeerId? expected, Action<byte[], IPEndPoint> send, PeerNetworkOptions options, PeerId? relayedVia = null)
+    internal PeerConnection(PeerIdentity local, IPEndPoint remote, PeerId? expected, Action<byte[], IPEndPoint> send, PeerNetworkOptions options, byte[] instance, PeerId? relayedVia = null)
     {
         RelayedVia = relayedVia;
+        _instance = instance;
         _local = local;
         RemoteEndPoint = remote;
         _expected = expected;
@@ -63,7 +66,8 @@ public sealed class PeerConnection : IDisposable
     internal PeerId? Expected => _expected;
     internal long LastReceivedAt => Volatile.Read(ref _lastReceived);
 
-    internal long EstablishedAt { get; private set; }
+    /// <summary>Random id of the remote app run. A different one from the same peer means it restarted.</summary>
+    internal byte[]? RemoteInstance { get; private set; }
     public ConnectionState State { get; private set; } = ConnectionState.Connecting;
     public PeerId? RemoteId { get; private set; }
     public byte[]? RemotePublicKey { get; private set; }
@@ -143,6 +147,7 @@ public sealed class PeerConnection : IDisposable
                     break;
                 case ConnectionState.Established:
                     if (now - _lastReceived > _options.IdleTimeout.TotalMilliseconds) { timeout = "went silent"; break; }
+                    if (_channels.Values.Any(c => c.OldestUnackedAge(now) > _options.UnackedTimeout.TotalMilliseconds)) { timeout = "did not acknowledge our data"; break; }
                     PumpLocked(now);
                     if (now - _lastSent >= _options.KeepAliveInterval.TotalMilliseconds) SendFrameLocked(new[] { FramePing });
                     break;
@@ -170,7 +175,7 @@ public sealed class PeerConnection : IDisposable
 
     private void OnHelloLocked(ReadOnlySpan<byte> packet, List<Action> post)
     {
-        byte[] idKey, ephKey, sig;
+        byte[] idKey, ephKey, sig, instance;
         try
         {
             int p = 2;
@@ -178,10 +183,12 @@ public sealed class PeerConnection : IDisposable
             idKey = ReadBlock(packet, ref p);
             ephKey = ReadBlock(packet, ref p);
             sig = ReadBlock(packet, ref p);
+            instance = ReadBlock(packet, ref p);
         }
         catch (Exception ex) when (ex is ArgumentOutOfRangeException or IndexOutOfRangeException) { return; }
 
-        if (!PeerIdentity.Verify(idKey, SignedHelloData(ephKey), sig)) return;
+        if (instance.Length != InstanceIdLength) return;
+        if (!PeerIdentity.Verify(idKey, SignedHelloData(ephKey, instance), sig)) return;
 
         var remoteId = PeerId.FromPublicKey(idKey);
         if (remoteId == _local.Id) { post.Add(() => CloseCore(false, "is ourselves")); return; }
@@ -199,8 +206,8 @@ public sealed class PeerConnection : IDisposable
             _channels.Clear();
             RemoteId = remoteId;
             RemotePublicKey = idKey;
+            RemoteInstance = instance;
             State = ConnectionState.Established;
-            EstablishedAt = now;
             _lastSent = now;
             post.Add(() => { _established.TrySetResult(this); Connected?.Invoke(this); });
         }
@@ -286,12 +293,13 @@ public sealed class PeerConnection : IDisposable
 
     private void SendHelloLocked(long now)
     {
-        var sig = _local.Sign(SignedHelloData(_ephPublic));
+        var sig = _local.Sign(SignedHelloData(_ephPublic, _instance));
         using var ms = new MemoryStream();
         ms.WriteByte(Magic); ms.WriteByte(PacketHello); ms.WriteByte(ProtocolVersion);
         WriteBlock(ms, _local.PublicKey);
         WriteBlock(ms, _ephPublic);
         WriteBlock(ms, sig);
+        WriteBlock(ms, _instance);
         _send(ms.ToArray(), RemoteEndPoint);
         _lastHelloSent = now;
     }
@@ -311,7 +319,7 @@ public sealed class PeerConnection : IDisposable
         return low ? new SessionCrypto(lowToHigh, highToLow) : new SessionCrypto(highToLow, lowToHigh);
     }
 
-    private static byte[] SignedHelloData(byte[] ephPublic) => HelloContext.Concat(ephPublic).ToArray();
+    private static byte[] SignedHelloData(byte[] ephPublic, byte[] instance) => HelloContext.Concat(ephPublic).Concat(instance).ToArray();
 
     private static void WriteBlock(Stream s, byte[] data)
     {

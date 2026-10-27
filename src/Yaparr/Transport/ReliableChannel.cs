@@ -14,6 +14,7 @@ internal sealed class ReliableChannel
         public required byte[] Payload;
         public bool Last;
         public long SentAt;
+        public long FirstSentAt;
         public int Retries;
     }
 
@@ -46,7 +47,7 @@ internal sealed class ReliableChannel
         {
             var (payload, last) = _queue.Dequeue();
             uint seq = _nextSeq++;
-            _inFlight[seq] = new InFlight { Payload = payload, Last = last, SentAt = now };
+            _inFlight[seq] = new InFlight { Payload = payload, Last = last, SentAt = now, FirstSentAt = now };
             transmit(seq, last, payload);
         }
 
@@ -59,6 +60,8 @@ internal sealed class ReliableChannel
             transmit(seq, f.Last, f.Payload);
         }
     }
+
+    public long OldestUnackedAge(long now) => _inFlight.Count == 0 ? 0 : now - _inFlight.Values.Min(f => f.FirstSentAt);
 
     public void OnAck(uint next)
     {
