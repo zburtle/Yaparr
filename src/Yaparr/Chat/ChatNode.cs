@@ -671,10 +671,11 @@ public sealed class ChatNode : IDisposable
     {
         var state = new PeerState(conn);
         bool isNew = !_peers.ContainsKey(state.Id);
+        // The hello must be the first thing on the connection, so send it before anyone can find the state and write to it.
+        Send(conn, new Wire { Type = Wire.Hello, Name = _options.DisplayName, Deg = _peers.Count + (isNew ? 1 : 0), Rooms = _rooms.Values.Select(r => RefTo(r, state)).ToArray() });
         _peers[state.Id] = state;
         foreach (var room in _rooms.Values)
             if (room.MemberStates.ContainsKey(state.Id)) room.MemberStates[state.Id] = state;
-        Send(conn, new Wire { Type = Wire.Hello, Name = _options.DisplayName, Deg = _peers.Count, Rooms = _rooms.Values.Select(r => RefTo(r, state)).ToArray() });
         _options.Log?.Invoke(isNew
             ? $"connected to {state.Id.Short} at {conn.RemoteEndPoint}"
             : $"switched to a new connection to {state.Id.Short} at {conn.RemoteEndPoint}");
