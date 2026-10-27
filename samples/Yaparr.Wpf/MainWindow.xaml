@@ -10,8 +10,26 @@
     </Window.Resources>
 
     <DockPanel>
+        <Menu DockPanel.Dock="Top">
+            <MenuItem Header="_File">
+                <MenuItem Header="Copy my _ID" Click="CopyId_Click" />
+                <MenuItem Header="_Import profile…" Click="ImportProfile_Click" />
+                <MenuItem Header="_Export profile…" Click="ExportProfile_Click" />
+                <Separator />
+                <MenuItem Header="E_xit" Click="Exit_Click" />
+            </MenuItem>
+            <MenuItem Header="_Help">
+                <MenuItem Header="Check for _updates…" Click="CheckUpdates_Click" />
+                <Separator />
+                <MenuItem Header="_About Yaparr" Click="About_Click" />
+            </MenuItem>
+        </Menu>
+
         <Border DockPanel.Dock="Bottom" Padding="8,4" BorderThickness="0,1,0,0" BorderBrush="LightGray">
-            <TextBlock x:Name="StatusText" Text="Starting…" Foreground="DimGray" />
+            <DockPanel>
+                <TextBlock x:Name="VersionText" DockPanel.Dock="Right" Margin="12,0,0,0" Foreground="DimGray" />
+                <TextBlock x:Name="StatusText" Text="Starting…" Foreground="DimGray" TextTrimming="CharacterEllipsis" />
+            </DockPanel>
         </Border>
 
         <Grid>

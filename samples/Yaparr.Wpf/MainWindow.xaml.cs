@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         ConversationList.ItemsSource = _conversations;
+        VersionText.Text = "v" + Updater.CurrentVersion;
         Loaded += async (_, _) =>
         {
             _ = CheckForUpdateAsync();
@@ -32,12 +33,104 @@ public partial class MainWindow : Window
         Closing += (_, _) => Shutdown();
     }
 
-    private async Task CheckForUpdateAsync()
+    private void ExportProfile_Click(object sender, RoutedEventArgs e)
+    {
+        if (_node == null) return;
+        var proceed = MessageBox.Show(this,
+            "The export contains your private identity key, your private room keys and your message history. " +
+            "Anyone with the file can impersonate you and read your private rooms.\n\nKeep it somewhere safe. Continue?",
+            "Export profile", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+        if (proceed != MessageBoxResult.Yes) return;
+
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "Export profile",
+            FileName = $"Yaparr-profile-{_settings.DisplayName}-{DateTime.Now:yyyyMMdd}.zip",
+            Filter = "Zip archive (*.zip)|*.zip",
+            DefaultExt = ".zip",
+        };
+        if (dialog.ShowDialog(this) != true) return;
+
+        try
+        {
+            _data.ExportProfile(dialog.FileName);
+            StatusText.Text = "Profile exported to " + dialog.FileName;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            StatusText.Text = "Export failed: " + ex.Message;
+        }
+    }
+
+    private void ImportProfile_Click(object sender, RoutedEventArgs e)
+    {
+        if (_node == null) return;
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Import profile",
+            Filter = "Zip archive (*.zip)|*.zip",
+            CheckFileExists = true,
+        };
+        if (dialog.ShowDialog(this) != true) return;
+
+        string staging;
+        try { staging = _data.StageProfile(dialog.FileName); }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            MessageBox.Show(this, ex.Message, "Import profile", MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
+
+        var proceed = MessageBox.Show(this,
+            "Importing replaces your current identity, private rooms and message history with the ones in the file. " +
+            "Your current profile will be lost unless you exported it first.\n\nYaparr will restart. Continue?",
+            "Import profile", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+        if (proceed != MessageBoxResult.Yes)
+        {
+            System.IO.Directory.Delete(staging, recursive: true);
+            return;
+        }
+
+        Shutdown();
+        try
+        {
+            _data.ApplyStagedProfile(staging);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            MessageBox.Show(this, "Import failed: " + ex.Message, "Import profile", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+
+        var args = Environment.GetCommandLineArgs().Skip(1).Select(a => $"\"{a}\"");
+        if (Environment.ProcessPath is { } exe)
+            Process.Start(new ProcessStartInfo(exe, string.Join(' ', args)) { UseShellExecute = false });
+        Application.Current.Shutdown();
+    }
+
+    private void Exit_Click(object sender, RoutedEventArgs e) => Close();
+
+    private async void CheckUpdates_Click(object sender, RoutedEventArgs e) => await CheckForUpdateAsync(manual: true);
+
+    private void About_Click(object sender, RoutedEventArgs e) =>
+        MessageBox.Show(this, $"Yaparr {Updater.CurrentVersion}\nServerless peer-to-peer chat over the BitTorrent DHT.",
+            "About Yaparr", MessageBoxButton.OK, MessageBoxImage.Information);
+
+    private async Task CheckForUpdateAsync(bool manual = false)
     {
         try
         {
+            if (manual && Updater.Repository is null)
+            {
+                StatusText.Text = "Updates are not available in this build.";
+                return;
+            }
+
             var update = await Updater.CheckAsync(_cts.Token);
-            if (update is null) return;
+            if (update is null)
+            {
+                if (manual) StatusText.Text = $"Yaparr {Updater.CurrentVersion} is up to date.";
+                return;
+            }
 
             var notes = string.IsNullOrWhiteSpace(update.Notes) ? "" : $"\n\n{update.Notes.Trim()}";
             var answer = MessageBox.Show(this,
@@ -101,7 +194,9 @@ public partial class MainWindow : Window
     private void Shutdown()
     {
         _cts.Cancel();
-        _node?.Dispose();
+        var node = _node;
+        _node = null;
+        node?.Dispose();
     }
 
     private void UI(Action action) => Dispatcher.BeginInvoke(action);
