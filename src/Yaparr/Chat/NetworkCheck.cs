@@ -1,4 +1,4 @@
-using Yaparr.Identity;
+﻿using Yaparr.Identity;
 using Yaparr.Transport;
 using Yaparr.Vpn;
 
@@ -98,6 +98,22 @@ public sealed partial class ChatNode
                 : vpnUp
                     ? new(CheckLevel.Info, "Router port", "Not used while the VPN is connected.")
                     : new(CheckLevel.Info, "Router port", "Your router did not open a port automatically (UPnP and NAT-PMP are off or unsupported)."));
+        }
+
+        if (vpnUp && _tunnel is { } tunnel && tunnel.SilentFor > TimeSpan.FromSeconds(45))
+            items.Add(new(CheckLevel.Problem, "The VPN is connected but silent",
+                $"Nothing has come back from the VPN server for {(int)tunnel.SilentFor.TotalSeconds} seconds. If another device uses the same WireGuard configuration, only one of them can work at a time. Give each device its own configuration from your VPN provider."));
+
+        if (_discoveries.OfType<Yaparr.Discovery.Dht.DhtDiscovery>().FirstOrDefault() is { } dht && !_rooms.IsEmpty)
+        {
+            var (queried, answered) = dht.Node.LastLookup;
+            if (queried == 0)
+                items.Add(new(CheckLevel.Info, "Peer discovery (DHT)", "No lookup has finished yet."));
+            else if (answered == 0)
+                items.Add(new(CheckLevel.Problem, "Peer discovery cannot reach the network",
+                    $"None of {queried} DHT nodes answered. A firewall may be blocking UDP, or replies are not coming back (a shared VPN configuration does this)."));
+            else
+                items.Add(new(CheckLevel.Ok, "Peer discovery works", $"{answered} of {queried} DHT nodes answered; {dht.Node.KnownNodes} known."));
         }
 
         if (VpnState == VpnState.Connecting)

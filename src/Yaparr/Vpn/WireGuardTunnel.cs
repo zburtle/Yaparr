@@ -1,4 +1,4 @@
-using System.Buffers.Binary;
+﻿using System.Buffers.Binary;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
@@ -76,7 +76,8 @@ public sealed class WireGuardTunnel : ITunnel, IDisposable
     private Pending? _pending;
     private long _lastInitiation, _lastSend, _lastReceive, _handshakeAt;
     private int _ipId;
-    private bool _oversizeLogged;
+    private bool _oversizeLogged, _silentLogged;
+    private static readonly TimeSpan SilentWarning = TimeSpan.FromSeconds(45);
     private VpnState _state = VpnState.Disconnected;
 
     public WireGuardTunnel(WireGuardConfig config, UdpMux mux, Action<string>? log = null)
@@ -88,6 +89,9 @@ public sealed class WireGuardTunnel : ITunnel, IDisposable
     }
 
     public VpnState State => _state;
+
+    /// <summary>How long nothing at all has come back from the server. Long silence on a connected tunnel usually means another device is using the same configuration.</summary>
+    public TimeSpan SilentFor => _state == VpnState.Connected ? TimeSpan.FromMilliseconds(Environment.TickCount64 - Math.Max(_lastReceive, Interlocked.Read(ref _handshakeAt))) : TimeSpan.Zero;
 
     public IPAddress LocalAddress => _config.Address;
 
@@ -371,6 +375,10 @@ public sealed class WireGuardTunnel : ITunnel, IDisposable
                     }
                 }
                 SetState(live ? VpnState.Connected : VpnState.Connecting);
+                bool silent = live && SilentFor > SilentWarning;
+                if (silent && !_silentLogged)
+                    _log?.Invoke($"VPN: nothing has come back from {_config.Endpoint} for {(int)SilentFor.TotalSeconds}s. If another device uses the same WireGuard configuration, only one of them can be connected; give each device its own.");
+                _silentLogged = silent;
             }
         }
         catch (OperationCanceledException) { }

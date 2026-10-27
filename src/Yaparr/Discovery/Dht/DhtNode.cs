@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
@@ -64,6 +64,9 @@ public sealed class DhtNode : IDisposable
 
     public DhtId Id { get; }
     public int KnownNodes => _table.Count;
+
+    /// <summary>How many nodes the latest lookup asked and how many of them answered.</summary>
+    public (int Queried, int Answered) LastLookup { get; private set; }
 
     public async Task BootstrapAsync(CancellationToken ct = default)
     {
@@ -188,6 +191,13 @@ public sealed class DhtNode : IDisposable
         }
 
         var responded = candidates.Values.Where(c => c.State == State.Responded).Order(byDistance).Take(_options.K).ToList();
+        int queried = candidates.Values.Count(c => c.State != State.New);
+        int answered = candidates.Values.Count(c => c.State == State.Responded);
+        LastLookup = (queried, answered);
+        if (wantPeers && peers.Count == 0)
+            _mux.Log?.Invoke(answered == 0
+                ? $"DHT lookup: none of {queried} node(s) answered ({_table.Count} known); UDP replies may be blocked or not coming back"
+                : $"DHT lookup: {answered} of {queried} node(s) answered, but none knew any peers for this room");
         return (peers.ToList(), responded);
     }
 
