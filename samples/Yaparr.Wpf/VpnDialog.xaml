@@ -1,0 +1,19 @@
+<Window x:Class="Yaparr.Wpf.VpnDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="VPN" SizeToContent="Height" Width="460" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+    <StackPanel Margin="16">
+        <TextBlock TextWrapping="Wrap" Margin="0,0,0,12"
+                   Text="Connect Yaparr to a WireGuard VPN to get around networks that block direct connections. Only Yaparr's own traffic goes through the VPN; other apps are not affected." />
+        <TextBlock x:Name="ConfigText" TextWrapping="Wrap" FontWeight="SemiBold" />
+        <TextBlock x:Name="StatusText" TextWrapping="Wrap" Margin="0,4,0,0" />
+        <TextBlock x:Name="NetworkText" TextWrapping="Wrap" Margin="0,4,0,0" Foreground="Gray" />
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button x:Name="ImportButton" Content="Import config…" Padding="10,4" Margin="0,0,8,0" Click="Import_Click" />
+            <Button x:Name="ToggleButton" Content="Connect" Padding="10,4" MinWidth="90" Margin="0,0,8,0" Click="Toggle_Click" />
+            <Button x:Name="RemoveButton" Content="Remove" Padding="10,4" Margin="0,0,8,0" Click="Remove_Click" />
+            <Button Content="Close" IsCancel="True" Padding="10,4" MinWidth="70" />
+        </StackPanel>
+    </StackPanel>
+</Window>

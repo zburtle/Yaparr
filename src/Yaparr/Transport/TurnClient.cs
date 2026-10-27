@@ -234,7 +234,7 @@ public sealed class TurnClient : IPacketRoute, IDisposable
                 _seen.TryRemove(stale.Key, out _);
     }
 
-    private static bool IsLocal(IPAddress address)
+    internal static bool IsLocal(IPAddress address)
     {
         if (IPAddress.IsLoopback(address)) return true;
         var b = address.GetAddressBytes();

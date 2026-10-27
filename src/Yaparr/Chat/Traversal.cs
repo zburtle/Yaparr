@@ -55,7 +55,7 @@ public sealed class TraversalOptions
     }
 }
 
-public sealed record NetworkStatus(NatReport Nat, PortMapping? Mapping, IPEndPoint? Relay)
+public sealed record NetworkStatus(NatReport Nat, PortMapping? Mapping, IPEndPoint? Relay, string? Vpn = null)
 {
     public static NetworkStatus Unknown { get; } = new(NatReport.Unknown, null, null);
 
@@ -63,7 +63,9 @@ public sealed record NetworkStatus(NatReport Nat, PortMapping? Mapping, IPEndPoi
 
     public string Describe()
     {
-        var parts = new List<string> { Nat.Describe() };
+        var parts = new List<string>();
+        if (Vpn != null) parts.Add(Vpn);
+        parts.Add(Nat.Describe());
         if (Mapping != null) parts.Add($"{Mapping.Method} port {Mapping.ExternalEndPoint.Port} open");
         if (Relay != null) parts.Add($"relay {Relay}");
         return string.Join("; ", parts);

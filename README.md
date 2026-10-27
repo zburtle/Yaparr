@@ -139,6 +139,20 @@ Peers behind home routers have to punch through their NATs. Yaparr does this in 
    switches to the relay only for peers that cannot be reached directly. A TURN server is the one piece of
    infrastructure involved; it forwards encrypted packets and cannot read them.
 
+### Built-in WireGuard VPN
+
+Yaparr contains its own WireGuard client (Noise IKpsk2, ChaCha20-Poly1305, BLAKE2s). In the WPF app use
+**Network > VPN…** to import a standard `.conf` file and connect. Nothing is installed on the machine and no admin
+rights are needed: only Yaparr's own UDP traffic is wrapped and sent to the VPN server, and every other program keeps
+using the normal connection. Traffic to local-network addresses stays direct. While the VPN is enabled but down,
+Yaparr's internet traffic is dropped instead of leaking out directly.
+
+Peers then see the VPN server's address, so a symmetric NAT on your side stops mattering as long as the server's
+outbound mapping is stable (a plain Linux WireGuard server with masquerading is). The NAT check is re-run through the
+tunnel and shown in the status bar. The config, including its private key, is saved as `vpn.conf` in the profile
+folder and is therefore part of a profile export. Only IPv4 servers and a single peer are supported; the client does
+not answer handshakes started by the server, so it relies on its own 2-minute rekey.
+
 Settings live in `network.json` in the profile folder (all keys optional):
 
 ```json

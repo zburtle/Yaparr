@@ -12,6 +12,11 @@ public interface IPacketRoute
     void NoteReceived(IPEndPoint from, bool viaRelay);
 }
 
+public interface ITunnel
+{
+    bool TrySend(ReadOnlySpan<byte> packet, IPEndPoint to);
+}
+
 public sealed class UdpMux : IDisposable
 {
     public delegate bool PacketHandler(ReadOnlyMemory<byte> packet, IPEndPoint from);
@@ -40,6 +45,8 @@ public sealed class UdpMux : IDisposable
 
     public IPacketRoute? Route { get; set; }
 
+    public ITunnel? Tunnel { get; set; }
+
     public int? AdvertisedPort { get; set; }
 
     public void AddHandler(PacketHandler handler)
@@ -59,10 +66,11 @@ public sealed class UdpMux : IDisposable
 
     public void SendRelayed(ReadOnlySpan<byte> packet, IPEndPoint to) => Route?.SendRelayed(packet, to);
 
-    public void Inject(ReadOnlyMemory<byte> packet, IPEndPoint from) => Deliver(packet, from, viaRelay: true);
+    public void Inject(ReadOnlyMemory<byte> packet, IPEndPoint from, bool viaRelay = true) => Deliver(packet, from, viaRelay);
 
     internal void SendDirect(ReadOnlySpan<byte> packet, IPEndPoint to)
     {
+        if (Tunnel?.TrySend(packet, to) == true) return;
         try { _socket.SendTo(packet, SocketFlags.None, to); }
         catch (SocketException ex) { Log?.Invoke($"send to {to} failed: {ex.SocketErrorCode}"); }
         catch (ObjectDisposedException) { }

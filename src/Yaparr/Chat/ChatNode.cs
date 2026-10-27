@@ -6,6 +6,7 @@ using Yaparr.Discovery;
 using Yaparr.Discovery.Dht;
 using Yaparr.Identity;
 using Yaparr.Transport;
+using Yaparr.Vpn;
 
 namespace Yaparr.Chat;
 
@@ -25,6 +26,8 @@ public sealed class ChatNodeOptions
     public PeerNetworkOptions Network { get; init; } = new();
 
     public TraversalOptions Traversal { get; init; } = new();
+
+    public WireGuardConfig? Vpn { get; init; }
 
     public TimeSpan DiscoveryInterval { get; init; } = TimeSpan.FromSeconds(15);
 
@@ -119,6 +122,8 @@ public sealed class ChatNode : IDisposable
     private bool _started;
     private PortMapper? _mapper;
     private TurnClient? _turn;
+    private WireGuardTunnel? _tunnel;
+    private readonly SemaphoreSlim _networkGate = new(1, 1);
 
     private const int MinDegree = 2;
     private const int MaxCandidates = 512;
@@ -187,6 +192,10 @@ public sealed class ChatNode : IDisposable
 
     public event Action<NetworkStatus>? NetworkStatusChanged;
 
+    public VpnState VpnState => _tunnel?.State ?? VpnState.Disconnected;
+
+    public event Action<VpnState>? VpnStateChanged;
+
     public event Action<PeerInfo>? PeerConnected;
     public event Action<PeerInfo>? PeerDisconnected;
 
@@ -200,8 +209,74 @@ public sealed class ChatNode : IDisposable
         var peerTopic = Topics.ForPeer(Id);
         foreach (var d in _discoveries)
             _ = RunLoopAsync(() => d.AnnounceAsync(peerTopic, _cts.Token), $"peer announce ({d.GetType().Name})");
-        if (_options.Traversal.Enabled && _options.DiscoveryFactory == null)
-            _ = Task.Run(() => SetupTraversalAsync(_cts.Token));
+        if (_options.Vpn != null || TraversalEnabled)
+            _ = Task.Run(() => StartNetworkAsync(_cts.Token));
+    }
+
+    private bool TraversalEnabled => _options.Traversal.Enabled && _options.DiscoveryFactory == null;
+
+    private async Task StartNetworkAsync(CancellationToken ct)
+    {
+        if (_options.Vpn != null)
+        {
+            try { await ConnectVpnCoreAsync(_options.Vpn, ct).ConfigureAwait(false); }
+            catch (Exception ex) when (ex is SocketException or InvalidOperationException)
+            {
+                _options.Log?.Invoke($"VPN could not start: {ex.Message}");
+            }
+        }
+        await RefreshNetworkAsync(ct).ConfigureAwait(false);
+    }
+
+    public async Task<bool> ConnectVpnAsync(WireGuardConfig config, CancellationToken ct = default)
+    {
+        Start();
+        bool connected = await ConnectVpnCoreAsync(config, ct).ConfigureAwait(false);
+        await RefreshNetworkAsync(ct).ConfigureAwait(false);
+        return connected;
+    }
+
+    public async Task DisconnectVpnAsync(CancellationToken ct = default)
+    {
+        DetachTunnel();
+        await RefreshNetworkAsync(ct).ConfigureAwait(false);
+    }
+
+    private void DetachTunnel()
+    {
+        var tunnel = Interlocked.Exchange(ref _tunnel, null);
+        if (tunnel == null) return;
+        _mux.Tunnel = null;
+        tunnel.Dispose();
+        VpnStateChanged?.Invoke(VpnState.Disconnected);
+    }
+
+    private async Task<bool> ConnectVpnCoreAsync(WireGuardConfig config, CancellationToken ct)
+    {
+        DetachTunnel();
+        var tunnel = new WireGuardTunnel(config, _mux, _options.Log);
+        tunnel.StateChanged += state => { if (ReferenceEquals(_tunnel, tunnel)) VpnStateChanged?.Invoke(state); };
+        _tunnel = tunnel;
+        _mux.Tunnel = tunnel;
+        try
+        {
+            bool connected = await tunnel.ConnectAsync(TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
+            _options.Log?.Invoke(connected ? $"VPN connected to {config.Endpoint}" : $"VPN handshake with {config.Endpoint} timed out; still trying");
+            return connected;
+        }
+        catch
+        {
+            DetachTunnel();
+            throw;
+        }
+    }
+
+    private async Task RefreshNetworkAsync(CancellationToken ct)
+    {
+        if (!TraversalEnabled) return;
+        await _networkGate.WaitAsync(ct).ConfigureAwait(false);
+        try { await SetupTraversalAsync(ct).ConfigureAwait(false); }
+        finally { _networkGate.Release(); }
     }
 
     private async Task SetupTraversalAsync(CancellationToken ct)
@@ -210,7 +285,10 @@ public sealed class ChatNode : IDisposable
         {
             var traversal = _options.Traversal;
             PortMapping? mapping = null;
-            if (traversal.PortMapping)
+            _turn?.Dispose();
+            _turn = null;
+            string? vpn = _tunnel is { State: VpnState.Connected } ? $"VPN {_tunnel.Describe()}" : null;
+            if (traversal.PortMapping && _tunnel == null)
             {
                 _mapper = new PortMapper(_mux.LocalPort, log: _options.Log);
                 mapping = await _mapper.MapAsync(ct).ConfigureAwait(false);
@@ -218,14 +296,14 @@ public sealed class ChatNode : IDisposable
             }
 
             var nat = await NatProbe.RunAsync(_mux, traversal.StunServers, ct).ConfigureAwait(false);
-            PublishNetwork(new NetworkStatus(nat, mapping, null));
+            PublishNetwork(new NetworkStatus(nat, mapping, null, vpn));
 
             bool needRelay = mapping == null && nat.Type is NatType.Symmetric or NatType.Unknown;
             if (traversal.Turn is { Enabled: true } turn && (needRelay || turn.Always))
             {
                 _turn = new TurnClient(_mux, turn, _options.Log);
                 if (await _turn.AllocateAsync(ct).ConfigureAwait(false))
-                    PublishNetwork(new NetworkStatus(nat, mapping, _turn.RelayedEndPoint));
+                    PublishNetwork(new NetworkStatus(nat, mapping, _turn.RelayedEndPoint, vpn));
             }
             else if (needRelay)
             {
@@ -251,6 +329,8 @@ public sealed class ChatNode : IDisposable
         foreach (var room in _rooms.Values.ToList()) LeaveRoomCore(room);
         Network.Dispose();
         _turn?.Dispose();
+        _mux.Tunnel = null;
+        _tunnel?.Dispose();
         if (_mapper != null)
         {
             try { _mapper.UnmapAsync().Wait(TimeSpan.FromSeconds(3)); } catch (AggregateException) { }
