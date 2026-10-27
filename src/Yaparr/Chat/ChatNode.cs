@@ -844,7 +844,10 @@ public sealed partial class ChatNode : IDisposable
         if (expected is { } pin) _pinned[pin.Value] = 0;
         var conn = Network.Connect(endPoint, expected);
         await conn.WhenEstablished.WaitAsync(ct).ConfigureAwait(false);
-        return GetDirectChat(conn.RemoteId!.Value);
+        // The connection is up a moment before the chat layer has registered it; wait so sending works at once.
+        var id = conn.RemoteId!.Value;
+        for (int i = 0; i < 100 && !_peers.ContainsKey(id); i++) await Task.Delay(20, ct).ConfigureAwait(false);
+        return GetDirectChat(id);
     }
 
     public async Task<DirectChat> OpenDirectChatAsync(PeerId peer, CancellationToken ct = default)

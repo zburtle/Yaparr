@@ -188,6 +188,7 @@ public partial class MainWindow : Window
             HistoryStore = new FileHistoryStore(_data.HistoryDirectory),
             Traversal = traversal,
             EnableLocalDiscovery = traversal.LocalDiscovery,
+            PeerCachePath = Path.Combine(_data.Directory, "peers.json"),
             Vpn = _vpn.LoadConfigIfEnabled(),
             Log = _log.Write,
         });
