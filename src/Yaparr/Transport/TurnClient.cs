@@ -1,4 +1,4 @@
-using System.Buffers.Binary;
+﻿using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
@@ -83,6 +83,14 @@ public sealed class TurnClient : IPacketRoute, IDisposable
 
         var reply = await AuthenticatedAsync(
             () => new StunMessage(StunType.AllocateRequest).Add(StunAttr.RequestedTransport, new byte[] { 17, 0, 0, 0 }), ct).ConfigureAwait(false);
+        if (reply != null && StunType.IsError(reply.Type) && reply.ErrorCode() == 437)
+        {
+            // An allocation from this same socket survives an earlier client (a restart or a network refresh).
+            // Release it and ask again.
+            await AuthenticatedAsync(() => new StunMessage(StunType.RefreshRequest).Add(StunAttr.Lifetime, LifetimeBytes(0)), ct).ConfigureAwait(false);
+            reply = await AuthenticatedAsync(
+                () => new StunMessage(StunType.AllocateRequest).Add(StunAttr.RequestedTransport, new byte[] { 17, 0, 0, 0 }), ct).ConfigureAwait(false);
+        }
         if (reply == null || reply.Type != StunType.AllocateSuccess)
         {
             _log?.Invoke(reply == null
@@ -246,6 +254,17 @@ public sealed class TurnClient : IPacketRoute, IDisposable
         if (_cts.IsCancellationRequested) return;
         _cts.Cancel();
         if (ReferenceEquals(_mux.Route, this)) _mux.Route = null;
+        if (_server != null && _key != null && RelayedEndPoint != null)
+        {
+            // Best effort: free the allocation so the next one from this socket is not refused (437).
+            try
+            {
+                var release = new StunMessage(StunType.RefreshRequest).Add(StunAttr.Lifetime, LifetimeBytes(0))
+                    .Add(StunAttr.Username, _options.Username).Add(StunAttr.Realm, _realm!).Add(StunAttr.Nonce, _nonce!);
+                _mux.SendDirect(release.Encode(_key), _server);
+            }
+            catch (Exception ex) when (ex is SocketException or ObjectDisposedException) { }
+        }
         _transactions.Dispose();
     }
 }
