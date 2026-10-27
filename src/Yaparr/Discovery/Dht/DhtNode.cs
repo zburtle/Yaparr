@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
@@ -117,14 +117,30 @@ public sealed class DhtNode : IDisposable
             var args = new BDict
             {
                 ["info_hash"] = infoHash,
-                ["port"] = (long)_mux.LocalPort,
-                ["implied_port"] = 1L,
+                ["port"] = (long)(_mux.AdvertisedPort ?? _mux.LocalPort),
+                ["implied_port"] = _mux.AdvertisedPort == null ? 1L : 0L,
                 ["token"] = c.Token!,
             };
             return await QueryAsync(c.Contact.EndPoint, "announce_peer", args, ct).ConfigureAwait(false) != null;
         });
         int accepted = (await Task.WhenAll(tasks).ConfigureAwait(false)).Count(ok => ok);
+        accepted += await AnnounceViaRelayAsync(infoHash, closest, ct).ConfigureAwait(false);
         return (accepted, peers);
+    }
+
+    private async Task<int> AnnounceViaRelayAsync(byte[] infoHash, List<Candidate> closest, CancellationToken ct)
+    {
+        if (_mux.Route is not TurnClient { IsActive: true } turn) return 0;
+        var results = await Task.WhenAll(closest.Take(_options.K).Select(async c =>
+        {
+            var node = c.Contact.EndPoint;
+            if (!await turn.EnsurePermissionAsync(node.Address, ct).ConfigureAwait(false)) return false;
+            var probe = await QueryAsync(node, "get_peers", new BDict { ["info_hash"] = infoHash }, ct, viaRelay: true).ConfigureAwait(false);
+            if (probe?.Bytes("token") is not { } token) return false;
+            var args = new BDict { ["info_hash"] = infoHash, ["port"] = 0L, ["implied_port"] = 1L, ["token"] = token };
+            return await QueryAsync(node, "announce_peer", args, ct, viaRelay: true).ConfigureAwait(false) != null;
+        })).ConfigureAwait(false);
+        return results.Count(ok => ok);
     }
 
     private async Task<(List<IPEndPoint> Peers, List<Candidate> Closest)> LookupAsync(DhtId target, bool wantPeers, CancellationToken ct)
@@ -175,7 +191,7 @@ public sealed class DhtNode : IDisposable
         return (peers.ToList(), responded);
     }
 
-    private async Task<BDict?> QueryAsync(IPEndPoint to, string method, BDict args, CancellationToken ct)
+    private async Task<BDict?> QueryAsync(IPEndPoint to, string method, BDict args, CancellationToken ct, bool viaRelay = false)
     {
         var tid = BitConverter.GetBytes((ushort)Interlocked.Increment(ref _nextTid));
         var key = Convert.ToHexString(tid);
@@ -186,7 +202,8 @@ public sealed class DhtNode : IDisposable
             args["id"] = Id.Bytes;
             var msg = new BDict { ["t"] = tid, ["y"] = "q", ["q"] = method, ["a"] = args };
             if (_options.ReadOnly) msg["ro"] = 1L;
-            _mux.Send(Bencode.Encode(msg), to);
+            if (viaRelay) _mux.SendRelayed(Bencode.Encode(msg), to);
+            else _mux.Send(Bencode.Encode(msg), to);
 
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(_options.QueryTimeout);

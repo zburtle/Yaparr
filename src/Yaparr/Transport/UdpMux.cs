@@ -1,7 +1,16 @@
-﻿using System.Net;
+using System.Net;
 using System.Net.Sockets;
 
 namespace Yaparr.Transport;
+
+public enum RouteMode { Direct, Relay, Both }
+
+public interface IPacketRoute
+{
+    RouteMode Choose(IPEndPoint to, ReadOnlySpan<byte> packet);
+    void SendRelayed(ReadOnlySpan<byte> packet, IPEndPoint to);
+    void NoteReceived(IPEndPoint from, bool viaRelay);
+}
 
 public sealed class UdpMux : IDisposable
 {
@@ -29,6 +38,10 @@ public sealed class UdpMux : IDisposable
 
     public Func<ReadOnlyMemory<byte>, IPEndPoint, bool>? OutboundFilter { get; set; }
 
+    public IPacketRoute? Route { get; set; }
+
+    public int? AdvertisedPort { get; set; }
+
     public void AddHandler(PacketHandler handler)
     {
         lock (_handlers) _handlers.Add(handler);
@@ -39,9 +52,32 @@ public sealed class UdpMux : IDisposable
     public void Send(ReadOnlySpan<byte> packet, IPEndPoint to)
     {
         if (OutboundFilter is { } filter && !filter(packet.ToArray(), to)) return;
+        var mode = Route?.Choose(to, packet) ?? RouteMode.Direct;
+        if (mode != RouteMode.Relay) SendDirect(packet, to);
+        if (mode != RouteMode.Direct) Route!.SendRelayed(packet, to);
+    }
+
+    public void SendRelayed(ReadOnlySpan<byte> packet, IPEndPoint to) => Route?.SendRelayed(packet, to);
+
+    public void Inject(ReadOnlyMemory<byte> packet, IPEndPoint from) => Deliver(packet, from, viaRelay: true);
+
+    internal void SendDirect(ReadOnlySpan<byte> packet, IPEndPoint to)
+    {
         try { _socket.SendTo(packet, SocketFlags.None, to); }
         catch (SocketException ex) { Log?.Invoke($"send to {to} failed: {ex.SocketErrorCode}"); }
         catch (ObjectDisposedException) { }
+    }
+
+    private void Deliver(ReadOnlyMemory<byte> packet, IPEndPoint from, bool viaRelay)
+    {
+        Route?.NoteReceived(from, viaRelay);
+        PacketHandler[] handlers;
+        lock (_handlers) handlers = _handlers.ToArray();
+        foreach (var h in handlers)
+        {
+            try { if (h(packet, from)) break; }
+            catch (Exception ex) { Log?.Invoke($"handler error from {from}: {ex.Message}"); }
+        }
     }
 
     private async Task ReceiveLoopAsync()
@@ -54,14 +90,7 @@ public sealed class UdpMux : IDisposable
             {
                 var result = await _socket.ReceiveFromAsync(buffer, SocketFlags.None, any, _cts.Token).ConfigureAwait(false);
                 var from = (IPEndPoint)result.RemoteEndPoint;
-                var packet = buffer.AsMemory(0, result.ReceivedBytes);
-                PacketHandler[] handlers;
-                lock (_handlers) handlers = _handlers.ToArray();
-                foreach (var h in handlers)
-                {
-                    try { if (h(packet, from)) break; }
-                    catch (Exception ex) { Log?.Invoke($"handler error from {from}: {ex.Message}"); }
-                }
+                Deliver(buffer.AsMemory(0, result.ReceivedBytes), from, viaRelay: false);
             }
             catch (OperationCanceledException) { break; }
             catch (ObjectDisposedException) { break; }

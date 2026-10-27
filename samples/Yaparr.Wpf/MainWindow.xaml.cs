@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
@@ -171,8 +171,10 @@ public partial class MainWindow : Window
             DisplayName = name,
             Identity = identity,
             HistoryStore = new FileHistoryStore(_data.HistoryDirectory),
+            Traversal = TraversalOptions.Load(Path.Combine(_data.Directory, "network.json")),
             Log = s => Trace.WriteLine("[yaparr] " + s),
         });
+        _node.NetworkStatusChanged += _ => UI(UpdateStatus);
         _node.PeerConnected += p => UI(() => { Remember(p); RefreshPeers(); UpdateStatus(); });
         _node.PeerDisconnected += p => UI(() => { Remember(p); RefreshPeers(p.Id); UpdateStatus(); });
         _node.IncomingDirectChat += chat => _ = AddDirect(chat);
@@ -207,7 +209,8 @@ public partial class MainWindow : Window
         if (_node == null) return;
         int peers = _node.ConnectedPeers.Count;
         StatusText.Text = $"UDP port {_node.LocalPort}  ·  {peers} peer{(peers == 1 ? "" : "s")} connected" +
-                          (peers == 0 ? "  ·  looking for peers (the first search can take a while)…" : "");
+                          (peers == 0 ? "  ·  looking for peers (the first search can take a while)…" : "") +
+                          (_node.NetworkStatus != NetworkStatus.Unknown ? "  ·  " + _node.NetworkStatus.Describe() : "");
     }
 
     private async void CreateRoom_Click(object sender, RoutedEventArgs e)
