@@ -67,6 +67,8 @@ public sealed class PeerConnection : IDisposable
 
     public byte[]? SessionId { get; private set; }
 
+    public string? CloseReason { get; private set; }
+
     public Task<PeerConnection> WhenEstablished => _established.Task;
 
     public event Action<PeerConnection>? Connected;
@@ -111,6 +113,7 @@ public sealed class PeerConnection : IDisposable
             if (State == ConnectionState.Closed) return;
             if (notifyPeer && State == ConnectionState.Established) SendFrameLocked(new[] { FrameClose });
             State = ConnectionState.Closed;
+            CloseReason = reason;
             _crypto?.Dispose();
             _crypto = null;
         }

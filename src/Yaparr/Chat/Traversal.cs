@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Text.Json;
 using Yaparr.Transport;
 
@@ -35,6 +35,28 @@ public sealed class TraversalOptions
         {
             return new TraversalOptions();
         }
+    }
+
+    public static void SaveTurn(string path, TurnOptions? turn)
+    {
+        var root = new System.Text.Json.Nodes.JsonObject();
+        try
+        {
+            if (File.Exists(path) && System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path)) is System.Text.Json.Nodes.JsonObject existing)
+                root = existing;
+        }
+        catch (Exception ex) when (ex is JsonException or IOException) { }
+        root.Remove("turn");
+        if (turn != null)
+            root["turn"] = new System.Text.Json.Nodes.JsonObject
+            {
+                ["server"] = turn.Server,
+                ["username"] = turn.Username,
+                ["credential"] = turn.Credential,
+                ["enabled"] = turn.Enabled,
+                ["always"] = turn.Always,
+            };
+        File.WriteAllText(path, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
     }
 
     private sealed class Settings

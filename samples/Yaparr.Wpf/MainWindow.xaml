@@ -23,6 +23,7 @@
             </MenuItem>
             <MenuItem Header="_Network">
                 <MenuItem Header="_VPN…" Click="Vpn_Click" />
+                <MenuItem Header="_TURN relay…" Click="Turn_Click" />
             </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem Header="Check for _updates…" Click="CheckUpdates_Click" />

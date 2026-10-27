@@ -1,4 +1,4 @@
-using System.Buffers.Binary;
+﻿using System.Buffers.Binary;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -516,6 +516,30 @@ public class TraversalSettingsTests
             var fallback = TraversalOptions.Load(path);
             Assert.True(fallback.Enabled);
             Assert.Null(fallback.Turn);
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Fact]
+    public void SaveTurn_round_trips_and_keeps_other_settings()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "yaparr-settings-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var path = Path.Combine(dir, "network.json");
+            File.WriteAllText(path, """{"portMapping":false}""");
+            TraversalOptions.SaveTurn(path, new TurnOptions { Server = "turn.example.org:3478", Username = "u", Credential = "c", Enabled = true, Always = true });
+            var loaded = TraversalOptions.Load(path);
+            Assert.False(loaded.PortMapping);
+            Assert.Equal("turn.example.org:3478", loaded.Turn!.Server);
+            Assert.Equal("c", loaded.Turn.Credential);
+            Assert.True(loaded.Turn.Enabled);
+            Assert.True(loaded.Turn.Always);
+
+            TraversalOptions.SaveTurn(path, null);
+            Assert.Null(TraversalOptions.Load(path).Turn);
+            Assert.False(TraversalOptions.Load(path).PortMapping);
         }
         finally { Directory.Delete(dir, true); }
     }

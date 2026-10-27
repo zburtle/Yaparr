@@ -236,6 +236,11 @@ public partial class MainWindow : Window
         new VpnDialog(_vpn) { Owner = this }.ShowDialog();
     }
 
+    private void Turn_Click(object sender, RoutedEventArgs e)
+    {
+        new TurnDialog(_node, Path.Combine(_data.Directory, "network.json")) { Owner = this }.ShowDialog();
+    }
+
     private async void CreateRoom_Click(object sender, RoutedEventArgs e)
     {
         var label = PromptDialog.Ask(this, "A name for the new private room (only you see it):", "Private room");
