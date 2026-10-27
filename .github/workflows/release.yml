@@ -4,6 +4,13 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Which part of the latest version to increase
+        type: choice
+        options: [patch, minor, major]
+        default: patch
 
 permissions:
   contents: write
@@ -13,10 +20,33 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
+
+      - name: Work out the version
+        id: version
+        shell: pwsh
+        run: |
+          if ('${{ github.event_name }}' -eq 'push') {
+            $tag = '${{ github.ref_name }}'
+          } else {
+            git fetch --tags --force
+            $latest = git tag --list 'v[0-9]*' --sort=-v:refname | Where-Object { $_ -match '^v\d+\.\d+\.\d+$' } | Select-Object -First 1
+            if (-not $latest) { $latest = 'v0.0.0' }
+            $major, $minor, $patch = $latest.TrimStart('v').Split('.') | ForEach-Object { [int]$_ }
+            switch ('${{ inputs.bump }}') {
+              'major' { $major++; $minor = 0; $patch = 0 }
+              'minor' { $minor++; $patch = 0 }
+              default { $patch++ }
+            }
+            $tag = "v$major.$minor.$patch"
+            Write-Host "Latest tag $latest, releasing $tag"
+          }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
 
       - name: Test
         run: dotnet test tests/Yaparr.Tests -c Release
@@ -26,7 +56,7 @@ jobs:
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          $version = '${{ github.ref_name }}'.TrimStart('v')
+          $version = '${{ steps.version.outputs.tag }}'.TrimStart('v')
           ./installer/build.ps1 -Version $version
 
       - name: Publish release
@@ -35,4 +65,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $msi = Get-ChildItem artifacts -Filter *.msi | Select-Object -First 1
-          gh release create '${{ github.ref_name }}' $msi.FullName --title '${{ github.ref_name }}' --generate-notes
+          # For a manual run the tag does not exist yet; --target makes gh create it on the built commit.
+          gh release create '${{ steps.version.outputs.tag }}' $msi.FullName --title '${{ steps.version.outputs.tag }}' --target '${{ github.sha }}' --generate-notes
