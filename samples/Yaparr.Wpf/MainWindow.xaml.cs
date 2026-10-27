@@ -192,6 +192,7 @@ public partial class MainWindow : Window
             Log = _log.Write,
         });
         _node.NetworkStatusChanged += _ => UI(UpdateStatus);
+        Microsoft.Win32.SystemEvents.PowerModeChanged += OnPowerModeChanged;
         _node.VpnStateChanged += _ => UI(UpdateStatus);
         _node.PeerConnected += p => UI(() => { Remember(p); RefreshPeers(); UpdateStatus(); });
         _node.PeerDisconnected += p => UI(() => { Remember(p); RefreshPeers(p.Id); UpdateStatus(); });
@@ -214,6 +215,7 @@ public partial class MainWindow : Window
 
     private void Shutdown()
     {
+        Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         _cts.Cancel();
         var node = _node;
         _node = null;
@@ -230,6 +232,11 @@ public partial class MainWindow : Window
                           (peers == 0 ? "  ·  looking for peers (the first search can take a while)…" : "") +
                           (_node.VpnState == Yaparr.Vpn.VpnState.Connecting ? "  ·  VPN connecting…" : "") +
                           (_node.NetworkStatus != NetworkStatus.Unknown ? "  ·  " + _node.NetworkStatus.Describe() : "");
+    }
+
+    private void OnPowerModeChanged(object sender, Microsoft.Win32.PowerModeChangedEventArgs e)
+    {
+        if (e.Mode == Microsoft.Win32.PowerModes.Resume) _node?.NotifyNetworkChanged();
     }
 
     private void Vpn_Click(object sender, RoutedEventArgs e)

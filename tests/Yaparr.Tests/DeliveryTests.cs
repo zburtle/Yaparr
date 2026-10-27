@@ -72,3 +72,40 @@ public class DeliveryTests
         Assert.Equal(1, bobCount);
     }
 }
+
+public class PeerCacheTests
+{
+    private static ChatNode Node(InMemoryDiscoveryHub hub, string name, string? cache) => new(new ChatNodeOptions
+    {
+        DisplayName = name,
+        DiscoveryFactory = mux => hub.CreateClient(new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, mux.LocalPort)),
+        DiscoveryInterval = TimeSpan.FromMilliseconds(300),
+        Network = TestUtil.FastNetwork,
+        PeerCachePath = cache,
+    });
+
+    [Fact]
+    public async Task A_restarted_node_dials_remembered_members_without_discovery()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "yaparr-cache-" + Guid.NewGuid().ToString("N"));
+        var cache = Path.Combine(dir, "peers.json");
+        try
+        {
+            var hub = new InMemoryDiscoveryHub();
+            using var b = Node(hub, "b", null);
+            await b.JoinRoomAsync("Home");
+            var a = Node(hub, "a", cache);
+            var ra = await a.JoinRoomAsync("Home");
+            await TestUtil.WaitFor(() => ra.Members.Count == 1);
+            a.Dispose();
+            Assert.True(File.Exists(cache));
+
+            // Nothing can be found through discovery now: this hub is empty.
+            using var a2 = Node(new InMemoryDiscoveryHub(), "a2", cache);
+            var ra2 = await a2.JoinRoomAsync("Home");
+            await TestUtil.WaitFor(() => ra2.Members.Count == 1, 15_000);
+            Assert.Equal("b", ra2.Members.Single().DisplayName);
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
+    }
+}

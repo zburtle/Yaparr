@@ -55,6 +55,9 @@ public sealed class ChatNodeOptions
 
     public TimeSpan MaxHistoryAge { get; init; } = TimeSpan.FromDays(7);
 
+    /// <summary>File where recently seen room members are remembered, so a restart can dial them directly. Null disables it.</summary>
+    public string? PeerCachePath { get; init; }
+
     /// <summary>How long to wait for a recipient to confirm a message before reporting it as not delivered.</summary>
     public TimeSpan AckTimeout { get; init; } = TimeSpan.FromSeconds(15);
 
@@ -127,6 +130,8 @@ public sealed class ChatNode : IDisposable
     private readonly ConcurrentDictionary<string, byte> _pinned = new();
     private readonly ConcurrentDictionary<string, Outgoing> _outbox = new();
     private readonly ConcurrentDictionary<string, long> _seenDirect = new();
+    private readonly ConcurrentDictionary<PeerId, Redial> _redial = new();
+    private PeerCache _peerCache = null!;
     private bool _started;
     private PortMapper? _mapper;
     private TurnClient? _turn;
@@ -138,6 +143,14 @@ public sealed class ChatNode : IDisposable
     private const int MaxCandidates = 512;
     private static readonly long BackoffMs = 60_000;
     private long RedialMs => (long)Math.Max(500, _options.DiscoveryInterval.TotalMilliseconds);
+
+    private sealed class Redial
+    {
+        public Redial(IPEndPoint endPoint) => EndPoint = endPoint;
+        public IPEndPoint EndPoint { get; }
+        public int Attempts;
+        public long Next;
+    }
 
     private sealed class Candidate
     {
@@ -152,6 +165,7 @@ public sealed class ChatNode : IDisposable
     public ChatNode(ChatNodeOptions? options = null)
     {
         _options = options ?? new ChatNodeOptions();
+        _peerCache = new PeerCache(_options.PeerCachePath);
         _turnOptions = _options.Traversal.Turn;
         _ownsIdentity = _options.Identity == null;
         _identity = _options.Identity ?? PeerIdentity.Generate();
@@ -220,6 +234,8 @@ public sealed class ChatNode : IDisposable
         foreach (var d in _discoveries)
             _ = RunLoopAsync(() => d.AnnounceAsync(peerTopic, _cts.Token), $"peer announce ({d.GetType().Name})");
         _ = Task.Run(OutboxLoopAsync);
+        _ = Task.Run(RedialLoopAsync);
+        System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged += OnAddressChanged;
         if (_options.Vpn != null || TraversalEnabled)
             _ = Task.Run(() => StartNetworkAsync(_cts.Token));
     }
@@ -347,6 +363,8 @@ public sealed class ChatNode : IDisposable
     public void Dispose()
     {
         _cts.Cancel();
+        System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged -= OnAddressChanged;
+        _peerCache.Save();
         foreach (var room in _rooms.Values.ToList()) LeaveRoomCore(room);
         Network.Dispose();
         _turn?.Dispose();
@@ -380,6 +398,9 @@ public sealed class ChatNode : IDisposable
             Send(peer.Connection, new Wire { Type = Wire.Join, Room = RefTo(room, peer) });
             if (peer.Declares(RefFrom(room, peer))) OnPeerEntersRoom(peer, room);
         }
+
+        foreach (var (cachedId, cachedEndPoint) in _peerCache.For(room.Key))
+            if (cachedId != Id) AddCandidate(cachedEndPoint, cachedId, null);
 
         _ = RunLoopAsync(() => DiscoverRoomAsync(room, _cts.Token), $"room {room.Name}", () => !_rooms.ContainsKey(room.Key));
         _ = RunLoopAsync(() => MaintainRoomAsync(room), $"maintain {room.Name}", () => !_rooms.ContainsKey(room.Key), _options.MaintenanceInterval);
@@ -482,6 +503,64 @@ public sealed class ChatNode : IDisposable
         else if (o.DirectPeer is { } peer && _directChats.TryGetValue(peer, out var chat)) chat.RaiseDelivery(status);
     }
 
+    private int _networkKickPending;
+
+    private void OnAddressChanged(object? sender, EventArgs e) => NotifyNetworkChanged();
+
+    /// <summary>
+    /// Call when the machine's network changed (Wi-Fi to cable, resume from sleep, VPN toggled outside the app).
+    /// The NAT type and port mapping are checked again and dropped peers are redialed soon after.
+    /// Several calls close together become one check.
+    /// </summary>
+    public void NotifyNetworkChanged()
+    {
+        if (_cts.IsCancellationRequested || Interlocked.Exchange(ref _networkKickPending, 1) == 1) return;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(3000, _cts.Token).ConfigureAwait(false);
+                Volatile.Write(ref _networkKickPending, 0);
+                _options.Log?.Invoke("network changed; checking the connection again");
+                // Sessions on the old network are going to fail; make sure they are dialed again as soon as they drop.
+                _backoff.Clear();
+                await RefreshNetworkAsync(_cts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) { }
+            finally { Volatile.Write(ref _networkKickPending, 0); }
+        });
+    }
+
+    private const int MaxRedialAttempts = 12;
+
+    // A peer that was connected and dropped is tried again quickly (1s, 2s, 4s ... up to 30s)
+    // instead of waiting for the next discovery round.
+    private async Task RedialLoopAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(500));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(_cts.Token).ConfigureAwait(false))
+            {
+                long now = Environment.TickCount64;
+                foreach (var (id, r) in _redial)
+                {
+                    if (_peers.ContainsKey(id) || r.Attempts >= MaxRedialAttempts || IsBackedOff(id.Value, now))
+                    {
+                        _redial.TryRemove(id, out _);
+                        continue;
+                    }
+                    if (now < r.Next) continue;
+                    r.Attempts++;
+                    r.Next = now + Math.Min(30_000, 1000L << Math.Min(r.Attempts, 5));
+                    _options.Log?.Invoke($"reconnecting to {id.Short} at {r.EndPoint} (attempt {r.Attempts})");
+                    Network.Connect(r.EndPoint, id);
+                }
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
     private async Task OutboxLoopAsync()
     {
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
@@ -495,6 +574,7 @@ public sealed class ChatNode : IDisposable
                     PublishDelivery(o);
                     if (now - o.SentAt > _options.ResendWindow.TotalMilliseconds) _outbox.TryRemove(o.Id, out _);
                 }
+                _peerCache.Save();
                 long cutoff = now - 600_000;
                 foreach (var kv in _seenDirect.Where(kv => kv.Value < cutoff).ToList()) _seenDirect.TryRemove(kv.Key, out _);
             }
@@ -726,6 +806,7 @@ public sealed class ChatNode : IDisposable
     {
         if (!room.MemberStates.TryAdd(peer.Id, peer)) return;
         _options.Log?.Invoke($"{peer.Id.Short} entered room '{room.Name}'");
+        if (!peer.Connection.IsRelayed) _peerCache.Remember(room.Key, peer.Id, peer.Connection.RemoteEndPoint);
 
         var others = room.MemberStates.Values.Where(m => m.Id != peer.Id && !m.Connection.IsRelayed).ToList();
         if (_options.TargetConnections > 0)
@@ -839,6 +920,8 @@ public sealed class ChatNode : IDisposable
             AfterMembershipChange(room);
         }
         PeerDisconnected?.Invoke(state.Info);
+        if (!conn.IsRelayed && !IsBackedOff(id.Value, Environment.TickCount64) && !_cts.IsCancellationRequested)
+            _redial[id] = new Redial(conn.RemoteEndPoint) { Next = Environment.TickCount64 + 1000 };
         if (_introducedVia.ContainsKey(id)) ScheduleRelayFallback(id);
     }
 
