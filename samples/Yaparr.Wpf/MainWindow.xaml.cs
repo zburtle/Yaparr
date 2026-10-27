@@ -18,6 +18,7 @@ public partial class MainWindow : Window
     private AppData _data = null!;
     private AppSettings _settings = new();
     private VpnController _vpn = null!;
+    private FileLog _log = null!;
     private ChatNode? _node;
     private ConversationVm? _selected;
 
@@ -112,6 +113,15 @@ public partial class MainWindow : Window
 
     private async void CheckUpdates_Click(object sender, RoutedEventArgs e) => await CheckForUpdateAsync(manual: true);
 
+    private void OpenLog_Click(object sender, RoutedEventArgs e)
+    {
+        try { Process.Start(new ProcessStartInfo(_log.Path) { UseShellExecute = true }); }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or FileNotFoundException)
+        {
+            MessageBox.Show(this, "The log is at " + _log.Path, "Yaparr");
+        }
+    }
+
     private void About_Click(object sender, RoutedEventArgs e) =>
         MessageBox.Show(this, $"Yaparr {Updater.CurrentVersion}\nServerless peer-to-peer chat over the BitTorrent DHT.",
             "About Yaparr", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -160,6 +170,8 @@ public partial class MainWindow : Window
         _data = new AppData(dataArg ?? AppData.DefaultDirectory);
         _settings = _data.LoadSettings();
         _vpn = new VpnController(_data, _settings, () => _node);
+        _log = new FileLog(Path.Combine(_data.Directory, "yaparr.log"));
+        _log.Write($"Yaparr {Updater.CurrentVersion} starting");
 
         var name = Arg("--name") ?? _settings.DisplayName
                    ?? PromptDialog.Ask(this, "Choose a display name (others will see it next to your messages):", Environment.UserName);
@@ -175,7 +187,7 @@ public partial class MainWindow : Window
             HistoryStore = new FileHistoryStore(_data.HistoryDirectory),
             Traversal = TraversalOptions.Load(Path.Combine(_data.Directory, "network.json")),
             Vpn = _vpn.LoadConfigIfEnabled(),
-            Log = s => Trace.WriteLine("[yaparr] " + s),
+            Log = _log.Write,
         });
         _node.NetworkStatusChanged += _ => UI(UpdateStatus);
         _node.VpnStateChanged += _ => UI(UpdateStatus);

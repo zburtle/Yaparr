@@ -91,6 +91,8 @@ public sealed class WireGuardTunnel : ITunnel, IDisposable
 
     public IPAddress LocalAddress => _config.Address;
 
+    internal bool TunnelLocalAddresses { get; set; }
+
     public DateTimeOffset? LastHandshake
     {
         get
@@ -124,7 +126,7 @@ public sealed class WireGuardTunnel : ITunnel, IDisposable
 
     public bool TrySend(ReadOnlySpan<byte> packet, IPEndPoint to)
     {
-        if (TurnClient.IsLocal(to.Address) || to.AddressFamily != AddressFamily.InterNetwork) return false;
+        if ((!TunnelLocalAddresses && TurnClient.IsLocal(to.Address)) || to.AddressFamily != AddressFamily.InterNetwork) return false;
 
         int total = 28 + packet.Length;
         if (total > _config.Mtu)

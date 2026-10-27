@@ -31,6 +31,28 @@ internal sealed class TestWireGuardServer : IDisposable
     public List<(IPEndPoint To, byte[] Payload, int SourcePort)> Received { get; } = new();
     public Func<IPEndPoint, byte[], byte[]?>? Reply { get; set; }
 
+    private UdpClient? _nat;
+    private int _clientPort;
+    private IPAddress? _clientAddress;
+
+    public IPEndPoint EnableForwarding()
+    {
+        _nat = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                while (true)
+                {
+                    var r = await _nat.ReceiveAsync(_cts.Token);
+                    if (_clientAddress != null && _sendKey != null) await SendIp(r.RemoteEndPoint, _clientPort, _clientAddress, r.Buffer);
+                }
+            }
+            catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException or SocketException) { }
+        });
+        return (IPEndPoint)_nat.Client.LocalEndPoint!;
+    }
+
     private async Task RunAsync()
     {
         try
@@ -107,6 +129,9 @@ internal sealed class TestWireGuardServer : IDisposable
         int sourcePort = BinaryPrimitives.ReadUInt16BigEndian(plain.AsSpan(20));
         var payload = plain[28..total];
         lock (Received) Received.Add((to, payload, sourcePort));
+        _clientPort = sourcePort;
+        _clientAddress = new IPAddress(plain.AsSpan(12, 4));
+        if (_nat != null) await _nat.SendAsync(payload, payload.Length, to);
 
         if (Reply?.Invoke(to, payload) is { } answer)
             await SendIp(to, sourcePort, new IPAddress(plain.AsSpan(12, 4)), answer);
@@ -143,6 +168,7 @@ internal sealed class TestWireGuardServer : IDisposable
     {
         _cts.Cancel();
         _socket.Dispose();
+        _nat?.Dispose();
     }
 }
 
@@ -363,5 +389,70 @@ public class WireGuardTunnelTests
         var report = await NatProbe.RunAsync(mux, new[] { "203.0.113.7:3478", "203.0.113.8:3478" });
         Assert.Equal(NatType.EndpointIndependent, report.Type);
         Assert.Equal(new IPEndPoint(IPAddress.Parse("198.51.100.9"), 41000), report.PublicEndPoint);
+    }
+}
+
+internal sealed class FixedDiscovery : Yaparr.Discovery.IPeerDiscovery
+{
+    private readonly Func<IReadOnlyList<IPEndPoint>> _peers;
+    public FixedDiscovery(Func<IReadOnlyList<IPEndPoint>> peers) => _peers = peers;
+    public Task AnnounceAsync(byte[] topic, CancellationToken ct = default) => Task.CompletedTask;
+    public Task<IReadOnlyList<IPEndPoint>> FindPeersAsync(byte[] topic, CancellationToken ct = default) => Task.FromResult(_peers());
+    public void Dispose() { }
+}
+
+public class VpnChatTests
+{
+    [Fact]
+    public async Task A_user_behind_the_vpn_and_a_direct_user_can_chat_in_both_directions()
+    {
+        using var server = new TestWireGuardServer();
+        var natEndPoint = server.EnableForwarding();
+
+        IPEndPoint? bEndPoint = null;
+        IPEndPoint? aEndPoint = null;
+        using var a = new Yaparr.Chat.ChatNode(new Yaparr.Chat.ChatNodeOptions
+        {
+            DisplayName = "vpn-user",
+            DiscoveryFactory = _ => new FixedDiscovery(() => bEndPoint == null ? Array.Empty<IPEndPoint>() : new[] { bEndPoint }),
+            DiscoveryInterval = TimeSpan.FromSeconds(1),
+        });
+        using var b = new Yaparr.Chat.ChatNode(new Yaparr.Chat.ChatNodeOptions
+        {
+            DisplayName = "direct-user",
+            DiscoveryFactory = _ => new FixedDiscovery(() => aEndPoint == null ? Array.Empty<IPEndPoint>() : new[] { aEndPoint }),
+            DiscoveryInterval = TimeSpan.FromSeconds(1),
+        });
+
+        var tunnel = new WireGuardTunnel(new WireGuardConfig
+        {
+            PrivateKey = WireGuardCrypto.GeneratePrivateKey(),
+            Address = IPAddress.Parse("10.8.0.2"),
+            PeerPublicKey = server.PublicKey,
+            Endpoint = server.EndPoint.ToString(),
+            PersistentKeepalive = 1,
+        }, a.Mux) { TunnelLocalAddresses = true };
+        a.Mux.Tunnel = tunnel;
+        Assert.True(await tunnel.ConnectAsync(TimeSpan.FromSeconds(5)));
+
+        a.Start();
+        b.Start();
+        bEndPoint = new IPEndPoint(IPAddress.Loopback, b.LocalPort);
+        aEndPoint = natEndPoint;
+
+        var key = Yaparr.Chat.RoomKey.Generate();
+        var ra = await a.JoinPrivateRoomAsync(key, "vpn");
+        var rb = await b.JoinPrivateRoomAsync(key, "vpn");
+        var gotB = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        var gotA = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        rb.MessageReceived += m => gotB.Enqueue(m.Text);
+        ra.MessageReceived += m => gotA.Enqueue(m.Text);
+
+        await TestUtil.WaitFor(() => ra.Members.Count == 1 && rb.Members.Count == 1, timeoutMs: 20000);
+
+        await ra.SendAsync("from vpn");
+        await rb.SendAsync("from direct");
+        await TestUtil.WaitFor(() => gotB.Contains("from vpn") && gotA.Contains("from direct"), timeoutMs: 10000);
+        tunnel.Dispose();
     }
 }

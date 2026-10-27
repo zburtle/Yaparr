@@ -453,9 +453,15 @@ public sealed class ChatNode : IDisposable
         foreach (var m in messages.Take(live ? 1 : 100))
         {
             if (!IsValidPeerId(m.From)) continue;
-            if (m.From == Id.Value || !SignedMessage.Verify(m, room.Key)) continue;
+            if (m.From == Id.Value) continue;
+            if (!SignedMessage.Verify(m, room.Key))
+            {
+                _options.Log?.Invoke($"dropped a message from {new PeerId(m.From).Short} in '{room.Name}': bad signature, or its clock is more than 5 minutes ahead of ours");
+                continue;
+            }
             bool fresh = live && m.Ts >= DateTimeOffset.UtcNow.Subtract(LiveWindow).ToUnixTimeMilliseconds();
             if (!room.History.TryAdd(m)) continue;
+            _options.Log?.Invoke($"message from {new PeerId(m.From).Short} in '{room.Name}' via {peer.Id.Short}{(fresh ? "" : " (catch-up)")}");
             room.RaiseMessage(ToChatMessage(room, m, catchUp: !fresh));
             if (fresh) ForwardToMembers(peer, room, m);
         }
