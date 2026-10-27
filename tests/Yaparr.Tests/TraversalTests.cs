@@ -228,7 +228,7 @@ public class StunTests
 public class TurnTests
 {
     private static TurnClient Client(UdpMux mux, FakeTurnServer server, string password = "pw") =>
-        new(mux, new TurnOptions { Server = server.EndPoint.ToString(), Username = "u", Credential = password }) { RelayLocalAddresses = true };
+        new(mux, new TurnOptions { Server = server.EndPoint.ToString(), Username = "u", Credential = password, Enabled = true }) { RelayLocalAddresses = true };
 
     [Fact]
     public async Task Allocation_authenticates_and_returns_a_relayed_address()
@@ -501,12 +501,16 @@ public class TraversalSettingsTests
             var path = Path.Combine(dir, "network.json");
             Assert.True(TraversalOptions.Load(path).Enabled);
 
-            File.WriteAllText(path, """{"portMapping":false,"stun":["stun.example.org:3478"],"turn":{"server":"turn.example.org:3478","username":"u","credential":"c","always":true}}""");
+            File.WriteAllText(path, """{"portMapping":false,"stun":["stun.example.org:3478"],"turn":{"server":"turn.example.org:3478","username":"u","credential":"c","enabled":true,"always":true}}""");
             var loaded = TraversalOptions.Load(path);
             Assert.False(loaded.PortMapping);
             Assert.Equal(new[] { "stun.example.org:3478" }, loaded.StunServers);
             Assert.Equal("turn.example.org:3478", loaded.Turn!.Server);
+            Assert.True(loaded.Turn.Enabled);
             Assert.True(loaded.Turn.Always);
+
+            File.WriteAllText(path, """{"turn":{"server":"turn.example.org:3478","username":"u","credential":"c"}}""");
+            Assert.False(TraversalOptions.Load(path).Turn!.Enabled);
 
             File.WriteAllText(path, "not json");
             var fallback = TraversalOptions.Load(path);

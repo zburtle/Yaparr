@@ -221,7 +221,7 @@ public sealed class ChatNode : IDisposable
             PublishNetwork(new NetworkStatus(nat, mapping, null));
 
             bool needRelay = mapping == null && nat.Type is NatType.Symmetric or NatType.Unknown;
-            if (traversal.Turn is { } turn && (needRelay || turn.Always))
+            if (traversal.Turn is { Enabled: true } turn && (needRelay || turn.Always))
             {
                 _turn = new TurnClient(_mux, turn, _options.Log);
                 if (await _turn.AllocateAsync(ct).ConfigureAwait(false))
@@ -229,7 +229,7 @@ public sealed class ChatNode : IDisposable
             }
             else if (needRelay)
             {
-                _options.Log?.Invoke("no TURN server configured; connections from some networks may fail");
+                _options.Log?.Invoke("TURN relay is off; connections from some networks may fail");
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

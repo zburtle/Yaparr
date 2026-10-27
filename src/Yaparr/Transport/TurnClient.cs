@@ -10,6 +10,7 @@ public sealed class TurnOptions
     public string Server { get; init; } = "";
     public string Username { get; init; } = "";
     public string Credential { get; init; } = "";
+    public bool Enabled { get; init; }
     public bool Always { get; init; }
 }
 

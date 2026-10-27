@@ -27,7 +27,7 @@ public sealed class TraversalOptions
                 PortMapping = dto.PortMapping ?? true,
                 StunServers = dto.Stun is { Length: > 0 } stun ? stun : NatProbe.DefaultServers,
                 Turn = dto.Turn is { Server: { Length: > 0 } server }
-                    ? new TurnOptions { Server = server, Username = dto.Turn.Username ?? "", Credential = dto.Turn.Credential ?? "", Always = dto.Turn.Always ?? false }
+                    ? new TurnOptions { Server = server, Username = dto.Turn.Username ?? "", Credential = dto.Turn.Credential ?? "", Enabled = dto.Turn.Enabled ?? false, Always = dto.Turn.Always ?? false }
                     : null,
             };
         }
@@ -50,6 +50,7 @@ public sealed class TraversalOptions
         public string? Server { get; set; }
         public string? Username { get; set; }
         public string? Credential { get; set; }
+        public bool? Enabled { get; set; }
         public bool? Always { get; set; }
     }
 }
