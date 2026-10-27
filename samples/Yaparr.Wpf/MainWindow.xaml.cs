@@ -24,8 +24,36 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         ConversationList.ItemsSource = _conversations;
-        Loaded += async (_, _) => await StartAsync();
+        Loaded += async (_, _) =>
+        {
+            _ = CheckForUpdateAsync();
+            await StartAsync();
+        };
         Closing += (_, _) => Shutdown();
+    }
+
+    private async Task CheckForUpdateAsync()
+    {
+        try
+        {
+            var update = await Updater.CheckAsync(_cts.Token);
+            if (update is null) return;
+
+            var notes = string.IsNullOrWhiteSpace(update.Notes) ? "" : $"\n\n{update.Notes.Trim()}";
+            var answer = MessageBox.Show(this,
+                $"Yaparr {update.Version} is available (you have {Updater.CurrentVersion}). Update now?{notes}",
+                "Update available", MessageBoxButton.YesNo, MessageBoxImage.Information);
+            if (answer != MessageBoxResult.Yes) return;
+
+            StatusText.Text = $"Downloading Yaparr {update.Version}…";
+            var path = await Updater.DownloadAsync(update, _cts.Token);
+            Updater.Install(path);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            StatusText.Text = "Update failed: " + ex.Message;
+        }
     }
 
     private async Task StartAsync()

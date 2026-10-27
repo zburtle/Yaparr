@@ -1,6 +1,7 @@
 ﻿param(
     [string]$Version,
-    [string]$Runtime = 'win-x64'
+    [string]$Runtime = 'win-x64',
+    [string]$Repository = $env:GITHUB_REPOSITORY
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
@@ -15,7 +16,7 @@ Write-Host "Building Yaparr $Version ($Runtime)"
 Push-Location $root
 try {
     if (Test-Path $publish) { Remove-Item $publish -Recurse -Force }
-    dotnet publish $project -c Release -r $Runtime --self-contained true -p:Version=$Version -o $publish
+    dotnet publish $project -c Release -r $Runtime --self-contained true -p:Version=$Version -p:UpdateRepository=$Repository -o $publish
     if ($LASTEXITCODE) { throw 'dotnet publish failed' }
 
     dotnet tool restore | Out-Null

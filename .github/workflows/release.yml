@@ -23,6 +23,8 @@ jobs:
 
       - name: Build installer
         shell: pwsh
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           $version = '${{ github.ref_name }}'.TrimStart('v')
           ./installer/build.ps1 -Version $version
