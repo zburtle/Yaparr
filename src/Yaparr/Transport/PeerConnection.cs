@@ -14,6 +14,7 @@ public sealed class PeerNetworkOptions
     public TimeSpan HelloInterval { get; init; } = TimeSpan.FromMilliseconds(300);
     public TimeSpan KeepAliveInterval { get; init; } = TimeSpan.FromSeconds(10);
     public TimeSpan IdleTimeout { get; init; } = TimeSpan.FromSeconds(35);
+    public TimeSpan NewerSessionWinsAfter { get; init; } = TimeSpan.FromSeconds(5);
     public bool AcceptIncoming { get; init; } = true;
 }
 
@@ -61,6 +62,8 @@ public sealed class PeerConnection : IDisposable
     public bool IsRelayed => RelayedVia != null;
     internal PeerId? Expected => _expected;
     internal long LastReceivedAt => Volatile.Read(ref _lastReceived);
+
+    internal long EstablishedAt { get; private set; }
     public ConnectionState State { get; private set; } = ConnectionState.Connecting;
     public PeerId? RemoteId { get; private set; }
     public byte[]? RemotePublicKey { get; private set; }
@@ -197,6 +200,7 @@ public sealed class PeerConnection : IDisposable
             RemoteId = remoteId;
             RemotePublicKey = idKey;
             State = ConnectionState.Established;
+            EstablishedAt = now;
             _lastSent = now;
             post.Add(() => { _established.TrySetResult(this); Connected?.Invoke(this); });
         }

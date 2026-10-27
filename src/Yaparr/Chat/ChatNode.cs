@@ -675,7 +675,9 @@ public sealed class ChatNode : IDisposable
         foreach (var room in _rooms.Values)
             if (room.MemberStates.ContainsKey(state.Id)) room.MemberStates[state.Id] = state;
         Send(conn, new Wire { Type = Wire.Hello, Name = _options.DisplayName, Deg = _peers.Count, Rooms = _rooms.Values.Select(r => RefTo(r, state)).ToArray() });
-        if (isNew) _options.Log?.Invoke($"connected to {state.Id.Short} at {conn.RemoteEndPoint}");
+        _options.Log?.Invoke(isNew
+            ? $"connected to {state.Id.Short} at {conn.RemoteEndPoint}"
+            : $"switched to a new connection to {state.Id.Short} at {conn.RemoteEndPoint}");
     }
 
     private void OnConnectionClosed(PeerConnection conn)
@@ -781,6 +783,12 @@ public sealed class ChatNode : IDisposable
                 OnGroupMessage(peer, liveRoom, wire.Msgs, live: true);
                 break;
 
+            case Wire.Message when wire.Room != null:
+                _options.Log?.Invoke(ResolveRoom(peer, wire.Room) == null
+                    ? $"ignored a message from {peer.Id.Short}: it names a room we do not recognise on this connection"
+                    : $"ignored a message from {peer.Id.Short}: they are not a member of that room here");
+                break;
+
             case Wire.Sync when wire.Room != null && wire.Have != null
                                 && ResolveRoom(peer, wire.Room) is { } syncRoom && syncRoom.MemberStates.ContainsKey(peer.Id):
                 OnSyncRequest(peer, syncRoom, wire.Have.Take(2000).ToArray());
@@ -857,7 +865,10 @@ public sealed class ChatNode : IDisposable
     private void Send(PeerConnection conn, Wire wire)
     {
         try { conn.SendReliable(ChannelIds.Chat, JsonSerializer.SerializeToUtf8Bytes(wire, Json)); }
-        catch (InvalidOperationException) {  }
+        catch (InvalidOperationException ex)
+        {
+            _options.Log?.Invoke($"could not send to {conn.RemoteId?.Short}: {ex.Message}");
+        }
     }
 
     private bool WantsMore(ChatRoom room)

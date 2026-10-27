@@ -117,3 +117,40 @@ public class TransportTests
         Assert.Equal(1, count);
     }
 }
+
+public class RestartTests
+{
+    [Fact]
+    public async Task A_restarted_peer_replaces_its_dead_session_instead_of_being_rejected()
+    {
+        var options = new PeerNetworkOptions { HelloInterval = TimeSpan.FromMilliseconds(100), NewerSessionWinsAfter = TimeSpan.FromMilliseconds(300) };
+        using var a = PeerIdentity.Generate();
+        using var bId = PeerIdentity.Generate();
+        using var aMux = new UdpMux();
+        using var aNet = new PeerNetwork(a, aMux, options);
+        aMux.Start();
+        var aEp = new IPEndPoint(IPAddress.Loopback, aMux.LocalPort);
+
+        // The session id tie-break is random, so repeat to cover both outcomes.
+        for (int i = 0; i < 12; i++)
+        {
+            var bMux1 = new UdpMux();
+            var bNet1 = new PeerNetwork(bId, bMux1, options);
+            bMux1.Start();
+            await bNet1.Connect(aEp, a.Id).WhenEstablished.WaitAsync(TimeSpan.FromSeconds(5));
+            await TestUtil.WaitFor(() => aNet.Get(bId.Id) != null);
+            await Task.Delay(500);
+
+            // B dies without saying goodbye: its socket just goes away.
+            bMux1.Dispose();
+
+            using var bMux2 = new UdpMux();
+            using var bNet2 = new PeerNetwork(bId, bMux2, options);
+            bMux2.Start();
+            await bNet2.Connect(aEp, a.Id).WhenEstablished.WaitAsync(TimeSpan.FromSeconds(5));
+            var expected = new IPEndPoint(IPAddress.Loopback, bMux2.LocalPort);
+            await TestUtil.WaitFor(() => aNet.Get(bId.Id) is { State: ConnectionState.Established } c && c.RemoteEndPoint.Equals(expected));
+            bNet1.Dispose();
+        }
+    }
+}

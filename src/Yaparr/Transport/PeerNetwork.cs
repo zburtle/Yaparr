@@ -181,10 +181,14 @@ public sealed class PeerNetwork : IDisposable
         ConnectionEstablished?.Invoke(conn);
     }
 
-    private static bool Prefer(PeerConnection candidate, PeerConnection current)
+    private bool Prefer(PeerConnection candidate, PeerConnection current)
     {
         if (candidate.IsRelayed != current.IsRelayed) return !candidate.IsRelayed;
         if (Environment.TickCount64 - current.LastReceivedAt > 15_000) return true;
+        // A connection that appears well after the current one is almost always the peer coming back
+        // (restart, new network path) while the old session is dead but not yet timed out. Duplicate dials
+        // made at the same moment are established within moments of each other and fall through to the tie-break.
+        if (candidate.EstablishedAt - current.EstablishedAt > _options.NewerSessionWinsAfter.TotalMilliseconds) return true;
         return candidate.SessionId.AsSpan().SequenceCompareTo(current.SessionId) < 0;
     }
 
