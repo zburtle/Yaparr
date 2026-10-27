@@ -16,6 +16,22 @@ public sealed class DhtOptions
         "dht.libtorrent.org:25401",
     };
 
+    /// <summary>
+    /// Used when none of the bootstrap host names can be resolved (DNS down or blocked). Addresses can go stale,
+    /// so names are always tried first.
+    /// </summary>
+    public IReadOnlyList<string> FallbackSeeds { get; init; } = new[]
+    {
+        "67.215.246.10:6881",
+        "87.98.162.88:6881",
+        "212.129.33.59:6881",
+        "82.221.103.244:6881",
+        "185.157.221.247:25401",
+    };
+
+    /// <summary>File where nodes that answered are remembered, so a restart can bootstrap without DNS. Null disables it.</summary>
+    public string? NodeCachePath { get; init; }
+
     public bool ReadOnly { get; init; } = true;
 
     public TimeSpan QueryTimeout { get; init; } = TimeSpan.FromSeconds(2);
@@ -76,16 +92,29 @@ public sealed class DhtNode : IDisposable
             if (_bootstrapped && _table.Count > 0) return;
 
             var seeds = new List<IPEndPoint>();
+            var unresolved = new List<string>();
             foreach (var host in _options.BootstrapHosts)
             {
                 var (name, port) = SplitHostPort(host);
                 try
                 {
-                    var addrs = await Dns.GetHostAddressesAsync(name, AddressFamily.InterNetwork, ct).ConfigureAwait(false);
+                    var addrs = await ResolveAsync(name, ct).ConfigureAwait(false);
+                    if (addrs.Count == 0) unresolved.Add(name);
                     seeds.AddRange(addrs.Select(a => new IPEndPoint(a, port)));
                 }
-                catch (SocketException) {  }
+                catch (SocketException ex) { unresolved.Add($"{name} ({ex.SocketErrorCode})"); }
             }
+            if (unresolved.Count > 0) _mux.Log?.Invoke($"DHT: could not look up {string.Join(", ", unresolved)}");
+
+            // Nodes that answered last time, and as a last resort the built-in addresses.
+            foreach (var cached in LoadCachedNodes()) seeds.Add(cached);
+            if (seeds.Count == 0 && _options.BootstrapHosts.Count > 0 && unresolved.Count == _options.BootstrapHosts.Count)
+            {
+                _mux.Log?.Invoke("DHT: using built-in addresses for the bootstrap nodes");
+                foreach (var fallback in _options.FallbackSeeds)
+                    if (IPEndPoint.TryParse(fallback, out var ep)) seeds.Add(ep);
+            }
+            seeds = seeds.Distinct().ToList();
 
             var args = new Func<BDict>(() => new BDict { ["target"] = Id.Bytes });
             var responses = await Task.WhenAll(seeds.Select(s => QueryAsync(s, "find_node", args(), ct))).ConfigureAwait(false);
@@ -96,8 +125,50 @@ public sealed class DhtNode : IDisposable
                 await LookupAsync(Id, wantPeers: false, ct).ConfigureAwait(false);
                 _bootstrapped = true;
             }
+            else _mux.Log?.Invoke($"DHT: none of {seeds.Count} bootstrap node(s) answered; UDP may be blocked");
         }
         finally { _bootstrapLock.Release(); }
+    }
+
+    private static async Task<List<IPAddress>> ResolveAsync(string name, CancellationToken ct)
+    {
+        if (IPAddress.TryParse(name, out var literal)) return new List<IPAddress> { literal };
+        try
+        {
+            return (await Dns.GetHostAddressesAsync(name, AddressFamily.InterNetwork, ct).ConfigureAwait(false)).ToList();
+        }
+        catch (SocketException)
+        {
+            // Some resolvers only answer the general query.
+            return (await Dns.GetHostAddressesAsync(name, ct).ConfigureAwait(false))
+                .Where(a => a.AddressFamily == AddressFamily.InterNetwork).ToList();
+        }
+    }
+
+    private long _nodesSavedAt;
+
+    private IEnumerable<IPEndPoint> LoadCachedNodes()
+    {
+        if (_options.NodeCachePath is not { } path || !File.Exists(path)) yield break;
+        string[] lines;
+        try { lines = File.ReadAllLines(path); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { yield break; }
+        foreach (var line in lines.Take(64))
+            if (IPEndPoint.TryParse(line.Trim(), out var ep)) yield return ep;
+    }
+
+    private void SaveCachedNodes()
+    {
+        if (_options.NodeCachePath is not { } path || Environment.TickCount64 - _nodesSavedAt < 60_000) return;
+        _nodesSavedAt = Environment.TickCount64;
+        var nodes = _table.Recent(64);
+        if (nodes.Count == 0) return;
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+            File.WriteAllLines(path, nodes.Select(n => n.ToString()));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
 
     public async Task<IReadOnlyList<IPEndPoint>> GetPeersAsync(byte[] infoHash, CancellationToken ct = default)
@@ -128,6 +199,7 @@ public sealed class DhtNode : IDisposable
         });
         int accepted = (await Task.WhenAll(tasks).ConfigureAwait(false)).Count(ok => ok);
         accepted += await AnnounceViaRelayAsync(infoHash, closest, ct).ConfigureAwait(false);
+        SaveCachedNodes();
         return (accepted, peers);
     }
 

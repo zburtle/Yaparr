@@ -60,6 +60,11 @@ internal sealed class RoutingTable
         }
     }
 
+    public List<IPEndPoint> Recent(int count)
+    {
+        lock (_gate) return _nodes.Values.OrderByDescending(v => v.Seen).Take(count).Select(v => v.Contact.EndPoint).ToList();
+    }
+
     public void Remove(IPEndPoint endPoint)
     {
         lock (_gate) _nodes.Remove(endPoint);
