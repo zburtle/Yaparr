@@ -198,7 +198,7 @@ public class RelayTests
         var ra = await a.JoinRoomAsync("mesh");
         var rb = await b.JoinRoomAsync("mesh");
 
-        await TestUtil.WaitFor(() => ra.Members.Count == 2 && rb.Members.Count == 2 && rr.Members.Count == 2);
+        await TestUtil.WaitFor(() => a.Network.Get(b.Id) != null && b.Network.Get(a.Id) != null && rr.Members.Count == 2);
         Assert.True(a.Network.Get(b.Id)!.IsRelayed);
         Assert.True(b.Network.Get(a.Id)!.IsRelayed);
         Assert.True(ra.Members.Single(m => m.Id == b.Id).IsRelayed);
@@ -238,7 +238,65 @@ public class RelayTests
         await TestUtil.WaitFor(() => rr.Members.Count == 2);
         await Task.Delay(2500);
         Assert.Null(a.Network.Get(b.Id));
-        Assert.Single(ra.Members);
+        Assert.Null(b.Network.Get(a.Id));
+    }
+
+    [Fact]
+    public async Task Group_messages_are_forwarded_by_members_between_peers_with_no_connection()
+    {
+        var hub = new InMemoryDiscoveryHub();
+        using var hubNode = TestUtil.NewNode(hub, "hub", relaying: false);
+        using var a = TestUtil.NewNode(hub, "a", relaying: false);
+        using var c = TestUtil.NewNode(hub, "c", relaying: false);
+        Isolate(a, c);
+
+        var rh = await hubNode.JoinRoomAsync("mesh");
+        var ra = await a.JoinRoomAsync("mesh");
+        var rc = await c.JoinRoomAsync("mesh");
+
+        await TestUtil.WaitFor(() => rh.Members.Count == 2 && ra.Members.Count == 2 && rc.Members.Count == 2);
+        Assert.Null(a.Network.Get(c.Id));
+        Assert.Contains(ra.Members, m => m.Id == c.Id);
+
+        var atC = new TaskCompletionSource<ChatMessage>();
+        var atA = new TaskCompletionSource<ChatMessage>();
+        rc.MessageReceived += m => { if (m.Text == "via the hub") atC.TrySetResult(m); };
+        ra.MessageReceived += m => { if (m.Text == "and back") atA.TrySetResult(m); };
+
+        await ra.SendAsync("via the hub");
+        var received = await atC.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(a.Id, received.From.Id);
+        Assert.False(received.IsCatchUp);
+
+        await rc.SendAsync("and back");
+        Assert.Equal(c.Id, (await atA.Task.WaitAsync(TimeSpan.FromSeconds(10))).From.Id);
+    }
+
+    [Fact]
+    public async Task Forwarding_never_goes_through_a_node_that_is_not_in_the_group()
+    {
+        var hub = new InMemoryDiscoveryHub();
+        using var outsider = TestUtil.NewNode(hub, "outsider", relaying: false);
+        using var a = TestUtil.NewNode(hub, "a", relaying: false);
+        using var c = TestUtil.NewNode(hub, "c", relaying: false);
+        Isolate(a, c);
+
+        await outsider.JoinRoomAsync("other");
+        await a.JoinRoomAsync("other");
+        await c.JoinRoomAsync("other");
+        var ra = await a.JoinRoomAsync("mesh");
+        var rc = await c.JoinRoomAsync("mesh");
+
+        await TestUtil.WaitFor(() => a.Network.Get(outsider.Id) != null && c.Network.Get(outsider.Id) != null);
+        int received = 0;
+        rc.MessageReceived += _ => Interlocked.Increment(ref received);
+        await Task.Delay(1000);
+        await ra.SendAsync("only for the group");
+        await Task.Delay(2500);
+
+        Assert.Equal(0, received);
+        Assert.Empty(ra.Members);
+        Assert.Empty(rc.Members);
     }
 
     [Fact]

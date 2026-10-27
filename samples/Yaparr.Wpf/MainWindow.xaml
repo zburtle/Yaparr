@@ -36,7 +36,7 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="230" />
                 <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="170" />
+                <ColumnDefinition Width="200" />
             </Grid.ColumnDefinitions>
 
             <DockPanel Grid.Column="0" Margin="8">
@@ -87,8 +87,31 @@
             </DockPanel>
 
             <DockPanel Grid.Column="2" Margin="8">
-                <TextBlock DockPanel.Dock="Top" Text="Members" FontWeight="SemiBold" Margin="0,0,0,6" />
-                <ListBox x:Name="MemberList" />
+                <TextBlock x:Name="PeopleHeader" DockPanel.Dock="Top" Text="People" FontWeight="SemiBold" Margin="0,0,0,6" />
+                <ListBox x:Name="PeopleList" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="ToolTip" Value="{Binding Tip}" />
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <DockPanel LastChildFill="True">
+                                <Ellipse x:Name="Dot" DockPanel.Dock="Left" Width="9" Height="9" Margin="0,0,6,0" Fill="Gray" VerticalAlignment="Center" />
+                                <TextBlock x:Name="State" DockPanel.Dock="Right" Margin="8,0,0,0" Text="offline" Foreground="Gray" />
+                                <TextBlock x:Name="Label" Text="{Binding Display}" TextTrimming="CharacterEllipsis" Foreground="Gray" />
+                            </DockPanel>
+                            <DataTemplate.Triggers>
+                                <DataTrigger Binding="{Binding Online}" Value="True">
+                                    <Setter TargetName="Dot" Property="Fill" Value="SeaGreen" />
+                                    <Setter TargetName="State" Property="Text" Value="online" />
+                                    <Setter TargetName="State" Property="Foreground" Value="SeaGreen" />
+                                    <Setter TargetName="Label" Property="Foreground" Value="Black" />
+                                </DataTrigger>
+                            </DataTemplate.Triggers>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
             </DockPanel>
         </Grid>
     </DockPanel>

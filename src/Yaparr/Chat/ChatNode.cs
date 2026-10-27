@@ -72,6 +72,14 @@ public sealed class ChatNode : IDisposable
         public PeerId Id => Connection.RemoteId!.Value;
         public PeerInfo Info => new(Id, Name ?? Id.Short, Connection.RemoteEndPoint, Connection.IsRelayed);
 
+        private readonly Dictionary<string, Dictionary<string, string>> _links = new();
+        public void SetLinks(string roomKey, Dictionary<string, string> links) { lock (_gate) _links[roomKey] = links; }
+        public void ClearLinks(string roomKey) { lock (_gate) _links.Remove(roomKey); }
+        public Dictionary<string, string> Links(string roomKey)
+        {
+            lock (_gate) return _links.TryGetValue(roomKey, out var l) ? new Dictionary<string, string>(l) : new();
+        }
+
         public bool Declares(string reference) { lock (_gate) return _rooms.Contains(reference); }
         public void SetRooms(IEnumerable<string> rooms) { lock (_gate) _rooms = new HashSet<string>(rooms); }
         public bool AddRoom(string key) { lock (_gate) return _rooms.Add(key); }
@@ -257,14 +265,74 @@ public sealed class ChatNode : IDisposable
         return new ChatMessage(info, room.Name, m.Id, m.Text, DateTimeOffset.FromUnixTimeMilliseconds(m.Ts), catchUp);
     }
 
+    private static readonly TimeSpan LiveWindow = TimeSpan.FromMinutes(2);
+
     private void OnGroupMessage(PeerState peer, ChatRoom room, StoredMessage[] messages, bool live)
     {
         foreach (var m in messages.Take(live ? 1 : 100))
         {
-            if (!IsValidPeerId(m.From) || (live && m.From != peer.Id.Value)) continue;
+            if (!IsValidPeerId(m.From)) continue;
             if (m.From == Id.Value || !SignedMessage.Verify(m, room.Key)) continue;
-            if (room.History.TryAdd(m)) room.RaiseMessage(ToChatMessage(room, m, catchUp: !live));
+            bool fresh = live && m.Ts >= DateTimeOffset.UtcNow.Subtract(LiveWindow).ToUnixTimeMilliseconds();
+            if (!room.History.TryAdd(m)) continue;
+            room.RaiseMessage(ToChatMessage(room, m, catchUp: !fresh));
+            if (fresh) ForwardToMembers(peer, room, m);
         }
+    }
+
+    private void ForwardToMembers(PeerState from, ChatRoom room, StoredMessage m)
+    {
+        var skip = from.Links(room.Key);
+        if (room.MemberStates.TryGetValue(new PeerId(m.From), out var author))
+            foreach (var kv in author.Links(room.Key)) skip[kv.Key] = kv.Value;
+
+        foreach (var member in room.MemberStates.Values)
+        {
+            if (member.Id == from.Id || member.Id.Value == m.From || skip.ContainsKey(member.Id.Value)) continue;
+            Send(member.Connection, new Wire { Type = Wire.Message, Room = RefTo(room, member), Msgs = new[] { m } });
+        }
+    }
+
+    private void SendLinks(ChatRoom room)
+    {
+        var direct = room.MemberStates.Values
+            .Select(s => new WirePeer { Id = s.Id.Value, Name = s.Name })
+            .ToArray();
+        foreach (var member in room.MemberStates.Values)
+            Send(member.Connection, new Wire { Type = Wire.Links, Room = RefTo(room, member), Peers = direct.Where(p => p.Id != member.Id.Value).ToArray() });
+    }
+
+    private void RefreshIndirect(ChatRoom room)
+    {
+        var joined = new List<PeerInfo>();
+        var left = new List<PeerInfo>();
+        lock (room.IndirectGate)
+        {
+            var reachable = new Dictionary<PeerId, string>();
+            foreach (var member in room.MemberStates.Values)
+                foreach (var kv in member.Links(room.Key))
+                {
+                    var id = new PeerId(kv.Key);
+                    if (id != Id && !room.MemberStates.ContainsKey(id)) reachable.TryAdd(id, kv.Value);
+                }
+
+            foreach (var id in room.Indirect.Keys.ToList())
+                if (!reachable.ContainsKey(id) && room.Indirect.TryRemove(id, out var gone) && !room.MemberStates.ContainsKey(id)) left.Add(gone);
+            foreach (var (id, name) in reachable)
+            {
+                var info = new PeerInfo(id, name, null, IsRelayed: true);
+                if (room.Indirect.TryAdd(id, info)) joined.Add(info);
+                else room.Indirect[id] = info;
+            }
+        }
+        foreach (var p in left) room.RaiseLeft(p);
+        foreach (var p in joined) room.RaiseJoined(p);
+    }
+
+    private void AfterMembershipChange(ChatRoom room)
+    {
+        SendLinks(room);
+        RefreshIndirect(room);
     }
 
     private void OnSyncRequest(PeerState peer, ChatRoom room, string[] have)
@@ -287,7 +355,9 @@ public sealed class ChatNode : IDisposable
             foreach (var other in others)
                 Send(other.Connection, new Wire { Type = Wire.Introduce, Room = RefTo(room, other), Peers = new[] { ToWirePeer(peer) } });
         }
-        room.RaiseJoined(peer.Info);
+        bool wasIndirect = room.Indirect.TryRemove(peer.Id, out _);
+        if (!wasIndirect) room.RaiseJoined(peer.Info);
+        AfterMembershipChange(room);
 
         if (_options.SyncHistory)
         {
@@ -352,7 +422,18 @@ public sealed class ChatNode : IDisposable
         if (!_peers.TryRemove(new KeyValuePair<PeerId, PeerState>(id, state))) return;
 
         foreach (var room in _rooms.Values)
-            if (room.MemberStates.TryRemove(id, out var gone)) room.RaiseLeft(gone.Info);
+        {
+            if (!room.MemberStates.TryRemove(id, out var gone)) continue;
+            string? name = null;
+            lock (room.IndirectGate)
+            {
+                foreach (var other in room.MemberStates.Values)
+                    if (other.Links(room.Key).TryGetValue(id.Value, out name)) break;
+                if (name != null) room.Indirect[id] = gone.Info with { EndPoint = null, IsRelayed = true };
+            }
+            if (name == null) room.RaiseLeft(gone.Info);
+            AfterMembershipChange(room);
+        }
         PeerDisconnected?.Invoke(state.Info);
         if (_introducedVia.ContainsKey(id)) ScheduleRelayFallback(id);
     }
@@ -386,7 +467,21 @@ public sealed class ChatNode : IDisposable
             case Wire.Leave when wire.Room != null:
                 peer.RemoveRoom(wire.Room);
                 if (ResolveRoom(peer, wire.Room) is { } left && left.MemberStates.TryRemove(peer.Id, out _))
+                {
+                    peer.ClearLinks(left.Key);
                     left.RaiseLeft(peer.Info);
+                    AfterMembershipChange(left);
+                }
+                break;
+
+            case Wire.Links when wire.Room != null && wire.Peers != null
+                                 && ResolveRoom(peer, wire.Room) is { } linkRoom && linkRoom.MemberStates.ContainsKey(peer.Id):
+                var links = new Dictionary<string, string>();
+                foreach (var p in wire.Peers.Take(256))
+                    if (IsValidPeerId(p.Id) && p.Id != peer.Id.Value)
+                        links[p.Id] = string.IsNullOrWhiteSpace(p.Name) ? new PeerId(p.Id).Short : p.Name.Length > 64 ? p.Name[..64] : p.Name;
+                peer.SetLinks(linkRoom.Key, links);
+                RefreshIndirect(linkRoom);
                 break;
 
             case Wire.Message when wire.Room == null && wire.Text != null && wire.Id != null:

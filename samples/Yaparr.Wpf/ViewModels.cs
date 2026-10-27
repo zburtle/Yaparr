@@ -18,6 +18,12 @@ public sealed record MessageVm(DateTimeOffset Time, string Sender, string Text, 
     public static MessageVm System(string text) => new(DateTimeOffset.Now, "", text, IsSystem: true);
 }
 
+public sealed record PeerVm(string Id, string Name, bool Online, DateTimeOffset LastSeen, bool IsRelayed = false)
+{
+    public string Display => IsRelayed ? Name + " (relayed)" : Name;
+    public string Tip => Online ? Id : $"{Id}\nLast seen {LastSeen.LocalDateTime:g}";
+}
+
 public sealed class ConversationVm : Observable
 {
     private int _unread;
@@ -38,7 +44,6 @@ public sealed class ConversationVm : Observable
     public bool HasInvite => Invite != null;
 
     public ObservableCollection<MessageVm> Messages { get; } = new();
-    public ObservableCollection<string> Members { get; } = new();
 
     public int Unread
     {

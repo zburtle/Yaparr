@@ -39,7 +39,11 @@ public sealed class ChatRoom
         return Convert.ToBase64String(HMACSHA256.HashData(_secret.AuthKey, data));
     }
 
-    public IReadOnlyCollection<PeerInfo> Members => MemberStates.Values.Select(s => s.Info).ToList();
+    internal readonly ConcurrentDictionary<PeerId, PeerInfo> Indirect = new();
+    internal readonly object IndirectGate = new();
+
+    public IReadOnlyCollection<PeerInfo> Members =>
+        MemberStates.Values.Select(s => s.Info).Concat(Indirect.Values).ToList();
 
     public event Action<ChatMessage>? MessageReceived;
     public event Action<PeerInfo>? MemberJoined;

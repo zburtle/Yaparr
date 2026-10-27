@@ -173,8 +173,8 @@ public partial class MainWindow : Window
             HistoryStore = new FileHistoryStore(_data.HistoryDirectory),
             Log = s => Trace.WriteLine("[yaparr] " + s),
         });
-        _node.PeerConnected += _ => UI(UpdateStatus);
-        _node.PeerDisconnected += _ => UI(UpdateStatus);
+        _node.PeerConnected += p => UI(() => { Remember(p); RefreshPeers(); UpdateStatus(); });
+        _node.PeerDisconnected += p => UI(() => { Remember(p); RefreshPeers(p.Id); UpdateStatus(); });
         _node.IncomingDirectChat += chat => _ = AddDirect(chat);
 
         Title = $"Yaparr — {name}";
@@ -183,6 +183,7 @@ public partial class MainWindow : Window
         IdText.ToolTip = _node.Id.Value;
         _node.Start();
         UpdateStatus();
+        RefreshPeers();
 
         foreach (var priv in _settings.PrivateRooms.ToList())
         {
@@ -243,20 +244,67 @@ public partial class MainWindow : Window
         _roomConversations[room] = conv;
 
         room.MessageReceived += m => UI(() => OnMessage(conv, ToVm(m)));
-        room.MemberJoined += p => UI(() => { RefreshMembers(conv, room); conv.Add(MessageVm.System($"{p.DisplayName} joined")); });
-        room.MemberLeft += p => UI(() => { RefreshMembers(conv, room); conv.Add(MessageVm.System($"{p.DisplayName} left")); });
+        room.MemberJoined += p => UI(() => { Remember(p); RefreshPeers(); conv.Add(MessageVm.System($"{p.DisplayName} joined")); });
+        room.MemberLeft += p => UI(() => { Remember(p); RefreshPeers(p.Id); conv.Add(MessageVm.System($"{p.DisplayName} left")); });
 
         foreach (var m in room.GetHistory()) conv.Add(ToVm(m));
-        RefreshMembers(conv, room);
         _conversations.Add(conv);
         ConversationList.SelectedItem = conv;
+        RefreshPeers();
         return conv;
     }
 
-    private static void RefreshMembers(ConversationVm conv, ChatRoom room)
+    private void Remember(PeerInfo peer)
     {
-        conv.Members.Clear();
-        foreach (var m in room.Members.OrderBy(m => m.DisplayName)) conv.Members.Add(m.IsRelayed ? m.DisplayName + " (relayed)" : m.DisplayName);
+        if (_node == null || peer.Id == _node.Id) return;
+        var known = _settings.KnownPeers.FirstOrDefault(k => k.Id == peer.Id.Value);
+        if (known == null)
+        {
+            _settings.KnownPeers.Add(new KnownPeer { Id = peer.Id.Value, Name = peer.DisplayName, LastSeen = DateTimeOffset.Now });
+            _data.SaveSettings(_settings);
+        }
+        else if (known.Name != peer.DisplayName)
+        {
+            known.Name = peer.DisplayName;
+            _data.SaveSettings(_settings);
+        }
+    }
+
+    private void RefreshPeers(PeerId? gone = null)
+    {
+        if (_node == null) return;
+
+        var live = new Dictionary<string, PeerInfo>();
+        foreach (var p in _node.ConnectedPeers) live[p.Id.Value] = p;
+        foreach (var room in _roomConversations.Keys)
+            foreach (var p in room.Members) live.TryAdd(p.Id.Value, p);
+        if (gone is { } g) live.Remove(g.Value);
+        live.Remove(_node.Id.Value);
+
+        var now = DateTimeOffset.Now;
+        bool changed = false;
+        foreach (var known in _settings.KnownPeers)
+        {
+            if (live.ContainsKey(known.Id)) { known.LastSeen = now; }
+        }
+        if (gone is { } left && _settings.KnownPeers.FirstOrDefault(k => k.Id == left.Value) is { } k2)
+        {
+            k2.LastSeen = now;
+            changed = true;
+        }
+        if (changed) _data.SaveSettings(_settings);
+
+        var online = live.Values.Select(p => new PeerVm(p.Id.Value, p.DisplayName, true, now, p.IsRelayed));
+        var offline = _settings.KnownPeers
+            .Where(k => !live.ContainsKey(k.Id) && k.Id != _node.Id.Value)
+            .Select(k => new PeerVm(k.Id, string.IsNullOrWhiteSpace(k.Name) ? k.Id[..8] : k.Name, false, k.LastSeen));
+        var people = online.Concat(offline)
+            .OrderByDescending(p => p.Online)
+            .ThenBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+
+        PeopleList.ItemsSource = people;
+        PeopleHeader.Text = $"People  ({people.Count(p => p.Online)} online)";
     }
 
     private async void DirectChat_Click(object sender, RoutedEventArgs e)
@@ -298,16 +346,20 @@ public partial class MainWindow : Window
         chat.MessageReceived += m => UI(() => OnMessage(conv, ToVm(m)));
         UI(() =>
         {
-            conv.Members.Add(chat.Peer?.DisplayName ?? chat.PeerId.Short);
+            if (chat.Peer != null) Remember(chat.Peer);
             _conversations.Add(conv);
+            RefreshPeers();
             if (_selected == null) ConversationList.SelectedItem = conv;
             tcs.SetResult();
         });
         return tcs.Task;
     }
 
-    private MessageVm ToVm(ChatMessage m) =>
-        new(m.Timestamp, m.From.DisplayName, m.Text, m.IsCatchUp, IsMine: _node != null && m.From.Id == _node.Id, Id: m.Id);
+    private MessageVm ToVm(ChatMessage m)
+    {
+        Remember(m.From);
+        return new(m.Timestamp, m.From.DisplayName, m.Text, m.IsCatchUp, IsMine: _node != null && m.From.Id == _node.Id, Id: m.Id);
+    }
 
     private void OnMessage(ConversationVm conv, MessageVm message)
     {
@@ -353,7 +405,6 @@ public partial class MainWindow : Window
         bool has = _selected != null;
         InputBox.IsEnabled = SendButton.IsEnabled = has;
         MessageList.ItemsSource = _selected?.Messages;
-        MemberList.ItemsSource = _selected?.Members;
         HeaderText.Text = _selected?.Title ?? "Create or join a private room, or open a direct chat, to begin";
         InviteButton.Visibility = _selected?.HasInvite == true ? Visibility.Visible : Visibility.Collapsed;
         if (_selected != null)

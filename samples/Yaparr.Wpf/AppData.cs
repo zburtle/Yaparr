@@ -11,8 +11,16 @@ public sealed class PrivateRoomSetting
     public string Key { get; set; } = "";
 }
 
+public sealed class KnownPeer
+{
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    public DateTimeOffset LastSeen { get; set; }
+}
+
 public sealed class AppSettings
 {
+    public List<KnownPeer> KnownPeers { get; set; } = new();
     public string? DisplayName { get; set; }
     public List<string> Rooms { get; set; } = new();
     public List<PrivateRoomSetting> PrivateRooms { get; set; } = new();

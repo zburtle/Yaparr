@@ -38,11 +38,12 @@ internal sealed class Wire
     public StoredMessage[]? Msgs { get; set; }
     public string[]? Have { get; set; }
 
-    public const string Hello = "hi", Join = "join", Leave = "leave", Message = "msg", Introduce = "peers", Sync = "sync", History = "hist";
+    public const string Hello = "hi", Join = "join", Leave = "leave", Message = "msg", Introduce = "peers", Sync = "sync", History = "hist", Links = "links";
 }
 
 internal sealed class WirePeer
 {
     public string Id { get; set; } = "";
     public string EndPoint { get; set; } = "";
+    public string? Name { get; set; }
 }
