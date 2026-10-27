@@ -37,8 +37,10 @@ internal sealed class Wire
     public WirePeer[]? Peers { get; set; }
     public StoredMessage[]? Msgs { get; set; }
     public string[]? Have { get; set; }
+    public StoredPresence[]? Pres { get; set; }
+    public int Deg { get; set; }
 
-    public const string Hello = "hi", Join = "join", Leave = "leave", Message = "msg", Introduce = "peers", Sync = "sync", History = "hist", Links = "links";
+    public const string Hello = "hi", Join = "join", Leave = "leave", Message = "msg", Introduce = "peers", Sync = "sync", History = "hist", Links = "links", Presence = "pres";
 }
 
 internal sealed class WirePeer

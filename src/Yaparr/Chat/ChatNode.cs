@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
@@ -29,6 +29,18 @@ public sealed class ChatNodeOptions
     public bool EnableRelaying { get; init; } = true;
 
     public TimeSpan RelayFallbackDelay { get; init; } = TimeSpan.FromSeconds(8);
+
+    public int TargetConnections { get; init; } = 8;
+
+    public int MaxConnections { get; init; } = 12;
+
+    public int IntroductionsPerJoin { get; init; } = 3;
+
+    public TimeSpan MaintenanceInterval { get; init; } = TimeSpan.FromSeconds(2);
+
+    public TimeSpan ShuffleInterval { get; init; } = TimeSpan.FromSeconds(20);
+
+    public TimeSpan PresenceInterval { get; init; } = TimeSpan.FromSeconds(30);
 
     public bool SyncHistory { get; init; } = true;
 
@@ -69,6 +81,7 @@ public sealed class ChatNode : IDisposable
             }
         }
         public string? Name { get; set; }
+        public volatile int Degree;
         public PeerId Id => Connection.RemoteId!.Value;
         public PeerInfo Info => new(Id, Name ?? Id.Short, Connection.RemoteEndPoint, Connection.IsRelayed);
 
@@ -98,7 +111,25 @@ public sealed class ChatNode : IDisposable
     private readonly ConcurrentDictionary<PeerId, ConcurrentDictionary<PeerId, byte>> _introducedVia = new();
     private readonly ConcurrentDictionary<PeerId, byte> _relayPending = new();
     private readonly ConcurrentDictionary<string, RoomHistory> _histories = new();
+    private readonly ConcurrentDictionary<string, Candidate> _candidates = new();
+    private readonly ConcurrentDictionary<string, long> _backoff = new();
+    private readonly ConcurrentDictionary<string, byte> _pinned = new();
     private bool _started;
+
+    private const int MinDegree = 2;
+    private const int MaxCandidates = 512;
+    private static readonly long BackoffMs = 60_000;
+    private long RedialMs => (long)Math.Max(500, _options.DiscoveryInterval.TotalMilliseconds);
+
+    private sealed class Candidate
+    {
+        public Candidate(IPEndPoint endPoint) => EndPoint = endPoint;
+        public IPEndPoint EndPoint { get; }
+        public PeerId? Id { get; set; }
+        public PeerId? Via { get; set; }
+        public long LastDial;
+        public long Seen;
+    }
 
     public ChatNode(ChatNodeOptions? options = null)
     {
@@ -193,6 +224,7 @@ public sealed class ChatNode : IDisposable
         }
 
         _ = RunLoopAsync(() => DiscoverRoomAsync(room, _cts.Token), $"room {room.Name}", () => !_rooms.ContainsKey(room.Key));
+        _ = RunLoopAsync(() => MaintainRoomAsync(room), $"maintain {room.Name}", () => !_rooms.ContainsKey(room.Key), _options.MaintenanceInterval);
         return room;
     }
 
@@ -211,7 +243,13 @@ public sealed class ChatNode : IDisposable
     private void LeaveRoomCore(ChatRoom room)
     {
         if (!_rooms.TryRemove(room.Key, out _)) return;
-        foreach (var peer in _peers.Values) Send(peer.Connection, new Wire { Type = Wire.Leave, Room = RefTo(room, peer) });
+        var gone = SignedPresence.Create(_identity, room.Key, _options.DisplayName, NextTimestamp(), gone: true);
+        foreach (var peer in _peers.Values)
+        {
+            if (room.MemberStates.ContainsKey(peer.Id))
+                Send(peer.Connection, new Wire { Type = Wire.Presence, Room = RefTo(room, peer), Pres = new[] { gone } });
+            Send(peer.Connection, new Wire { Type = Wire.Leave, Room = RefTo(room, peer) });
+        }
     }
 
     private async Task DiscoverRoomAsync(ChatRoom room, CancellationToken ct)
@@ -223,7 +261,13 @@ public sealed class ChatNode : IDisposable
                 await d.AnnounceAsync(room.Topic, ct).ConfigureAwait(false);
                 var found = await d.FindPeersAsync(room.Topic, ct).ConfigureAwait(false);
                 _options.Log?.Invoke($"room '{room.Name}' via {d.GetType().Name}: {found.Count} endpoint(s){(found.Count > 0 ? ": " + string.Join(", ", found) : "")}");
-                foreach (var ep in found) Network.Connect(ep);
+                if (_options.TargetConnections <= 0)
+                {
+                    foreach (var ep in found) Network.Connect(ep);
+                    return;
+                }
+                foreach (var ep in found) AddCandidate(ep, null, null);
+                TopUpConnections(room);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -280,16 +324,19 @@ public sealed class ChatNode : IDisposable
         }
     }
 
-    private void ForwardToMembers(PeerState from, ChatRoom room, StoredMessage m)
+    private void ForwardToMembers(PeerState from, ChatRoom room, StoredMessage m) =>
+        Relay(from, room, m.From, reference => new Wire { Type = Wire.Message, Room = reference, Msgs = new[] { m } });
+
+    private void Relay(PeerState from, ChatRoom room, string authorId, Func<string, Wire> build)
     {
         var skip = from.Links(room.Key);
-        if (room.MemberStates.TryGetValue(new PeerId(m.From), out var author))
+        if (room.MemberStates.TryGetValue(new PeerId(authorId), out var author))
             foreach (var kv in author.Links(room.Key)) skip[kv.Key] = kv.Value;
 
         foreach (var member in room.MemberStates.Values)
         {
-            if (member.Id == from.Id || member.Id.Value == m.From || skip.ContainsKey(member.Id.Value)) continue;
-            Send(member.Connection, new Wire { Type = Wire.Message, Room = RefTo(room, member), Msgs = new[] { m } });
+            if (member.Id == from.Id || member.Id.Value == authorId || skip.ContainsKey(member.Id.Value)) continue;
+            Send(member.Connection, build(RefTo(room, member)));
         }
     }
 
@@ -299,7 +346,52 @@ public sealed class ChatNode : IDisposable
             .Select(s => new WirePeer { Id = s.Id.Value, Name = s.Name })
             .ToArray();
         foreach (var member in room.MemberStates.Values)
-            Send(member.Connection, new Wire { Type = Wire.Links, Room = RefTo(room, member), Peers = direct.Where(p => p.Id != member.Id.Value).ToArray() });
+            Send(member.Connection, new Wire
+            {
+                Type = Wire.Links, Room = RefTo(room, member), Deg = _peers.Count,
+                Peers = direct.Where(p => p.Id != member.Id.Value).ToArray(),
+            });
+    }
+
+    private TimeSpan PresenceLifetime => _options.PresenceInterval * 3;
+
+    private void SendPresence(ChatRoom room)
+    {
+        var beacon = SignedPresence.Create(_identity, room.Key, _options.DisplayName, NextTimestamp(), gone: false);
+        foreach (var member in room.MemberStates.Values)
+            Send(member.Connection, new Wire { Type = Wire.Presence, Room = RefTo(room, member), Pres = new[] { beacon } });
+    }
+
+    private void SendPresenceTo(ChatRoom room, PeerState peer, bool includeCache)
+    {
+        var beacons = new List<StoredPresence> { SignedPresence.Create(_identity, room.Key, _options.DisplayName, NextTimestamp(), gone: false) };
+        if (includeCache)
+        {
+            long cutoff = Environment.TickCount64 - (long)PresenceLifetime.TotalMilliseconds;
+            lock (room.IndirectGate)
+                beacons.AddRange(room.Presence.Values.Where(e => !e.Beacon.Gone && e.SeenAt >= cutoff && e.Beacon.From != peer.Id.Value)
+                    .Take(63).Select(e => e.Beacon));
+        }
+        Send(peer.Connection, new Wire { Type = Wire.Presence, Room = RefTo(room, peer), Pres = beacons.ToArray() });
+    }
+
+    private void OnPresence(PeerState peer, ChatRoom room, StoredPresence[] beacons)
+    {
+        bool changed = false;
+        foreach (var b in beacons.Take(64))
+        {
+            if (!IsValidPeerId(b.From) || b.From == Id.Value || !SignedPresence.Verify(b, room.Key)) continue;
+            var id = new PeerId(b.From);
+            lock (room.IndirectGate)
+            {
+                if (room.Presence.TryGetValue(id, out var old) && old.Beacon.Ts >= b.Ts) continue;
+                if (room.Presence.Count >= 1000 && !room.Presence.ContainsKey(id)) continue;
+                room.Presence[id] = new PresenceEntry(b, Environment.TickCount64);
+            }
+            changed = true;
+            Relay(peer, room, b.From, reference => new Wire { Type = Wire.Presence, Room = reference, Pres = new[] { b } });
+        }
+        if (changed) RefreshIndirect(room);
     }
 
     private void RefreshIndirect(ChatRoom room)
@@ -315,6 +407,11 @@ public sealed class ChatNode : IDisposable
                     var id = new PeerId(kv.Key);
                     if (id != Id && !room.MemberStates.ContainsKey(id)) reachable.TryAdd(id, kv.Value);
                 }
+
+            long cutoff = Environment.TickCount64 - (long)PresenceLifetime.TotalMilliseconds;
+            foreach (var (id, entry) in room.Presence)
+                if (!entry.Beacon.Gone && entry.SeenAt >= cutoff && id != Id && !room.MemberStates.ContainsKey(id))
+                    reachable.TryAdd(id, entry.Beacon.Name);
 
             foreach (var id in room.Indirect.Keys.ToList())
                 if (!reachable.ContainsKey(id) && room.Indirect.TryRemove(id, out var gone) && !room.MemberStates.ContainsKey(id)) left.Add(gone);
@@ -349,6 +446,12 @@ public sealed class ChatNode : IDisposable
         _options.Log?.Invoke($"{peer.Id.Short} entered room '{room.Name}'");
 
         var others = room.MemberStates.Values.Where(m => m.Id != peer.Id && !m.Connection.IsRelayed).ToList();
+        if (_options.TargetConnections > 0)
+        {
+            others = others.Where(o => o.Degree < _options.TargetConnections).OrderBy(_ => Random.Shared.Next())
+                .Take(Math.Max(1, _options.IntroductionsPerJoin)).ToList();
+            if (peer.Degree >= _options.TargetConnections) others.Clear();
+        }
         if (others.Count > 0 && !peer.Connection.IsRelayed)
         {
             Send(peer.Connection, new Wire { Type = Wire.Introduce, Room = RefTo(room, peer), Peers = others.Select(ToWirePeer).ToArray() });
@@ -358,6 +461,7 @@ public sealed class ChatNode : IDisposable
         bool wasIndirect = room.Indirect.TryRemove(peer.Id, out _);
         if (!wasIndirect) room.RaiseJoined(peer.Info);
         AfterMembershipChange(room);
+        SendPresenceTo(room, peer, includeCache: true);
 
         if (_options.SyncHistory)
         {
@@ -371,6 +475,8 @@ public sealed class ChatNode : IDisposable
     public async Task<DirectChat> ConnectAsync(IPEndPoint endPoint, PeerId? expected = null, CancellationToken ct = default)
     {
         Start();
+        _pinned[endPoint.ToString()] = 0;
+        if (expected is { } pin) _pinned[pin.Value] = 0;
         var conn = Network.Connect(endPoint, expected);
         await conn.WhenEstablished.WaitAsync(ct).ConfigureAwait(false);
         return GetDirectChat(conn.RemoteId!.Value);
@@ -379,6 +485,7 @@ public sealed class ChatNode : IDisposable
     public async Task<DirectChat> OpenDirectChatAsync(PeerId peer, CancellationToken ct = default)
     {
         Start();
+        _pinned[peer.Value] = 0;
         var topic = Topics.ForPeer(peer);
         while (true)
         {
@@ -411,7 +518,7 @@ public sealed class ChatNode : IDisposable
         _peers[state.Id] = state;
         foreach (var room in _rooms.Values)
             if (room.MemberStates.ContainsKey(state.Id)) room.MemberStates[state.Id] = state;
-        Send(conn, new Wire { Type = Wire.Hello, Name = _options.DisplayName, Rooms = _rooms.Values.Select(r => RefTo(r, state)).ToArray() });
+        Send(conn, new Wire { Type = Wire.Hello, Name = _options.DisplayName, Deg = _peers.Count, Rooms = _rooms.Values.Select(r => RefTo(r, state)).ToArray() });
         if (isNew) _options.Log?.Invoke($"connected to {state.Id.Short} at {conn.RemoteEndPoint}");
     }
 
@@ -429,6 +536,9 @@ public sealed class ChatNode : IDisposable
             {
                 foreach (var other in room.MemberStates.Values)
                     if (other.Links(room.Key).TryGetValue(id.Value, out name)) break;
+                if (name == null && room.Presence.TryGetValue(id, out var entry) && !entry.Beacon.Gone
+                    && entry.SeenAt >= Environment.TickCount64 - (long)PresenceLifetime.TotalMilliseconds)
+                    name = entry.Beacon.Name;
                 if (name != null) room.Indirect[id] = gone.Info with { EndPoint = null, IsRelayed = true };
             }
             if (name == null) room.RaiseLeft(gone.Info);
@@ -453,7 +563,9 @@ public sealed class ChatNode : IDisposable
                 bool first = peer.Name == null;
                 peer.Name = string.IsNullOrWhiteSpace(wire.Name) ? peer.Id.Short : wire.Name;
                 peer.SetRooms(wire.Rooms ?? Array.Empty<string>());
+                peer.Degree = wire.Deg;
                 _options.Log?.Invoke($"hello from {peer.Id.Short} ({peer.Name}): declares {wire.Rooms?.Length ?? 0} room(s); we are in {_rooms.Count}");
+                if (first && !EnforceCap(peer)) break;
                 if (first) PeerConnected?.Invoke(peer.Info);
                 foreach (var room in _rooms.Values)
                     if (peer.Declares(RefFrom(room, peer))) OnPeerEntersRoom(peer, room);
@@ -481,7 +593,13 @@ public sealed class ChatNode : IDisposable
                     if (IsValidPeerId(p.Id) && p.Id != peer.Id.Value)
                         links[p.Id] = string.IsNullOrWhiteSpace(p.Name) ? new PeerId(p.Id).Short : p.Name.Length > 64 ? p.Name[..64] : p.Name;
                 peer.SetLinks(linkRoom.Key, links);
+                if (wire.Deg > 0) peer.Degree = wire.Deg;
                 RefreshIndirect(linkRoom);
+                break;
+
+            case Wire.Presence when wire.Room != null && wire.Pres != null
+                                    && ResolveRoom(peer, wire.Room) is { } presRoom && presRoom.MemberStates.ContainsKey(peer.Id):
+                OnPresence(peer, presRoom, wire.Pres);
                 break;
 
             case Wire.Message when wire.Room == null && wire.Text != null && wire.Id != null:
@@ -514,10 +632,17 @@ public sealed class ChatNode : IDisposable
                     if (!IsValidPeerId(p.Id) || p.Id == Id.Value) continue;
                     var target = new PeerId(p.Id);
                     if (_peers.ContainsKey(target) || peer.Connection.IsRelayed) continue;
+                    if (!IPEndPoint.TryParse(p.EndPoint, out var ep)) continue;
 
-                    _introducedVia.GetOrAdd(target, _ => new()).TryAdd(peer.Id, 0);
-                    if (IPEndPoint.TryParse(p.EndPoint, out var ep)) Network.Connect(ep, target);
-                    ScheduleRelayFallback(target);
+                    if (_options.TargetConnections <= 0)
+                    {
+                        _introducedVia.GetOrAdd(target, _ => new()).TryAdd(peer.Id, 0);
+                        Network.Connect(ep, target);
+                        ScheduleRelayFallback(target);
+                        continue;
+                    }
+                    var candidate = AddCandidate(ep, target, peer.Id);
+                    if (WantsMore(introRoom) && CanDial(candidate)) Dial(candidate);
                 }
                 break;
         }
@@ -534,7 +659,7 @@ public sealed class ChatNode : IDisposable
             try
             {
                 await Task.Delay(_options.RelayFallbackDelay, _cts.Token).ConfigureAwait(false);
-                while (!_cts.IsCancellationRequested && !_peers.ContainsKey(target))
+                while (!_cts.IsCancellationRequested && !_peers.ContainsKey(target) && !IsBackedOff(target.Value, Environment.TickCount64))
                 {
                     var relay = _introducedVia.TryGetValue(target, out var vias)
                         ? vias.Keys.Select(r => _peers.GetValueOrDefault(r)?.Connection)
@@ -569,7 +694,132 @@ public sealed class ChatNode : IDisposable
         catch (InvalidOperationException) {  }
     }
 
-    private async Task RunLoopAsync(Func<Task> action, string what, Func<bool>? stop = null)
+    private bool WantsMore(ChatRoom room)
+    {
+        int target = _options.TargetConnections;
+        if (target <= 0) return true;
+        if (room.MemberStates.Count >= target) return false;
+        return _options.MaxConnections <= 0 || _peers.Count < _options.MaxConnections;
+    }
+
+    private Candidate AddCandidate(IPEndPoint endPoint, PeerId? id, PeerId? via)
+    {
+        var candidate = _candidates.GetOrAdd(endPoint.ToString(), _ => new Candidate(endPoint));
+        if (id != null) candidate.Id = id;
+        if (via != null) candidate.Via = via;
+        candidate.Seen = Environment.TickCount64;
+        if (_candidates.Count > MaxCandidates)
+            foreach (var key in _candidates.OrderBy(kv => kv.Value.Seen).Take(_candidates.Count - MaxCandidates).Select(kv => kv.Key).ToList())
+                _candidates.TryRemove(key, out _);
+        return candidate;
+    }
+
+    private bool IsBackedOff(string key, long now) => _backoff.TryGetValue(key, out var until) && now < until;
+
+    private bool IsConnectedTo(IPEndPoint endPoint) => _peers.Values.Any(p => p.Connection.RemoteEndPoint.Equals(endPoint));
+
+    private bool IsDialable(Candidate c) =>
+        (c.LastDial == 0 || Environment.TickCount64 - c.LastDial >= RedialMs) && CanDial(c);
+
+    private bool CanDial(Candidate c)
+    {
+        long now = Environment.TickCount64;
+        if (c.EndPoint.Port == _mux.LocalPort && IPAddress.IsLoopback(c.EndPoint.Address)) return false;
+        if (IsBackedOff(c.EndPoint.ToString(), now)) return false;
+        if (c.Id is { } id && (IsBackedOff(id.Value, now) || _peers.ContainsKey(id))) return false;
+        return !IsConnectedTo(c.EndPoint);
+    }
+
+    private void Dial(Candidate c)
+    {
+        c.LastDial = Environment.TickCount64;
+        if (c.Id is { } id && c.Via is { } via)
+        {
+            _introducedVia.GetOrAdd(id, _ => new()).TryAdd(via, 0);
+            Network.Connect(c.EndPoint, id);
+            ScheduleRelayFallback(id);
+        }
+        else Network.Connect(c.EndPoint, c.Id);
+    }
+
+    private void TopUpConnections(ChatRoom room)
+    {
+        if (_options.TargetConnections <= 0) return;
+        long now = Environment.TickCount64;
+        int pending = _candidates.Values.Count(c => c.LastDial != 0 && now - c.LastDial < RedialMs && !IsConnectedTo(c.EndPoint));
+        int need = _options.TargetConnections - room.MemberStates.Count - pending;
+        if (_options.MaxConnections > 0) need = Math.Min(need, _options.MaxConnections - _peers.Count - pending);
+        if (need <= 0) return;
+        foreach (var c in _candidates.Values.Where(IsDialable).OrderBy(_ => Random.Shared.Next()).Take(need).ToList()) Dial(c);
+    }
+
+    private bool IsPinned(PeerState p) =>
+        _pinned.ContainsKey(p.Id.Value) || _pinned.ContainsKey(p.Connection.RemoteEndPoint.ToString()) || _directChats.ContainsKey(p.Id);
+
+    private bool EnforceCap(PeerState peer)
+    {
+        int max = _options.MaxConnections;
+        if (max <= 0 || _peers.Count <= max || IsPinned(peer)) return true;
+
+        if (peer.Degree <= MinDegree)
+        {
+            var victims = _peers.Values
+                .Where(p => p.Id != peer.Id && p.Name != null && p.Degree > MinDegree && !IsPinned(p))
+                .ToList();
+            if (victims.Count > 0)
+            {
+                Drop(victims[Random.Shared.Next(victims.Count)]);
+                return true;
+            }
+        }
+        Drop(peer);
+        return false;
+    }
+
+    private void Drop(PeerState peer)
+    {
+        long until = Environment.TickCount64 + BackoffMs;
+        _backoff[peer.Id.Value] = until;
+        _backoff[peer.Connection.RemoteEndPoint.ToString()] = until;
+        _options.Log?.Invoke($"over the connection limit; dropping {peer.Id.Short}");
+        peer.Connection.Close(notifyPeer: true);
+    }
+
+    private Task MaintainRoomAsync(ChatRoom room)
+    {
+        long now = Environment.TickCount64;
+        TopUpConnections(room);
+
+        if (now - room.LastPresenceAt >= _options.PresenceInterval.TotalMilliseconds)
+        {
+            room.LastPresenceAt = now;
+            SendPresence(room);
+        }
+        if (_options.TargetConnections > 0 && now - room.LastShuffleAt >= _options.ShuffleInterval.TotalMilliseconds)
+        {
+            room.LastShuffleAt = now;
+            ShuffleMembers(room);
+        }
+
+        long stale = now - (long)(PresenceLifetime.TotalMilliseconds * 2);
+        lock (room.IndirectGate)
+            foreach (var id in room.Presence.Where(kv => kv.Value.SeenAt < stale).Select(kv => kv.Key).ToList()) room.Presence.Remove(id);
+        RefreshIndirect(room);
+        return Task.CompletedTask;
+    }
+
+    private void ShuffleMembers(ChatRoom room)
+    {
+        var members = room.MemberStates.Values.Where(m => !m.Connection.IsRelayed).ToList();
+        foreach (var member in members)
+        {
+            var sample = members.Where(o => o.Id != member.Id).OrderBy(_ => Random.Shared.Next()).Take(3).Select(ToWirePeer).ToArray();
+            if (sample.Length > 0)
+                Send(member.Connection, new Wire { Type = Wire.Introduce, Room = RefTo(room, member), Peers = sample });
+        }
+    }
+
+    private async Task RunLoopAsync(Func<Task> action, string what, Func<bool>? stop = null, TimeSpan? every = null)
     {
         try
         {
@@ -580,7 +830,7 @@ public sealed class ChatNode : IDisposable
                 {
                     _options.Log?.Invoke($"{what} failed: {ex.Message}");
                 }
-                await Task.Delay(_options.DiscoveryInterval, _cts.Token).ConfigureAwait(false);
+                await Task.Delay(every ?? _options.DiscoveryInterval, _cts.Token).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) { }

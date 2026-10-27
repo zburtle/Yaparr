@@ -83,6 +83,21 @@ room, who proved they hold the key: a node that is not in the group never carrie
 can still forward opaque encrypted datagrams for a connection-level relay only if it shares a room with both ends,
 see above). Messages are forwarded one hop at a time, so they travel any number of member-to-member hops.
 
+**Connection limits.** A node does not connect to every member of a room. It aims for `TargetConnections` (8)
+neighbours per room and never keeps more than `MaxConnections` (12) in total; set `TargetConnections = 0` for the old
+full mesh. Peers found through the DHT or learned from other members are kept as candidates and dialled at random
+only while below the target. Members periodically swap small random samples of who they are connected to, so
+candidates stay fresh, and a newcomer is only introduced to members that still have room. A node at its maximum
+still accepts a newcomer that has almost no connections (two or fewer) by dropping one of its better-connected
+neighbours, and refuses anyone else; dropped peers are not redialled for a minute. Connections you opened on purpose
+(`ConnectAsync`, `OpenDirectChatAsync`, an open direct chat) are never dropped. Messages reach everyone by
+forwarding (above), and catch-up repairs what forwarding misses.
+
+**Presence.** Because a node only sees its neighbours, `room.Members` also lists members it has heard about through
+signed presence beacons: every `PresenceInterval` (30 s) each member signs "I'm here" for the room and neighbours
+pass it on, and a member who leaves sends a signed "gone". A member counts as online for three intervals after their
+last beacon (so a crash takes up to 90 s to show), and beacons from non-members are rejected.
+
 **Security.** Identity is an ECDSA P-256 key; `PeerId` = SHA-256 of the public key. The hello carries an ephemeral
 ECDH key signed by the identity key; session keys come from HKDF and traffic is AES-256-GCM with replay protection.
 **Public rooms** (`JoinRoomAsync(name)`) are open: anyone who knows the name can join. **Private rooms**
@@ -113,6 +128,6 @@ and use the chat channel (or its own reliable channel) for call signalling. The 
 ## Known limitations
 
 - IPv4 only; a flat routing table instead of k-buckets; DHT node is read-only (BEP 43) by default.
-- Members still try to connect to every other member of a room (messages are forwarded when a direct path is missing, but there is no cap on connections per node), so very large rooms are not supported. Forwarded delivery is best effort: if no member connects two parts of a room, they only exchange messages once catch-up reaches them. Members report their connections themselves, so a malicious member could claim phantom members or suppress forwarding.
+- Connections are capped (see above), but this has only been tested with 24 simulated nodes on one machine, so larger rooms are unproven. Forwarding is best effort: if the neighbour graph splits, the halves only exchange messages once a connection or catch-up bridges them. Members report their connections and degrees themselves, so a malicious member could claim phantom neighbours, suppress forwarding, or trigger drops by announcing a tiny degree. Presence traffic grows with room size (one beacon per member per interval, sent to each neighbour).
 - Catch-up needs someone online who holds the messages (no server stores them); members can only vouch for messages by signature, so a malicious member could inject messages from invented identities, but not from real members. No offline delivery for 1:1 chats. Relaying needs a mutual room member who is directly reachable; there are no dedicated relay servers, no relay bandwidth limits, and no relay chains.
 - Hole punching is verified only on loopback in tests; real-NAT behaviour should be tried across networks.

@@ -40,7 +40,9 @@ public sealed class ChatRoom
     }
 
     internal readonly ConcurrentDictionary<PeerId, PeerInfo> Indirect = new();
+    internal readonly Dictionary<PeerId, PresenceEntry> Presence = new();
     internal readonly object IndirectGate = new();
+    internal long LastPresenceAt, LastShuffleAt;
 
     public IReadOnlyCollection<PeerInfo> Members =>
         MemberStates.Values.Select(s => s.Info).Concat(Indirect.Values).ToList();

@@ -1,4 +1,5 @@
-﻿using System.Collections.Concurrent;
+using System.Net;
+using System.Collections.Concurrent;
 using Yaparr.Chat;
 using Yaparr.Discovery;
 using Yaparr.Identity;
@@ -533,5 +534,73 @@ public class DiscoveryTests
 
         Assert.Equal(0, dropsA);
         Assert.Equal(0, dropsB);
+    }
+}
+
+public class LimitedMeshTests
+{
+    private static ChatNode Node(InMemoryDiscoveryHub hub, string name, int target, int max) => new(new ChatNodeOptions
+    {
+        DisplayName = name,
+        TargetConnections = target,
+        MaxConnections = max,
+        DiscoveryFactory = mux => hub.CreateClient(new IPEndPoint(IPAddress.Loopback, mux.LocalPort)),
+        DiscoveryInterval = TimeSpan.FromMilliseconds(400),
+        MaintenanceInterval = TimeSpan.FromMilliseconds(200),
+        ShuffleInterval = TimeSpan.FromMilliseconds(600),
+        PresenceInterval = TimeSpan.FromMilliseconds(500),
+        Network = TestUtil.FastNetwork,
+    });
+
+    [Fact]
+    public async Task A_large_room_stays_within_the_connection_limit_and_still_delivers_to_everyone()
+    {
+        const int count = 24, target = 4, max = 6;
+        var hub = new InMemoryDiscoveryHub();
+        var nodes = new List<ChatNode>();
+        var rooms = new List<ChatRoom>();
+        try
+        {
+            for (int i = 0; i < count; i++)
+            {
+                var node = Node(hub, "n" + i, target, max);
+                nodes.Add(node);
+                rooms.Add(await node.JoinRoomAsync("crowd"));
+            }
+
+            await TestUtil.WaitFor(() => rooms.All(r => r.Members.Count == count - 1), 60_000);
+            await TestUtil.WaitFor(() => nodes.All(n => n.ConnectedPeers.Count is >= 1 and <= max), 15_000);
+
+            var received = new HashSet<int>();
+            for (int i = 1; i < count; i++)
+            {
+                int index = i;
+                rooms[i].MessageReceived += m => { if (m.Text == "hello everyone") lock (received) received.Add(index); };
+            }
+            await rooms[0].SendAsync("hello everyone");
+            await TestUtil.WaitFor(() => { lock (received) return received.Count == count - 1; }, 20_000);
+
+            await TestUtil.WaitFor(() => nodes.All(n => n.ConnectedPeers.Count is >= 1 and <= max), 15_000);
+        }
+        finally
+        {
+            foreach (var n in nodes) n.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task A_member_that_leaves_disappears_from_everyones_list()
+    {
+        var hub = new InMemoryDiscoveryHub();
+        using var a = Node(hub, "a", 2, 3);
+        using var b = Node(hub, "b", 2, 3);
+        var c = Node(hub, "c", 2, 3);
+        var ra = await a.JoinRoomAsync("small");
+        var rb = await b.JoinRoomAsync("small");
+        var rc = await c.JoinRoomAsync("small");
+        await TestUtil.WaitFor(() => ra.Members.Count == 2 && rb.Members.Count == 2);
+
+        c.Dispose();
+        await TestUtil.WaitFor(() => ra.Members.Count == 1 && rb.Members.Count == 1, 10_000);
     }
 }

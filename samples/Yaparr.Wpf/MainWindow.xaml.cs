@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
@@ -210,17 +210,103 @@ public partial class MainWindow : Window
                           (peers == 0 ? "  ·  looking for peers (the first search can take a while)…" : "");
     }
 
-    private async void PrivateRoom_Click(object sender, RoutedEventArgs e)
+    private async void CreateRoom_Click(object sender, RoutedEventArgs e)
     {
-        var label = PromptDialog.Ask(this, "A name for this private room (only you see it):");
+        var label = PromptDialog.Ask(this, "A name for the new private room (only you see it):", "Private room");
         if (string.IsNullOrWhiteSpace(label)) return;
-        var invite = PromptDialog.Ask(this, "Paste an invite to join an existing private room, or leave blank to create a new one:");
-        if (invite == null) return;
+        await JoinPrivateAsync(label, RoomKey.Generate(), persist: true);
+    }
 
+    private async void JoinRoom_Click(object sender, RoutedEventArgs e)
+    {
+        var initial = ClipboardInvite() ?? "";
         RoomKey key;
-        try { key = invite.Length == 0 ? RoomKey.Generate() : RoomKey.Parse(invite); }
-        catch (FormatException) { MessageBox.Show(this, "That doesn't look like a valid invite.", "Yaparr"); return; }
+        while (true)
+        {
+            var invite = PromptDialog.Ask(this, "Paste the invite you were sent:", initial);
+            if (string.IsNullOrWhiteSpace(invite)) return;
+            try { key = RoomKey.Parse(invite); break; }
+            catch (FormatException)
+            {
+                MessageBox.Show(this, "That doesn't look like a valid invite. Check that you copied all of it.", "Yaparr");
+                initial = invite;
+            }
+        }
+
+        if (_settings.PrivateRooms.Any(r => r.Key == key.ToString()))
+        {
+            MessageBox.Show(this, "You are already in that room.", "Yaparr");
+            return;
+        }
+
+        var label = PromptDialog.Ask(this, "A name for this private room (only you see it):", "Private room");
+        if (string.IsNullOrWhiteSpace(label)) return;
         await JoinPrivateAsync(label, key, persist: true);
+    }
+
+    private const string PrivatePrefix = "(private) ";
+
+    private void ConversationList_RightClick(object sender, MouseButtonEventArgs e)
+    {
+        var source = e.OriginalSource as DependencyObject;
+        while (source != null && source is not ListBoxItem) source = System.Windows.Media.VisualTreeHelper.GetParent(source);
+        if (source is ListBoxItem item) item.IsSelected = true;
+    }
+
+    private void ConversationList_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+    {
+        if (_selected is not { IsRoom: true }) e.Handled = true;
+    }
+
+    private void RenameRoom_Click(object sender, RoutedEventArgs e)
+    {
+        if (_selected is not { IsRoom: true } conv) return;
+        var current = conv.Title.StartsWith(PrivatePrefix) ? conv.Title[PrivatePrefix.Length..] : conv.Title;
+        var label = PromptDialog.Ask(this, "A new name for this room (only you see it):", current);
+        if (string.IsNullOrWhiteSpace(label) || label == current) return;
+
+        conv.Title = PrivatePrefix + label;
+        HeaderText.Text = conv.Title;
+        if (_settings.PrivateRooms.FirstOrDefault(r => r.Key == conv.Invite) is { } saved)
+        {
+            saved.Label = label;
+            _data.SaveSettings(_settings);
+        }
+    }
+
+    private async void LeaveRoom_Click(object sender, RoutedEventArgs e)
+    {
+        if (_selected is not { IsRoom: true } conv) return;
+        var answer = MessageBox.Show(this,
+            $"Leave \"{conv.Title}\"? You will stop receiving its messages. To come back you need the invite again.",
+            "Leave room", MessageBoxButton.YesNo, MessageBoxImage.Question);
+        if (answer != MessageBoxResult.Yes) return;
+
+        var room = _roomConversations.FirstOrDefault(kv => kv.Value == conv).Key;
+        if (room != null)
+        {
+            await room.LeaveAsync();
+            _roomConversations.Remove(room);
+        }
+        _conversations.Remove(conv);
+        if (_settings.PrivateRooms.RemoveAll(r => r.Key == conv.Invite) > 0) _data.SaveSettings(_settings);
+        RefreshPeers();
+        StatusText.Text = $"Left {conv.Title}.";
+    }
+
+    private static string? ClipboardInvite()
+    {
+        try
+        {
+            var text = Clipboard.ContainsText() ? Clipboard.GetText().Trim() : null;
+            if (text == null) return null;
+            RoomKey.Parse(text);
+            return text;
+        }
+        catch (Exception ex) when (ex is FormatException or System.Runtime.InteropServices.COMException)
+        {
+            return null;
+        }
     }
 
     private async Task JoinPrivateAsync(string label, RoomKey key, bool persist)
@@ -405,7 +491,7 @@ public partial class MainWindow : Window
         bool has = _selected != null;
         InputBox.IsEnabled = SendButton.IsEnabled = has;
         MessageList.ItemsSource = _selected?.Messages;
-        HeaderText.Text = _selected?.Title ?? "Create or join a private room, or open a direct chat, to begin";
+        HeaderText.Text = _selected?.Title ?? "Create a private room, join one with an invite, or open a direct chat to begin";
         InviteButton.Visibility = _selected?.HasInvite == true ? Visibility.Visible : Visibility.Collapsed;
         if (_selected != null)
         {

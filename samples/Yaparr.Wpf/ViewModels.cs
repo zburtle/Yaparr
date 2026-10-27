@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 
@@ -27,16 +27,21 @@ public sealed record PeerVm(string Id, string Name, bool Online, DateTimeOffset 
 public sealed class ConversationVm : Observable
 {
     private int _unread;
+    private string _title;
     private readonly HashSet<string> _ids = new();
 
     public ConversationVm(string title, bool isRoom, Func<string, Task> send)
     {
-        Title = title;
+        _title = title;
         IsRoom = isRoom;
         Send = send;
     }
 
-    public string Title { get; }
+    public string Title
+    {
+        get => _title;
+        set { _title = value; Raise(); Raise(nameof(Label)); }
+    }
     public bool IsRoom { get; }
     public Func<string, Task> Send { get; }
 
