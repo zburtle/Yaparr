@@ -153,11 +153,12 @@ tunnel and shown in the status bar. The config, including its private key, is sa
 folder and is therefore part of a profile export. Only IPv4 servers and a single peer are supported; the client does
 not answer handshakes started by the server, so it relies on its own 2-minute rekey.
 
-Settings live in `network.json` in the profile folder (all keys optional):
+Settings live in `network.json` in the profile folder (all keys optional). The WPF app looks for peers on the local network only when `localDiscovery` is `true` (off by default for now):
 
 ```json
 {
   "portMapping": true,
+  "localDiscovery": false,
   "stun": ["stun.l.google.com:19302", "stun.cloudflare.com:3478"],
   "turn": { "server": "turn.example.com:3478", "username": "user", "credential": "secret", "enabled": false, "always": false }
 }

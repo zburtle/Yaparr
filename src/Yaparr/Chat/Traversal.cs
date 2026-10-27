@@ -10,6 +10,9 @@ public sealed class TraversalOptions
 
     public bool PortMapping { get; init; } = true;
 
+    /// <summary>Whether apps should look for peers on the local network. Off by default for now.</summary>
+    public bool LocalDiscovery { get; init; }
+
     public IReadOnlyList<string> StunServers { get; init; } = NatProbe.DefaultServers;
 
     public TurnOptions? Turn { get; init; }
@@ -25,6 +28,7 @@ public sealed class TraversalOptions
             {
                 Enabled = dto.Enabled ?? true,
                 PortMapping = dto.PortMapping ?? true,
+                LocalDiscovery = dto.LocalDiscovery ?? false,
                 StunServers = dto.Stun is { Length: > 0 } stun ? stun : NatProbe.DefaultServers,
                 Turn = dto.Turn is { Server: { Length: > 0 } server }
                     ? new TurnOptions { Server = server, Username = dto.Turn.Username ?? "", Credential = dto.Turn.Credential ?? "", Enabled = dto.Turn.Enabled ?? false, Always = dto.Turn.Always ?? false }
@@ -63,6 +67,7 @@ public sealed class TraversalOptions
     {
         public bool? Enabled { get; set; }
         public bool? PortMapping { get; set; }
+        public bool? LocalDiscovery { get; set; }
         public string[]? Stun { get; set; }
         public TurnSettings? Turn { get; set; }
     }

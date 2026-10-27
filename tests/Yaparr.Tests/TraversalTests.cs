@@ -500,6 +500,9 @@ public class TraversalSettingsTests
         {
             var path = Path.Combine(dir, "network.json");
             Assert.True(TraversalOptions.Load(path).Enabled);
+            Assert.False(TraversalOptions.Load(path).LocalDiscovery);
+            File.WriteAllText(path, """{"localDiscovery":true}""");
+            Assert.True(TraversalOptions.Load(path).LocalDiscovery);
 
             File.WriteAllText(path, """{"portMapping":false,"stun":["stun.example.org:3478"],"turn":{"server":"turn.example.org:3478","username":"u","credential":"c","enabled":true,"always":true}}""");
             var loaded = TraversalOptions.Load(path);

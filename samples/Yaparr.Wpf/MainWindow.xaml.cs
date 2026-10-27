@@ -180,12 +180,14 @@ public partial class MainWindow : Window
         _data.SaveSettings(_settings);
 
         var identity = _data.LoadOrCreateIdentity();
+        var traversal = TraversalOptions.Load(Path.Combine(_data.Directory, "network.json"));
         _node = new ChatNode(new ChatNodeOptions
         {
             DisplayName = name,
             Identity = identity,
             HistoryStore = new FileHistoryStore(_data.HistoryDirectory),
-            Traversal = TraversalOptions.Load(Path.Combine(_data.Directory, "network.json")),
+            Traversal = traversal,
+            EnableLocalDiscovery = traversal.LocalDiscovery,
             Vpn = _vpn.LoadConfigIfEnabled(),
             Log = _log.Write,
         });
