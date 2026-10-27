@@ -22,6 +22,7 @@ public sealed class AppSettings
 {
     public List<KnownPeer> KnownPeers { get; set; } = new();
     public string? DisplayName { get; set; }
+    public bool VpnEnabled { get; set; }
     public List<string> Rooms { get; set; } = new();
     public List<PrivateRoomSetting> PrivateRooms { get; set; } = new();
 }
@@ -51,6 +52,7 @@ public sealed class AppData
 
     public string Directory { get; }
     public string HistoryDirectory => Path.Combine(Directory, "history");
+    public string VpnConfigPath => Path.Combine(Directory, "vpn.conf");
     private string SettingsPath => Path.Combine(Directory, "settings.json");
     private string IdentityPath => Path.Combine(Directory, "identity.key");
 
