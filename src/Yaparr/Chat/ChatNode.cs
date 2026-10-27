@@ -417,6 +417,7 @@ public sealed class ChatNode : IDisposable
     {
         var message = SignedMessage.Create(_identity, room.Key, _options.DisplayName, text, NextTimestamp());
         room.History.TryAdd(message);
+        _options.Log?.Invoke($"sending a message in '{room.Name}' to {room.MemberStates.Count} member(s)");
         foreach (var member in room.MemberStates.Values)
             Send(member.Connection, new Wire { Type = Wire.Message, Room = RefTo(room, member), Msgs = new[] { message } });
     }
@@ -670,6 +671,7 @@ public sealed class ChatNode : IDisposable
         var id = conn.RemoteId!.Value;
         if (!_peers.TryGetValue(id, out var state) || !ReferenceEquals(state.Connection, conn)) return;
         if (!_peers.TryRemove(new KeyValuePair<PeerId, PeerState>(id, state))) return;
+        _options.Log?.Invoke($"disconnected from {id.Short} at {conn.RemoteEndPoint}: connection {conn.CloseReason ?? "closed"}");
 
         foreach (var room in _rooms.Values)
         {
@@ -693,11 +695,20 @@ public sealed class ChatNode : IDisposable
 
     private void OnChatData(PeerConnection conn, byte channel, ReadOnlyMemory<byte> data, bool reliable)
     {
-        if (!reliable || conn.RemoteId is not { } id || !_peers.TryGetValue(id, out var peer)) return;
+        if (!reliable || conn.RemoteId is not { } id) return;
+        if (!_peers.TryGetValue(id, out var peer))
+        {
+            _options.Log?.Invoke($"chat data from {id.Short} arrived before the connection was registered");
+            return;
+        }
 
         Wire? wire;
         try { wire = JsonSerializer.Deserialize<Wire>(data.Span, Json); }
-        catch (JsonException) { return; }
+        catch (JsonException ex)
+        {
+            _options.Log?.Invoke($"unreadable chat data from {id.Short}: {ex.Message}");
+            return;
+        }
         if (wire == null) return;
 
         switch (wire.Type)
