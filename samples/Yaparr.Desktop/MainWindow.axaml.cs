@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using Avalonia;
@@ -161,7 +161,13 @@ public partial class MainWindow : Window
 
             StatusText.Text = $"Downloading Yaparr {update.Version}…";
             var path = await Updater.DownloadAsync(update, _cts.Token);
-            Updater.Install(path);
+            if (!await Updater.InstallAsync(path, _cts.Token))
+            {
+                StatusText.Text = "The update was not installed.";
+                return;
+            }
+            if (!OperatingSystem.IsWindows() && Environment.ProcessPath is { } exe)
+                Process.Start(new ProcessStartInfo(exe) { UseShellExecute = false });
             (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
         }
         catch (OperationCanceledException) { }

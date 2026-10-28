@@ -2,6 +2,7 @@
 using System.IO;
 using System.Net.Http;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
 
@@ -13,16 +14,29 @@ public static class Updater
 {
     private static readonly HttpClient Http = CreateClient();
 
-    /// <summary>The installer is an MSI, so self-update is Windows only; other platforms update through their package.</summary>
+    /// <summary>Windows ships an MSI and Debian/Ubuntu a .deb; on other systems there is no installer to update from.</summary>
     public static string? Repository
     {
         get
         {
-            if (!OperatingSystem.IsWindows()) return null;
+            if (InstallerExtension is null) return null;
             var repo = Assembly.GetExecutingAssembly().GetCustomAttributes<AssemblyMetadataAttribute>()
                 .FirstOrDefault(a => a.Key == "UpdateRepository")?.Value;
             return string.IsNullOrWhiteSpace(repo) ? null : repo;
         }
+    }
+
+    private static string? InstallerExtension =>
+        OperatingSystem.IsWindows() ? ".msi" : OperatingSystem.IsLinux() ? ".deb" : null;
+
+    /// <summary>Debian architecture name of this process, as used in the .deb file name.</summary>
+    private static string DebArchitecture => RuntimeInformation.OSArchitecture == Architecture.Arm64 ? "arm64" : "amd64";
+
+    /// <summary>True if a release asset is the installer for this system.</summary>
+    public static bool IsInstaller(string name)
+    {
+        if (InstallerExtension is not { } ext || !name.EndsWith(ext, StringComparison.OrdinalIgnoreCase)) return false;
+        return ext != ".deb" || name.EndsWith($"_{DebArchitecture}.deb", StringComparison.OrdinalIgnoreCase);
     }
 
     public static Version CurrentVersion
@@ -50,7 +64,7 @@ public static class Updater
         foreach (var asset in root.GetProperty("assets").EnumerateArray())
         {
             var name = asset.GetProperty("name").GetString() ?? "";
-            if (!name.EndsWith(".msi", StringComparison.OrdinalIgnoreCase)) continue;
+            if (!IsInstaller(name)) continue;
 
             string? sha = null;
             if (asset.TryGetProperty("digest", out var digest) && digest.GetString() is { } d && d.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase))
@@ -89,9 +103,26 @@ public static class Updater
         return path;
     }
 
-    public static void Install(string msiPath)
+    /// <summary>
+    /// Starts the installer. On Windows msiexec replaces the app after this process exits, so the caller should shut
+    /// down. On Linux the package is installed first (asking for the password through the desktop), and the result says
+    /// whether it worked; the caller then restarts the app.
+    /// </summary>
+    public static async Task<bool> InstallAsync(string path, CancellationToken ct = default)
     {
-        Process.Start(new ProcessStartInfo("msiexec.exe", $"/i \"{msiPath}\"") { UseShellExecute = false });
+        if (OperatingSystem.IsWindows())
+        {
+            Process.Start(new ProcessStartInfo("msiexec.exe", $"/i \"{path}\"") { UseShellExecute = false });
+            return true;
+        }
+
+        // apt resolves dependencies and treats this as an upgrade; pkexec shows the usual graphical password prompt.
+        var psi = new ProcessStartInfo(File.Exists("/usr/bin/pkexec") ? "pkexec" : "apt-get") { UseShellExecute = false };
+        if (psi.FileName == "pkexec") psi.ArgumentList.Add("apt-get");
+        foreach (var arg in new[] { "install", "-y", "--allow-downgrades", path }) psi.ArgumentList.Add(arg);
+        using var process = Process.Start(psi) ?? throw new InvalidOperationException("Could not start the installer.");
+        await process.WaitForExitAsync(ct);
+        return process.ExitCode == 0;
     }
 
     private static bool TryParse(string? text, out Version version)
