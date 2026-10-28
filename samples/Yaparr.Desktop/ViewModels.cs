@@ -157,6 +157,18 @@ public sealed class ConversationVm : Observable
         }
     }
     public string Subtitle => IsRoom ? "Private room" : "Direct chat";
+    public bool IsDirect => !IsRoom;
+
+    /// <summary>Full peer ID of the other person in a direct chat.</summary>
+    public string? PeerId { get; init; }
+    public bool HasPeerId => PeerId != null;
+
+    private string _membersText = "";
+    public string MembersText
+    {
+        get => _membersText;
+        set { if (_membersText == value) return; _membersText = value; Raise(); }
+    }
     public string Initial => Avatars.Initial(Name);
     public IBrush Avatar => Avatars.BrushFor(Name);
     public bool HasUnread => _unread > 0;

@@ -223,8 +223,8 @@ public partial class MainWindow : Window
         NameText.Text = name;
         ProfileInitial.Text = Avatars.Initial(name);
         ProfileAvatar.Background = Avatars.BrushFor(name);
-        IdText.Text = _node.Id.Value;
-        ToolTip.SetTip(IdText, _node.Id.Value);
+        IdText.Text = _node.Id.Short;
+        ProfileIdText.Text = _node.Id.Value;
         _node.Start();
         UpdateStatus();
         RefreshPeers();
@@ -256,6 +256,9 @@ public partial class MainWindow : Window
                           (peers == 0 ? "  ·  looking for peers (the first search can take a while)…" : "") +
                           (_node.VpnState == Yaparr.Vpn.VpnState.Connecting ? "  ·  VPN connecting…" : "") +
                           (_node.NetworkStatus != NetworkStatus.Unknown ? "  ·  " + _node.NetworkStatus.Describe() : "");
+        ProfileNetText.Text = $"UDP port {_node.LocalPort}" +
+                              (_node.NetworkStatus != NetworkStatus.Unknown ? "\n" + _node.NetworkStatus.Describe() : "") +
+                              $"\nVPN: {_node.VpnState}";
     }
 
     private void OnPowerModeChanged(object sender, Microsoft.Win32.PowerModeChangedEventArgs e)
@@ -466,6 +469,7 @@ public partial class MainWindow : Window
 
         PeopleList.ItemsSource = people;
         PeopleCount.Text = $"{people.Count(p => p.Online)} online";
+        RefreshMembers();
     }
 
     private async void DirectChat_Click(object? sender, RoutedEventArgs e)
@@ -500,7 +504,7 @@ public partial class MainWindow : Window
                 return tcs.Task;
             }
             var title = (chat.Peer?.DisplayName ?? chat.PeerId.Short) + " (direct)";
-            conv = new ConversationVm(title, isRoom: false, chat.SendAsync, chat.Retry);
+            conv = new ConversationVm(title, isRoom: false, chat.SendAsync, chat.Retry) { PeerId = chat.PeerId.Value };
             chat.DeliveryChanged += s => UI(() => conv.ApplyDelivery(s));
             _directConversations[chat.PeerId] = conv;
         }
@@ -571,7 +575,10 @@ public partial class MainWindow : Window
         HeaderText.Text = _selected?.Name ?? "Welcome to Yaparr";
         HeaderSubtitle.Text = _selected?.Subtitle ?? "Serverless chat between friends";
         EmptyPanel.IsVisible = !has;
-        InviteButton.IsVisible = _selected?.HasInvite == true;
+        DetailsPanel.DataContext = _selected;
+        RoomToggle.IsEnabled = has;
+        if (!has) RoomToggle.IsChecked = false;
+        RefreshMembers();
         if (_selected != null)
         {
             _selected.Unread = 0;
@@ -585,6 +592,23 @@ public partial class MainWindow : Window
         if (_node == null) return;
         StatusText.Text = await Dialogs.CopyAsync(this, _node.Id.Value)
             ? "Your peer ID was copied to the clipboard."
+            : "Couldn't copy: another program is using the clipboard. Try again.";
+    }
+
+    private void RefreshMembers()
+    {
+        if (_selected is not { IsRoom: true } conv) return;
+        var room = _roomConversations.FirstOrDefault(kv => kv.Value == conv).Key;
+        if (room == null) return;
+        int others = room.Members.Count(m => m.Id != _node?.Id);
+        conv.MembersText = others == 0 ? "Only you so far" : $"You and {others} other{(others == 1 ? "" : "s")} online";
+    }
+
+    private async void CopyPeerId_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_selected?.PeerId is not { } id) return;
+        StatusText.Text = await Dialogs.CopyAsync(this, id)
+            ? "Their peer ID was copied to the clipboard."
             : "Couldn't copy: another program is using the clipboard. Try again.";
     }
 

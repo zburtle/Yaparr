@@ -5,6 +5,54 @@
         Title="Yaparr" Width="1080" Height="680" MinWidth="720" MinHeight="440"
         Background="{DynamicResource AppBg}">
     <Window.Styles>
+        <!-- Expandable headers: a flat toggle with a chevron that turns when open. -->
+        <Style Selector="ToggleButton.expander">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="6" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="CornerRadius" Value="10" />
+        </Style>
+        <Style Selector="ToggleButton.expander:pointerover /template/ ContentPresenter#PART_ContentPresenter, ToggleButton.expander:checked:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource Hover}" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink}" />
+        </Style>
+        <Style Selector="ToggleButton.expander:checked /template/ ContentPresenter#PART_ContentPresenter, ToggleButton.expander:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink}" />
+        </Style>
+        <Style Selector="ToggleButton.expander /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Foreground" Value="{DynamicResource Ink}" />
+        </Style>
+        <Style Selector="ToggleButton.expander TextBlock.chevron">
+            <Setter Property="Foreground" Value="{DynamicResource Muted}" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Text" Value="&#x25BC;" />
+        </Style>
+        <Style Selector="ToggleButton.expander:checked TextBlock.chevron">
+            <Setter Property="Text" Value="&#x25B2;" />
+        </Style>
+        <Style Selector="ToggleButton.expander:disabled TextBlock.chevron">
+            <Setter Property="IsVisible" Value="False" />
+        </Style>
+        <Style Selector="Border.details">
+            <Setter Property="Background" Value="{DynamicResource AppBg}" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="12" />
+        </Style>
+        <Style Selector="SelectableTextBlock.mono">
+            <Setter Property="FontFamily" Value="Consolas, Menlo, DejaVu Sans Mono, monospace" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <Style Selector="TextBlock.label">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource Muted}" />
+        </Style>
+
         <!-- Conversation list and people list: flat rows with a soft highlight. -->
         <Style Selector="ListBox.flat">
             <Setter Property="Background" Value="Transparent" />
@@ -161,17 +209,30 @@
             <!-- Conversations -->
             <Border Grid.Column="0" Classes="card" Margin="0,0,8,8">
                 <DockPanel>
-                    <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*,Auto" Margin="14,14,10,10">
-                        <Border x:Name="ProfileAvatar" Classes="avatar" Width="40" Height="40" Background="{DynamicResource Accent}">
-                            <TextBlock x:Name="ProfileInitial" FontSize="16" />
+                    <StackPanel DockPanel.Dock="Top" Margin="8,8,8,6">
+                        <ToggleButton x:Name="ProfileToggle" Classes="expander">
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                <Border x:Name="ProfileAvatar" Classes="avatar" Width="40" Height="40" Background="{DynamicResource Accent}">
+                                    <TextBlock x:Name="ProfileInitial" FontSize="16" />
+                                </Border>
+                                <StackPanel Grid.Column="1" Margin="10,0,6,0" VerticalAlignment="Center">
+                                    <TextBlock x:Name="NameText" FontWeight="SemiBold" FontSize="15" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock x:Name="IdText" Classes="muted small" TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                                <TextBlock Grid.Column="2" Classes="chevron" />
+                            </Grid>
+                        </ToggleButton>
+                        <Border Classes="details" Margin="4,4,4,0" IsVisible="{Binding #ProfileToggle.IsChecked}">
+                            <StackPanel Spacing="6">
+                                <TextBlock Classes="label" Text="YOUR PEER ID" />
+                                <SelectableTextBlock x:Name="ProfileIdText" Classes="mono" />
+                                <Button Content="Copy ID" HorizontalAlignment="Left" Padding="10,5" Click="CopyId_Click"
+                                        ToolTip.Tip="Copy your peer ID so others can open a direct chat with you" />
+                                <TextBlock Classes="label" Text="CONNECTION" Margin="0,6,0,0" />
+                                <TextBlock x:Name="ProfileNetText" Classes="small" TextWrapping="Wrap" />
+                            </StackPanel>
                         </Border>
-                        <StackPanel Grid.Column="1" Margin="10,0,6,0" VerticalAlignment="Center">
-                            <TextBlock x:Name="NameText" FontWeight="SemiBold" FontSize="15" TextTrimming="CharacterEllipsis" />
-                            <TextBlock x:Name="IdText" Classes="muted small" TextTrimming="CharacterEllipsis" />
-                        </StackPanel>
-                        <Button Grid.Column="2" Content="Copy ID" Classes="ghost" Click="CopyId_Click" VerticalAlignment="Center"
-                                ToolTip.Tip="Copy your peer ID so others can open a direct chat with you" />
-                    </Grid>
+                    </StackPanel>
 
                     <StackPanel DockPanel.Dock="Bottom" Margin="12,6,12,12" Spacing="6">
                         <Button Content="New private room" Classes="primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="CreateRoom_Click" />
@@ -214,15 +275,43 @@
             <!-- Chat -->
             <Border Grid.Column="1" Classes="card" Margin="0,0,8,8">
                 <Grid RowDefinitions="Auto,*,Auto">
-                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="20,14,14,12">
-                        <StackPanel VerticalAlignment="Center">
-                            <TextBlock x:Name="HeaderText" FontSize="17" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
-                                       Text="Welcome to Yaparr" />
-                            <TextBlock x:Name="HeaderSubtitle" Classes="muted small" Text="Serverless chat between friends" />
-                        </StackPanel>
-                        <Button x:Name="InviteButton" Grid.Column="1" Content="Copy invite" IsVisible="False" Click="CopyInvite_Click" VerticalAlignment="Center" />
-                    </Grid>
-                    <Border Grid.Row="0" Height="1" Background="{DynamicResource Line}" VerticalAlignment="Bottom" />
+                    <StackPanel Grid.Row="0">
+                        <ToggleButton x:Name="RoomToggle" Classes="expander" Margin="10,8,10,0" IsEnabled="False">
+                            <Grid ColumnDefinitions="*,Auto" Margin="4,2">
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock x:Name="HeaderText" FontSize="17" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                               Text="Welcome to Yaparr" />
+                                    <TextBlock x:Name="HeaderSubtitle" Classes="muted small" Text="Serverless chat between friends" />
+                                </StackPanel>
+                                <TextBlock Grid.Column="1" Classes="chevron" Margin="8,0,0,0" />
+                            </Grid>
+                        </ToggleButton>
+                        <Border x:Name="DetailsPanel" x:DataType="local:ConversationVm" Classes="details" Margin="14,6,14,0"
+                                IsVisible="{Binding #RoomToggle.IsChecked}">
+                            <StackPanel Spacing="6">
+                                <TextBlock Classes="label" Text="ROOM KEY (INVITE)" IsVisible="{Binding HasInvite}" />
+                                <SelectableTextBlock Classes="mono" Text="{Binding Invite}" IsVisible="{Binding HasInvite}" />
+                                <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasInvite}">
+                                    <Button Content="Copy invite" Click="CopyInvite_Click" />
+                                    <TextBlock Classes="muted small" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="320"
+                                               Text="Anyone who has this can join the room. Share it carefully." />
+                                </StackPanel>
+
+                                <TextBlock Classes="label" Text="PEER ID" IsVisible="{Binding HasPeerId}" />
+                                <SelectableTextBlock Classes="mono" Text="{Binding PeerId}" IsVisible="{Binding HasPeerId}" />
+                                <Button Content="Copy peer ID" HorizontalAlignment="Left" Click="CopyPeerId_Click" IsVisible="{Binding HasPeerId}" />
+
+                                <TextBlock Classes="label" Text="PEOPLE" Margin="0,4,0,0" IsVisible="{Binding IsRoom}" />
+                                <TextBlock Classes="small" Text="{Binding MembersText}" IsVisible="{Binding IsRoom}" />
+
+                                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,6,0,0" IsVisible="{Binding IsRoom}">
+                                    <Button Content="Rename…" Click="RenameRoom_Click" />
+                                    <Button Content="Leave room" Click="LeaveRoom_Click" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                        <Border Height="1" Margin="0,10,0,0" Background="{DynamicResource Line}" />
+                    </StackPanel>
 
                     <ListBox x:Name="MessageList" Grid.Row="1" Classes="chat" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                         <ListBox.ItemTemplate>
