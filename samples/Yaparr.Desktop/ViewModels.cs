@@ -109,6 +109,28 @@ public sealed class MessageVm : Observable
     };
 
     public string TimeText => Time.LocalDateTime.ToString("HH:mm");
+    public string FullTime => Time.LocalDateTime.ToString("dddd, MMMM d, yyyy  HH:mm:ss");
+
+    private bool _showDay;
+
+    /// <summary>True when this is the first message of its day, so a date line is shown above it.</summary>
+    public bool ShowDay
+    {
+        get => _showDay;
+        set { if (_showDay != value) { _showDay = value; Raise(); } }
+    }
+
+    public string DayLabel
+    {
+        get
+        {
+            var day = Time.LocalDateTime.Date;
+            var today = DateTime.Now.Date;
+            if (day == today) return "Today";
+            if (day == today.AddDays(-1)) return "Yesterday";
+            return day.Year == today.Year ? day.ToString("dddd, MMMM d") : day.ToString("dddd, MMMM d, yyyy");
+        }
+    }
     public bool ShowSender => !IsMine && !IsSystem;
     public bool IsOther => !IsMine && !IsSystem;
     public IBrush SenderBrush => Avatars.BrushFor(Sender);
@@ -231,12 +253,20 @@ public sealed class ConversationVm : Observable
 
     public string Label => Unread > 0 ? $"{Title}  ({Unread})" : Title;
 
+    // A date line goes above the first message of each day; only the inserted message and the one after it can change.
+    private void MarkDays(int index)
+    {
+        for (int j = index; j <= index + 1 && j < Messages.Count; j++)
+            Messages[j].ShowDay = j == 0 || Messages[j - 1].Time.LocalDateTime.Date != Messages[j].Time.LocalDateTime.Date;
+    }
+
     public void Add(MessageVm message)
     {
         if (message.Id != null && !_ids.Add(message.Id)) return;
         if (message.Id != null && _delivery.TryGetValue(message.Id, out var status)) message.Delivery = status;
         int i = Messages.Count;
-        while (i > 0 && Messages[i - 1].Time > message.Time && !Messages[i - 1].IsSystem) i--;
+        while (i > 0 && Messages[i - 1].Time > message.Time) i--;
         Messages.Insert(i, message);
+        MarkDays(i);
     }
 }

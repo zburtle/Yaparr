@@ -224,6 +224,7 @@ public partial class MainWindow : Window
             DefaultTurn = BuiltInRelay.Load(),
             EnableLocalDiscovery = traversal.LocalDiscovery,
             PeerCachePath = Path.Combine(_data.Directory, "peers.json"),
+            ClockOffsetsPath = Path.Combine(_data.Directory, "clocks.json"),
             Dht = new Yaparr.Discovery.Dht.DhtOptions { NodeCachePath = Path.Combine(_data.Directory, "dht-nodes.txt") },
             Vpn = _vpn.LoadConfigIfEnabled(),
             Log = _log.Write,

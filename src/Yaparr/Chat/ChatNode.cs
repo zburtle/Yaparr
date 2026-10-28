@@ -73,6 +73,9 @@ public sealed class ChatNodeOptions
     /// <summary>File where recently seen room members are remembered, so a restart can dial them directly. Null disables it.</summary>
     public string? PeerCachePath { get; init; }
 
+    /// <summary>Where the learned clock differences between people are kept, so history stays in order after a restart.</summary>
+    public string? ClockOffsetsPath { get; init; }
+
     /// <summary>How long to wait for a recipient to confirm a message before reporting it as not delivered.</summary>
     public TimeSpan AckTimeout { get; init; } = TimeSpan.FromSeconds(15);
 
@@ -147,6 +150,7 @@ public sealed partial class ChatNode : IDisposable
     private readonly ConcurrentDictionary<string, long> _seenDirect = new();
     private readonly ConcurrentDictionary<PeerId, Redial> _redial = new();
     private PeerCache _peerCache = null!;
+    private ClockOffsets _clocks = null!;
     private bool _started;
     private PortMapper? _mapper;
     private TurnClient? _turn;
@@ -197,6 +201,7 @@ public sealed partial class ChatNode : IDisposable
     {
         _options = options ?? new ChatNodeOptions();
         _peerCache = new PeerCache(_options.PeerCachePath);
+        _clocks = new ClockOffsets(_options.ClockOffsetsPath);
         _blobs = new BlobStore(_options.AttachmentDirectory);
         _turnOptions = _options.Traversal.Turn;
         _useDefaultRelay = _options.Traversal.UseDefaultRelay;
@@ -813,7 +818,8 @@ public sealed partial class ChatNode : IDisposable
         var info = _peers.TryGetValue(id, out var p)
             ? p.Info with { DisplayName = m.Name }
             : new PeerInfo(id, m.Name, null);
-        return BuildMessage(info, room.Name, m.Id, m.Text, DateTimeOffset.FromUnixTimeMilliseconds(m.Ts), catchUp);
+        long ts = m.From == Id.Value ? m.Ts : _clocks.Correct(m.From, m.Ts);
+        return BuildMessage(info, room.Name, m.Id, m.Text, DateTimeOffset.FromUnixTimeMilliseconds(ts), catchUp);
     }
 
     // A message whose text carries an attachment description is shown as the caption plus the attachment.
@@ -847,6 +853,7 @@ public sealed partial class ChatNode : IDisposable
                 continue;
             }
             received.Add(m.Id);
+            if (live) _clocks.Observe(m.From, m.Ts, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
             bool fresh = live && m.Ts >= DateTimeOffset.UtcNow.Subtract(LiveWindow).ToUnixTimeMilliseconds();
             if (!room.History.TryAdd(m)) continue;
             _options.Log?.Invoke($"message from {new PeerId(m.From).Short} in '{room.Name}' via {peer.Id.Short}{(fresh ? "" : " (catch-up)")}");
@@ -1205,7 +1212,8 @@ public sealed partial class ChatNode : IDisposable
             case Wire.Message when wire.Room == null && wire.Text != null && wire.Id != null:
                 Send(conn, new Wire { Type = Wire.Ack, Have = new[] { wire.Id } });
                 if (!_seenDirect.TryAdd(peer.Id.Value + wire.Id, Environment.TickCount64)) break;
-                var msg = BuildMessage(peer.Info, null, wire.Id, wire.Text, DateTimeOffset.FromUnixTimeMilliseconds(wire.Ts));
+                _clocks.Observe(peer.Id.Value, wire.Ts, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+                var msg = BuildMessage(peer.Info, null, wire.Id, wire.Text, DateTimeOffset.FromUnixTimeMilliseconds(_clocks.Correct(peer.Id.Value, wire.Ts)));
                 bool existed = _directChats.ContainsKey(peer.Id);
                 var chat = GetDirectChat(peer.Id);
                 if (!existed) IncomingDirectChat?.Invoke(chat);

@@ -125,7 +125,7 @@ public sealed class ConversationVm : Observable
         if (message.Id != null && !_ids.Add(message.Id)) return;
         if (message.Id != null && _delivery.TryGetValue(message.Id, out var status)) message.Delivery = status;
         int i = Messages.Count;
-        while (i > 0 && Messages[i - 1].Time > message.Time && !Messages[i - 1].IsSystem) i--;
+        while (i > 0 && Messages[i - 1].Time > message.Time) i--;
         Messages.Insert(i, message);
     }
 }

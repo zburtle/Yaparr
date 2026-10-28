@@ -321,6 +321,8 @@
                         <ListBox.ItemTemplate>
                             <DataTemplate x:DataType="local:MessageVm">
                                 <StackPanel Spacing="2">
+                                    <TextBlock Classes="sys" IsVisible="{Binding ShowDay}" Text="{Binding DayLabel}"
+                                               HorizontalAlignment="Center" FontWeight="SemiBold" Margin="0,10,0,6" />
                                     <TextBlock Classes="sys" IsVisible="{Binding IsSystem}" Text="{Binding Text}" />
                                     <TextBlock IsVisible="{Binding ShowSender}" Text="{Binding Sender}" Foreground="{Binding SenderBrush}"
                                                FontSize="12" FontWeight="SemiBold" Margin="10,6,0,0" />
@@ -337,7 +339,7 @@
                                                         HorizontalAlignment="Center" VerticalAlignment="Center" Click="Download_Click" />
                                             </Grid>
                                             <SelectableTextBlock Classes="body" IsVisible="{Binding HasText}" Text="{Binding Text}" TextWrapping="Wrap" />
-                                            <TextBlock Classes="time" Text="{Binding TimeText}" />
+                                            <TextBlock Classes="time" Text="{Binding TimeText}" ToolTip.Tip="{Binding FullTime}" />
                                         </StackPanel>
                                     </Border>
                                     <TextBlock Classes="status" Classes.failed="{Binding CanRetry}" IsVisible="{Binding HasStatus}" Text="{Binding Status}" />
