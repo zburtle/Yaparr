@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using Yaparr.Chat;
 using Yaparr.Discovery;
 
@@ -16,7 +16,8 @@ public class DeliveryTests
         var ra = await a.JoinRoomAsync("Lobby");
         await b.JoinRoomAsync("Lobby");
         await c.JoinRoomAsync("Lobby");
-        await TestUtil.WaitFor(() => ra.Members.Count == 2);
+        // Members also lists people known only through others; a message is confirmed per direct connection.
+        await TestUtil.WaitFor(() => ra.MemberStates.Count == 2);
 
         var seen = new ConcurrentQueue<DeliveryStatus>();
         ra.DeliveryChanged += seen.Enqueue;
