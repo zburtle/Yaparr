@@ -39,6 +39,9 @@ public sealed class PeerNetwork : IDisposable
 
     public event Action<PeerConnection>? ConnectionClosed;
 
+    /// <summary>A connection we started was closed before the other side proved who it was (nobody answered, or it timed out).</summary>
+    public event Action<IPEndPoint, string?>? ConnectFailed;
+
     public Func<PeerConnection, PeerConnection, bool>? RelayForwardPolicy { get; set; }
 
     public Func<PeerConnection, PeerId, bool>? RelayedAcceptPolicy { get; set; }
@@ -198,7 +201,11 @@ public sealed class PeerNetwork : IDisposable
         if (conn.IsRelayed && conn.Expected is { } target)
             _relayed.TryRemove(new KeyValuePair<PeerId, PeerConnection>(target, conn));
 
-        if (conn.RemoteId is not { } id) return;
+        if (conn.RemoteId is not { } id)
+        {
+            if (!conn.IsRelayed) ConnectFailed?.Invoke(conn.RemoteEndPoint, conn.CloseReason);
+            return;
+        }
         bool wasLive = _byPeer.TryRemove(new KeyValuePair<PeerId, PeerConnection>(id, conn));
 
         if (!conn.IsRelayed)

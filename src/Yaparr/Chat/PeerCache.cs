@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Text.Json;
 using Yaparr.Identity;
 
@@ -34,6 +34,32 @@ internal sealed class PeerCache
             _rooms = JsonSerializer.Deserialize<Dictionary<string, List<Entry>>>(File.ReadAllText(path), new JsonSerializerOptions(JsonSerializerDefaults.Web)) ?? new();
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException) { }
+    }
+
+    // Our own addresses (public address, port mapping, relay) end up in the DHT and come back in searches, sometimes
+    // long after we stopped using them. They are kept under a reserved key so a restart can skip them too.
+    private const string SelfKey = "(self)";
+    private static readonly TimeSpan SelfAge = TimeSpan.FromHours(3);
+
+    public void RememberSelf(IPEndPoint endPoint)
+    {
+        long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        lock (_gate)
+        {
+            if (!_rooms.TryGetValue(SelfKey, out var list)) _rooms[SelfKey] = list = new();
+            string text = endPoint.ToString();
+            list.RemoveAll(e => e.EndPoint == text || e.Seen < now - (long)SelfAge.TotalSeconds);
+            list.Insert(0, new Entry { Id = "", EndPoint = text, Seen = now });
+            if (list.Count > 256) list.RemoveRange(256, list.Count - 256);
+            _dirty = true;
+        }
+    }
+
+    public bool IsSelf(IPEndPoint endPoint)
+    {
+        long cutoff = DateTimeOffset.UtcNow.Subtract(SelfAge).ToUnixTimeSeconds();
+        string text = endPoint.ToString();
+        lock (_gate) return _rooms.TryGetValue(SelfKey, out var list) && list.Any(e => e.EndPoint == text && e.Seen >= cutoff);
     }
 
     public void Remember(string roomKey, PeerId id, IPEndPoint endPoint)

@@ -170,6 +170,8 @@ public sealed partial class ChatNode : IDisposable
         public PeerId? Id { get; set; }
         public PeerId? Via { get; set; }
         public long LastDial;
+        public long NextDial;
+        public int Failures;
         public long Seen;
         /// <summary>Higher is tried first: addresses that worked before beat addresses from a search.</summary>
         public int Rank;
@@ -188,6 +190,7 @@ public sealed partial class ChatNode : IDisposable
         Network = new PeerNetwork(_identity, _mux, _options.Network);
         Network.ConnectionEstablished += OnConnectionEstablished;
         Network.ConnectionClosed += OnConnectionClosed;
+        Network.ConnectFailed += OnConnectFailed;
         Network.RegisterChannel(ChannelIds.Chat, OnChatData);
 
         if (_options.EnableRelaying)
@@ -369,6 +372,8 @@ public sealed partial class ChatNode : IDisposable
     private void PublishNetwork(NetworkStatus status)
     {
         NetworkStatus = status;
+        foreach (var own in new[] { status.Nat.PublicEndPoint, status.Mapping?.ExternalEndPoint, status.Relay })
+            if (own != null) _peerCache.RememberSelf(own);
         _options.Log?.Invoke($"network: {status.Describe()}");
         NetworkStatusChanged?.Invoke(status);
     }
@@ -910,6 +915,7 @@ public sealed partial class ChatNode : IDisposable
     {
         var state = new PeerState(conn);
         bool isNew = !_peers.ContainsKey(state.Id);
+        if (_candidates.TryGetValue(conn.RemoteEndPoint.ToString(), out var dialed)) { dialed.Failures = 0; dialed.NextDial = 0; }
         // The hello must be the first thing on the connection, so send it before anyone can find the state and write to it.
         Send(conn, new Wire { Type = Wire.Hello, Name = _options.DisplayName, Deg = _peers.Count + (isNew ? 1 : 0), Rooms = _rooms.Values.Select(r => RefTo(r, state)).ToArray() });
         _peers[state.Id] = state;
@@ -919,6 +925,17 @@ public sealed partial class ChatNode : IDisposable
         _options.Log?.Invoke(isNew
             ? $"connected to {state.Id.Short} at {conn.RemoteEndPoint}"
             : $"switched to a new connection to {state.Id.Short} at {conn.RemoteEndPoint}");
+    }
+
+    // An outgoing attempt that nobody answered. Back off further each time, so addresses that are dead (old
+    // announcements, other people's NAT mappings) stop using up the dial budget.
+    private void OnConnectFailed(IPEndPoint endPoint, string? reason)
+    {
+        if (!_candidates.TryGetValue(endPoint.ToString(), out var c) || IsConnectedTo(endPoint)) return;
+        c.Failures++;
+        long wait = Math.Min(RedialMs << Math.Min(c.Failures, 6), 10 * 60_000);
+        c.NextDial = Environment.TickCount64 + wait;
+        _options.Log?.Invoke($"could not connect to {endPoint}: {reason ?? "no answer"}; trying again in {wait / 1000}s");
     }
 
     private void OnConnectionClosed(PeerConnection conn)
@@ -1143,6 +1160,7 @@ public sealed partial class ChatNode : IDisposable
     // Discovery also returns our own announcement; that does not count as finding anyone.
     private bool IsSomeoneElse(IPEndPoint endPoint)
     {
+        if (_peerCache.IsSelf(endPoint)) return false;
         if (endPoint.Port == _mux.LocalPort && IPAddress.IsLoopback(endPoint.Address)) return false;
         var status = NetworkStatus;
         return !endPoint.Equals(status.Nat.PublicEndPoint) && !endPoint.Equals(status.Mapping?.ExternalEndPoint) && !endPoint.Equals(status.Relay);
@@ -1153,12 +1171,13 @@ public sealed partial class ChatNode : IDisposable
     private bool IsConnectedTo(IPEndPoint endPoint) => _peers.Values.Any(p => p.Connection.RemoteEndPoint.Equals(endPoint));
 
     private bool IsDialable(Candidate c) =>
-        (c.LastDial == 0 || Environment.TickCount64 - c.LastDial >= RedialMs) && CanDial(c);
+        (c.LastDial == 0 || Environment.TickCount64 - c.LastDial >= RedialMs) && Environment.TickCount64 >= c.NextDial && CanDial(c);
 
     private bool CanDial(Candidate c)
     {
         long now = Environment.TickCount64;
         if (c.EndPoint.Port == _mux.LocalPort && IPAddress.IsLoopback(c.EndPoint.Address)) return false;
+        if (_peerCache.IsSelf(c.EndPoint)) return false;
         if (IsBackedOff(c.EndPoint.ToString(), now)) return false;
         if (c.Id is { } id && (IsBackedOff(id.Value, now) || _peers.ContainsKey(id))) return false;
         return !IsConnectedTo(c.EndPoint);
@@ -1181,6 +1200,7 @@ public sealed partial class ChatNode : IDisposable
     {
         if (!ReserveDial()) return;
         c.LastDial = Environment.TickCount64;
+        _options.Log?.Invoke($"dialing {c.EndPoint}{(c.Id is { } who ? " (" + who.Short + ")" : "")}{(c.Failures > 0 ? $", attempt {c.Failures + 1}" : "")}");
         if (c.Id is { } id && c.Via is { } via)
         {
             _introducedVia.GetOrAdd(id, _ => new()).TryAdd(via, 0);
