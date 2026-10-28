@@ -1,0 +1,19 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Yaparr.Desktop.VpnDialog"
+        Title="VPN" SizeToContent="Height" Width="460" CanResize="False"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+    <StackPanel Margin="16" Spacing="4">
+        <TextBlock TextWrapping="Wrap" Margin="0,0,0,8"
+                   Text="Connect Yaparr to a WireGuard VPN to get around networks that block direct connections. Only Yaparr's own traffic goes through the VPN; other apps are not affected." />
+        <TextBlock x:Name="ConfigText" TextWrapping="Wrap" FontWeight="SemiBold" />
+        <TextBlock x:Name="StatusText" TextWrapping="Wrap" />
+        <TextBlock x:Name="NetworkText" TextWrapping="Wrap" Foreground="Gray" />
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,12,0,0">
+            <Button x:Name="ImportButton" Content="Import config…" Click="Import_Click" />
+            <Button x:Name="ToggleButton" Content="Connect" MinWidth="90" HorizontalContentAlignment="Center" Click="Toggle_Click" />
+            <Button x:Name="RemoveButton" Content="Remove" Click="Remove_Click" />
+            <Button Content="Close" IsCancel="True" MinWidth="70" HorizontalContentAlignment="Center" Click="Close_Click" />
+        </StackPanel>
+    </StackPanel>
+</Window>
