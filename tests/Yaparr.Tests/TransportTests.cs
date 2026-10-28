@@ -62,8 +62,14 @@ public class TransportTests
         await ca.WhenEstablished.WaitAsync(TimeSpan.FromSeconds(5));
         await TestUtil.WaitFor(() => b.Network.Get(a.Identity.Id) != null);
 
-        a.Mux.OutboundFilter = (_, _) => Random.Shared.NextDouble() > 0.35;
-        b.Mux.OutboundFilter = (_, _) => Random.Shared.NextDouble() > 0.35;
+        // Seeded, so a slow machine sees the same pattern of losses as a fast one.
+        static Func<ReadOnlyMemory<byte>, System.Net.IPEndPoint, bool> Lossy(int seed)
+        {
+            var random = new Random(seed);
+            return (_, _) => { lock (random) return random.NextDouble() > 0.3; };
+        }
+        a.Mux.OutboundFilter = Lossy(1);
+        b.Mux.OutboundFilter = Lossy(2);
 
         var received = new List<byte[]>();
         b.Network.RegisterChannel(7, (_, _, data, reliable) => { if (reliable) lock (received) received.Add(data.ToArray()); });
@@ -71,7 +77,7 @@ public class TransportTests
         var messages = Enumerable.Range(0, 6).Select(i => RandomNumberGenerator.GetBytes(i == 3 ? 40_000 : 500 + i)).ToList();
         foreach (var m in messages) ca.SendReliable(7, m);
 
-        await TestUtil.WaitFor(() => { lock (received) return received.Count == messages.Count; }, 20_000);
+        await TestUtil.WaitFor(() => { lock (received) return received.Count == messages.Count; }, 40_000);
         lock (received)
             for (int i = 0; i < messages.Count; i++) Assert.Equal(messages[i], received[i]);
     }

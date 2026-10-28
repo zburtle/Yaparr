@@ -70,17 +70,19 @@ public class DialLimitTests
     public async Task A_direct_chat_search_only_contacts_a_limited_number_of_addresses()
     {
         using var silent = new Listeners(100);
+        var log = new ConcurrentQueue<string>();
         using var node = new ChatNode(new ChatNodeOptions
         {
             DisplayName = "dialer",
             DiscoveryFactory = _ => new FixedDiscovery(silent.EndPoints),
+            Log = log.Enqueue,
         });
         node.Start();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1.5));
         try { await node.OpenDirectChatAsync(new Yaparr.Identity.PeerId(new string('a', 64)), cts.Token); }
         catch (OperationCanceledException) { }
 
-        Assert.InRange(silent.Contacted, 1, 16);
+        Assert.True(silent.Contacted is >= 1 and <= 16, $"contacted {silent.Contacted} addresses; node log: {string.Join(" | ", log)}");
     }
 
     [Fact]
