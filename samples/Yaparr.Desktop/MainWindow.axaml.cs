@@ -261,6 +261,7 @@ public partial class MainWindow : Window
                               $"\nVPN: {_node.VpnState}";
     }
 
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
     private void OnPowerModeChanged(object sender, Microsoft.Win32.PowerModeChangedEventArgs e)
     {
         if (e.Mode == Microsoft.Win32.PowerModes.Resume) _node?.NotifyNetworkChanged();

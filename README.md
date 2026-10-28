@@ -1,4 +1,4 @@
-﻿# Yaparr
+# Yaparr
 
 A .NET library for serverless chat. Peers find each other on the **BitTorrent mainline DHT**, then open
 **direct, encrypted UDP connections** using **hole punching** (no manual port forwarding). Supports one-to-one
@@ -22,14 +22,14 @@ await dm.SendAsync("hi");
 Try it: `dotnet run --project samples/Yaparr.Cli -- alice room lobby` in two terminals/machines.
 Run tests: `dotnet test`.
 
-**Desktop UI.** `samples/Yaparr.Wpf` is a very basic WPF chat window (Windows): a list of rooms and direct chats,
-messages, members, and buttons to join a public room, create or join a private room (with a copy-invite button) or
-open a direct chat by peer ID. Your name, identity key, joined rooms and message history are kept in
+**Desktop UI.** `samples/Yaparr.Desktop` is the chat app, built with Avalonia so it runs on Windows and Linux: a list of rooms and direct chats,
+messages with delivery marks, the people in the room, and buttons to create or join a private room (the room key and copy-invite button are under the room title) or
+open a direct chat by peer ID. `samples/Yaparr.Wpf` is the older Windows-only version and is no longer released. Your name, identity key, joined rooms and message history are kept in
 `%LOCALAPPDATA%\\Yaparr` so you keep the same peer ID and rejoin your rooms on the next start. To run two copies on
-one machine, give each its own folder: `Yaparr.Wpf.exe --name alice --data C:\\temp\\alice` (the launch profiles
-`alice` and `bob` do this). Run it with `dotnet run --project samples/Yaparr.Wpf`.
+one machine, give each its own folder: `Yaparr.Desktop.exe --name alice --data C:\\temp\\alice` (the launch profiles
+`alice` and `bob` do this). Run it with `dotnet run --project samples/Yaparr.Desktop`.
 
-**Installer.** `.\installer\build.ps1` publishes the WPF app self-contained (no .NET install needed on the target
+**Installer.** `.\installer\build.ps1` publishes the desktop app self-contained (no .NET install needed on the target
 machine) and wraps it in `artifacts\Yaparr-<version>-x64.msi` (about 48 MB) using WiX 5, which is restored as a local
 dotnet tool. The MSI installs per user to `%LOCALAPPDATA%\Programs\Yaparr` by default with a Start menu shortcut and needs no
 administrator rights. It is a single file: double-clicking opens a wizard (welcome, install folder, progress, finish

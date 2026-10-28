@@ -18,5 +18,7 @@ jobs:
       - name: Test
         run: dotnet test tests/Yaparr.Tests -c Release
 
-      - name: Build the WPF app
-        run: dotnet build samples/Yaparr.Wpf -c Release
+      - name: Build the desktop apps
+        run: |
+          dotnet build samples/Yaparr.Desktop -c Release
+          dotnet build samples/Yaparr.Wpf -c Release

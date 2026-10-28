@@ -1,0 +1,16 @@
+﻿{
+  "$schema": "https://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "Yaparr (your profile)": {
+      "commandName": "Project"
+    },
+    "alice (separate profile)": {
+      "commandName": "Project",
+      "commandLineArgs": "--name alice --data \"%TEMP%\\yaparr-desktop\\alice\""
+    },
+    "bob (separate profile)": {
+      "commandName": "Project",
+      "commandLineArgs": "--name bob --data \"%TEMP%\\yaparr-desktop\\bob\""
+    }
+  }
+}

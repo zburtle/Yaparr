@@ -5,7 +5,7 @@
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
-$project = Join-Path $root 'samples\Yaparr.Wpf\Yaparr.Wpf.csproj'
+$project = Join-Path $root 'samples\Yaparr.Desktop\Yaparr.Desktop.csproj'
 $out = Join-Path $root 'artifacts'
 $publish = Join-Path $out 'publish'
 
