@@ -33,7 +33,19 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         ConversationList.ItemsSource = _conversations;
-        VersionText.Text = "v" + Updater.CurrentVersion;
+        VersionText.Text = "Yaparr v" + Updater.CurrentVersion;
+
+        // The bar under the window shows only the latest alert, and clears itself after a while.
+        var alertTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
+        alertTimer.Tick += (_, _) => { alertTimer.Stop(); StatusText.Text = ""; };
+        StatusText.PropertyChanged += (_, e) =>
+        {
+            if (e.Property != TextBlock.TextProperty) return;
+            bool has = !string.IsNullOrEmpty(StatusText.Text);
+            AlertBar.IsVisible = has;
+            alertTimer.Stop();
+            if (has) alertTimer.Start();
+        };
         SelectOnRightClick(ConversationList);
         SelectOnRightClick(MessageList);
         Opened += async (_, _) =>
@@ -252,13 +264,18 @@ public partial class MainWindow : Window
     {
         if (_node == null) return;
         int peers = _node.ConnectedPeers.Count;
-        StatusText.Text = $"UDP port {_node.LocalPort}  ·  {peers} peer{(peers == 1 ? "" : "s")} connected" +
-                          (peers == 0 ? "  ·  looking for peers (the first search can take a while)…" : "") +
-                          (_node.VpnState == Yaparr.Vpn.VpnState.Connecting ? "  ·  VPN connecting…" : "") +
-                          (_node.NetworkStatus != NetworkStatus.Unknown ? "  ·  " + _node.NetworkStatus.Describe() : "");
-        ProfileNetText.Text = $"UDP port {_node.LocalPort}" +
-                              (_node.NetworkStatus != NetworkStatus.Unknown ? "\n" + _node.NetworkStatus.Describe() : "") +
-                              $"\nVPN: {_node.VpnState}";
+        var vpn = _node.VpnState;
+        var network = _node.NetworkStatus != NetworkStatus.Unknown ? _node.NetworkStatus.Describe() : null;
+
+        ConnSummary.Text = peers == 0
+            ? "Looking for peers…"
+            : $"{peers} peer{(peers == 1 ? "" : "s")} connected" + (vpn == Yaparr.Vpn.VpnState.Connecting ? " · VPN connecting…" : "");
+
+        var lines = new List<string> { $"{peers} peer{(peers == 1 ? "" : "s")} connected", $"UDP port {_node.LocalPort}" };
+        if (network != null) lines.Add(network);
+        lines.Add($"VPN: {vpn}");
+        if (peers == 0) lines.Add("Looking for peers. The first search can take a while.");
+        ConnectionText.Text = string.Join("\n", lines);
     }
 
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]

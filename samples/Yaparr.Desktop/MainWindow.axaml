@@ -34,6 +34,12 @@
         <Style Selector="ToggleButton.expander:checked TextBlock.chevron">
             <Setter Property="Text" Value="&#x25B2;" />
         </Style>
+        <Style Selector="ToggleButton.expander.up TextBlock.chevron">
+            <Setter Property="Text" Value="&#x25B2;" />
+        </Style>
+        <Style Selector="ToggleButton.expander.up:checked TextBlock.chevron">
+            <Setter Property="Text" Value="&#x25BC;" />
+        </Style>
         <Style Selector="ToggleButton.expander:disabled TextBlock.chevron">
             <Setter Property="IsVisible" Value="False" />
         </Style>
@@ -200,10 +206,10 @@
             </MenuItem>
         </Menu>
 
-        <DockPanel DockPanel.Dock="Bottom" Margin="16,2,16,6">
-            <TextBlock x:Name="VersionText" DockPanel.Dock="Right" Margin="12,0,0,0" Classes="muted small" />
-            <TextBlock x:Name="StatusText" Text="Starting…" Classes="muted small" TextTrimming="CharacterEllipsis" />
-        </DockPanel>
+        <!-- Latest alert only (copied, exported, update problems…); hidden when there is none. -->
+        <Border x:Name="AlertBar" DockPanel.Dock="Bottom" Margin="16,2,16,6" IsVisible="False">
+            <TextBlock x:Name="StatusText" Classes="muted small" TextTrimming="CharacterEllipsis" />
+        </Border>
 
         <Grid ColumnDefinitions="272,*,236" Margin="8,4,8,0">
             <!-- Conversations -->
@@ -228,8 +234,6 @@
                                 <SelectableTextBlock x:Name="ProfileIdText" Classes="mono" />
                                 <Button Content="Copy ID" HorizontalAlignment="Left" Padding="10,5" Click="CopyId_Click"
                                         ToolTip.Tip="Copy your peer ID so others can open a direct chat with you" />
-                                <TextBlock Classes="label" Text="CONNECTION" Margin="0,6,0,0" />
-                                <TextBlock x:Name="ProfileNetText" Classes="small" TextWrapping="Wrap" />
                             </StackPanel>
                         </Border>
                     </StackPanel>
@@ -366,6 +370,24 @@
                         <TextBlock x:Name="PeopleHeader" Text="People" FontWeight="SemiBold" FontSize="15" />
                         <TextBlock x:Name="PeopleCount" Grid.Column="1" Classes="muted small" VerticalAlignment="Center" />
                     </Grid>
+                    <StackPanel DockPanel.Dock="Bottom" Margin="8,0,8,8">
+                        <Border x:Name="ConnectionPanel" Classes="details" Margin="4,0,4,4" IsVisible="{Binding #ConnectionToggle.IsChecked}">
+                            <StackPanel Spacing="6">
+                                <TextBlock Classes="label" Text="STATUS" />
+                                <TextBlock x:Name="ConnectionText" Classes="small" TextWrapping="Wrap" />
+                                <TextBlock x:Name="VersionText" Classes="muted small" Margin="0,4,0,0" />
+                            </StackPanel>
+                        </Border>
+                        <ToggleButton x:Name="ConnectionToggle" Classes="expander up">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Connection" FontWeight="SemiBold" FontSize="13" />
+                                    <TextBlock x:Name="ConnSummary" Classes="muted small" TextTrimming="CharacterEllipsis" Text="Starting…" />
+                                </StackPanel>
+                                <TextBlock Grid.Column="1" Classes="chevron" Margin="8,0,0,0" />
+                            </Grid>
+                        </ToggleButton>
+                    </StackPanel>
                     <ListBox x:Name="PeopleList" Classes="flat people" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                         <ListBox.ItemTemplate>
                             <DataTemplate x:DataType="local:PeerVm">
