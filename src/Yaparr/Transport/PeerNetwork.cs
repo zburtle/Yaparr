@@ -178,12 +178,34 @@ public sealed class PeerNetwork : IDisposable
         if (!conn.IsRelayed) _endpointOwner[conn.RemoteEndPoint] = id;
         if (_byPeer.TryGetValue(id, out var existing) && !ReferenceEquals(existing, conn) && existing.State == ConnectionState.Established)
         {
+            // If an instance we already replaced comes back (the same identity running twice, say), stop swapping:
+            // keep the one that is alive and let the other go quietly, so it does not redial at once.
+            if (IsRetired(id, conn) && Environment.TickCount64 - existing.LastReceivedAt <= 15_000) { conn.Close(notifyPeer: false); return; }
             if (!Prefer(conn, existing)) { conn.Close(notifyPeer: true); return; }
+            Retire(id, existing);
             existing.Close(notifyPeer: true);
         }
         _byPeer[id] = conn;
         ConnectionEstablished?.Invoke(conn);
     }
+
+    // App instances of a peer that were pushed out by a newer one. A restarted peer never comes back as its old
+    // instance, so an old instance that reappears means two copies are running and fighting over the slot.
+    private readonly ConcurrentDictionary<string, long> _retired = new();
+    private const long RetiredMs = 60_000;
+
+    private static string InstanceKey(PeerId id, byte[]? instance) => id.Value + ":" + (instance == null ? "" : Convert.ToHexString(instance));
+
+    private void Retire(PeerId id, PeerConnection old)
+    {
+        long now = Environment.TickCount64;
+        foreach (var dead in _retired.Where(kv => now - kv.Value > RetiredMs).Select(kv => kv.Key).ToList()) _retired.TryRemove(dead, out _);
+        if (old.RemoteInstance != null) _retired[InstanceKey(id, old.RemoteInstance)] = now;
+    }
+
+    private bool IsRetired(PeerId id, PeerConnection candidate) =>
+        candidate.RemoteInstance != null && _retired.TryGetValue(InstanceKey(id, candidate.RemoteInstance), out var at)
+        && Environment.TickCount64 - at < RetiredMs;
 
     private static bool Prefer(PeerConnection candidate, PeerConnection current)
     {

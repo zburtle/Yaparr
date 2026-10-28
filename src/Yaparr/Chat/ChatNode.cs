@@ -558,10 +558,37 @@ public sealed partial class ChatNode : IDisposable
         });
     }
 
-    private const int MaxRedialAttempts = 12;
+    private sealed class EventWindow { public long Start; public int Count, Skipped; }
+    private readonly ConcurrentDictionary<PeerId, EventWindow> _eventWindows = new();
+
+    // Connection events for one peer are logged freely at first, then only a few per ten seconds. A connection
+    // that keeps flapping used to write over a thousand lines a minute and bury everything else in the log.
+    private void LogPeerEvent(PeerId peer, string message)
+    {
+        var w = _eventWindows.GetOrAdd(peer, _ => new EventWindow());
+        string? summary = null;
+        bool write;
+        lock (w)
+        {
+            long now = Environment.TickCount64;
+            if (now - w.Start >= 10_000)
+            {
+                if (w.Skipped > 0) summary = $"{peer.Short}: {w.Skipped} more connection event(s) in the last 10s were not logged";
+                w.Start = now; w.Count = 0; w.Skipped = 0;
+            }
+            write = ++w.Count <= 8;
+            if (!write) w.Skipped++;
+        }
+        if (summary != null) _options.Log?.Invoke(summary);
+        if (write) _options.Log?.Invoke(message);
+    }
+
+    private const int FastRedialAttempts = 12;
+    private const int MaxRedialAttempts = 60;
 
     // A peer that was connected and dropped is tried again quickly (1s, 2s, 4s ... up to 30s)
-    // instead of waiting for the next discovery round.
+    // instead of waiting for the next discovery round. A peer that stays away (asleep, offline) is then tried
+    // every 5 minutes for several hours, because dropping it would leave us disconnected until a restart.
     private async Task RedialLoopAsync()
     {
         using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(500));
@@ -579,11 +606,11 @@ public sealed partial class ChatNode : IDisposable
                     }
                     if (now < r.Next) continue;
                     r.Attempts++;
-                    r.Next = now + Math.Min(30_000, 1000L << Math.Min(r.Attempts, 5));
+                    r.Next = now + (r.Attempts > FastRedialAttempts ? 300_000 : Math.Min(30_000, 1000L << Math.Min(r.Attempts, 5)));
                     _options.Log?.Invoke($"reconnecting to {id.Short} at {r.EndPoint} (attempt {r.Attempts})");
                     Network.Connect(r.EndPoint, id);
                     // If the old address keeps failing the peer may have moved; its address record knows where it is now.
-                    if (r.Attempts is 3 or 7) _ = RefreshRedialAsync(id, r);
+                    if (r.Attempts is 3 or 7 || r.Attempts > FastRedialAttempts) _ = RefreshRedialAsync(id, r);
                 }
             }
         }
@@ -914,7 +941,7 @@ public sealed partial class ChatNode : IDisposable
     private void OnPeerEntersRoom(PeerState peer, ChatRoom room)
     {
         if (!room.MemberStates.TryAdd(peer.Id, peer)) return;
-        _options.Log?.Invoke($"{peer.Id.Short} entered room '{room.Name}'");
+        LogPeerEvent(peer.Id, $"{peer.Id.Short} entered room '{room.Name}'");
         if (!peer.Connection.IsRelayed) _peerCache.Remember(room.Key, peer.Id, peer.Connection.RemoteEndPoint);
 
         var others = room.MemberStates.Values.Where(m => m.Id != peer.Id && !m.Connection.IsRelayed).ToList();
@@ -1028,7 +1055,7 @@ public sealed partial class ChatNode : IDisposable
         foreach (var room in _rooms.Values)
             if (room.MemberStates.ContainsKey(state.Id)) room.MemberStates[state.Id] = state;
         ResendTo(state, o => o.DirectPeer == state.Id, o => o.DirectWire!);
-        _options.Log?.Invoke(isNew
+        LogPeerEvent(state.Id, isNew
             ? $"connected to {state.Id.Short} at {conn.RemoteEndPoint}"
             : $"switched to a new connection to {state.Id.Short} at {conn.RemoteEndPoint}");
     }
@@ -1049,7 +1076,7 @@ public sealed partial class ChatNode : IDisposable
         var id = conn.RemoteId!.Value;
         if (!_peers.TryGetValue(id, out var state) || !ReferenceEquals(state.Connection, conn)) return;
         if (!_peers.TryRemove(new KeyValuePair<PeerId, PeerState>(id, state))) return;
-        _options.Log?.Invoke($"disconnected from {id.Short} at {conn.RemoteEndPoint}: connection {conn.CloseReason ?? "closed"}");
+        LogPeerEvent(id, $"disconnected from {id.Short} at {conn.RemoteEndPoint}: connection {conn.CloseReason ?? "closed"}");
 
         foreach (var room in _rooms.Values)
         {
@@ -1098,7 +1125,7 @@ public sealed partial class ChatNode : IDisposable
                 peer.Name = string.IsNullOrWhiteSpace(wire.Name) ? peer.Id.Short : wire.Name;
                 peer.SetRooms(wire.Rooms ?? Array.Empty<string>());
                 peer.Degree = wire.Deg;
-                _options.Log?.Invoke($"hello from {peer.Id.Short} ({peer.Name}): declares {wire.Rooms?.Length ?? 0} room(s); we are in {_rooms.Count}");
+                LogPeerEvent(peer.Id, $"hello from {peer.Id.Short} ({peer.Name}): declares {wire.Rooms?.Length ?? 0} room(s); we are in {_rooms.Count}");
                 if (first && !EnforceCap(peer)) break;
                 if (first) PeerConnected?.Invoke(peer.Info);
                 foreach (var room in _rooms.Values)
