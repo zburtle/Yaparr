@@ -45,6 +45,8 @@ public sealed class DhtNode : IDisposable
 {
     private enum State { New, Queried, Responded, Failed }
 
+    private enum LookupKind { FindNode, GetPeers, Get }
+
     private sealed class Candidate
     {
         public required DhtContact Contact;
@@ -65,6 +67,11 @@ public sealed class DhtNode : IDisposable
     private readonly object _storeGate = new();
     private readonly Dictionary<string, Dictionary<IPEndPoint, long>> _store = new();
     private static readonly long PeerTtlMs = (long)TimeSpan.FromMinutes(30).TotalMilliseconds;
+
+    private sealed record StoredItem(byte[] Key, byte[] Salt, long Seq, byte[] Value, byte[] Signature, long ExpiresAt);
+    private readonly Dictionary<string, StoredItem> _items = new();
+    private static readonly long ItemTtlMs = (long)TimeSpan.FromHours(2).TotalMilliseconds;
+    private const int MaxStoredItems = 2048;
 
     private byte[] _secret = RandomNumberGenerator.GetBytes(16);
     private byte[] _prevSecret = RandomNumberGenerator.GetBytes(16);
@@ -122,7 +129,7 @@ public sealed class DhtNode : IDisposable
 
             if (_table.Count > 0)
             {
-                await LookupAsync(Id, wantPeers: false, ct).ConfigureAwait(false);
+                await LookupAsync(Id, LookupKind.FindNode, ct).ConfigureAwait(false);
                 _bootstrapped = true;
             }
             else _mux.Log?.Invoke($"DHT: none of {seeds.Count} bootstrap node(s) answered; UDP may be blocked");
@@ -171,10 +178,56 @@ public sealed class DhtNode : IDisposable
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
 
+    /// <summary>
+    /// Looks up a BEP 44 mutable item and returns the newest one whose signature is valid for this key and salt.
+    /// </summary>
+    public async Task<FoundItem?> GetMutableAsync(byte[] publicKey, byte[] salt, CancellationToken ct = default)
+    {
+        await BootstrapAsync(ct).ConfigureAwait(false);
+        FoundItem? best = null;
+        int valid = 0;
+        var gate = new object();
+        // Stop at the first valid value: an item is stored on several nodes, and waiting for
+        // every one of them would take most of a minute on the real network.
+        await LookupAsync(new DhtId(MutableItem.Target(publicKey, salt)), LookupKind.Get, ct, r =>
+        {
+            if (r.Bytes("v") is not { } v || r.Bytes("k") is not { } k || r.Bytes("sig") is not { } sig || r.Int("seq") is not { } seq) return;
+            if (!k.AsSpan().SequenceEqual(publicKey) || !MutableItem.Verify(publicKey, salt, seq, v, sig)) return;
+            lock (gate)
+            {
+                valid++;
+                if (best == null || seq > best.Seq) best = new FoundItem(v, seq, sig);
+            }
+        }, enough: () => { lock (gate) return valid >= 1; }).ConfigureAwait(false);
+        return best;
+    }
+
+    /// <summary>
+    /// Stores a BEP 44 mutable item on the nodes closest to its key. Returns how many nodes accepted it.
+    /// A node keeps only the highest sequence number, so <paramref name="seq"/> must grow with every update.
+    /// </summary>
+    public async Task<int> PutMutableAsync(byte[] seed, byte[] publicKey, byte[] salt, long seq, byte[] value, CancellationToken ct = default)
+    {
+        if (value.Length > MutableItem.MaxValueLength || salt.Length > MutableItem.MaxSaltLength)
+            throw new ArgumentException("Value or salt too large for a mutable item.");
+        await BootstrapAsync(ct).ConfigureAwait(false);
+        var (_, closest) = await LookupAsync(new DhtId(MutableItem.Target(publicKey, salt)), LookupKind.Get, ct).ConfigureAwait(false);
+
+        var sig = MutableItem.Sign(seed, publicKey, salt, seq, value);
+        var results = await Task.WhenAll(closest.Where(c => c.Token != null).Take(_options.K).Select(async c =>
+        {
+            var args = new BDict { ["k"] = publicKey, ["seq"] = seq, ["sig"] = sig, ["token"] = c.Token!, ["v"] = value };
+            if (salt.Length > 0) args["salt"] = salt;
+            return await QueryAsync(c.Contact.EndPoint, "put", args, ct).ConfigureAwait(false) != null;
+        })).ConfigureAwait(false);
+        SaveCachedNodes();
+        return results.Count(ok => ok);
+    }
+
     public async Task<IReadOnlyList<IPEndPoint>> GetPeersAsync(byte[] infoHash, CancellationToken ct = default)
     {
         await BootstrapAsync(ct).ConfigureAwait(false);
-        var (peers, _) = await LookupAsync(new DhtId(infoHash), wantPeers: true, ct).ConfigureAwait(false);
+        var (peers, _) = await LookupAsync(new DhtId(infoHash), LookupKind.GetPeers, ct).ConfigureAwait(false);
         return peers;
     }
 
@@ -184,7 +237,7 @@ public sealed class DhtNode : IDisposable
     public async Task<(int Accepted, IReadOnlyList<IPEndPoint> Peers)> AnnounceAndFindAsync(byte[] infoHash, CancellationToken ct = default)
     {
         await BootstrapAsync(ct).ConfigureAwait(false);
-        var (peers, closest) = await LookupAsync(new DhtId(infoHash), wantPeers: true, ct).ConfigureAwait(false);
+        var (peers, closest) = await LookupAsync(new DhtId(infoHash), LookupKind.GetPeers, ct).ConfigureAwait(false);
 
         var tasks = closest.Where(c => c.Token != null).Take(_options.K).Select(async c =>
         {
@@ -218,7 +271,7 @@ public sealed class DhtNode : IDisposable
         return results.Count(ok => ok);
     }
 
-    private async Task<(List<IPEndPoint> Peers, List<Candidate> Closest)> LookupAsync(DhtId target, bool wantPeers, CancellationToken ct)
+    private async Task<(List<IPEndPoint> Peers, List<Candidate> Closest)> LookupAsync(DhtId target, LookupKind kind, CancellationToken ct, Action<BDict>? onReply = null, Func<bool>? enough = null)
     {
         var candidates = new Dictionary<IPEndPoint, Candidate>();
         var peers = new HashSet<IPEndPoint>();
@@ -232,11 +285,15 @@ public sealed class DhtNode : IDisposable
 
         Comparer<Candidate> byDistance = Comparer<Candidate>.Create((a, b) => DhtId.CompareDistance(target, a.Contact.Id, b.Contact.Id));
 
-        for (int round = 0; round < 24; round++)
+        // Many nodes do not know BEP 44 and answer "get" with an error, so such a lookup has to ask more nodes at once.
+        int width = kind == LookupKind.Get ? _options.Alpha * 2 : _options.Alpha;
+        int maxRounds = kind == LookupKind.Get ? 12 : 24;
+        for (int round = 0; round < maxRounds; round++)
         {
             ct.ThrowIfCancellationRequested();
+            if (enough?.Invoke() == true) break;
             var closest = candidates.Values.Where(c => c.State != State.Failed).Order(byDistance).Take(_options.K).ToList();
-            var batch = closest.Where(c => c.State == State.New).Take(_options.Alpha).ToList();
+            var batch = closest.Where(c => c.State == State.New).Take(width).ToList();
             if (batch.Count == 0) break;
 
             await Task.WhenAll(batch.Select(async cand =>
@@ -244,14 +301,25 @@ public sealed class DhtNode : IDisposable
                 cand.State = State.Queried;
                 var args = new BDict();
                 string q;
-                if (wantPeers) { q = "get_peers"; args["info_hash"] = target.Bytes; }
-                else { q = "find_node"; args["target"] = target.Bytes; }
+                switch (kind)
+                {
+                    case LookupKind.GetPeers: q = "get_peers"; args["info_hash"] = target.Bytes; break;
+                    case LookupKind.Get: q = "get"; args["target"] = target.Bytes; break;
+                    default: q = "find_node"; args["target"] = target.Bytes; break;
+                }
 
                 var r = await QueryAsync(cand.Contact.EndPoint, q, args, ct).ConfigureAwait(false);
-                if (r == null) { cand.State = State.Failed; _table.Remove(cand.Contact.EndPoint); return; }
+                if (r == null)
+                {
+                    cand.State = State.Failed;
+                    // A node that does not know BEP 44 answers "get" with an error; that does not make it a dead node.
+                    if (kind != LookupKind.Get) _table.Remove(cand.Contact.EndPoint);
+                    return;
+                }
 
                 cand.State = State.Responded;
                 cand.Token = r.Bytes("token");
+                onReply?.Invoke(r);
                 lock (candidates)
                 {
                     foreach (var n in ParseCompactNodes(r.Bytes("nodes"))) Offer(n);
@@ -266,7 +334,7 @@ public sealed class DhtNode : IDisposable
         int queried = candidates.Values.Count(c => c.State != State.New);
         int answered = candidates.Values.Count(c => c.State == State.Responded);
         LastLookup = (queried, answered);
-        if (wantPeers && peers.Count == 0)
+        if (kind == LookupKind.GetPeers && peers.Count == 0)
             _mux.Log?.Invoke(answered == 0
                 ? $"DHT lookup: none of {queried} node(s) answered ({_table.Count} known); UDP replies may be blocked or not coming back"
                 : $"DHT lookup: {answered} of {queried} node(s) answered, but none knew any peers for this room");
@@ -351,6 +419,25 @@ public sealed class DhtNode : IDisposable
                 if (values.Count > 0) reply["values"] = values;
                 reply["nodes"] = CompactNodes(_table.Closest(new DhtId(hash), _options.K));
                 break;
+            case "get":
+                if (args.Bytes("target") is not { Length: DhtId.Length } getTarget) return;
+                reply["token"] = MakeToken(from.Address, _secret);
+                reply["nodes"] = CompactNodes(_table.Closest(new DhtId(getTarget), _options.K));
+                if (FindItem(getTarget) is { } found)
+                {
+                    reply["seq"] = found.Seq;
+                    // Only send the value if the asker does not already have this version or a newer one.
+                    if (args.Int("seq") is not { } have || found.Seq > have)
+                    {
+                        reply["v"] = found.Value;
+                        reply["k"] = found.Key;
+                        reply["sig"] = found.Signature;
+                    }
+                }
+                break;
+            case "put":
+                if (!HandlePut(args, from, tid)) return;
+                break;
             case "announce_peer":
                 if (args.Bytes("info_hash") is not { Length: DhtId.Length } ih || args.Bytes("token") is not { } token) return;
                 if (!ValidToken(from.Address, token)) { SendError(tid, from, 203, "bad token"); return; }
@@ -363,6 +450,54 @@ public sealed class DhtNode : IDisposable
                 return;
         }
         _mux.Send(Bencode.Encode(new BDict { ["t"] = tid, ["y"] = "r", ["r"] = reply }), from);
+    }
+
+    private StoredItem? FindItem(byte[] target)
+    {
+        lock (_storeGate)
+        {
+            var key = Convert.ToHexString(target);
+            if (!_items.TryGetValue(key, out var item)) return null;
+            if (item.ExpiresAt >= Environment.TickCount64) return item;
+            _items.Remove(key);
+            return null;
+        }
+    }
+
+    // BEP 44 put. Errors use the codes from the specification.
+    private bool HandlePut(BDict args, IPEndPoint from, byte[] tid)
+    {
+        if (args.Bytes("token") is not { } token || args.Bytes("v") is not { } v || args.Bytes("k") is not { } k
+            || args.Bytes("sig") is not { } sig || args.Int("seq") is not { } seq) return false;
+        var salt = args.Bytes("salt") ?? Array.Empty<byte>();
+
+        if (!ValidToken(from.Address, token)) { SendError(tid, from, 203, "bad token"); return false; }
+        if (v.Length > MutableItem.MaxValueLength) { SendError(tid, from, 205, "message too big"); return false; }
+        if (salt.Length > MutableItem.MaxSaltLength) { SendError(tid, from, 207, "salt too big"); return false; }
+        if (!MutableItem.Verify(k, salt, seq, v, sig)) { SendError(tid, from, 206, "invalid signature"); return false; }
+
+        var target = MutableItem.Target(k, salt);
+        lock (_storeGate)
+        {
+            var key = Convert.ToHexString(target);
+            long now = Environment.TickCount64;
+            if (_items.TryGetValue(key, out var existing) && existing.ExpiresAt >= now)
+            {
+                if (args.Int("cas") is { } cas && cas != existing.Seq) { SendError(tid, from, 301, "CAS mismatch"); return false; }
+                if (seq < existing.Seq || (seq == existing.Seq && !existing.Value.AsSpan().SequenceEqual(v)))
+                {
+                    SendError(tid, from, 302, "sequence number less than current");
+                    return false;
+                }
+            }
+            else if (_items.Count >= MaxStoredItems)
+            {
+                foreach (var dead in _items.Where(kv => kv.Value.ExpiresAt < now).Select(kv => kv.Key).ToList()) _items.Remove(dead);
+                if (_items.Count >= MaxStoredItems) { SendError(tid, from, 202, "storage full"); return false; }
+            }
+            _items[key] = new StoredItem(k, salt, seq, v, sig, now + ItemTtlMs);
+        }
+        return true;
     }
 
     private void SendError(byte[] tid, IPEndPoint to, int code, string text) =>

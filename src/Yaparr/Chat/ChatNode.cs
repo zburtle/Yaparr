@@ -22,6 +22,9 @@ public sealed class ChatNodeOptions
 
     public bool EnableLocalDiscovery { get; init; } = true;
 
+    /// <summary>Addresses to publish in our DHT address record besides the ones found automatically, for example a port you forwarded by hand.</summary>
+    public IReadOnlyList<IPEndPoint> AdvertisedEndPoints { get; init; } = Array.Empty<IPEndPoint>();
+
     public DhtOptions Dht { get; init; } = new();
     public PeerNetworkOptions Network { get; init; } = new();
 
@@ -158,7 +161,7 @@ public sealed partial class ChatNode : IDisposable
     private sealed class Redial
     {
         public Redial(IPEndPoint endPoint) => EndPoint = endPoint;
-        public IPEndPoint EndPoint { get; }
+        public IPEndPoint EndPoint { get; set; }
         public int Attempts;
         public long Next;
     }
@@ -206,7 +209,7 @@ public sealed partial class ChatNode : IDisposable
 
     private List<IPeerDiscovery> CreateDefaultDiscoveries()
     {
-        var members = new List<IPeerDiscovery> { new DhtDiscovery(_mux, _options.Dht) };
+        var members = new List<IPeerDiscovery> { new DhtDiscovery(_mux, _options.Dht, _identity) };
         if (_options.EnableLocalDiscovery)
         {
             try { members.Add(new LocalServiceDiscovery(_mux.LocalPort, _options.Log)); }
@@ -251,6 +254,8 @@ public sealed partial class ChatNode : IDisposable
             _ = RunLoopAsync(() => d.AnnounceAsync(peerTopic, _cts.Token), $"peer announce ({d.GetType().Name})");
         _ = Task.Run(OutboxLoopAsync);
         _ = Task.Run(RedialLoopAsync);
+        if (_discoveries.OfType<IPeerRecords>().Any())
+            _ = RunLoopAsync(PublishRecordAsync, "address record", null, TimeSpan.FromMinutes(3));
         System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged += OnAddressChanged;
         if (_options.Vpn != null || TraversalEnabled)
             _ = Task.Run(() => StartNetworkAsync(_cts.Token));
@@ -376,6 +381,7 @@ public sealed partial class ChatNode : IDisposable
             if (own != null) _peerCache.RememberSelf(own);
         _options.Log?.Invoke($"network: {status.Describe()}");
         NetworkStatusChanged?.Invoke(status);
+        if (_started) _ = PublishRecordAsync();
     }
 
     public void Dispose()
@@ -576,8 +582,90 @@ public sealed partial class ChatNode : IDisposable
                     r.Next = now + Math.Min(30_000, 1000L << Math.Min(r.Attempts, 5));
                     _options.Log?.Invoke($"reconnecting to {id.Short} at {r.EndPoint} (attempt {r.Attempts})");
                     Network.Connect(r.EndPoint, id);
+                    // If the old address keeps failing the peer may have moved; its address record knows where it is now.
+                    if (r.Attempts is 3 or 7) _ = RefreshRedialAsync(id, r);
                 }
             }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private readonly SemaphoreSlim _recordGate = new(1, 1);
+    private string _recordPublished = "";
+    private long _recordPublishedAt;
+    private const long RecordRefreshMs = 40 * 60_000;
+
+    /// <summary>
+    /// Publishes where we can be reached (our public address, port mapping and relay) as a signed record in the DHT.
+    /// Done when the addresses change and otherwise every 40 minutes, before the DHT forgets the old copy.
+    /// </summary>
+    private async Task PublishRecordAsync()
+    {
+        if (_cts.IsCancellationRequested || !await _recordGate.WaitAsync(0).ConfigureAwait(false)) return;
+        try
+        {
+            var status = NetworkStatus;
+            var endpoints = new[] { status.Mapping?.ExternalEndPoint, status.Nat.PublicEndPoint, status.Relay }
+                .OfType<IPEndPoint>().Concat(_options.AdvertisedEndPoints).Distinct().ToList();
+            if (endpoints.Count == 0) return;
+
+            string fingerprint = string.Join(",", endpoints);
+            long now = Environment.TickCount64;
+            if (fingerprint == _recordPublished && now - _recordPublishedAt < RecordRefreshMs) return;
+
+            int stored = 0;
+            foreach (var records in _discoveries.OfType<IPeerRecords>())
+                stored += await records.PublishAsync(endpoints, _cts.Token).ConfigureAwait(false);
+            _options.Log?.Invoke($"published our address ({fingerprint}) to the DHT; {stored} node(s) stored it");
+            if (stored > 0) { _recordPublished = fingerprint; _recordPublishedAt = now; }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _options.Log?.Invoke($"could not publish our address record: {ex.Message}");
+        }
+        finally { _recordGate.Release(); }
+    }
+
+    private readonly ConcurrentDictionary<PeerId, (long At, Task<IReadOnlyList<IPEndPoint>> Result)> _recordLookups = new();
+
+    // One lookup per peer at a time, and its answer is reused for a minute (a lookup can take many seconds).
+    private Task<IReadOnlyList<IPEndPoint>> LookupRecordCachedAsync(PeerId peer, CancellationToken ct)
+    {
+        long now = Environment.TickCount64;
+        if (_recordLookups.TryGetValue(peer, out var cached) && (!cached.Result.IsCompleted || now - cached.At < 60_000))
+            return cached.Result;
+        var task = LookupRecordAsync(peer, _cts.Token);
+        _recordLookups[peer] = (now, task);
+        return task;
+    }
+
+    private async Task<IReadOnlyList<IPEndPoint>> LookupRecordAsync(PeerId peer, CancellationToken ct)
+    {
+        var all = new List<IPEndPoint>();
+        foreach (var records in _discoveries.OfType<IPeerRecords>())
+        {
+            try { all.AddRange(await records.LookupAsync(peer, ct).ConfigureAwait(false)); }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _options.Log?.Invoke($"address lookup for {peer.Short} failed: {ex.Message}");
+            }
+        }
+        var usable = all.Distinct().Where(IsSomeoneElse).ToList();
+        _options.Log?.Invoke(usable.Count > 0
+            ? $"{peer.Short} published {usable.Count} address(es): {string.Join(", ", usable)}"
+            : $"no address record found for {peer.Short}");
+        return usable;
+    }
+
+    private async Task RefreshRedialAsync(PeerId id, Redial redial)
+    {
+        try
+        {
+            var fresh = await LookupRecordAsync(id, _cts.Token).ConfigureAwait(false);
+            if (fresh.Count == 0 || _peers.ContainsKey(id)) return;
+            redial.EndPoint = fresh[0];
+            redial.Next = 0;
+            foreach (var ep in fresh) Network.Connect(ep, id);
         }
         catch (OperationCanceledException) { }
     }
@@ -882,7 +970,24 @@ public sealed partial class ChatNode : IDisposable
 
             // A search can return hundreds of addresses; try a limited number, skipping ones tried a moment ago.
             long now = Environment.TickCount64;
-            var attempts = (await Discovery.FindPeersAsync(topic, ct).ConfigureAwait(false))
+            // The peer's own address record (if it published one) is the best lead, so ask for it alongside the topic search.
+            // It can take a while on the real network, so it runs on its own and is dialed whenever it arrives.
+            var recordTask = LookupRecordCachedAsync(peer, ct);
+            var recordConnected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _ = Task.Run(async () =>
+            {
+                var recorded = await recordTask.ConfigureAwait(false);
+                long at = Environment.TickCount64;
+                var started = new List<Task>();
+                foreach (var ep in recorded.Where(ep => at - _directDialed.GetValueOrDefault(ep.ToString()) > 10_000))
+                {
+                    _directDialed[ep.ToString()] = at;
+                    started.Add(Network.Connect(ep, peer).WhenEstablished);
+                }
+                if (started.Count > 0 && (await Task.WhenAny(started).ConfigureAwait(false)).IsCompletedSuccessfully) recordConnected.TrySetResult();
+            }, ct);
+            var found = await Discovery.FindPeersAsync(topic, ct).ConfigureAwait(false);
+            var attempts = found
                 .Where(IsSomeoneElse)
                 .Where(ep => now - _directDialed.GetValueOrDefault(ep.ToString()) > 10_000)
                 .OrderBy(_ => Random.Shared.Next())
@@ -890,6 +995,7 @@ public sealed partial class ChatNode : IDisposable
                 .Select(ep => { _directDialed[ep.ToString()] = now; return Network.Connect(ep, peer).WhenEstablished; })
                 .Cast<Task>()
                 .ToList();
+            attempts.Add(recordConnected.Task);
             attempts.Add(Task.Delay(TimeSpan.FromSeconds(3), ct));
             await Task.WhenAny(attempts).ConfigureAwait(false);
         }

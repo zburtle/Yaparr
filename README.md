@@ -58,6 +58,14 @@ alice and bob, stop bob, chat as alice, then start bob again to see the `missed`
 also *introduce* newcomers to each other over existing connections so mesh links punch simultaneously.
 Works for the common cone/endpoint-independent NATs.
 
+**Address records (BEP 44).** Besides announcing under a room's topic, every node publishes a small signed record,
+"my current addresses are X, Y, Z", as a BEP 44 mutable item (`PeerRecord`, `DhtNode.PutMutableAsync`). A newer record
+replaces the older one instead of piling up beside it, so opening a direct chat or redialling a peer that moved asks
+for exactly that peer's latest address (`IPeerRecords`). The DHT key is derived from the peer ID, so anyone who knows
+the ID can overwrite the record; readers therefore trust only the inner signature made with the peer's real identity
+key and ignore anything else. Records are republished when the addresses change and every 40 minutes. Add addresses
+the node cannot discover itself (for example a forwarded port) with `ChatNodeOptions.AdvertisedEndPoints`.
+
 **Same network.** The DHT only reports a peer's *public* address, and most home routers cannot loop traffic back
 to a device on their own LAN (no NAT hairpinning), so two peers behind one router would never connect that way.
 By default the node therefore also runs BEP 14 Local Service Discovery (multicast, `LocalServiceDiscovery`) and
