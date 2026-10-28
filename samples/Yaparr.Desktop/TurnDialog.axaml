@@ -1,4 +1,4 @@
-<Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="Yaparr.Desktop.TurnDialog"
         Title="TURN relay" SizeToContent="Height" Width="460" CanResize="False"
@@ -16,7 +16,7 @@
         <CheckBox x:Name="AlwaysBox" Margin="0,4,0,0" Content="Always relay (otherwise only when behind a NAT that blocks direct connections)" />
         <TextBlock x:Name="StatusText" TextWrapping="Wrap" Foreground="Gray" />
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,12,0,0">
-            <Button x:Name="SaveButton" Content="Save" MinWidth="80" HorizontalContentAlignment="Center" IsDefault="True" Click="Save_Click" />
+            <Button x:Name="SaveButton" Content="Save" Classes="primary" MinWidth="80" HorizontalContentAlignment="Center" IsDefault="True" Click="Save_Click" />
             <Button Content="Close" IsCancel="True" MinWidth="70" HorizontalContentAlignment="Center" Click="Close_Click" />
         </StackPanel>
     </StackPanel>

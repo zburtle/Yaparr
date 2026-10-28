@@ -221,6 +221,8 @@ public partial class MainWindow : Window
 
         Title = $"Yaparr — {name}";
         NameText.Text = name;
+        ProfileInitial.Text = Avatars.Initial(name);
+        ProfileAvatar.Background = Avatars.BrushFor(name);
         IdText.Text = _node.Id.Value;
         ToolTip.SetTip(IdText, _node.Id.Value);
         _node.Start();
@@ -339,7 +341,7 @@ public partial class MainWindow : Window
         if (string.IsNullOrWhiteSpace(label) || label == current) return;
 
         conv.Title = PrivatePrefix + label;
-        HeaderText.Text = conv.Title;
+        HeaderText.Text = conv.Name;
         if (_settings.PrivateRooms.FirstOrDefault(r => r.Key == conv.Invite) is { } saved)
         {
             saved.Label = label;
@@ -463,7 +465,7 @@ public partial class MainWindow : Window
             .ToList();
 
         PeopleList.ItemsSource = people;
-        PeopleHeader.Text = $"People  ({people.Count(p => p.Online)} online)";
+        PeopleCount.Text = $"{people.Count(p => p.Online)} online";
     }
 
     private async void DirectChat_Click(object? sender, RoutedEventArgs e)
@@ -566,7 +568,9 @@ public partial class MainWindow : Window
         bool has = _selected != null;
         InputBox.IsEnabled = SendButton.IsEnabled = has;
         MessageList.ItemsSource = _selected?.Messages;
-        HeaderText.Text = _selected?.Title ?? "Create a private room, join one with an invite, or open a direct chat to begin";
+        HeaderText.Text = _selected?.Name ?? "Welcome to Yaparr";
+        HeaderSubtitle.Text = _selected?.Subtitle ?? "Serverless chat between friends";
+        EmptyPanel.IsVisible = !has;
         InviteButton.IsVisible = _selected?.HasInvite == true;
         if (_selected != null)
         {

@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Input.Platform;
@@ -38,6 +38,7 @@ public static class Dialogs
         {
             var button = new Button { Content = label, MinWidth = 80, HorizontalContentAlignment = HorizontalAlignment.Center };
             button.Click += (_, _) => { result = label; dialog.Close(); };
+            if (panel.Children.Count == 0) button.Classes.Add("primary");
             panel.Children.Add(button);
         }
         await dialog.ShowDialog(owner);
