@@ -18,7 +18,6 @@ Improvements we have agreed to do later, roughly in priority order. Done items a
 - Desktop notifications and unread counts (including in the taskbar).
 - Queue messages typed while the app is offline and send them when it reconnects.
 - First-run guide that explains the VPN and TURN options in plain words.
-- Debian/Ubuntu installer (set aside earlier).
 - Wire `network.json`, the VPN and the new connection/delivery status into `Yaparr.Host` and the Flutter UI (on the shelved `flutter-ui` branch).
 - NAT-PMP / port mapping through the VPN tunnel.
 - Faster first DHT lookup.

@@ -141,6 +141,17 @@ public sealed partial class ChatNode : IDisposable
 
     private const int MinDegree = 2;
     private const int MaxCandidates = 512;
+
+    // Discovery results come from anyone (an address can be announced for a room it does not belong to), so the
+    // number of first-contact packets we send is limited: no more than DialBudget new dials per DialWindowMs, with
+    // the first DialImmediately dials of a top-up go out at once (small rooms connect without delay) and the rest are spread out by DialStaggerMs.
+    private const int DialBudget = 24;
+    private const long DialWindowMs = 30_000;
+    private const int DialStaggerMs = 250;
+    private const int DialImmediately = 3;
+    private const int MaxDirectDials = 16;
+    private readonly Queue<long> _dialTimes = new();
+    private readonly ConcurrentDictionary<string, long> _directDialed = new();
     private static readonly long BackoffMs = 60_000;
     private long RedialMs => (long)Math.Max(500, _options.DiscoveryInterval.TotalMilliseconds);
 
@@ -160,6 +171,8 @@ public sealed partial class ChatNode : IDisposable
         public PeerId? Via { get; set; }
         public long LastDial;
         public long Seen;
+        /// <summary>Higher is tried first: addresses that worked before beat addresses from a search.</summary>
+        public int Rank;
     }
 
     public ChatNode(ChatNodeOptions? options = null)
@@ -399,8 +412,10 @@ public sealed partial class ChatNode : IDisposable
             if (peer.Declares(RefFrom(room, peer))) OnPeerEntersRoom(peer, room);
         }
 
+        // The cache lists the most recently seen first.
+        int rank = _peerCache.For(room.Key).Count;
         foreach (var (cachedId, cachedEndPoint) in _peerCache.For(room.Key))
-            if (cachedId != Id) AddCandidate(cachedEndPoint, cachedId, null);
+            if (cachedId != Id) AddCandidate(cachedEndPoint, cachedId, null).Rank = Math.Max(1, rank--);
 
         _ = RunLoopAsync(() => DiscoverRoomAsync(room, _cts.Token), $"room {room.Name}", () => !_rooms.ContainsKey(room.Key));
         _ = RunLoopAsync(() => MaintainRoomAsync(room), $"maintain {room.Name}", () => !_rooms.ContainsKey(room.Key), _options.MaintenanceInterval);
@@ -860,8 +875,14 @@ public sealed partial class ChatNode : IDisposable
             ct.ThrowIfCancellationRequested();
             if (_peers.ContainsKey(peer)) return GetDirectChat(peer);
 
+            // A search can return hundreds of addresses; try a limited number, skipping ones tried a moment ago.
+            long now = Environment.TickCount64;
             var attempts = (await Discovery.FindPeersAsync(topic, ct).ConfigureAwait(false))
-                .Select(ep => Network.Connect(ep, peer).WhenEstablished)
+                .Where(IsSomeoneElse)
+                .Where(ep => now - _directDialed.GetValueOrDefault(ep.ToString()) > 10_000)
+                .OrderBy(_ => Random.Shared.Next())
+                .Take(MaxDirectDials)
+                .Select(ep => { _directDialed[ep.ToString()] = now; return Network.Connect(ep, peer).WhenEstablished; })
                 .Cast<Task>()
                 .ToList();
             attempts.Add(Task.Delay(TimeSpan.FromSeconds(3), ct));
@@ -1143,8 +1164,22 @@ public sealed partial class ChatNode : IDisposable
         return !IsConnectedTo(c.EndPoint);
     }
 
+    /// <summary>Takes one dial from the budget; false when too many were made recently.</summary>
+    private bool ReserveDial()
+    {
+        long now = Environment.TickCount64;
+        lock (_dialTimes)
+        {
+            while (_dialTimes.Count > 0 && now - _dialTimes.Peek() > DialWindowMs) _dialTimes.Dequeue();
+            if (_dialTimes.Count >= DialBudget) return false;
+            _dialTimes.Enqueue(now);
+            return true;
+        }
+    }
+
     private void Dial(Candidate c)
     {
+        if (!ReserveDial()) return;
         c.LastDial = Environment.TickCount64;
         if (c.Id is { } id && c.Via is { } via)
         {
@@ -1163,7 +1198,27 @@ public sealed partial class ChatNode : IDisposable
         int need = _options.TargetConnections - room.MemberStates.Count - pending;
         if (_options.MaxConnections > 0) need = Math.Min(need, _options.MaxConnections - _peers.Count - pending);
         if (need <= 0) return;
-        foreach (var c in _candidates.Values.Where(IsDialable).OrderBy(_ => Random.Shared.Next()).Take(need).ToList()) Dial(c);
+        // Known members first (best remembered first), then the rest in random order so no one address is favoured.
+        var wave = _candidates.Values.Where(IsDialable)
+            .OrderByDescending(c => c.Rank).ThenByDescending(c => c.Id != null).ThenBy(_ => Random.Shared.Next())
+            .Take(need).ToList();
+        for (int i = 0; i < wave.Count; i++)
+        {
+            if (i < DialImmediately) { Dial(wave[i]); continue; }
+            var candidate = wave[i];
+            int delay = (i - DialImmediately + 1) * DialStaggerMs;
+            // Mark it as pending now so the next top-up does not count it twice, then dial if it is still needed.
+            candidate.LastDial = Environment.TickCount64;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(delay, _cts.Token).ConfigureAwait(false);
+                    if (WantsMore(room) && CanDial(candidate)) Dial(candidate);
+                }
+                catch (OperationCanceledException) { }
+            });
+        }
     }
 
     private bool IsPinned(PeerState p) =>

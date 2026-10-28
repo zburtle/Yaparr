@@ -1,0 +1,112 @@
+﻿<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Yaparr.Desktop.App"
+             RequestedThemeVariant="Default">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="AppBg" Color="#F2F3F8" />
+                    <SolidColorBrush x:Key="Surface" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="Line" Color="#E6E8F0" />
+                    <SolidColorBrush x:Key="Muted" Color="#6B7280" />
+                    <SolidColorBrush x:Key="Ink" Color="#161821" />
+                    <SolidColorBrush x:Key="BubbleOther" Color="#EEF0F7" />
+                    <SolidColorBrush x:Key="BubbleMine" Color="#4F6BED" />
+                    <SolidColorBrush x:Key="Hover" Color="#F3F4FA" />
+                    <SolidColorBrush x:Key="Selected" Color="#E8ECFE" />
+                    <SolidColorBrush x:Key="Accent" Color="#4F6BED" />
+                    <SolidColorBrush x:Key="AccentHover" Color="#3F59D6" />
+                    <SolidColorBrush x:Key="Good" Color="#2E9E5B" />
+                    <SolidColorBrush x:Key="Warn" Color="#E38B00" />
+                    <SolidColorBrush x:Key="Bad" Color="#D93B3B" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="AppBg" Color="#101116" />
+                    <SolidColorBrush x:Key="Surface" Color="#1A1B22" />
+                    <SolidColorBrush x:Key="Line" Color="#292B36" />
+                    <SolidColorBrush x:Key="Muted" Color="#9AA0AE" />
+                    <SolidColorBrush x:Key="Ink" Color="#ECEEF4" />
+                    <SolidColorBrush x:Key="BubbleOther" Color="#262833" />
+                    <SolidColorBrush x:Key="BubbleMine" Color="#5870F0" />
+                    <SolidColorBrush x:Key="Hover" Color="#21232C" />
+                    <SolidColorBrush x:Key="Selected" Color="#262B45" />
+                    <SolidColorBrush x:Key="Accent" Color="#6E85F5" />
+                    <SolidColorBrush x:Key="AccentHover" Color="#8196F8" />
+                    <SolidColorBrush x:Key="Good" Color="#46C27A" />
+                    <SolidColorBrush x:Key="Warn" Color="#F2A93B" />
+                    <SolidColorBrush x:Key="Bad" Color="#F0605F" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+
+    <Application.Styles>
+        <FluentTheme />
+
+        <!-- Buttons: rounded, with an accent style for the main action. -->
+        <Style Selector="Button">
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="12,7" />
+            <Setter Property="Background" Value="{DynamicResource Hover}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+        </Style>
+        <Style Selector="Button.primary">
+            <Setter Property="Background" Value="{DynamicResource Accent}" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="Button.primary:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AccentHover}" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+        <Style Selector="Button.primary:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AccentHover}" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+        <Style Selector="Button.primary:disabled /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Opacity" Value="0.45" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+        <Style Selector="Button.ghost">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource Muted}" />
+            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style Selector="Button.ghost:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource Hover}" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink}" />
+        </Style>
+
+        <Style Selector="TextBox">
+            <Setter Property="CornerRadius" Value="8" />
+        </Style>
+        <Style Selector="Menu">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+
+        <!-- Small building blocks used by the windows. -->
+        <Style Selector="Border.card">
+            <Setter Property="Background" Value="{DynamicResource Surface}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="14" />
+        </Style>
+        <Style Selector="TextBlock.muted">
+            <Setter Property="Foreground" Value="{DynamicResource Muted}" />
+        </Style>
+        <Style Selector="TextBlock.small">
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style Selector="Border.avatar">
+            <Setter Property="CornerRadius" Value="999" />
+        </Style>
+        <Style Selector="Border.avatar > TextBlock">
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+    </Application.Styles>
+</Application>

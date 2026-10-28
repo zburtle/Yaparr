@@ -16,16 +16,14 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    runs-on: windows-latest
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 10.0.x
 
       - name: Work out the version
         id: version
@@ -48,6 +46,16 @@ jobs:
           }
           "tag=$tag" >> $env:GITHUB_OUTPUT
 
+  windows:
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
       - name: Test
         run: dotnet test tests/Yaparr.Tests -c Release
 
@@ -56,14 +64,56 @@ jobs:
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          $version = '${{ steps.version.outputs.tag }}'.TrimStart('v')
+          $version = '${{ needs.version.outputs.tag }}'.TrimStart('v')
           ./installer/build.ps1 -Version $version
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-windows
+          path: artifacts/*.msi
+          if-no-files-found: error
+
+  deb:
+    needs: version
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build package
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          version='${{ needs.version.outputs.tag }}'
+          bash installer/build-deb.sh "${version#v}" ${{ matrix.arch }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-deb-${{ matrix.arch }}
+          path: artifacts/*.deb
+          if-no-files-found: error
+
+  publish:
+    needs: [version, windows, deb]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: installer-*
+          path: installers
+          merge-multiple: true
+
       - name: Publish release
-        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $msi = Get-ChildItem artifacts -Filter *.msi | Select-Object -First 1
           # For a manual run the tag does not exist yet; --target makes gh create it on the built commit.
-          gh release create '${{ steps.version.outputs.tag }}' $msi.FullName --title '${{ steps.version.outputs.tag }}' --target '${{ github.sha }}' --generate-notes
+          gh release create '${{ needs.version.outputs.tag }}' installers/* --title '${{ needs.version.outputs.tag }}' --target '${{ github.sha }}' --generate-notes
