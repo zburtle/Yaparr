@@ -17,7 +17,10 @@ public partial class TurnDialog : Window
     {
         _node = node;
         _path = settingsPath;
-        var turn = TraversalOptions.Load(settingsPath).Turn;
+        var saved = TraversalOptions.Load(settingsPath);
+        var turn = saved.Turn;
+        DefaultBox.IsChecked = saved.UseDefaultRelay;
+        DefaultBox.IsVisible = BuiltInRelay.Load() != null;
         if (turn != null)
         {
             EnabledBox.IsChecked = turn.Enabled;
@@ -46,6 +49,7 @@ public partial class TurnDialog : Window
     {
         var server = ServerBox.Text?.Trim() ?? "";
         bool enabled = EnabledBox.IsChecked == true;
+        bool useDefault = DefaultBox.IsChecked == true;
         if (enabled && server.Length == 0)
         {
             await Dialogs.MessageAsync(this, "TURN relay", "Enter the TURN server address, for example turn.example.com:3478.");
@@ -65,6 +69,7 @@ public partial class TurnDialog : Window
         try
         {
             TraversalOptions.SaveTurn(_path, turn);
+            TraversalOptions.SaveDefaultRelay(_path, useDefault);
         }
         catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException)
         {
@@ -76,7 +81,7 @@ public partial class TurnDialog : Window
         StatusText.Text = enabled ? "Connecting to the relay…" : "Saved.";
         try
         {
-            if (_node != null) await _node.ConfigureTurnAsync(turn);
+            if (_node != null) await _node.ConfigureTurnAsync(turn, useDefault);
         }
         finally
         {

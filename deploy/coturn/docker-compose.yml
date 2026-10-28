@@ -1,0 +1,39 @@
+# TURN relay for Yaparr (coturn). Run with:  docker compose up -d
+# Copy .env.example to .env and fill it in first.
+services:
+  coturn:
+    image: coturn/coturn:4.6.3
+    container_name: yaparr-coturn
+    restart: unless-stopped
+    # Host networking: a TURN server hands out relay ports from a range, and mapping a range through Docker's
+    # port publishing is slow and error-prone.
+    network_mode: host
+    command:
+      - -n                                   # no config file, everything below
+      - --log-file=stdout
+      - --listening-port=${TURN_PORT:-443}
+      - --listening-ip=0.0.0.0
+      - --external-ip=${TURN_PUBLIC_IP}
+      - --realm=${TURN_REALM:-yaparr}
+      - --fingerprint
+      - --lt-cred-mech
+      - --user=${TURN_USER}:${TURN_PASSWORD}
+      - --min-port=${TURN_MIN_PORT:-49152}
+      - --max-port=${TURN_MAX_PORT:-49400}
+      - --no-tls
+      - --no-dtls
+      - --no-tcp-relay                       # Yaparr relays UDP only
+      - --no-cli
+      - --no-multicast-peers
+      - --stale-nonce=600
+      - --user-quota=12                      # allocations per user
+      - --total-quota=200
+      - --max-bps=${TURN_MAX_BPS:-250000}      # bytes/second per relayed session (about 2 Mbit/s)
+      # Do not let relayed traffic reach private networks behind the server.
+      - --denied-peer-ip=0.0.0.0-0.255.255.255
+      - --denied-peer-ip=10.0.0.0-10.255.255.255
+      - --denied-peer-ip=100.64.0.0-100.127.255.255
+      - --denied-peer-ip=127.0.0.0-127.255.255.255
+      - --denied-peer-ip=169.254.0.0-169.254.255.255
+      - --denied-peer-ip=172.16.0.0-172.31.255.255
+      - --denied-peer-ip=192.168.0.0-192.168.255.255

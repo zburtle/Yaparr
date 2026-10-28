@@ -16,6 +16,9 @@ public sealed class ChatNodeOptions
 
     public PeerIdentity? Identity { get; init; }
 
+    /// <summary>A relay the app ships with. Used when the user has not set up a TURN server of their own, unless they switched it off.</summary>
+    public TurnOptions? DefaultTurn { get; init; }
+
     public int ListenPort { get; init; }
 
     public Func<UdpMux, IPeerDiscovery>? DiscoveryFactory { get; init; }
@@ -139,6 +142,7 @@ public sealed partial class ChatNode : IDisposable
     private PortMapper? _mapper;
     private TurnClient? _turn;
     private TurnOptions? _turnOptions;
+    private bool _useDefaultRelay;
     private WireGuardTunnel? _tunnel;
     private readonly SemaphoreSlim _networkGate = new(1, 1);
 
@@ -185,6 +189,7 @@ public sealed partial class ChatNode : IDisposable
         _options = options ?? new ChatNodeOptions();
         _peerCache = new PeerCache(_options.PeerCachePath);
         _turnOptions = _options.Traversal.Turn;
+        _useDefaultRelay = _options.Traversal.UseDefaultRelay;
         _ownsIdentity = _options.Identity == null;
         _identity = _options.Identity ?? PeerIdentity.Generate();
         _mux = new UdpMux(_options.ListenPort) { Log = _options.Log };
@@ -321,9 +326,19 @@ public sealed partial class ChatNode : IDisposable
 
     public TurnOptions? Turn => _turnOptions;
 
-    public async Task ConfigureTurnAsync(TurnOptions? turn, CancellationToken ct = default)
+    /// <summary>The user's own TURN server if they set one up, otherwise the app's built-in relay (unless switched off).</summary>
+    internal TurnOptions? EffectiveTurn()
+    {
+        if (_turnOptions is { Enabled: true, Server.Length: > 0 }) return _turnOptions;
+        if (_useDefaultRelay && _options.DefaultTurn is { Server.Length: > 0 } builtIn)
+            return new TurnOptions { Server = builtIn.Server, Username = builtIn.Username, Credential = builtIn.Credential, Enabled = true };
+        return null;
+    }
+
+    public async Task ConfigureTurnAsync(TurnOptions? turn, bool? useDefaultRelay = null, CancellationToken ct = default)
     {
         _turnOptions = turn;
+        if (useDefaultRelay != null) _useDefaultRelay = useDefaultRelay.Value;
         Start();
         await RefreshNetworkAsync(ct).ConfigureAwait(false);
     }
@@ -341,7 +356,7 @@ public sealed partial class ChatNode : IDisposable
         try
         {
             var traversal = _options.Traversal;
-            var turnOptions = _turnOptions;
+            var turnOptions = EffectiveTurn();
             PortMapping? mapping = null;
             _turn?.Dispose();
             _turn = null;

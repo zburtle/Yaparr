@@ -216,6 +216,7 @@ public partial class MainWindow : Window
             Identity = identity,
             HistoryStore = new FileHistoryStore(_data.HistoryDirectory),
             Traversal = traversal,
+            DefaultTurn = BuiltInRelay.Load(),
             EnableLocalDiscovery = traversal.LocalDiscovery,
             PeerCachePath = Path.Combine(_data.Directory, "peers.json"),
             Dht = new Yaparr.Discovery.Dht.DhtOptions { NodeCachePath = Path.Combine(_data.Directory, "dht-nodes.txt") },

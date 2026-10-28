@@ -14,7 +14,23 @@
     <Company>Yaparr</Company>
   </PropertyGroup>
 
+  <!-- The built-in relay. Set TurnServer, TurnUser and TurnCredential as environment variables or build properties,
+       or put them in turn.local.props (not committed). Without them the app has no built-in relay. -->
+  <Import Project="turn.local.props" Condition="Exists('turn.local.props')" />
+
   <ItemGroup>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>TurnServer</_Parameter1>
+      <_Parameter2>$(TurnServer)</_Parameter2>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>TurnUser</_Parameter1>
+      <_Parameter2>$(TurnUser)</_Parameter2>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>TurnCredential</_Parameter1>
+      <_Parameter2>$(TurnCredential)</_Parameter2>
+    </AssemblyAttribute>
     <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
       <_Parameter1>UpdateRepository</_Parameter1>
       <_Parameter2>$(UpdateRepository)</_Parameter2>

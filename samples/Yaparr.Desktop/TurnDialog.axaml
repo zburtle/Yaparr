@@ -6,7 +6,9 @@
     <StackPanel Margin="16" Spacing="4">
         <TextBlock TextWrapping="Wrap" Margin="0,0,0,8"
                    Text="A TURN server relays Yaparr's traffic when two peers cannot connect directly (for example behind symmetric NAT). Messages stay end-to-end signed; the relay only forwards packets." />
-        <CheckBox x:Name="EnabledBox" Content="Use a TURN relay" />
+        <CheckBox x:Name="DefaultBox" Content="Use Yaparr's built-in relay when I have not set up my own" IsChecked="True" />
+        <TextBlock Text="Your own server" FontWeight="SemiBold" Margin="0,8,0,0" />
+        <CheckBox x:Name="EnabledBox" Content="Use my own TURN relay" />
         <TextBlock Text="Server (host:port)" Margin="0,4,0,0" />
         <TextBox x:Name="ServerBox" />
         <TextBlock Text="Username" Margin="0,4,0,0" />

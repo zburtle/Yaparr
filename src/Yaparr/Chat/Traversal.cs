@@ -17,6 +17,9 @@ public sealed class TraversalOptions
 
     public TurnOptions? Turn { get; init; }
 
+    /// <summary>Whether to fall back on the relay the app ships with when no server of the user's own is set up.</summary>
+    public bool UseDefaultRelay { get; init; } = true;
+
     public static TraversalOptions Load(string path)
     {
         if (!File.Exists(path)) return new TraversalOptions();
@@ -29,6 +32,7 @@ public sealed class TraversalOptions
                 Enabled = dto.Enabled ?? true,
                 PortMapping = dto.PortMapping ?? true,
                 LocalDiscovery = dto.LocalDiscovery ?? false,
+                UseDefaultRelay = dto.DefaultRelay ?? true,
                 StunServers = dto.Stun is { Length: > 0 } stun ? stun : NatProbe.DefaultServers,
                 Turn = dto.Turn is { Server: { Length: > 0 } server }
                     ? new TurnOptions { Server = server, Username = dto.Turn.Username ?? "", Credential = dto.Turn.Credential ?? "", Enabled = dto.Turn.Enabled ?? false, Always = dto.Turn.Always ?? false }
@@ -41,15 +45,27 @@ public sealed class TraversalOptions
         }
     }
 
-    public static void SaveTurn(string path, TurnOptions? turn)
+    public static void SaveDefaultRelay(string path, bool use)
     {
-        var root = new System.Text.Json.Nodes.JsonObject();
+        var root = LoadRoot(path);
+        root["defaultRelay"] = use;
+        File.WriteAllText(path, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+    }
+
+    private static System.Text.Json.Nodes.JsonObject LoadRoot(string path)
+    {
         try
         {
             if (File.Exists(path) && System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path)) is System.Text.Json.Nodes.JsonObject existing)
-                root = existing;
+                return existing;
         }
         catch (Exception ex) when (ex is JsonException or IOException) { }
+        return new System.Text.Json.Nodes.JsonObject();
+    }
+
+    public static void SaveTurn(string path, TurnOptions? turn)
+    {
+        var root = LoadRoot(path);
         root.Remove("turn");
         if (turn != null)
             root["turn"] = new System.Text.Json.Nodes.JsonObject
@@ -68,6 +84,7 @@ public sealed class TraversalOptions
         public bool? Enabled { get; set; }
         public bool? PortMapping { get; set; }
         public bool? LocalDiscovery { get; set; }
+        public bool? DefaultRelay { get; set; }
         public string[]? Stun { get; set; }
         public TurnSettings? Turn { get; set; }
     }
