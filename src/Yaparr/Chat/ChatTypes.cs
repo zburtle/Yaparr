@@ -9,6 +9,7 @@ namespace Yaparr.Chat;
 public static class ChannelIds
 {
     public const byte Chat = 1;
+    public const byte File = 3;
     public const byte Voice = 16;
 }
 
@@ -30,7 +31,7 @@ public enum DeliveryState
 
 public sealed record DeliveryStatus(string MessageId, DeliveryState State, int Delivered, int Total);
 
-public sealed record ChatMessage(PeerInfo From, string? Room, string Id, string Text, DateTimeOffset Timestamp, bool IsCatchUp = false);
+public sealed record ChatMessage(PeerInfo From, string? Room, string Id, string Text, DateTimeOffset Timestamp, bool IsCatchUp = false, Attachment? Attachment = null);
 
 public static class Topics
 {

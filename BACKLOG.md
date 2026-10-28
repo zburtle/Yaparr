@@ -15,6 +15,8 @@ Improvements we have agreed to do later, roughly in priority order. Done items a
 
 ## Polish
 
+- Direct connections through symmetric NATs: try the ports just above and below the one a peer advertises ("birthday" or port-prediction punching), so fewer pairs need the relay. Needs a symmetric-NAT test setup to verify.
+- Pictures: a "Save picture as" and a larger view, animated WebP, and checking more than the sender (for example members that already have the file) before showing a download button.
 - Desktop notifications and unread counts (including in the taskbar).
 - Queue messages typed while the app is offline and send them when it reconnects.
 - First-run guide that explains the VPN and TURN options in plain words.

@@ -5,6 +5,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
@@ -32,6 +33,9 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        DragDrop.SetAllowDrop(this, true);
+        AddHandler(DragDrop.DragOverEvent, OnDragOver);
+        AddHandler(DragDrop.DropEvent, OnDrop);
         ConversationList.ItemsSource = _conversations;
         VersionText.Text = "Yaparr v" + Updater.CurrentVersion;
 
@@ -216,6 +220,7 @@ public partial class MainWindow : Window
             Identity = identity,
             HistoryStore = new FileHistoryStore(_data.HistoryDirectory),
             Traversal = traversal,
+            AttachmentDirectory = Path.Combine(_data.Directory, "attachments"),
             DefaultTurn = BuiltInRelay.Load(),
             EnableLocalDiscovery = traversal.LocalDiscovery,
             PeerCachePath = Path.Combine(_data.Directory, "peers.json"),
@@ -224,6 +229,7 @@ public partial class MainWindow : Window
             Log = _log.Write,
         });
         _node.NetworkStatusChanged += _ => UI(UpdateStatus);
+        _node.AttachmentChanged += update => UI(() => OnAttachmentChanged(update));
         if (OperatingSystem.IsWindows()) Microsoft.Win32.SystemEvents.PowerModeChanged += OnPowerModeChanged;
         _linkTimer.Tick += (_, _) => RefreshPeers();
         _linkTimer.Start();
@@ -543,7 +549,100 @@ public partial class MainWindow : Window
     private MessageVm ToVm(ChatMessage m)
     {
         Remember(m.From);
-        return new(m.Timestamp, m.From.DisplayName, m.Text, m.IsCatchUp, isMine: _node != null && m.From.Id == _node.Id, id: m.Id);
+        var vm = new MessageVm(m.Timestamp, m.From.DisplayName, m.Text, m.IsCatchUp, isMine: _node != null && m.From.Id == _node.Id, id: m.Id, attachment: m.Attachment) { Source = m };
+        if (m.Attachment != null) TrackAttachment(vm);
+        return vm;
+    }
+
+    private readonly Dictionary<string, List<MessageVm>> _attachmentVms = new();
+
+    private void TrackAttachment(MessageVm vm)
+    {
+        var hash = vm.Attachment!.Hash;
+        if (!_attachmentVms.TryGetValue(hash, out var list)) _attachmentVms[hash] = list = new List<MessageVm>();
+        list.Add(vm);
+        _ = LoadAttachmentAsync(vm, force: false);
+    }
+
+    private async Task LoadAttachmentAsync(MessageVm vm, bool force)
+    {
+        if (_node == null || vm.Source == null || vm.Attachment is not { } a) return;
+        if (!_node.HasAttachment(a.Hash))
+        {
+            var state = await _node.FetchAttachmentAsync(vm.Source, force);
+            if (state != AttachmentState.Ready) { UI(() => vm.Apply(new AttachmentUpdate(a.Hash, state, 0, a.Size))); return; }
+        }
+        await ShowAttachmentAsync(vm, a.Hash);
+    }
+
+    private async Task ShowAttachmentAsync(MessageVm vm, string hash)
+    {
+        var node = _node;
+        var bytes = await Task.Run(() => node?.ReadAttachment(hash));
+        if (bytes != null) UI(() => vm.SetImage(bytes));
+    }
+
+    private void OnAttachmentChanged(AttachmentUpdate update)
+    {
+        if (!_attachmentVms.TryGetValue(update.Hash, out var list)) return;
+        foreach (var vm in list.ToList())
+        {
+            if (update.State == AttachmentState.Ready) _ = ShowAttachmentAsync(vm, update.Hash);
+            else vm.Apply(update);
+        }
+    }
+
+    private void Download_Click(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control { DataContext: MessageVm vm }) return;
+        vm.Apply(new AttachmentUpdate(vm.Attachment!.Hash, AttachmentState.Fetching, 0, vm.Attachment.Size));
+        _ = LoadAttachmentAsync(vm, force: true);
+    }
+
+    private async void Attach_Click(object? sender, RoutedEventArgs e)
+    {
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Send a picture or GIF",
+            AllowMultiple = false,
+            FileTypeFilter = new[] { new FilePickerFileType("Pictures") { Patterns = new[] { "*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp" } } },
+        });
+        if (files.Count > 0) await SendFileAsync(files[0]);
+    }
+
+    private static async Task<byte[]?> ReadLimitedAsync(Stream stream, int limit)
+    {
+        using var ms = new MemoryStream();
+        var buffer = new byte[81920];
+        int n;
+        while ((n = await stream.ReadAsync(buffer)) > 0)
+        {
+            if (ms.Length + n > limit) return null;
+            ms.Write(buffer, 0, n);
+        }
+        return ms.ToArray();
+    }
+
+    private async Task SendPictureAsync(byte[] original, string fileName)
+    {
+        var conv = _selected;
+        if (conv == null || _node == null) return;
+        try
+        {
+            var prepared = await Task.Run(() => ImageTools.Prepare(original, fileName));
+            var attachment = _node.PrepareAttachment(prepared.Bytes, prepared.FileName, prepared.Thumbnail);
+            var caption = InputBox.Text?.Trim() ?? "";
+            var id = await conv.Send(attachment.ToText(caption));
+            InputBox.Text = "";
+            var vm = new MessageVm(DateTimeOffset.Now, _node.DisplayName, caption, isMine: true, id: id, attachment: attachment);
+            vm.SetImage(prepared.Bytes);
+            conv.Add(vm);
+            ScrollToEnd();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            StatusText.Text = ex.Message;
+        }
     }
 
     private void OnMessage(ConversationVm conv, MessageVm message)
@@ -561,8 +660,61 @@ public partial class MainWindow : Window
 
     private async void Send_Click(object? sender, RoutedEventArgs e) => await SendAsync();
 
+    private static readonly string[] PictureExtensions = { ".png", ".jpg", ".jpeg", ".gif", ".webp" };
+
+    private static bool IsPictureName(string? name) =>
+        name != null && PictureExtensions.Contains(Path.GetExtension(name), StringComparer.OrdinalIgnoreCase);
+
+    private async Task SendFileAsync(IStorageFile file)
+    {
+        try
+        {
+            await using var stream = await file.OpenReadAsync();
+            var bytes = await ReadLimitedAsync(stream, 40 * 1024 * 1024);
+            if (bytes == null) { StatusText.Text = "That file is too big to send as a picture."; return; }
+            await SendPictureAsync(bytes, file.Name);
+        }
+        catch (IOException ex) { StatusText.Text = ex.Message; }
+        catch (UnauthorizedAccessException ex) { StatusText.Text = ex.Message; }
+    }
+
+    // Ctrl+V with a picture (or a copied picture file) on the clipboard sends it; ordinary text still pastes as text.
+    private async Task PasteImageAsync()
+    {
+        if (Clipboard is not { } clipboard || _selected == null) return;
+        if (!string.IsNullOrEmpty(await clipboard.TryGetTextAsync())) return;
+        var items = await clipboard.TryGetFilesAsync();
+        if (items?.OfType<IStorageFile>().FirstOrDefault(f => IsPictureName(f.Name)) is { } file)
+        {
+            await SendFileAsync(file);
+            return;
+        }
+        if (await clipboard.TryGetBitmapAsync() is { } bitmap)
+        {
+            using var ms = new MemoryStream();
+            bitmap.Save(ms);
+            await SendPictureAsync(ms.ToArray(), "pasted.png");
+        }
+    }
+
+    private void OnDragOver(object? sender, DragEventArgs e)
+    {
+        e.DragEffects = _selected != null && e.DataTransfer.TryGetFiles()?.OfType<IStorageFile>().Any(f => IsPictureName(f.Name)) == true
+            ? DragDropEffects.Copy
+            : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private async void OnDrop(object? sender, DragEventArgs e)
+    {
+        e.Handled = true;
+        if (e.DataTransfer.TryGetFiles()?.OfType<IStorageFile>().FirstOrDefault(f => IsPictureName(f.Name)) is { } file)
+            await SendFileAsync(file);
+    }
+
     private async void InputBox_KeyDown(object? sender, KeyEventArgs e)
     {
+        if (e.Key == Key.V && e.KeyModifiers == KeyModifiers.Control) _ = PasteImageAsync();
         if (e.Key == Key.Enter && e.KeyModifiers == KeyModifiers.None) { e.Handled = true; await SendAsync(); }
     }
 
@@ -589,7 +741,7 @@ public partial class MainWindow : Window
     {
         _selected = ConversationList.SelectedItem as ConversationVm;
         bool has = _selected != null;
-        InputBox.IsEnabled = SendButton.IsEnabled = has;
+        InputBox.IsEnabled = SendButton.IsEnabled = AttachButton.IsEnabled = has;
         MessageList.ItemsSource = _selected?.Messages;
         HeaderText.Text = _selected?.Name ?? "Welcome to Yaparr";
         HeaderSubtitle.Text = _selected?.Subtitle ?? "Serverless chat between friends";

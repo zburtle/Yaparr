@@ -181,6 +181,15 @@ Group members still relay for each other once connected, so a TURN server mainly
 - Catch-up needs someone online who holds the messages (no server stores them); members can only vouch for messages by signature, so a malicious member could inject messages from invented identities, but not from real members. No offline delivery for 1:1 chats. Relaying needs a mutual room member who is directly reachable; there are no dedicated relay servers, no relay bandwidth limits, and no relay chains.
 - Hole punching is verified only on loopback in tests; real-NAT behaviour should be tried across networks.
 
+## Pictures and GIFs
+
+A message can carry a picture or GIF (PNG, JPEG, GIF or WebP, up to 8 MB; you pick the file yourself, there is no GIF search service). The message holds only a small description: a hash of the file (covered by the message signature), its size and dimensions, and a tiny preview. The file itself is fetched on a separate channel from the sender or from any connected room member that already has it, checked against the hash, and kept under `attachments` in the app data folder for as long as the message history. Chat keeps flowing while a file downloads.
+
+- `ChatNode.PrepareAttachment` stores a file for sending; put the result in a message with `Attachment.ToText(caption)`. Received messages carry `ChatMessage.Attachment`, and `FetchAttachmentAsync` / `AttachmentChanged` / `ReadAttachment` fetch and read the file.
+- Files up to `MaxAutoFetchBytes` (8 MB) download automatically; while the traffic goes through our own TURN relay the limit is `MaxMeteredAutoFetchBytes` (1 MB) and bigger files wait for a click.
+- The Desktop app shrinks and re-encodes still pictures before sending, which also removes camera and location metadata; GIFs are sent as they are.
+- Headers are checked before anything is decoded (size, dimensions, GIF frame count), so a malicious file cannot make the app decode something huge.
+
 ## Reliability
 
 - **Delivery receipts.** `SendAsync` on a room or direct chat returns the message id. `DeliveryChanged` reports `Sending`, `Delivered`, `PartlyDelivered`, `NotDelivered` or `Queued` (nobody connected). Unconfirmed messages are sent again when the recipient reconnects, and `Retry(id)` sends them on demand.

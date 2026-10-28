@@ -59,6 +59,15 @@ public sealed class ChatNodeOptions
 
     public int MaxHistoryMessages { get; init; } = 500;
 
+    /// <summary>Where pictures and GIFs from messages are kept. Without a folder they are only kept in memory.</summary>
+    public string? AttachmentDirectory { get; init; }
+
+    /// <summary>Files up to this size are downloaded without asking.</summary>
+    public long MaxAutoFetchBytes { get; init; } = Attachment.MaxBytes;
+
+    /// <summary>The same limit while the traffic goes through our TURN relay, whose bandwidth is shared and limited.</summary>
+    public long MaxMeteredAutoFetchBytes { get; init; } = 1024 * 1024;
+
     public TimeSpan MaxHistoryAge { get; init; } = TimeSpan.FromDays(7);
 
     /// <summary>File where recently seen room members are remembered, so a restart can dial them directly. Null disables it.</summary>
@@ -188,6 +197,7 @@ public sealed partial class ChatNode : IDisposable
     {
         _options = options ?? new ChatNodeOptions();
         _peerCache = new PeerCache(_options.PeerCachePath);
+        _blobs = new BlobStore(_options.AttachmentDirectory);
         _turnOptions = _options.Traversal.Turn;
         _useDefaultRelay = _options.Traversal.UseDefaultRelay;
         _ownsIdentity = _options.Identity == null;
@@ -200,6 +210,7 @@ public sealed partial class ChatNode : IDisposable
         Network.ConnectionClosed += OnConnectionClosed;
         Network.ConnectFailed += OnConnectFailed;
         Network.RegisterChannel(ChannelIds.Chat, OnChatData);
+        Network.RegisterChannel(ChannelIds.File, OnFileData);
 
         if (_options.EnableRelaying)
         {
@@ -254,6 +265,7 @@ public sealed partial class ChatNode : IDisposable
         if (_started) return;
         _started = true;
         _mux.Start();
+        _ = Task.Run(() => _blobs.Sweep(_options.MaxHistoryAge));
         var peerTopic = Topics.ForPeer(Id);
         foreach (var d in _discoveries)
             _ = RunLoopAsync(() => d.AnnounceAsync(peerTopic, _cts.Token), $"peer announce ({d.GetType().Name})");
@@ -801,8 +813,14 @@ public sealed partial class ChatNode : IDisposable
         var info = _peers.TryGetValue(id, out var p)
             ? p.Info with { DisplayName = m.Name }
             : new PeerInfo(id, m.Name, null);
-        return new ChatMessage(info, room.Name, m.Id, m.Text, DateTimeOffset.FromUnixTimeMilliseconds(m.Ts), catchUp);
+        return BuildMessage(info, room.Name, m.Id, m.Text, DateTimeOffset.FromUnixTimeMilliseconds(m.Ts), catchUp);
     }
+
+    // A message whose text carries an attachment description is shown as the caption plus the attachment.
+    private static ChatMessage BuildMessage(PeerInfo from, string? room, string id, string text, DateTimeOffset time, bool catchUp = false) =>
+        Attachment.TryParse(text, out var attachment, out var caption)
+            ? new ChatMessage(from, room, id, caption, time, catchUp, attachment)
+            : new ChatMessage(from, room, id, text, time, catchUp);
 
     private static readonly TimeSpan LiveWindow = TimeSpan.FromMinutes(2);
 
@@ -832,7 +850,9 @@ public sealed partial class ChatNode : IDisposable
             bool fresh = live && m.Ts >= DateTimeOffset.UtcNow.Subtract(LiveWindow).ToUnixTimeMilliseconds();
             if (!room.History.TryAdd(m)) continue;
             _options.Log?.Invoke($"message from {new PeerId(m.From).Short} in '{room.Name}' via {peer.Id.Short}{(fresh ? "" : " (catch-up)")}");
-            room.RaiseMessage(ToChatMessage(room, m, catchUp: !fresh));
+            var shown = ToChatMessage(room, m, catchUp: !fresh);
+            room.RaiseMessage(shown);
+            AutoFetch(shown);
             if (fresh) ForwardToMembers(peer, room, m);
         }
     }
@@ -1185,11 +1205,12 @@ public sealed partial class ChatNode : IDisposable
             case Wire.Message when wire.Room == null && wire.Text != null && wire.Id != null:
                 Send(conn, new Wire { Type = Wire.Ack, Have = new[] { wire.Id } });
                 if (!_seenDirect.TryAdd(peer.Id.Value + wire.Id, Environment.TickCount64)) break;
-                var msg = new ChatMessage(peer.Info, null, wire.Id, wire.Text, DateTimeOffset.FromUnixTimeMilliseconds(wire.Ts));
+                var msg = BuildMessage(peer.Info, null, wire.Id, wire.Text, DateTimeOffset.FromUnixTimeMilliseconds(wire.Ts));
                 bool existed = _directChats.ContainsKey(peer.Id);
                 var chat = GetDirectChat(peer.Id);
                 if (!existed) IncomingDirectChat?.Invoke(chat);
                 chat.RaiseMessage(msg);
+                AutoFetch(msg);
                 break;
 
             case Wire.Message when wire.Room != null && wire.Msgs != null

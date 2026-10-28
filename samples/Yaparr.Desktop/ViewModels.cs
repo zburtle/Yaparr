@@ -41,10 +41,46 @@ public sealed class MessageVm : Observable
 {
     private DeliveryStatus? _delivery;
 
-    public MessageVm(DateTimeOffset time, string sender, string text, bool isCatchUp = false, bool isSystem = false, bool isMine = false, string? id = null)
+    private byte[]? _image;
+    private AttachmentState? _state;
+    private long _received;
+
+    public MessageVm(DateTimeOffset time, string sender, string text, bool isCatchUp = false, bool isSystem = false, bool isMine = false, string? id = null, Attachment? attachment = null)
     {
-        Time = time; Sender = sender; Text = text; IsCatchUp = isCatchUp; IsSystem = isSystem; IsMine = isMine; Id = id;
+        Time = time; Sender = sender; Text = text; IsCatchUp = isCatchUp; IsSystem = isSystem; IsMine = isMine; Id = id; Attachment = attachment;
     }
+
+    public Attachment? Attachment { get; }
+    public ChatMessage? Source { get; init; }
+    public bool HasAttachment => Attachment != null;
+    public bool HasText => Text.Length > 0;
+    public byte[]? Image => _image;
+    public byte[]? Thumbnail => Attachment?.Thumbnail;
+    public int PixelWidth => Attachment?.Width ?? 0;
+    public int PixelHeight => Attachment?.Height ?? 0;
+    public bool IsFetching => _image == null && _state == AttachmentState.Fetching;
+    public double ProgressPercent => Attachment is { Size: > 0 } a ? Math.Min(100, _received * 100.0 / a.Size) : 0;
+    public bool NeedsAction => _image == null && _state is AttachmentState.NeedsConfirmation or AttachmentState.Unavailable;
+    public string ActionText => _state == AttachmentState.NeedsConfirmation
+        ? $"Download · {FormatSize(Attachment?.Size ?? 0)}"
+        : "Not available yet · Try again";
+
+    public void SetImage(byte[] data) { _image = data; _state = AttachmentState.Ready; RaiseAttachment(); }
+
+    public void Apply(AttachmentUpdate update)
+    {
+        if (_image != null) return;
+        _state = update.State;
+        _received = update.Received;
+        RaiseAttachment();
+    }
+
+    private void RaiseAttachment()
+    {
+        Raise(nameof(Image)); Raise(nameof(IsFetching)); Raise(nameof(ProgressPercent)); Raise(nameof(NeedsAction)); Raise(nameof(ActionText));
+    }
+
+    public static string FormatSize(long bytes) => bytes >= 1 << 20 ? $"{bytes / 1048576.0:0.#} MB" : $"{Math.Max(1, bytes / 1024)} KB";
 
     public DateTimeOffset Time { get; }
     public string Sender { get; }

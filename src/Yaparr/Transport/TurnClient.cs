@@ -205,6 +205,14 @@ public sealed class TurnClient : IPacketRoute, IDisposable
         return true;
     }
 
+    /// <summary>True if traffic to this address is currently going through the relay instead of directly.</summary>
+    public bool UsesRelayFor(IPEndPoint to)
+    {
+        if (!IsActive || !_seen.TryGetValue(to, out var seen)) return false;
+        long now = Environment.TickCount64;
+        return now - Volatile.Read(ref seen.Relay) < RelayFreshMs && now - Volatile.Read(ref seen.Direct) >= RelayFreshMs;
+    }
+
     public RouteMode Choose(IPEndPoint to, ReadOnlySpan<byte> packet)
     {
         if (!IsActive || to.Equals(_server) || packet.Length < 2 || packet[0] != PeerConnection.Magic) return RouteMode.Direct;

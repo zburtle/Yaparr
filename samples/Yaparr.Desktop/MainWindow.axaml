@@ -328,7 +328,15 @@
                                             Classes.mine="{Binding IsMine}" Classes.other="{Binding IsOther}"
                                             Classes.missed="{Binding IsCatchUp}" Classes.failed="{Binding IsFailed}">
                                         <StackPanel Spacing="2">
-                                            <SelectableTextBlock Classes="body" Text="{Binding Text}" TextWrapping="Wrap" />
+                                            <Grid IsVisible="{Binding HasAttachment}" HorizontalAlignment="Left">
+                                                <local:PictureView Data="{Binding Image}" Thumbnail="{Binding Thumbnail}"
+                                                                   PixelWidth="{Binding PixelWidth}" PixelHeight="{Binding PixelHeight}" />
+                                                <ProgressBar IsVisible="{Binding IsFetching}" Value="{Binding ProgressPercent}" Maximum="100"
+                                                             Height="4" VerticalAlignment="Bottom" />
+                                                <Button IsVisible="{Binding NeedsAction}" Content="{Binding ActionText}" Classes="primary"
+                                                        HorizontalAlignment="Center" VerticalAlignment="Center" Click="Download_Click" />
+                                            </Grid>
+                                            <SelectableTextBlock Classes="body" IsVisible="{Binding HasText}" Text="{Binding Text}" TextWrapping="Wrap" />
                                             <TextBlock Classes="time" Text="{Binding TimeText}" />
                                         </StackPanel>
                                     </Border>
@@ -357,6 +365,8 @@
                         <DockPanel>
                             <Button x:Name="SendButton" DockPanel.Dock="Right" Content="Send" Classes="primary" CornerRadius="18" Padding="18,7"
                                     Margin="6,4,0,4" IsEnabled="False" Click="Send_Click" />
+                            <Button x:Name="AttachButton" DockPanel.Dock="Left" Content="📎" Padding="8,6" Margin="0,4,2,4" CornerRadius="18"
+                                    Background="Transparent" IsEnabled="False" ToolTip.Tip="Send a picture or GIF" Click="Attach_Click" />
                             <TextBox x:Name="InputBox" Classes="composer" PlaceholderText="Write a message" IsEnabled="False" KeyDown="InputBox_KeyDown" />
                         </DockPanel>
                     </Border>
