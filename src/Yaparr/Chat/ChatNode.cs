@@ -53,6 +53,9 @@ public sealed class ChatNodeOptions
 
     public TimeSpan PresenceInterval { get; init; } = TimeSpan.FromSeconds(30);
 
+    /// <summary>How often your place in a voice channel is announced again. Someone who stops announcing drops out after three intervals.</summary>
+    public TimeSpan VoiceInterval { get; init; } = TimeSpan.FromSeconds(10);
+
     public bool SyncHistory { get; init; } = true;
 
     public IChatHistoryStore? HistoryStore { get; init; }
@@ -216,6 +219,7 @@ public sealed partial class ChatNode : IDisposable
         Network.ConnectFailed += OnConnectFailed;
         Network.RegisterChannel(ChannelIds.Chat, OnChatData);
         Network.RegisterChannel(ChannelIds.File, OnFileData);
+        Network.RegisterChannel(ChannelIds.Voice, OnVoiceData);
 
         if (_options.EnableRelaying)
         {
@@ -480,6 +484,7 @@ public sealed partial class ChatNode : IDisposable
     private void LeaveRoomCore(ChatRoom room)
     {
         if (!_rooms.TryRemove(room.Key, out _)) return;
+        room.ActiveVoice?.Dispose();
         var gone = SignedPresence.Create(_identity, room.Key, _options.DisplayName, NextTimestamp(), gone: true);
         foreach (var peer in _peers.Values)
         {
@@ -1003,6 +1008,7 @@ public sealed partial class ChatNode : IDisposable
         if (!wasIndirect) room.RaiseJoined(peer.Info);
         AfterMembershipChange(room);
         SendPresenceTo(room, peer, includeCache: true);
+        SendVoiceStateTo(room, peer);
         ResendTo(peer, o => o.Room == room, o => new Wire { Type = Wire.Message, Room = RefTo(room, peer), Msgs = new[] { o.Signed! } });
 
         if (_options.SyncHistory)
@@ -1207,6 +1213,11 @@ public sealed partial class ChatNode : IDisposable
             case Wire.Presence when wire.Room != null && wire.Pres != null
                                     && ResolveRoom(peer, wire.Room) is { } presRoom && presRoom.MemberStates.ContainsKey(peer.Id):
                 OnPresence(peer, presRoom, wire.Pres);
+                break;
+
+            case Wire.Voice when wire.Room != null && wire.Vox != null
+                                 && ResolveRoom(peer, wire.Room) is { } voiceRoom && voiceRoom.MemberStates.ContainsKey(peer.Id):
+                OnVoiceState(peer, voiceRoom, wire.Vox);
                 break;
 
             case Wire.Message when wire.Room == null && wire.Text != null && wire.Id != null:
@@ -1454,6 +1465,7 @@ public sealed partial class ChatNode : IDisposable
     {
         long now = Environment.TickCount64;
         TopUpConnections(room);
+        MaintainVoice(room, now);
 
         if (now - room.LastPresenceAt >= _options.PresenceInterval.TotalMilliseconds)
         {

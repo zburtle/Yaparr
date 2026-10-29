@@ -314,6 +314,35 @@
                                 </StackPanel>
                             </StackPanel>
                         </Border>
+                        <Border x:Name="VoicePanel" x:DataType="local:ConversationVm" IsVisible="{Binding IsRoom}" Margin="14,8,14,0">
+                            <StackPanel Spacing="6">
+                                <WrapPanel>
+                                    <Button Content="🔊 Join voice" Classes="primary" IsVisible="{Binding CanJoinVoice}" Click="JoinVoice_Click" Margin="0,0,6,4" />
+                                    <Button Content="{Binding MuteText}" IsVisible="{Binding CanUseVoiceControls}" Click="MuteVoice_Click" Margin="0,0,6,4" />
+                                    <Button Content="{Binding DeafenText}" IsVisible="{Binding CanUseVoiceControls}" Click="DeafenVoice_Click" Margin="0,0,6,4" />
+                                    <Button Content="Leave voice" IsVisible="{Binding CanUseVoiceControls}" Click="LeaveVoice_Click" Margin="0,0,6,4" />
+                                    <Button Content="⚙ Voice settings" Click="VoiceSettings_Click" Margin="0,0,6,4" />
+                                </WrapPanel>
+                                <ItemsControl ItemsSource="{Binding VoiceMembers}" IsVisible="{Binding HasVoiceMembers}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="local:VoiceMemberVm">
+                                            <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,14,4">
+                                                <Border Width="28" Height="28" CornerRadius="14" Background="{Binding Avatar}"
+                                                        BorderBrush="{Binding Ring}" BorderThickness="3">
+                                                    <TextBlock Text="{Binding Initial}" Foreground="White" FontSize="12" FontWeight="SemiBold"
+                                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                </Border>
+                                                <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                                                <TextBlock Text="{Binding Status}" Classes="muted small" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
                         <Border Height="1" Margin="0,10,0,0" Background="{DynamicResource Line}" />
                     </StackPanel>
 

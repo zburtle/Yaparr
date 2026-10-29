@@ -260,6 +260,7 @@ public partial class MainWindow : Window
     {
         _linkTimer.Stop();
         if (OperatingSystem.IsWindows()) Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+        LeaveVoiceCore();
         _cts.Cancel();
         var node = _node;
         _node = null;
@@ -434,6 +435,7 @@ public partial class MainWindow : Window
         room.DeliveryChanged += s => UI(() => conv.ApplyDelivery(s));
 
         room.MessageReceived += m => UI(() => OnMessage(conv, ToVm(m)));
+        room.VoiceChanged += () => UI(() => RefreshVoice(conv, room));
         room.MemberJoined += p => UI(() => { Remember(p); RefreshPeers(); conv.Add(MessageVm.System($"{p.DisplayName} joined")); });
         room.MemberLeft += p => UI(() => { Remember(p); RefreshPeers(p.Id); conv.Add(MessageVm.System($"{p.DisplayName} left")); });
 
@@ -748,6 +750,7 @@ public partial class MainWindow : Window
         HeaderSubtitle.Text = _selected?.Subtitle ?? "Serverless chat between friends";
         EmptyPanel.IsVisible = !has;
         DetailsPanel.DataContext = _selected;
+        VoicePanel.DataContext = _selected;
         RoomToggle.IsEnabled = has;
         if (!has) RoomToggle.IsChecked = false;
         RefreshMembers();

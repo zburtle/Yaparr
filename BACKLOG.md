@@ -13,6 +13,17 @@ Improvements we have agreed to do later, roughly in priority order. Done items a
 - **Rate limits per peer.** Limit incoming connections and messages per peer so one bad peer cannot flood a room.
 - **Updater and installer signing.** Check that the auto-updater verifies what it downloads, and code-sign the MSI so Windows does not show an "unknown publisher" warning.
 
+## Voice
+
+- Push-to-talk in the Desktop app needs a global hotkey (Avalonia has none); the library already supports it.
+- Echo cancellation and noise suppression (use a headset for now), and per-person volume sliders in the UI.
+- Channels larger than about six people (target 15 to 20). A full mesh costs about 55 kbps per stream, so talking to 19 people is roughly 1 Mbps up; open mics, relay-bound peers and decoding many talkers are the pain points. Measure a real 8 to 10 person call first to see which limit hits. Staged plan:
+  - Stage 1, no protocol change (comfortable to about 10 to 12): don't send to deafened people (state is already published); only dial and send to people actually in the channel; decode and mix only the loudest ~4 talkers; lower bitrate (24 kbps) if needed.
+  - Stage 2, elected forwarder (15 to 20): one member with a good connection acts as a mini-SFU. Everyone sends once to it and it fans out. Chosen deterministically from the voice roster (best connectivity, then lowest ID), announced by a signed beacon, with failover to the next candidate. The forwarder pays about 1 Mbps up and adds one hop (about 20 to 60 ms). Needs a room-level voice key (per-sender keys, rotated when someone joins or leaves) so the forwarder only moves ciphertext and cannot listen; that is the main work.
+  - Stage 3, only if needed: a tree of several forwarders, each serving a subset (little gain below about 30 people).
+- Voice over the TURN relay is capped by the server's per-session limit; check that 32 kbps per listener fits.
+- Video and screen sharing on the same media layer.
+
 ## Polish
 
 - Direct connections through symmetric NATs: try the ports just above and below the one a peer advertises ("birthday" or port-prediction punching), so fewer pairs need the relay. Needs a symmetric-NAT test setup to verify.

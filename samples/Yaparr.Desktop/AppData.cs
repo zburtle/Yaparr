@@ -25,6 +25,14 @@ public sealed class AppSettings
     public bool VpnEnabled { get; set; }
     public List<string> Rooms { get; set; } = new();
     public List<PrivateRoomSetting> PrivateRooms { get; set; } = new();
+
+    /// <summary>Names of the microphone and speakers to use; empty means the system default.</summary>
+    public string? VoiceInput { get; set; }
+    public string? VoiceOutput { get; set; }
+    /// <summary>Loudness (0 to 100) the microphone has to reach before voice activation sends.</summary>
+    public int VoiceSensitivity { get; set; } = 12;
+    /// <summary>Send all the time instead of only when talking.</summary>
+    public bool VoiceAlwaysOn { get; set; }
 }
 
 public sealed class AppData

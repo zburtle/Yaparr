@@ -221,6 +221,37 @@ public sealed class ConversationVm : Observable
     public string? PeerId { get; init; }
     public bool HasPeerId => PeerId != null;
 
+    // ---- voice channel ----
+
+    public ObservableCollection<VoiceMemberVm> VoiceMembers { get; } = new();
+    public bool HasVoiceMembers => VoiceMembers.Count > 0;
+    public bool CanJoinVoice => IsRoom && !_inVoice;
+    public bool CanUseVoiceControls => _inVoice;
+
+    private bool _inVoice, _muted, _deafened;
+
+    public bool InVoice
+    {
+        get => _inVoice;
+        set { if (_inVoice == value) return; _inVoice = value; Raise(); Raise(nameof(CanJoinVoice)); Raise(nameof(CanUseVoiceControls)); }
+    }
+
+    public bool Muted
+    {
+        get => _muted;
+        set { if (_muted == value) return; _muted = value; Raise(); Raise(nameof(MuteText)); }
+    }
+
+    public bool Deafened
+    {
+        get => _deafened;
+        set { if (_deafened == value) return; _deafened = value; Raise(); Raise(nameof(DeafenText)); }
+    }
+
+    public string MuteText => _muted ? "🔇 Unmute" : "🎤 Mute";
+    public string DeafenText => _deafened ? "🎧 Undeafen" : "🎧 Deafen";
+    public void VoiceMembersChanged() => Raise(nameof(HasVoiceMembers));
+
     private string _membersText = "";
     public string MembersText
     {
@@ -269,4 +300,41 @@ public sealed class ConversationVm : Observable
         Messages.Insert(i, message);
         MarkDays(i);
     }
+}
+
+public sealed class VoiceMemberVm : Observable
+{
+    private bool _speaking, _muted, _deafened;
+
+    public VoiceMemberVm(string id, string name, bool isSelf)
+    {
+        Id = id; Name = name; IsSelf = isSelf;
+    }
+
+    public string Id { get; }
+    public string Name { get; }
+    public bool IsSelf { get; }
+    public string Initial => Avatars.Initial(Name);
+    public IBrush Avatar => Avatars.BrushFor(Name);
+
+    public bool Speaking
+    {
+        get => _speaking;
+        set { if (_speaking == value) return; _speaking = value; Raise(); Raise(nameof(Ring)); }
+    }
+
+    public bool Muted
+    {
+        get => _muted;
+        set { if (_muted == value) return; _muted = value; Raise(); Raise(nameof(Status)); }
+    }
+
+    public bool Deafened
+    {
+        get => _deafened;
+        set { if (_deafened == value) return; _deafened = value; Raise(); Raise(nameof(Status)); }
+    }
+
+    public string Status => _deafened ? "🎧✕" : _muted ? "🎤✕" : "";
+    public IBrush Ring => _speaking ? new SolidColorBrush(Color.Parse("#46A758")) : Brushes.Transparent;
 }

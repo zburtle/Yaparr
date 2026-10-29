@@ -41,6 +41,10 @@ public sealed class ChatRoom
 
     internal readonly ConcurrentDictionary<PeerId, PeerInfo> Indirect = new();
     internal readonly Dictionary<PeerId, PresenceEntry> Presence = new();
+    internal readonly Dictionary<PeerId, VoiceEntry> Voice = new();
+    internal Yaparr.Voice.VoiceSession? ActiveVoice;
+    internal bool SelfMuted, SelfDeafened;
+    internal long LastVoiceAt;
     internal readonly object IndirectGate = new();
     internal long LastPresenceAt, LastShuffleAt;
 
@@ -48,6 +52,19 @@ public sealed class ChatRoom
         MemberStates.Values.Select(s => s.Info).Concat(Indirect.Values).ToList();
 
     public event Action<ChatMessage>? MessageReceived;
+
+    /// <summary>Raised when someone joins or leaves the voice channel or mutes or unmutes themselves.</summary>
+    public event Action? VoiceChanged;
+    internal void RaiseVoiceChanged() => VoiceChanged?.Invoke();
+
+    /// <summary>The people currently in this room's voice channel, including you if you have joined.</summary>
+    public IReadOnlyList<VoiceParticipant> VoiceParticipants => _node.GetVoiceParticipants(this);
+
+    /// <summary>Your session in this room's voice channel, or null if you have not joined.</summary>
+    public Yaparr.Voice.VoiceSession? CurrentVoice => ActiveVoice;
+
+    /// <summary>Joins the voice channel. Dispose or Leave the returned session to leave.</summary>
+    public Yaparr.Voice.VoiceSession JoinVoice() => _node.JoinVoice(this);
     public event Action<PeerInfo>? MemberJoined;
     public event Action<PeerInfo>? MemberLeft;
     public event Action<DeliveryStatus>? DeliveryChanged;

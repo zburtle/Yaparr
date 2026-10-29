@@ -190,6 +190,16 @@ A message can carry a picture or GIF (PNG, JPEG, GIF or WebP, up to 8 MB; you pi
 - The Desktop app shrinks and re-encodes still pictures before sending, which also removes camera and location metadata; GIFs are sent as they are.
 - Headers are checked before anything is decoded (size, dimensions, GIF frame count), so a malicious file cannot make the app decode something huge.
 
+## Voice channels
+
+Every room has a voice channel you can join and leave, like on Discord. Joining announces you with a small signed statement that spreads through the room like presence (and carries your muted and deafened state); everyone in the channel then connects directly to each other and sends Opus audio (48 kHz, mono, about 32 kbps, 20 ms frames, with forward error correction) as unreliable encrypted datagrams on channel 16. The roster is visible to the whole room, whether or not you have joined.
+
+- `room.JoinVoice()` returns a `VoiceSession`; `Leave()` or `Dispose()` leaves. `room.VoiceParticipants` and `room.VoiceChanged` show who is in the channel.
+- The library does not touch audio devices: call `session.PushCapture(samples)` with microphone samples and play what `session.PullPlayback(buffer)` fills in. The Desktop app does this with SoundFlow (miniaudio) in `VoiceAudio.cs`.
+- `Activation` is voice activity (with `Sensitivity`), push-to-talk (`PushToTalkHeld`) or open microphone; `Muted`, `Deafened`, `SetVolume` and `SetLocalMute` do what they say. `SpeakingChanged` drives the speaking indicators.
+- Each person's audio goes through a jitter buffer that reorders packets, grows when the network is rough, and asks Opus to conceal or recover lost packets.
+- Everyone sends to everyone, so a channel is meant for small groups (about six people); larger groups would need one person forwarding for the others.
+
 ## Reliability
 
 - **Delivery receipts.** `SendAsync` on a room or direct chat returns the message id. `DeliveryChanged` reports `Sending`, `Delivered`, `PartlyDelivered`, `NotDelivered` or `Queued` (nobody connected). Unconfirmed messages are sent again when the recipient reconnects, and `Retry(id)` sends them on demand.
