@@ -28,7 +28,7 @@ Improvements we have agreed to do later, roughly in priority order. Done items a
   - Stage 2, elected forwarder (15 to 20): one member with a good connection acts as a mini-SFU. Everyone sends once to it and it fans out. Chosen deterministically from the voice roster (best connectivity, then lowest ID), announced by a signed beacon, with failover to the next candidate. The forwarder pays about 1 Mbps up and adds one hop (about 20 to 60 ms). Needs a room-level voice key (per-sender keys, rotated when someone joins or leaves) so the forwarder only moves ciphertext and cannot listen; that is the main work.
   - Stage 3, only if needed: a tree of several forwarders, each serving a subset (little gain below about 30 people).
 - Voice over the TURN relay is capped by the server's per-session limit; check that 32 kbps per listener fits.
-- Video and screen sharing on the same media layer.
+- Screen sharing: see "Screen sharing" below. Camera video would reuse the same pieces.
 
 ## Relaying
 
@@ -60,6 +60,19 @@ Not done:
 - The link code is encrypted with a passphrase and expires in a day, but can be used more than once. A one-time code would need the two devices to talk, for example through the DHT the way a private room is found.
 - Sync needs two of your devices online together. An always-on device (the CLI in a headless mode on a Raspberry Pi, a VPS or a home server) is just another device that never sleeps, and could hold history and receive direct messages for you. It can share the headless mode with volunteer relays.
 - No network storage for backups. The mainline DHT (BEP 44) only fits tiny short-lived records: about 1000 bytes, expires in around two hours without a republish, and many nodes do not support it. To evaluate later if offline delivery without running anything is wanted: Nostr relays for encrypted store-and-forward. They are third-party servers, use secp256k1 where we use P-256, see connection metadata, and keep messages as long as each relay chooses.
+
+## Screen sharing
+
+Not started. Sharing a screen or window is Windows only for now; watching should work wherever the app runs. The plan is to use FFmpeg as a separate program the app starts, not linked in:
+
+- Sender: FFmpeg's Windows screen sources (`ddagrab`, `gdigrab`) capture and encode. Use a hardware H.264 encoder (NVENC, AMF, Quick Sync) when the machine has one, otherwise VP8 or VP9 in software; pick with a short test at the start.
+- Transport: the encoded packets go over an unreliable channel, split into datagrams of about 1100 bytes with sequence numbers, and a keyframe is requested when a viewer joins or loses packets.
+- Viewer: FFmpeg decodes to raw frames drawn in a viewer tile. Windows bundles it; the `.deb` recommends the system `ffmpeg` package. Android can only watch (its own decoders handle both codecs).
+- A share is announced like a voice beacon (who, which screen or window, size, codec), and nothing is sent to anyone who has not clicked Watch. A blocked person's share is never shown.
+- Licence: ship an LGPL build only (no x264, which makes a build GPL), with its notices next to the existing ones. Check the H.264 patent position first, or ship VP8 and VP9 only. Which prebuilt LGPL builds exist is unchecked; if there is none, build a trimmed one in CI, which also keeps the installer small.
+- Bandwidth is the real limit. Default to 720p at 5 to 15 frames per second and 0.5 to 1 Mbit/s, and cap viewers at about 4 until there is a relay tree. Peer relays (256 KB/s in total) cannot carry video, and the TURN server has its own limits, so a viewer reached through it gets lower quality or is refused. Adaptive bitrate comes after.
+- Sound from the shared window needs its own capture; later.
+- Prototype first: one Windows share and one viewer on the same machine, to measure CPU use and bitrate before choosing codecs and settings.
 
 ## Android
 
