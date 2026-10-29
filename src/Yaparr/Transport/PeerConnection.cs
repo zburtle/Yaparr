@@ -16,6 +16,32 @@ public sealed class PeerNetworkOptions
     public TimeSpan IdleTimeout { get; init; } = TimeSpan.FromSeconds(35);
     public TimeSpan UnackedTimeout { get; init; } = TimeSpan.FromSeconds(15);
     public bool AcceptIncoming { get; init; } = true;
+
+    /// <summary>
+    /// The same settings for a connection that runs through another member: it checks more often, so that when the
+    /// member in between disappears without saying goodbye, both ends notice in seconds and move to another path.
+    /// </summary>
+    internal PeerNetworkOptions ForRelayedPaths() => new()
+    {
+        ConnectTimeout = ConnectTimeout,
+        HelloInterval = HelloInterval,
+        KeepAliveInterval = KeepAliveInterval < TimeSpan.FromSeconds(4) ? KeepAliveInterval : TimeSpan.FromSeconds(4),
+        IdleTimeout = IdleTimeout < TimeSpan.FromSeconds(15) ? IdleTimeout : TimeSpan.FromSeconds(15),
+        UnackedTimeout = UnackedTimeout,
+        AcceptIncoming = AcceptIncoming,
+        RelayBytesPerSecond = RelayBytesPerSecond,
+        RelayBytesPerSender = RelayBytesPerSender,
+        MaxRelayedPairs = MaxRelayedPairs,
+    };
+
+    /// <summary>The most this node forwards for other members, in bytes per second (the default is about 2 Mbit/s).</summary>
+    public int RelayBytesPerSecond { get; init; } = 256 * 1024;
+
+    /// <summary>The most it forwards for any one member (about 770 kbit/s, enough for a dozen voice streams).</summary>
+    public int RelayBytesPerSender { get; init; } = 96 * 1024;
+
+    /// <summary>How many pairs of members it relays between at the same time.</summary>
+    public int MaxRelayedPairs { get; init; } = 24;
 }
 
 public delegate void DataReceivedHandler(PeerConnection connection, byte channel, ReadOnlyMemory<byte> data, bool reliable);

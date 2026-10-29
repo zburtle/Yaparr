@@ -205,6 +205,9 @@ public sealed class TurnClient : IPacketRoute, IDisposable
         return true;
     }
 
+    /// <summary>The TURN server's address once it has been resolved. People's relay addresses live on this server too.</summary>
+    public IPEndPoint? ServerEndPoint => _server;
+
     /// <summary>True if traffic to this address is currently going through the relay instead of directly.</summary>
     public bool UsesRelayFor(IPEndPoint to)
     {

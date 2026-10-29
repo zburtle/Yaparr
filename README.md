@@ -81,6 +81,28 @@ members of a room it shares with both, and only over direct connections (no rela
 trying direct, and a direct path replaces a relayed one as soon as it works. `PeerInfo.IsRelayed` tells you which
 you have. Relayed paths add latency and spend the relay's bandwidth. Disable with `EnableRelaying = false`.
 
+Who relays is not a choice. A node relays when its network allows it (a public address, an open port mapping, or a
+router that keeps the same public port for every destination: `ChatNode.IsRelayCapable`) and refuses otherwise,
+so members behind strict routers never carry anyone's traffic. Members announce this to the people they are
+connected to (`Rly` in the hello, and a `caps` message when it changes), and a peer only asks members that can
+relay. A relay's work is capped (`PeerNetworkOptions.RelayBytesPerSecond`, `RelayBytesPerSender` and
+`MaxRelayedPairs`, about 2 Mbit/s in total by default) and `ChatNode.RelayStats` shows what it has passed on. If a
+connection ends up on the shared TURN server and a capable member can carry it instead, it moves to that member
+and the server is left alone.
+
+Someone you reach through a member also keeps a **standby path** through a second capable member (opened a few
+seconds after the first, and refreshed with the same 4 s keep-alives). If the member in use disappears, the standby
+takes over at once: same person, same state, no new handshake and no disconnect/connect events
+(`PeerNetwork.ConnectionPromoted`); anything not yet confirmed is sent again on it. Room references depend on the
+connection's session, so both sessions are understood while the switch settles. A direct connection, when one works,
+replaces a relayed one and its standby is closed.
+
+If the member carrying a connection leaves and there is no standby, both ends move to another capable member
+straight away, without the usual `RelayFallbackDelay`. Any member who says it is connected to the other person can take over, not only the one
+who introduced them. A member that leaves without saying goodbye is noticed within about 15 s on a relayed path
+(4 s keep-alives, 15 s idle limit, against 10 s and 35 s on direct ones). Messages not yet confirmed are sent again
+on the new path.
+
 **Message forwarding.** Group chat no longer needs every pair of members to be connected. A live group message is
 signed by its author, so any member can pass it on without being able to alter or forge it. When a member receives a
 new message it forwards it to the room members it is connected to, except the one it came from, the author, and
@@ -178,7 +200,7 @@ Group members still relay for each other once connected, so a TURN server mainly
 
 - IPv4 only; a flat routing table instead of k-buckets; DHT node is read-only (BEP 43) by default.
 - Connections are capped (see above), but this has only been tested with 24 simulated nodes on one machine, so larger rooms are unproven. Forwarding is best effort: if the neighbour graph splits, the halves only exchange messages once a connection or catch-up bridges them. Members report their connections and degrees themselves, so a malicious member could claim phantom neighbours, suppress forwarding, or trigger drops by announcing a tiny degree. Presence traffic grows with room size (one beacon per member per interval, sent to each neighbour).
-- Catch-up needs someone online who holds the messages (no server stores them); members can only vouch for messages by signature, so a malicious member could inject messages from invented identities, but not from real members. No offline delivery for 1:1 chats. Relaying needs a mutual room member who is directly reachable; there are no dedicated relay servers, no relay bandwidth limits, and no relay chains.
+- Catch-up needs someone online who holds the messages (no server stores them); members can only vouch for messages by signature, so a malicious member could inject messages from invented identities, but not from real members. No offline delivery for 1:1 chats. Relaying needs a mutual room member with a good connection who is directly reachable from both sides; there are no dedicated relay servers and no relay chains, and small rooms (a pair, or nobody with an open router) fall back on the TURN server.
 - Hole punching is verified only on loopback in tests; real-NAT behaviour should be tried across networks.
 
 ## Pictures and GIFs

@@ -127,6 +127,18 @@ public sealed partial class ChatNode
                 : new(CheckLevel.Warning, "TURN relay is not working",
                     "Yaparr could not get a relay from the server. Check the address, username and password, and that the server is reachable."));
 
+        if (_options.EnableRelaying && !_rooms.IsEmpty && TraversalEnabled)
+        {
+            var relayed = RelayStats;
+            items.Add(IsRelayCapable
+                ? new(CheckLevel.Ok, "You help others connect",
+                    relayed.ForwardedFrames == 0
+                        ? "Your connection is good enough to pass traffic between members of your rooms who cannot reach each other. Nothing needed it yet."
+                        : $"You have passed {relayed.ForwardedBytes / 1024} KB between members of your rooms (limited to about 2 Mbit/s).")
+                : new(CheckLevel.Info, "Others relay for you",
+                    "Your router is too strict to help other people connect, so you do not relay for anyone."));
+        }
+
         if (!_rooms.IsEmpty)
         {
             int connected = _peers.Count;

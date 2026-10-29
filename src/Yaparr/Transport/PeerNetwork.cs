@@ -16,10 +16,15 @@ public sealed class PeerNetwork : IDisposable
     private readonly byte[] _instance = System.Security.Cryptography.RandomNumberGenerator.GetBytes(PeerConnection.InstanceIdLength);
     private readonly ConcurrentDictionary<IPEndPoint, PeerConnection> _byEndPoint = new();
     private readonly ConcurrentDictionary<PeerId, PeerConnection> _byPeer = new();
-    private readonly ConcurrentDictionary<PeerId, PeerConnection> _relayed = new();
+    // Connections through another member, by (the person at the far end, the member in between). More than one
+    // can exist for a person: the one in use, and a standby through a different member, ready to take over.
+    private readonly ConcurrentDictionary<(PeerId Target, PeerId Relay), PeerConnection> _relayed = new();
+    private readonly ConcurrentDictionary<PeerId, PeerConnection> _standby = new();
     private readonly ConcurrentDictionary<IPEndPoint, PeerId> _endpointOwner = new();
     private readonly ConcurrentDictionary<byte, DataReceivedHandler> _channels = new();
     private readonly object _relayGate = new();
+    private readonly RelayBudget _budget;
+    private readonly PeerNetworkOptions _relayedOptions;
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _timer;
 
@@ -28,6 +33,8 @@ public sealed class PeerNetwork : IDisposable
         _identity = identity;
         _mux = mux;
         _options = options ?? new PeerNetworkOptions();
+        _relayedOptions = _options.ForRelayedPaths();
+        _budget = new RelayBudget(_options.RelayBytesPerSecond, _options.RelayBytesPerSender, _options.MaxRelayedPairs, Environment.TickCount64);
         _channels[RelayChannel] = OnRelayFrame;
         _mux.AddHandler(HandlePacket);
         _timer = Task.Run(TimerLoopAsync);
@@ -39,12 +46,30 @@ public sealed class PeerNetwork : IDisposable
 
     public event Action<PeerConnection>? ConnectionClosed;
 
+    /// <summary>The connection in use was lost and a standby took over: (the lost connection, the one now in use). No close or establish event is raised for the person.</summary>
+    public event Action<PeerConnection, PeerConnection>? ConnectionPromoted;
+
+    /// <summary>A standby path through another member is now ready.</summary>
+    public event Action<PeerConnection>? StandbyReady;
+
     /// <summary>A connection we started was closed before the other side proved who it was (nobody answered, or it timed out).</summary>
     public event Action<IPEndPoint, string?>? ConnectFailed;
 
     public Func<PeerConnection, PeerConnection, bool>? RelayForwardPolicy { get; set; }
 
     public Func<PeerConnection, PeerId, bool>? RelayedAcceptPolicy { get; set; }
+
+    /// <summary>
+    /// Says whether a direct connection runs through a shared, limited server (a TURN relay). A path through
+    /// another member is preferred over such a connection, so the server is only used when nothing better exists.
+    /// </summary>
+    public Func<PeerConnection, bool>? IsMetered { get; set; }
+
+    /// <summary>What this node has forwarded for other members, and what it refused to because of its limits.</summary>
+    public RelayStats RelayStats => _budget.Stats(Environment.TickCount64);
+
+    /// <summary>Who answered when we last connected straight to this address, if anyone did.</summary>
+    public PeerId? OwnerOf(IPEndPoint endPoint) => _endpointOwner.TryGetValue(endPoint, out var owner) ? owner : null;
 
     public PeerConnection? Get(PeerId peer) => _byPeer.TryGetValue(peer, out var c) ? c : null;
 
@@ -72,7 +97,25 @@ public sealed class PeerNetwork : IDisposable
 
         lock (_relayGate)
         {
-            if (_relayed.TryGetValue(target, out var existing) && existing.State != ConnectionState.Closed) return existing;
+            var existing = _relayed.Where(kv => kv.Key.Target == target && kv.Value.State != ConnectionState.Closed).Select(kv => kv.Value).FirstOrDefault();
+            return existing ?? CreateRelayed(relay, relayId, target);
+        }
+    }
+
+    public bool HasStandby(PeerId peer) => _standby.TryGetValue(peer, out var c) && c.State != ConnectionState.Closed;
+
+    /// <summary>
+    /// Opens a second path to someone we reach through a member, this time through a different member. If the first
+    /// path is lost, this one takes over without a new handshake. Null if there is nothing to back up.
+    /// </summary>
+    public PeerConnection? ConnectStandby(PeerConnection relay, PeerId target)
+    {
+        if (relay.IsRelayed || relay.State != ConnectionState.Established || relay.RemoteId is not { } relayId) return null;
+        lock (_relayGate)
+        {
+            if (!_byPeer.TryGetValue(target, out var primary) || !primary.IsRelayed || primary.State != ConnectionState.Established
+                || primary.RelayedVia == relayId) return null;
+            if (_relayed.TryGetValue((target, relayId), out var existing) && existing.State != ConnectionState.Closed) return existing;
             return CreateRelayed(relay, relayId, target);
         }
     }
@@ -80,9 +123,9 @@ public sealed class PeerNetwork : IDisposable
     private PeerConnection CreateRelayed(PeerConnection relay, PeerId relayId, PeerId target)
     {
         var conn = new PeerConnection(_identity, relay.RemoteEndPoint, target,
-            (packet, _) => SendViaRelay(relay, target, packet), _options, _instance, relayedVia: relayId);
+            (packet, _) => SendViaRelay(relay, target, packet), _relayedOptions, _instance, relayedVia: relayId);
         Hook(conn);
-        _relayed[target] = conn;
+        _relayed[(target, relayId)] = conn;
         return conn;
     }
 
@@ -114,7 +157,8 @@ public sealed class PeerNetwork : IDisposable
         {
             case RelayTo:
                 if (Get(peer) is { IsRelayed: false, State: ConnectionState.Established } dst
-                    && RelayForwardPolicy?.Invoke(from, dst) == true)
+                    && RelayForwardPolicy?.Invoke(from, dst) == true
+                    && _budget.TryForward(fromId.Value, peer.Value, data.Length, Environment.TickCount64))
                 {
                     var frame = new byte[data.Length];
                     frame[0] = RelayFrom;
@@ -135,8 +179,8 @@ public sealed class PeerNetwork : IDisposable
         PeerConnection? conn;
         lock (_relayGate)
         {
-            _relayed.TryGetValue(origin, out conn);
-            if (conn != null && (conn.State == ConnectionState.Closed || conn.RelayedVia != relayId)) conn = null;
+            _relayed.TryGetValue((origin, relayId), out conn);
+            if (conn != null && conn.State == ConnectionState.Closed) conn = null;
             if (conn == null)
             {
                 if (payload.Span[0] != PeerConnection.Magic || payload.Span[1] != 1) return;
@@ -181,13 +225,35 @@ public sealed class PeerNetwork : IDisposable
             // If an instance we already replaced comes back (the same identity running twice, say), stop swapping:
             // keep the one that is alive and let the other go quietly, so it does not redial at once.
             if (IsRetired(id, conn) && Environment.TickCount64 - existing.LastReceivedAt <= 15_000) { conn.Close(notifyPeer: false); return; }
+            if (IsStandbyFor(conn, existing))
+            {
+                // A second path through a different member, while the first works: keep it warm instead of choosing.
+                if (_standby.TryGetValue(id, out var held) && held.State == ConnectionState.Established && !ReferenceEquals(held, conn))
+                {
+                    conn.Close(notifyPeer: true);
+                    return;
+                }
+                _standby[id] = conn;
+                StandbyReady?.Invoke(conn);
+                return;
+            }
             if (!Prefer(conn, existing)) { conn.Close(notifyPeer: true); return; }
             Retire(id, existing);
+            // Put the new one in place first, so closing the old one is not mistaken for losing the person.
+            _byPeer[id] = conn;
             existing.Close(notifyPeer: true);
         }
+        // A direct connection, or a better one, makes the spare path pointless.
+        if (_standby.TryRemove(id, out var spare) && !ReferenceEquals(spare, conn)) spare.Close(notifyPeer: true);
         _byPeer[id] = conn;
         ConnectionEstablished?.Invoke(conn);
     }
+
+    // Two paths through different members, the first one healthy and from the same app run of the other person.
+    private static bool IsStandbyFor(PeerConnection candidate, PeerConnection current) =>
+        candidate.IsRelayed && current.IsRelayed && candidate.RelayedVia != current.RelayedVia
+        && Environment.TickCount64 - current.LastReceivedAt <= 15_000
+        && (candidate.RemoteInstance == null || current.RemoteInstance == null || candidate.RemoteInstance.AsSpan().SequenceEqual(current.RemoteInstance));
 
     // App instances of a peer that were pushed out by a newer one. A restarted peer never comes back as its old
     // instance, so an old instance that reappears means two copies are running and fighting over the slot.
@@ -207,9 +273,15 @@ public sealed class PeerNetwork : IDisposable
         candidate.RemoteInstance != null && _retired.TryGetValue(InstanceKey(id, candidate.RemoteInstance), out var at)
         && Environment.TickCount64 - at < RetiredMs;
 
-    private static bool Prefer(PeerConnection candidate, PeerConnection current)
+    private bool Prefer(PeerConnection candidate, PeerConnection current)
     {
-        if (candidate.IsRelayed != current.IsRelayed) return !candidate.IsRelayed;
+        if (candidate.IsRelayed != current.IsRelayed)
+        {
+            // A path through another member beats one through the shared server; otherwise direct beats relayed.
+            var direct = candidate.IsRelayed ? current : candidate;
+            if (IsMetered?.Invoke(direct) == true) return candidate.IsRelayed;
+            return !candidate.IsRelayed;
+        }
         if (Environment.TickCount64 - current.LastReceivedAt > 15_000) return true;
         // A different app run of the same peer: the old session belongs to a process that no longer exists.
         if (candidate.RemoteInstance != null && current.RemoteInstance != null
@@ -220,19 +292,32 @@ public sealed class PeerNetwork : IDisposable
     private void OnClosed(PeerConnection conn)
     {
         _byEndPoint.TryRemove(new KeyValuePair<IPEndPoint, PeerConnection>(conn.RemoteEndPoint, conn));
-        if (conn.IsRelayed && conn.Expected is { } target)
-            _relayed.TryRemove(new KeyValuePair<PeerId, PeerConnection>(target, conn));
+        if (conn.IsRelayed && conn.Expected is { } target && conn.RelayedVia is { } via)
+            _relayed.TryRemove(new KeyValuePair<(PeerId, PeerId), PeerConnection>((target, via), conn));
 
         if (conn.RemoteId is not { } id)
         {
             if (!conn.IsRelayed) ConnectFailed?.Invoke(conn.RemoteEndPoint, conn.CloseReason);
             return;
         }
-        bool wasLive = _byPeer.TryRemove(new KeyValuePair<PeerId, PeerConnection>(id, conn));
+        _standby.TryRemove(new KeyValuePair<PeerId, PeerConnection>(id, conn));
 
+        // The member in the middle is gone: everything that ran through it goes too (a standby may be one of them).
         if (!conn.IsRelayed)
             foreach (var r in _relayed.Values.Where(r => r.RelayedVia == id).ToList()) r.Close(notifyPeer: false);
 
+        // The connection in use is lost but a standby is ready and was heard from lately: switch without anyone noticing.
+        if (_byPeer.TryGetValue(id, out var current) && ReferenceEquals(current, conn)
+            && _standby.TryGetValue(id, out var spare) && spare.State == ConnectionState.Established
+            && Environment.TickCount64 - spare.LastReceivedAt < 10_000
+            && _standby.TryRemove(new KeyValuePair<PeerId, PeerConnection>(id, spare))
+            && _byPeer.TryUpdate(id, spare, conn))
+        {
+            ConnectionPromoted?.Invoke(conn, spare);
+            return;
+        }
+
+        bool wasLive = _byPeer.TryRemove(new KeyValuePair<PeerId, PeerConnection>(id, conn));
         if (wasLive) ConnectionClosed?.Invoke(conn);
     }
 

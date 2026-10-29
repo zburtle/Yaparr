@@ -19,13 +19,15 @@ internal static class TestUtil
 
     public static PeerNetworkOptions FastNetwork => new() { HelloInterval = TimeSpan.FromMilliseconds(100) };
 
-    public static ChatNode NewNode(InMemoryDiscoveryHub hub, string name, bool relaying = true) => new(new ChatNodeOptions
+    // Test nodes have no real network, so by default they count as having a connection that relays.
+    public static ChatNode NewNode(InMemoryDiscoveryHub hub, string name, bool relaying = true, bool relayCapable = true,
+        TimeSpan? fallbackDelay = null, PeerNetworkOptions? network = null) => new(new ChatNodeOptions
     {
         EnableRelaying = relaying,
-        RelayFallbackDelay = TimeSpan.FromMilliseconds(500),
+        RelayFallbackDelay = fallbackDelay ?? TimeSpan.FromMilliseconds(500),
         DisplayName = name,
         DiscoveryFactory = mux => hub.CreateClient(new IPEndPoint(IPAddress.Loopback, mux.LocalPort)),
         DiscoveryInterval = TimeSpan.FromMilliseconds(300),
-        Network = FastNetwork,
-    });
+        Network = network ?? FastNetwork,
+    }) { RelayCapableOverride = relayCapable };
 }

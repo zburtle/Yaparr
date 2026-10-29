@@ -100,9 +100,40 @@ public sealed partial class ChatNode : IDisposable
         private readonly object _gate = new();
         private HashSet<string> _rooms = new();
 
-        public PeerState(PeerConnection connection) => Connection = connection;
+        private PeerConnection _connection;
+        private readonly List<byte[]> _otherSessions = new();
 
-        public PeerConnection Connection { get; }
+        public PeerState(PeerConnection connection) => _connection = connection;
+
+        /// <summary>The connection we send on. It can change to a standby path without the person being lost.</summary>
+        public PeerConnection Connection
+        {
+            get => Volatile.Read(ref _connection);
+            set => Volatile.Write(ref _connection, value);
+        }
+
+        /// <summary>
+        /// Room references are worked out from the connection's session, and what the other side sends may come in on
+        /// a standby path (a different session) for a moment, so references from the recent ones are understood too.
+        /// </summary>
+        public void KnowSession(byte[]? session)
+        {
+            if (session == null) return;
+            lock (_gate)
+            {
+                if (_otherSessions.Any(s => s.AsSpan().SequenceEqual(session))) return;
+                _otherSessions.Add(session);
+                if (_otherSessions.Count > 4) _otherSessions.RemoveAt(0);
+            }
+        }
+
+        public List<byte[]> Sessions()
+        {
+            var all = new List<byte[]>();
+            if (Connection.SessionId is { } current) all.Add(current);
+            lock (_gate) all.AddRange(_otherSessions);
+            return all;
+        }
         public long HistoryExpectedUntil;
         private readonly Dictionary<string, long> _lastServed = new();
         public bool TryStartServing(string roomKey)
@@ -117,6 +148,13 @@ public sealed partial class ChatNode : IDisposable
         }
         public string? Name { get; set; }
         public volatile int Degree;
+        /// <summary>Whether this peer relays for others: null until it says (older versions never do).</summary>
+        private volatile int _canRelay;
+        public bool? CanRelay
+        {
+            get => _canRelay switch { 1 => true, 2 => false, _ => null };
+            set => _canRelay = value == null ? 0 : value.Value ? 1 : 2;
+        }
         public PeerId Id => Connection.RemoteId!.Value;
         public PeerInfo Info => new(Id, Name ?? Id.Short, Connection.RemoteEndPoint, Connection.IsRelayed);
 
@@ -145,6 +183,7 @@ public sealed partial class ChatNode : IDisposable
     private readonly ConcurrentDictionary<PeerId, DirectChat> _directChats = new();
     private readonly ConcurrentDictionary<PeerId, ConcurrentDictionary<PeerId, byte>> _introducedVia = new();
     private readonly ConcurrentDictionary<PeerId, byte> _relayPending = new();
+    private readonly ConcurrentDictionary<PeerId, byte> _relayPendingNow = new();
     private readonly ConcurrentDictionary<string, RoomHistory> _histories = new();
     private readonly ConcurrentDictionary<string, Candidate> _candidates = new();
     private readonly ConcurrentDictionary<string, long> _backoff = new();
@@ -217,16 +256,17 @@ public sealed partial class ChatNode : IDisposable
         Network.ConnectionEstablished += OnConnectionEstablished;
         Network.ConnectionClosed += OnConnectionClosed;
         Network.ConnectFailed += OnConnectFailed;
+        Network.ConnectionPromoted += OnConnectionPromoted;
+        Network.StandbyReady += OnStandbyReady;
         Network.RegisterChannel(ChannelIds.Chat, OnChatData);
         Network.RegisterChannel(ChannelIds.File, OnFileData);
         Network.RegisterChannel(ChannelIds.Voice, OnVoiceData);
 
         if (_options.EnableRelaying)
         {
-            Network.RelayForwardPolicy = (a, b) => a.RemoteId is { } x && b.RemoteId is { } y &&
-                _rooms.Values.Any(r => r.MemberStates.ContainsKey(x) && r.MemberStates.ContainsKey(y));
-            Network.RelayedAcceptPolicy = (via, from) => via.RemoteId is { } v &&
-                _introducedVia.TryGetValue(from, out var vias) && vias.ContainsKey(v);
+            Network.RelayForwardPolicy = MaySharedRoomRelay;
+            Network.IsMetered = IsOnSharedServer;
+            Network.RelayedAcceptPolicy = MayAcceptRelayed;
         }
     }
 
@@ -417,6 +457,7 @@ public sealed partial class ChatNode : IDisposable
             if (own != null) _peerCache.RememberSelf(own);
         _options.Log?.Invoke($"network: {status.Describe()}");
         NetworkStatusChanged?.Invoke(status);
+        AnnounceRelayCapability();
         if (_started) _ = PublishRecordAsync();
     }
 
@@ -472,8 +513,11 @@ public sealed partial class ChatNode : IDisposable
     private string RefTo(ChatRoom room, PeerState peer) => room.RefFor(peer.Connection.SessionId!, Id);
     private static string RefFrom(ChatRoom room, PeerState peer) => room.RefFor(peer.Connection.SessionId!, peer.Id);
 
-    private ChatRoom? ResolveRoom(PeerState peer, string reference) =>
-        _rooms.Values.FirstOrDefault(r => RefFrom(r, peer) == reference);
+    private ChatRoom? ResolveRoom(PeerState peer, string reference)
+    {
+        var sessions = peer.Sessions();
+        return _rooms.Values.FirstOrDefault(r => sessions.Any(s => r.RefFor(s, peer.Id) == reference));
+    }
 
     internal Task LeaveRoomAsync(ChatRoom room)
     {
@@ -1098,11 +1142,13 @@ public sealed partial class ChatNode : IDisposable
         bool isNew = !_peers.ContainsKey(state.Id);
         if (_candidates.TryGetValue(conn.RemoteEndPoint.ToString(), out var dialed)) { dialed.Failures = 0; dialed.NextDial = 0; }
         // The hello must be the first thing on the connection, so send it before anyone can find the state and write to it.
-        Send(conn, new Wire { Type = Wire.Hello, Name = _options.DisplayName, Deg = _peers.Count + (isNew ? 1 : 0), Rooms = _rooms.Values.Select(r => RefTo(r, state)).ToArray() });
+        Send(conn, new Wire { Type = Wire.Hello, Name = _options.DisplayName, Deg = _peers.Count + (isNew ? 1 : 0), Rly = IsRelayCapable, Rooms = _rooms.Values.Select(r => RefTo(r, state)).ToArray() });
         _peers[state.Id] = state;
         foreach (var room in _rooms.Values)
             if (room.MemberStates.ContainsKey(state.Id)) room.MemberStates[state.Id] = state;
         ResendTo(state, o => o.DirectPeer == state.Id, o => o.DirectWire!);
+        // On the shared TURN server? Look for a member who can carry this connection instead (checked after the delay, once we know).
+        if (_turn != null && !conn.IsRelayed && _introducedVia.ContainsKey(state.Id)) ScheduleRelayFallback(state.Id);
         LogPeerEvent(state.Id, isNew
             ? $"connected to {state.Id.Short} at {conn.RemoteEndPoint}"
             : $"switched to a new connection to {state.Id.Short} at {conn.RemoteEndPoint}");
@@ -1145,7 +1191,8 @@ public sealed partial class ChatNode : IDisposable
         PeerDisconnected?.Invoke(state.Info);
         if (!conn.IsRelayed && !IsBackedOff(id.Value, Environment.TickCount64) && !_cts.IsCancellationRequested)
             _redial[id] = new Redial(conn.RemoteEndPoint) { Next = Environment.TickCount64 + 1000 };
-        if (_introducedVia.ContainsKey(id)) ScheduleRelayFallback(id);
+        if (conn.IsRelayed) ScheduleRelayFallback(id, immediate: true);
+        if (_introducedVia.ContainsKey(id) || conn.IsRelayed) ScheduleRelayFallback(id);
     }
 
     private void OnChatData(PeerConnection conn, byte channel, ReadOnlyMemory<byte> data, bool reliable)
@@ -1173,11 +1220,19 @@ public sealed partial class ChatNode : IDisposable
                 peer.Name = string.IsNullOrWhiteSpace(wire.Name) ? peer.Id.Short : wire.Name;
                 peer.SetRooms(wire.Rooms ?? Array.Empty<string>());
                 peer.Degree = wire.Deg;
+                peer.CanRelay = wire.Rly;
                 LogPeerEvent(peer.Id, $"hello from {peer.Id.Short} ({peer.Name}): declares {wire.Rooms?.Length ?? 0} room(s); we are in {_rooms.Count}");
                 if (first && !EnforceCap(peer)) break;
                 if (first) PeerConnected?.Invoke(peer.Info);
                 foreach (var room in _rooms.Values)
                     if (peer.Declares(RefFrom(room, peer))) OnPeerEntersRoom(peer, room);
+                break;
+
+            case Wire.Caps when wire.Rly != null:
+                peer.CanRelay = wire.Rly;
+                // A member that can now relay may be the way to someone we could not reach.
+                foreach (var target in _introducedVia.Where(kv => kv.Value.ContainsKey(peer.Id)).Select(kv => kv.Key).ToList())
+                    if (wire.Rly == true && WantsPeerRelay(target)) ScheduleRelayFallback(target);
                 break;
 
             case Wire.Ack:
@@ -1279,23 +1334,29 @@ public sealed partial class ChatNode : IDisposable
     private static bool IsValidPeerId(string id) =>
         id.Length == 64 && id.All(c => c is (>= '0' and <= '9') or (>= 'a' and <= 'f'));
 
-    private void ScheduleRelayFallback(PeerId target)
+    // With immediate set (a path through a member just failed) there is no waiting: another member may already be known.
+    private void ScheduleRelayFallback(PeerId target, bool immediate = false)
     {
-        if (!_options.EnableRelaying || !_relayPending.TryAdd(target, 0)) return;
+        var pending = immediate ? _relayPendingNow : _relayPending;
+        if (!_options.EnableRelaying || !pending.TryAdd(target, 0)) return;
         _ = Task.Run(async () =>
         {
             try
             {
-                await Task.Delay(_options.RelayFallbackDelay, _cts.Token).ConfigureAwait(false);
-                while (!_cts.IsCancellationRequested && !_peers.ContainsKey(target) && !IsBackedOff(target.Value, Environment.TickCount64))
+                if (!immediate) await Task.Delay(_options.RelayFallbackDelay, _cts.Token).ConfigureAwait(false);
+                int triesWhileOnServer = 0;
+                while (!_cts.IsCancellationRequested && WantsPeerRelay(target) && !IsBackedOff(target.Value, Environment.TickCount64))
                 {
-                    var relay = _introducedVia.TryGetValue(target, out var vias)
-                        ? vias.Keys.Select(r => _peers.GetValueOrDefault(r)?.Connection)
-                              .FirstOrDefault(c => c is { IsRelayed: false, State: ConnectionState.Established })
-                        : null;
+                    // Already connected through the shared server: try a few times to move off it, then leave it be.
+                    bool onServer = _peers.ContainsKey(target);
+                    if (onServer && ++triesWhileOnServer > 3) break;
+
+                    var relay = RelayCandidates(target).FirstOrDefault();
                     if (relay == null) break;
 
-                    _options.Log?.Invoke($"no direct path to {target.Short}; relaying via {relay.RemoteId!.Value.Short}");
+                    _options.Log?.Invoke(onServer
+                        ? $"moving {target.Short} off the shared relay server, via {relay.RemoteId!.Value.Short}"
+                        : $"no direct path to {target.Short}; relaying via {relay.RemoteId!.Value.Short}");
                     var conn = Network.ConnectVia(relay, target);
                     await Task.WhenAny(conn.WhenEstablished, Task.Delay(_options.Network.ConnectTimeout, _cts.Token)).ConfigureAwait(false);
                     await Task.Delay(1000, _cts.Token).ConfigureAwait(false);
@@ -1303,7 +1364,7 @@ public sealed partial class ChatNode : IDisposable
             }
             catch (OperationCanceledException) { }
             catch (Exception ex) { _options.Log?.Invoke($"relay fallback for {target.Short} failed: {ex.Message}"); }
-            finally { _relayPending.TryRemove(target, out _); }
+            finally { pending.TryRemove(target, out _); }
         });
     }
 
@@ -1368,6 +1429,7 @@ public sealed partial class ChatNode : IDisposable
         if (_peerCache.IsSelf(c.EndPoint)) return false;
         if (IsBackedOff(c.EndPoint.ToString(), now)) return false;
         if (c.Id is { } id && (IsBackedOff(id.Value, now) || _peers.ContainsKey(id))) return false;
+        if (IsRedundantServerPath(c.EndPoint, c.Id)) return false;
         return !IsConnectedTo(c.EndPoint);
     }
 
@@ -1466,6 +1528,7 @@ public sealed partial class ChatNode : IDisposable
         long now = Environment.TickCount64;
         TopUpConnections(room);
         MaintainVoice(room, now);
+        foreach (var member in room.MemberStates.Values) EnsureStandby(member);
 
         if (now - room.LastPresenceAt >= _options.PresenceInterval.TotalMilliseconds)
         {

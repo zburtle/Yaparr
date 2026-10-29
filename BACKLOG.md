@@ -24,6 +24,15 @@ Improvements we have agreed to do later, roughly in priority order. Done items a
 - Voice over the TURN relay is capped by the server's per-session limit; check that 32 kbps per listener fits.
 - Video and screen sharing on the same media layer.
 
+## Relaying
+
+- Standby paths exist only for people reached through a member, and only when a second capable member knows them. Someone on a direct connection or on the TURN server has none, and a crash is still noticed only after the 15 s idle limit (the standby then takes over, but voice is silent until then).
+- A standby costs a keep-alive every 4 s through the second member and a handshake; measure that in a large room before opening one for everyone.
+- Count how connections end up (direct, through a member, through the TURN server) and show it in the network check, to see how much load the member relays take off the server.
+- Show the relay counters in the Desktop app's network dialog.
+- The "already connected" check for server addresses only knows an address's owner if we once connected to it directly; an address we have never reached is still dialled once.
+- Rate limits are fixed numbers; scale them to the relay's measured upload.
+
 ## Polish
 
 - Direct connections through symmetric NATs: try the ports just above and below the one a peer advertises ("birthday" or port-prediction punching), so fewer pairs need the relay. Needs a symmetric-NAT test setup to verify.
