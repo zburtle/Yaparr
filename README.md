@@ -273,8 +273,39 @@ Every room has a voice channel you can join and leave whenever you like, with no
 - The library does not touch audio devices: call `session.PushCapture(samples)` with microphone samples and play what `session.PullPlayback(buffer)` fills in. The Desktop app does this with SoundFlow (miniaudio) in `VoiceAudio.cs`.
 - `Activation` is voice activity (with `Sensitivity`), push-to-talk (`PushToTalkHeld`) or open microphone; `Muted`, `Deafened`, `SetVolume` and `SetLocalMute` do what they say. `SpeakingChanged` drives the speaking indicators.
 - Each person's audio goes through a jitter buffer that reorders packets, grows when the network is rough, and asks Opus to conceal or recover lost packets.
-- Everyone sends to everyone, so a channel is meant for small groups (about six people); larger groups would need one person forwarding for the others.
+- Up to about eight people everyone sends to everyone. From `VoiceTreeThreshold` (9) people the channel passes the audio along a tree instead, see "Streams and large rooms".
 - **Echo cancellation and noise suppression.** Give `session.Processor` an `IVoiceProcessor` and the session passes it every 20 ms microphone frame (to clean in place before it is encoded) and every block handed to the speakers (the reference echo cancellation needs). The library has no signal processing of its own. The `Yaparr.Voice.WebRtc` project provides `WebRtcVoiceProcessor`, which uses Google's WebRTC audio processing: in a test with a made-up room it removes about 39 dB of echo once settled, keeps your voice at full level while the other side talks, and takes 6 to 14 dB out of steady hiss depending on the level. It costs about half a percent of one core. `WebRtcVoiceProcessor.TryCreate` returns false instead of throwing when the native library cannot load (on Linux it needs glibc 2.38 or newer, so Ubuntu 24.04 or Debian 13 and later), and a processor that throws is switched off by the session (`ProcessorFailed`) while the microphone carries on. The Desktop app turns echo cancellation on and noise suppression to Moderate by default, both changeable in the voice settings. Automatic volume is left off.
+
+## Streams and large rooms
+
+Something that many people take part in cannot be sent to each person from one machine: a screen is about 1 Mbit/s per
+viewer, and a voice channel of 20 is 19 streams each way. So such a stream travels along a **tree**. The sharer (the
+root) sends to a few members, and each of those passes it on to a few more. Only members of the room take part, and
+the stream is announced like a voice beacon, signed by the sharer.
+
+- **Where you attach.** A newcomer asks the root, which answers with the shallowest member who has a free place (or
+  itself). The newcomer connects there and asks to attach; if that member has since filled up it says no and the
+  newcomer asks the root again. Because the root decides, the tree has no loops and stays shallow. A member sends to at
+  most `MediaFanout` (3) others, the sharer to `MediaRootFanout` (3), and only members whose connection can relay
+  (`IsRelayCapable`) are ever used as parents. If the sharer's places are all held by members who cannot pass the stream
+  on, one of them steps aside for one who can.
+- **When someone leaves.** Neighbours ping each other every maintenance interval. A member whose parent goes silent
+  (`MediaEdgeTimeout`, 6 s) or whose connection closes asks the root again and is placed elsewhere, with its own
+  children still attached to it. A newcomer is given the packets since the last key straight away by whoever it
+  attaches to, so it does not wait for the sharer to produce another.
+- **What is protected.** Packets are encrypted hop by hop like everything else. In a `signed` stream the sharer signs every
+  packet and a member passing it on cannot change it or add to it; the viewers check. Forwarders see the content, as they
+  are viewers themselves. Each member forwards at most `MediaBytesPerSecond` (about 3 Mbit/s) for others.
+- **Using it.** `node.StartMedia(room, kind, name)` returns a `MediaSource` to `Send` packets into; `room.MediaGroups` lists
+  what is shared; `node.WatchMedia(room, id)` returns a `MediaView` with a `Received` event. Packet contents are up to
+  the caller. The library does not capture or encode a screen.
+- **Voice.** When a voice channel reaches `VoiceTreeThreshold` people, the member who sorts first by id and can relay starts
+  a tree (the others wait a little longer for each place further down, so only one does). Everybody joins it and sends
+  their audio up it; the root and the other members pass it on. The root sends to `VoiceRootFanout` (6) members. Until
+  a member is attached, and whenever there is no tree, audio goes straight to each person as before. If the root
+  disappears, the next one in line starts a new tree; the gap is a few seconds. When the channel shrinks to half the
+  threshold the root ends the tree. Voice trees are not signed (each packet would nearly double in size), so a member in
+  the tree could pass off audio as someone else's.
 
 ## Reliability
 

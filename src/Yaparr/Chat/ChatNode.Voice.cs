@@ -27,6 +27,7 @@ public sealed partial class ChatNode
     {
         if (!ReferenceEquals(room.ActiveVoice, session)) return;
         room.ActiveVoice = null;
+        LeaveVoiceGroups(room);
         PublishVoiceState(room, active: false, muted: false, deafened: false);
     }
 
@@ -80,6 +81,7 @@ public sealed partial class ChatNode
 
     private void MaintainVoice(ChatRoom room, long now)
     {
+        MaintainVoiceTree(room, now);
         if (room.ActiveVoice != null && now - room.LastVoiceAt >= _options.VoiceInterval.TotalMilliseconds)
             PublishVoiceState(room, active: true, room.SelfMuted, room.SelfDeafened, raise: false);
 
@@ -118,6 +120,12 @@ public sealed partial class ChatNode
 
     internal void SendVoicePacket(ChatRoom room, ReadOnlySpan<byte> packet)
     {
+        // In a big channel the audio goes up the tree, which passes it on; until we are in it, straight to each person.
+        if (AttachedVoiceGroup(room) is { } tree)
+        {
+            try { PublishMedia(tree, packet, isKey: false); return; }
+            catch (ArgumentException) { return; }
+        }
         foreach (var id in ActiveVoiceOthers(room))
         {
             if (!_peers.TryGetValue(id, out var peer) || peer.Connection.State != ConnectionState.Established) continue;

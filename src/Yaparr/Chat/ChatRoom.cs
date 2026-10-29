@@ -45,6 +45,8 @@ public sealed class ChatRoom
     internal readonly ConcurrentDictionary<PeerId, PeerInfo> Indirect = new();
     internal readonly Dictionary<PeerId, PresenceEntry> Presence = new();
     internal readonly Dictionary<PeerId, VoiceEntry> Voice = new();
+    internal readonly ConcurrentDictionary<string, MediaGroup> Media = new();
+    internal long VoiceTreeWantedSince, VoiceTreeLowSince;
     internal Yaparr.Voice.VoiceSession? ActiveVoice;
     internal bool SelfMuted, SelfDeafened;
     internal long LastVoiceAt;
@@ -59,6 +61,14 @@ public sealed class ChatRoom
     /// <summary>Raised when someone joins or leaves the voice channel or mutes or unmutes themselves.</summary>
     public event Action? VoiceChanged;
     internal void RaiseVoiceChanged() => VoiceChanged?.Invoke();
+
+    /// <summary>The streams shared with this room right now (a screen, for example), as last announced.</summary>
+    public IReadOnlyList<MediaGroupInfo> MediaGroups =>
+        Media.Values.Where(g => g.Kind != "voice").Select(g => g.Info).OrderBy(g => g.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+
+    /// <summary>A stream was shared or ended.</summary>
+    public event Action? MediaGroupsChanged;
+    internal void RaiseMediaChanged() => MediaGroupsChanged?.Invoke();
 
     /// <summary>The people currently in this room's voice channel, including you if you have joined.</summary>
     public IReadOnlyList<VoiceParticipant> VoiceParticipants => _node.GetVoiceParticipants(this);

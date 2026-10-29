@@ -280,8 +280,11 @@ public sealed class VoiceSession : IDisposable
     internal void RosterChanged(IReadOnlyCollection<PeerId> others)
     {
         if (_disposed) return;
-        foreach (var gone in _dials.Keys.Where(id => !others.Contains(id)).ToList())
+        // In a big channel the audio goes through a tree, so there is no need to reach everyone.
+        bool tree = _node.VoiceTreeActive(_room);
+        foreach (var gone in _dials.Keys.Where(id => tree || !others.Contains(id)).ToList())
             if (_dials.TryRemove(gone, out var cts)) cts.Cancel();
+        if (tree) return;
         foreach (var id in others)
         {
             if (_node.IsConnected(id) || _dials.ContainsKey(id)) continue;

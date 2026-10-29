@@ -51,6 +51,36 @@ public sealed class ChatNodeOptions
     /// <summary>Settings to start with, for example those that came with a device being linked.</summary>
     public IReadOnlyList<AccountEntry> AccountEntries { get; init; } = Array.Empty<AccountEntry>();
 
+    /// <summary>How many other members a viewer passes a stream on to, when its connection can relay. Zero for one that cannot.</summary>
+    public int MediaFanout { get; init; } = 3;
+
+    /// <summary>How many members the sharer of a stream sends to itself.</summary>
+    public int MediaRootFanout { get; init; } = 3;
+
+    /// <summary>The most this node forwards for others, in bytes per second (the default is about 3 Mbit/s).</summary>
+    public int MediaBytesPerSecond { get; init; } = 384 * 1024;
+
+    /// <summary>How often the root of a stream says it is still there. A stream not heard from for three intervals is gone.</summary>
+    public TimeSpan MediaAnnounceInterval { get; init; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>How long a neighbour in a stream's tree can be silent before it is given up on and another is found.</summary>
+    public TimeSpan MediaEdgeTimeout { get; init; } = TimeSpan.FromSeconds(6);
+
+    /// <summary>
+    /// A voice channel with this many people (counting you) or more stops using a connection between every pair and
+    /// passes the audio along a tree instead.
+    /// </summary>
+    public int VoiceTreeThreshold { get; init; } = 9;
+
+    /// <summary>How many members the root of a voice tree sends to directly.</summary>
+    public int VoiceRootFanout { get; init; } = 6;
+
+    /// <summary>
+    /// When a voice tree is wanted and none exists, the member who sorts first by id starts it, the next one waits this
+    /// long, the one after twice as long, and so on, so that only one starts.
+    /// </summary>
+    public TimeSpan VoiceTreeRankDelay { get; init; } = TimeSpan.FromSeconds(1);
+
     public TimeSpan RelayFallbackDelay { get; init; } = TimeSpan.FromSeconds(8);
 
     public int TargetConnections { get; init; } = 8;
@@ -282,6 +312,7 @@ public sealed partial class ChatNode : IDisposable
         Network.RegisterChannel(ChannelIds.Chat, OnChatData);
         Network.RegisterChannel(ChannelIds.File, OnFileData);
         Network.RegisterChannel(ChannelIds.Voice, OnVoiceData);
+        Network.RegisterChannel(ChannelIds.Media, OnMediaData);
 
         if (_options.EnableRelaying)
         {
@@ -557,6 +588,11 @@ public sealed partial class ChatNode : IDisposable
     {
         if (!_rooms.TryRemove(room.Key, out _)) return;
         room.ActiveVoice?.Dispose();
+        foreach (var g in room.Media.Values.ToList())
+        {
+            if (g.IsRoot) StopMedia(g);
+            else LeaveMedia(g);
+        }
         var gone = SignedPresence.Create(_identity, room.Key, DisplayName, NextTimestamp(), gone: true);
         foreach (var peer in _peers.Values)
         {
@@ -1091,6 +1127,7 @@ public sealed partial class ChatNode : IDisposable
         AfterMembershipChange(room);
         SendPresenceTo(room, peer, includeCache: true);
         SendVoiceStateTo(room, peer);
+        SendMediaAnnouncesTo(room, peer);
         ResendTo(peer, o => o.Room == room, o => new Wire { Type = Wire.Message, Room = RefTo(room, peer), Msgs = new[] { o.Signed! } });
 
         if (_options.SyncHistory)
@@ -1232,6 +1269,7 @@ public sealed partial class ChatNode : IDisposable
             if (name == null) room.RaiseLeft(gone.Info);
             AfterMembershipChange(room);
         }
+        MediaPeerGone(id);
         PeerDisconnected?.Invoke(state.Info);
         if (!conn.IsRelayed && !IsBackedOff(id.Value, Environment.TickCount64) && !IsBlocked(id) && !_cts.IsCancellationRequested)
             _redial[id] = new Redial(conn.RemoteEndPoint) { Next = Environment.TickCount64 + 1000 };
@@ -1275,6 +1313,11 @@ public sealed partial class ChatNode : IDisposable
 
             case Wire.Account when wire.Entries != null:
                 OnAccountEntries(peer, wire.Entries);
+                break;
+
+            case Wire.Media when wire.Room != null && ResolveRoom(peer, wire.Room) is { } mediaRoom && mediaRoom.MemberStates.ContainsKey(peer.Id):
+                if (wire.Ann != null) OnMediaAnnounce(peer, mediaRoom, wire.Ann);
+                if (wire.Mx != null) OnMediaControl(peer, mediaRoom, wire.Mx);
                 break;
 
             case Wire.Caps when wire.Rly != null:
@@ -1553,6 +1596,19 @@ public sealed partial class ChatNode : IDisposable
         int max = _options.MaxConnections;
         if (max <= 0 || _peers.Count <= max || IsPinned(peer)) return true;
 
+        // In a stream's tree, members we have not heard of yet connect to ask where to attach, or to attach to us.
+        // They are let in over the limit for a moment; the ones that become our neighbours are pinned and stay.
+        if (TakesPartInStream && _peers.Count <= max + MediaGraceConnections)
+        {
+            _ = Task.Run(async () =>
+            {
+                try { await Task.Delay(MediaGraceMs, _cts.Token).ConfigureAwait(false); }
+                catch (OperationCanceledException) { return; }
+                if (_peers.TryGetValue(peer.Id, out var current) && ReferenceEquals(current, peer) && _peers.Count > max && !IsPinned(current)) Drop(current);
+            });
+            return true;
+        }
+
         if (peer.Degree <= MinDegree)
         {
             var victims = _peers.Values
@@ -1582,6 +1638,7 @@ public sealed partial class ChatNode : IDisposable
         long now = Environment.TickCount64;
         TopUpConnections(room);
         MaintainVoice(room, now);
+        MaintainMedia(room, now);
         foreach (var member in room.MemberStates.Values) EnsureStandby(member);
 
         if (now - room.LastPresenceAt >= _options.PresenceInterval.TotalMilliseconds)

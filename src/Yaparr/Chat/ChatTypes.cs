@@ -11,6 +11,7 @@ public static class ChannelIds
     public const byte Chat = 1;
     public const byte File = 3;
     public const byte Voice = 16;
+    public const byte Media = 17;
 }
 
 /// <summary>
@@ -72,7 +73,13 @@ internal sealed class Wire
     /// <summary>Settings passed between a person's own devices.</summary>
     public AccountEntry[]? Entries { get; set; }
 
-    public const string Caps = "caps", Rename = "name", Account = "acct";
+    /// <summary>Announcements of shared streams (a screen, a large voice channel), passed around the room.</summary>
+    public StoredMedia[]? Ann { get; set; }
+
+    /// <summary>A control message between neighbours in a stream's tree.</summary>
+    public WireMedia? Mx { get; set; }
+
+    public const string Caps = "caps", Rename = "name", Account = "acct", Media = "media";
 
     public const string Ack = "ack", Hello = "hi", Join = "join", Leave = "leave", Message = "msg", Introduce = "peers", Sync = "sync", History = "hist", Links = "links", Presence = "pres", Voice = "voice";
 }

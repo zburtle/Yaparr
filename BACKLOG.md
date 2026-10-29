@@ -23,10 +23,12 @@ Improvements we have agreed to do later, roughly in priority order. Done items a
 - Push-to-talk in the Desktop app needs a global hotkey (Avalonia has none); the library already supports it.
 - Per-person volume sliders in the UI.
 - Voice processing: the notification sounds play on their own device and are not part of the echo reference, so they are not cancelled. Echo cancellation is weaker when the microphone and speakers are different devices on different clocks (a USB headset microphone with laptop speakers). Try RNNoise in front of the WebRTC processor if keyboards and fans still come through. The Linux library needs glibc 2.38 or newer; for older systems build our own, and only if people ask. Needs a real test with a speaker and microphone in one room.
-- Channels larger than about six people (target 15 to 20). A full mesh costs about 55 kbps per stream, so talking to 19 people is roughly 1 Mbps up; open mics, relay-bound peers and decoding many talkers are the pain points. Measure a real 8 to 10 person call first to see which limit hits. Staged plan:
-  - Stage 1, no protocol change (comfortable to about 10 to 12): don't send to deafened people (state is already published); only dial and send to people actually in the channel; decode and mix only the loudest ~4 talkers; lower bitrate (24 kbps) if needed.
-  - Stage 2, elected forwarder (15 to 20): one member with a good connection acts as a mini-SFU. Everyone sends once to it and it fans out. Chosen deterministically from the voice roster (best connectivity, then lowest ID), announced by a signed beacon, with failover to the next candidate. The forwarder pays about 1 Mbps up and adds one hop (about 20 to 60 ms). Needs a room-level voice key (per-sender keys, rotated when someone joins or leaves) so the forwarder only moves ciphertext and cannot listen; that is the main work.
-  - Stage 3, only if needed: a tree of several forwarders, each serving a subset (little gain below about 30 people).
+- Large voice channels are built (see the README, "Streams and large rooms"): a tree from 9 people up, tested in one process with up to 10 people and a root that disappears. Not tried on real networks or with real people. Still to do:
+  - Measure a real 10 to 20 person call: delay through two or three hops, the root's upload with many open microphones (19 open microphones is about 5 Mbit/s for a root with 6 children, over the default 3 Mbit/s forwarding limit), and CPU for decoding many talkers.
+  - Stage 1 savings that were not done: don't send to deafened people, and decode and mix only the loudest few talkers.
+  - Voice packets in a tree are not signed, so a member in the tree could pass audio off as someone else's. Signing every packet nearly doubles it (64 bytes on about 90); signing a hash of several packets would be cheaper.
+  - A voice tree starts at the first member who sorts by id and can relay; if the first several cannot, each waits its turn and it takes seconds. Announce who can relay in the voice beacon, and prefer the best connection.
+  - The root's failure leaves a gap of a few seconds; keep a prepared second root.
 - Voice over the TURN relay is capped by the server's per-session limit; check that 32 kbps per listener fits.
 - Screen sharing: see "Screen sharing" below. Camera video would reuse the same pieces.
 
@@ -63,16 +65,29 @@ Not done:
 
 ## Screen sharing
 
-Not started. Sharing a screen or window is Windows only for now; watching should work wherever the app runs. The plan is to use FFmpeg as a separate program the app starts, not linked in:
+The distribution is built: `StartMedia`, `WatchMedia` and the tree behind them pass signed packets from a sharer to a whole room (README, "Streams and large rooms"), with a cache of the packets since the last key for late viewers. Capture, encoding, decoding and the viewer are not started. Sharing a screen or window is Windows only for now; watching should work wherever the app runs. The plan is to use FFmpeg as a separate program the app starts, not linked in:
 
 - Sender: FFmpeg's Windows screen sources (`ddagrab`, `gdigrab`) capture and encode. Use a hardware H.264 encoder (NVENC, AMF, Quick Sync) when the machine has one, otherwise VP8 or VP9 in software; pick with a short test at the start.
 - Transport: the encoded packets go over an unreliable channel, split into datagrams of about 1100 bytes with sequence numbers, and a keyframe is requested when a viewer joins or loses packets.
 - Viewer: FFmpeg decodes to raw frames drawn in a viewer tile. Windows bundles it; the `.deb` recommends the system `ffmpeg` package. Android can only watch (its own decoders handle both codecs).
 - A share is announced like a voice beacon (who, which screen or window, size, codec), and nothing is sent to anyone who has not clicked Watch. A blocked person's share is never shown.
 - Licence: ship an LGPL build only (no x264, which makes a build GPL), with its notices next to the existing ones. Check the H.264 patent position first, or ship VP8 and VP9 only. Which prebuilt LGPL builds exist is unchecked; if there is none, build a trimmed one in CI, which also keeps the installer small.
-- Bandwidth is the real limit. Default to 720p at 5 to 15 frames per second and 0.5 to 1 Mbit/s, and cap viewers at about 4 until there is a relay tree. Peer relays (256 KB/s in total) cannot carry video, and the TURN server has its own limits, so a viewer reached through it gets lower quality or is refused. Adaptive bitrate comes after.
+- Bandwidth is the real limit. Default to 720p at 5 to 15 frames per second and 0.5 to 1 Mbit/s, and a viewer passes it on to at most 3 others (more for the sharer if its upload allows). Peer relays (256 KB/s in total) cannot carry video, and the TURN server has its own limits, so a viewer reached through it gets lower quality or is refused. Adaptive bitrate comes after.
 - Sound from the shared window needs its own capture; later.
 - Prototype first: one Windows share and one viewer on the same machine, to measure CPU use and bitrate before choosing codecs and settings.
+
+## Streams and trees
+
+Built for screen sharing and large voice channels. Not done:
+
+- Viewers choose their own parents only through the root, so the root and a member's parent must be reachable; a member who cannot reach the root (or whom the root cannot reach) is never attached. The relay path through other members could carry these connections too.
+- The members that can be parents are those with a relay-capable connection; nothing measures upload speed, so `MediaFanout` and `MediaBytesPerSecond` are fixed numbers. Scale them to a measured upload (also the Relaying item about rate limits).
+- Placement is only swapped at the root: if the sharer's places go to members who cannot pass the stream on, one steps aside; lower down, a capable newcomer waits if every place is held by a member who cannot.
+- The root believes what members report about who sits under whom. A member can only mislead where newcomers are placed, but it should be checked or repaired by the root asking.
+- No adaptive bitrate and no quality layers: every viewer gets the same stream, and a viewer with a bad link just loses packets. Forwarders could drop layers per child.
+- Forwarders see the stream (they are viewers). Members who forward without viewing, such as the planned volunteer relays, would need a key held only by the viewers.
+- A viewer sees the addresses of its parent and children, whom it might not otherwise connect to in a large room.
+- The Desktop app has nothing for it yet: voice trees work without any UI, and a screen sharing UI needs the capture work above.
 
 ## Android
 
