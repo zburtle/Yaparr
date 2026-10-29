@@ -13,7 +13,15 @@ public static class ChannelIds
     public const byte Voice = 16;
 }
 
-public sealed record PeerInfo(PeerId Id, string DisplayName, IPEndPoint? EndPoint, bool IsRelayed = false);
+/// <summary>
+/// Someone in a room. <see cref="Id"/> is one device; <see cref="Account"/> is the person, the same for all of their
+/// devices. Group by <see cref="Account"/> to show people, and compare it with <see cref="ChatNode.AccountId"/> to
+/// recognise yourself on another device.
+/// </summary>
+public sealed record PeerInfo(PeerId Id, string DisplayName, IPEndPoint? EndPoint, bool IsRelayed = false, PeerId? AccountId = null)
+{
+    public PeerId Account => AccountId ?? Id;
+}
 
 public enum DeliveryState
 {
@@ -61,7 +69,10 @@ internal sealed class Wire
     /// <summary>Whether the sender's connection is good enough to relay for the other members of a room. Absent from older versions.</summary>
     public bool? Rly { get; set; }
 
-    public const string Caps = "caps", Rename = "name";
+    /// <summary>Settings passed between a person's own devices.</summary>
+    public AccountEntry[]? Entries { get; set; }
+
+    public const string Caps = "caps", Rename = "name", Account = "acct";
 
     public const string Ack = "ack", Hello = "hi", Join = "join", Leave = "leave", Message = "msg", Introduce = "peers", Sync = "sync", History = "hist", Links = "links", Presence = "pres", Voice = "voice";
 }

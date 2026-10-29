@@ -22,6 +22,13 @@ public sealed partial class ChatNode
         var name = CleanName(newName);
         if (name.Length == 0) throw new ArgumentException("A name cannot be empty.", nameof(newName));
         if (name == _displayName) return;
+        ApplyName(name);
+        // Your other devices take the new name too.
+        Stamp(NameKey, name, deleted: false);
+    }
+
+    private void ApplyName(string name)
+    {
         _displayName = name;
         _options.Log?.Invoke($"renamed to {name}");
 

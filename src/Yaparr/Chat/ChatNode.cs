@@ -42,6 +42,15 @@ public sealed class ChatNodeOptions
     /// <summary>People blocked in an earlier run. <see cref="ChatNode.Block"/> and <see cref="ChatNode.BlockChanged"/> keep the list up to date.</summary>
     public IReadOnlyCollection<PeerId> BlockedPeers { get; init; } = Array.Empty<PeerId>();
 
+    /// <summary>
+    /// Where your name, blocks and rooms are kept for your other devices (see <see cref="ChatNode.SyncedRoomChanged"/>).
+    /// Without a file they are only remembered while the app runs.
+    /// </summary>
+    public string? AccountStatePath { get; init; }
+
+    /// <summary>Settings to start with, for example those that came with a device being linked.</summary>
+    public IReadOnlyList<AccountEntry> AccountEntries { get; init; } = Array.Empty<AccountEntry>();
+
     public TimeSpan RelayFallbackDelay { get; init; } = TimeSpan.FromSeconds(8);
 
     public int TargetConnections { get; init; } = 8;
@@ -159,7 +168,8 @@ public sealed partial class ChatNode : IDisposable
             set => _canRelay = value == null ? 0 : value.Value ? 1 : 2;
         }
         public PeerId Id => Connection.RemoteId!.Value;
-        public PeerInfo Info => new(Id, Name ?? Id.Short, Connection.RemoteEndPoint, Connection.IsRelayed);
+        public PeerId AccountId => Connection.RemoteAccount ?? Id;
+        public PeerInfo Info => new(Id, Name ?? Id.Short, Connection.RemoteEndPoint, Connection.IsRelayed, AccountId);
 
         private readonly Dictionary<string, Dictionary<string, string>> _links = new();
         public void SetLinks(string roomKey, Dictionary<string, string> links) { lock (_gate) _links[roomKey] = links; }
@@ -252,9 +262,14 @@ public sealed partial class ChatNode : IDisposable
         _turnOptions = _options.Traversal.Turn;
         _useDefaultRelay = _options.Traversal.UseDefaultRelay;
         _displayName = _options.DisplayName;
-        foreach (var blocked in _options.BlockedPeers) _blocked[blocked] = 0;
         _ownsIdentity = _options.Identity == null;
         _identity = _options.Identity ?? PeerIdentity.Generate();
+        LoadAccountState();
+        foreach (var blocked in _options.BlockedPeers) _blocked[blocked] = 0;
+        // Blocks that came with the settings, in case the app's own list does not have them yet.
+        lock (_acctGate)
+            foreach (var e in _acct.Values.Where(e => e.Key.StartsWith(BlockPrefix, StringComparison.Ordinal) && !e.Deleted))
+                if (IsValidPeerId(e.Key[BlockPrefix.Length..])) _blocked[new PeerId(e.Key[BlockPrefix.Length..])] = 0;
         _mux = new UdpMux(_options.ListenPort) { Log = _options.Log };
         _discoveries = _options.DiscoveryFactory?.Invoke(_mux) is { } custom ? new() { custom } : CreateDefaultDiscoveries();
 
@@ -324,9 +339,11 @@ public sealed partial class ChatNode : IDisposable
         _started = true;
         _mux.Start();
         _ = Task.Run(() => _blobs.Sweep(_options.MaxHistoryAge));
-        var peerTopic = Topics.ForPeer(Id);
+        // Anyone looking for this person by their account id has to find every one of their devices.
+        var peerTopics = AccountId == Id ? new[] { Topics.ForPeer(Id) } : new[] { Topics.ForPeer(Id), Topics.ForPeer(AccountId) };
         foreach (var d in _discoveries)
-            _ = RunLoopAsync(() => d.AnnounceAsync(peerTopic, _cts.Token), $"peer announce ({d.GetType().Name})");
+            foreach (var peerTopic in peerTopics)
+                _ = RunLoopAsync(() => d.AnnounceAsync(peerTopic, _cts.Token), $"peer announce ({d.GetType().Name})");
         _ = Task.Run(OutboxLoopAsync);
         _ = Task.Run(RedialLoopAsync);
         if (_discoveries.OfType<IPeerRecords>().Any())
@@ -502,6 +519,7 @@ public sealed partial class ChatNode : IDisposable
         room.History = _histories.GetOrAdd(room.Key, k =>
             new RoomHistory(k, _options.HistoryStore, _options.MaxHistoryMessages, _options.MaxHistoryAge));
         if (!_rooms.TryAdd(room.Key, room)) return _rooms[room.Key];
+        NoteRoomChanged(room, joined: true);
 
         foreach (var peer in _peers.Values)
         {
@@ -531,6 +549,7 @@ public sealed partial class ChatNode : IDisposable
     internal Task LeaveRoomAsync(ChatRoom room)
     {
         LeaveRoomCore(room);
+        NoteRoomChanged(room, joined: false);
         return Task.CompletedTask;
     }
 
@@ -848,7 +867,7 @@ public sealed partial class ChatNode : IDisposable
         foreach (var id in wire.Have.Take(200))
         {
             if (!_outbox.TryGetValue(id, out var o)) continue;
-            if (room != null ? o.Room != room : o.DirectPeer != peer.Id) continue;
+            if (room != null ? o.Room != room : o.DirectPeer != peer.AccountId && o.DirectPeer != peer.Id) continue;
             lock (o) { o.Targets.Add(peer.Id); o.Acked.Add(peer.Id); }
             PublishDelivery(o);
         }
@@ -875,7 +894,7 @@ public sealed partial class ChatNode : IDisposable
         var id = new PeerId(m.From);
         var info = _peers.TryGetValue(id, out var p)
             ? p.Info with { DisplayName = m.Name }
-            : new PeerInfo(id, m.Name, null);
+            : new PeerInfo(id, m.Name, null, AccountId: AccountOf(id));
         long ts = m.From == Id.Value ? m.Ts : _clocks.Correct(m.From, m.Ts);
         return BuildMessage(info, room.Name, m.Id, m.Text, DateTimeOffset.FromUnixTimeMilliseconds(ts), catchUp);
     }
@@ -1020,7 +1039,7 @@ public sealed partial class ChatNode : IDisposable
                 if (!reachable.ContainsKey(id) && room.Indirect.TryRemove(id, out var gone) && !room.MemberStates.ContainsKey(id)) left.Add(gone);
             foreach (var (id, name) in reachable)
             {
-                var info = new PeerInfo(id, name, null, IsRelayed: true);
+                var info = new PeerInfo(id, name, null, IsRelayed: true, AccountId: AccountOf(id));
                 if (room.Indirect.TryAdd(id, info)) joined.Add(info);
                 else
                 {
@@ -1093,7 +1112,7 @@ public sealed partial class ChatNode : IDisposable
         // The connection is up a moment before the chat layer has registered it; wait so sending works at once.
         var id = conn.RemoteId!.Value;
         for (int i = 0; i < 100 && !_peers.ContainsKey(id); i++) await Task.Delay(20, ct).ConfigureAwait(false);
-        return GetDirectChat(id);
+        return GetDirectChat(conn.RemoteAccount ?? id);
     }
 
     public async Task<DirectChat> OpenDirectChatAsync(PeerId peer, CancellationToken ct = default)
@@ -1104,7 +1123,7 @@ public sealed partial class ChatNode : IDisposable
         while (true)
         {
             ct.ThrowIfCancellationRequested();
-            if (_peers.ContainsKey(peer)) return GetDirectChat(peer);
+            if (HasDevicesOf(peer)) return GetDirectChat(peer);
 
             // A search can return hundreds of addresses; try a limited number, skipping ones tried a moment ago.
             long now = Environment.TickCount64;
@@ -1141,22 +1160,27 @@ public sealed partial class ChatNode : IDisposable
 
     public DirectChat GetDirectChat(PeerId peer) => _directChats.GetOrAdd(peer, id => new DirectChat(this, id));
 
-    internal PeerInfo? GetPeerInfo(PeerId id) => _peers.TryGetValue(id, out var p) ? p.Info : null;
+    // A person can be reached on several devices; the direct path is the best one to show.
+    internal PeerInfo? GetPeerInfo(PeerId person) =>
+        DevicesOf(person).OrderBy(s => s.Connection.IsRelayed).ThenBy(s => s.Id.Value, StringComparer.Ordinal).FirstOrDefault()?.Info;
 
+    // Goes to every device of the person that is connected; "delivered" means all of those confirmed it.
     internal string SendDirectMessage(PeerId peer, string text)
     {
-        if (!_peers.TryGetValue(peer, out var state)) throw new InvalidOperationException($"Not connected to {peer.Short}.");
+        var devices = DevicesOf(peer);
+        if (devices.Count == 0) throw new InvalidOperationException($"Not connected to {peer.Short}.");
         var wire = NewMessage(text, room: null);
         var outgoing = new Outgoing(wire.Id!) { DirectPeer = peer, DirectWire = wire, SentAt = Environment.TickCount64 };
-        outgoing.Targets.Add(peer);
+        foreach (var device in devices) outgoing.Targets.Add(device.Id);
         _outbox[wire.Id!] = outgoing;
-        Send(state.Connection, wire);
+        foreach (var device in devices) Send(device.Connection, wire);
         PublishDelivery(outgoing);
         return wire.Id!;
     }
 
     private void OnConnectionEstablished(PeerConnection conn)
     {
+        LearnAccount(conn);
         if (IsBlocked(conn.RemoteId!.Value)) { conn.Close(notifyPeer: true); return; }
         var state = new PeerState(conn);
         bool isNew = !_peers.ContainsKey(state.Id);
@@ -1166,7 +1190,7 @@ public sealed partial class ChatNode : IDisposable
         _peers[state.Id] = state;
         foreach (var room in _rooms.Values)
             if (room.MemberStates.ContainsKey(state.Id)) room.MemberStates[state.Id] = state;
-        ResendTo(state, o => o.DirectPeer == state.Id, o => o.DirectWire!);
+        ResendTo(state, o => o.DirectPeer == state.AccountId || o.DirectPeer == state.Id, o => o.DirectWire!);
         // On the shared TURN server? Look for a member who can carry this connection instead (checked after the delay, once we know).
         if (_turn != null && !conn.IsRelayed && _introducedVia.ContainsKey(state.Id)) ScheduleRelayFallback(state.Id);
         LogPeerEvent(state.Id, isNew
@@ -1244,8 +1268,13 @@ public sealed partial class ChatNode : IDisposable
                 LogPeerEvent(peer.Id, $"hello from {peer.Id.Short} ({peer.Name}): declares {wire.Rooms?.Length ?? 0} room(s); we are in {_rooms.Count}");
                 if (first && !EnforceCap(peer)) break;
                 if (first) PeerConnected?.Invoke(peer.Info);
+                if (first && IsSibling(peer)) SendAccountState(peer);
                 foreach (var room in _rooms.Values)
                     if (peer.Declares(RefFrom(room, peer))) OnPeerEntersRoom(peer, room);
+                break;
+
+            case Wire.Account when wire.Entries != null:
+                OnAccountEntries(peer, wire.Entries);
                 break;
 
             case Wire.Caps when wire.Rly != null:
@@ -1304,8 +1333,8 @@ public sealed partial class ChatNode : IDisposable
                 if (!_seenDirect.TryAdd(peer.Id.Value + wire.Id, Environment.TickCount64) || IsBlocked(peer.Id)) break;
                 _clocks.Observe(peer.Id.Value, wire.Ts, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                 var msg = BuildMessage(peer.Info, null, wire.Id, wire.Text, DateTimeOffset.FromUnixTimeMilliseconds(_clocks.Correct(peer.Id.Value, wire.Ts)));
-                bool existed = _directChats.ContainsKey(peer.Id);
-                var chat = GetDirectChat(peer.Id);
+                bool existed = _directChats.ContainsKey(peer.AccountId);
+                var chat = GetDirectChat(peer.AccountId);
                 if (!existed) IncomingDirectChat?.Invoke(chat);
                 chat.RaiseMessage(msg);
                 AutoFetch(msg);

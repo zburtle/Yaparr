@@ -8,8 +8,8 @@ public partial class MainWindow
 {
     private string? BlockedIdOf(object? item) => item switch
     {
-        PeerVm { Id: var id } when id != _node?.Id.Value => id,
-        MessageVm { IsMine: false, Source: { } source } => source.From.Id.Value,
+        PeerVm { Id: var id } when id != _node?.AccountId.Value => id,
+        MessageVm { IsMine: false, Source: { } source } => source.From.Account.Value,
         _ => null,
     };
 
@@ -65,6 +65,13 @@ public partial class MainWindow
     private void OnBlockChanged(PeerId id, bool blocked)
     {
         if (!blocked && _settings.BlockedPeers.RemoveAll(b => b.Id == id.Value) > 0) _data.SaveSettings(_settings);
+        // Blocked on another of your devices: the list kept here follows.
+        if (blocked && _settings.BlockedPeers.All(b => b.Id != id.Value))
+        {
+            var name = _settings.KnownPeers.FirstOrDefault(k => k.Id == id.Value)?.Name ?? "";
+            _settings.BlockedPeers.Add(new KnownPeer { Id = id.Value, Name = name, LastSeen = DateTimeOffset.Now });
+            _data.SaveSettings(_settings);
+        }
         RefreshPeers();
         foreach (var conv in _roomConversations.Values) conv.VoiceMembersChanged();
         foreach (var (room, conv) in _roomConversations) RefreshVoice(conv, room, announce: false);

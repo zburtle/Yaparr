@@ -188,6 +188,7 @@
                 <Separator />
                 <MenuItem Header="Change my _name…" Click="Rename_Click" />
                 <MenuItem Header="Copy my _ID" Click="CopyId_Click" />
+                <MenuItem Header="_Link another device…" Click="LinkDevice_Click" />
                 <MenuItem Header="_Import profile…" Click="ImportProfile_Click" />
                 <MenuItem Header="_Export profile…" Click="ExportProfile_Click" />
                 <Separator />

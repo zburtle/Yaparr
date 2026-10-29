@@ -32,6 +32,9 @@ public sealed class ChatRoom
     internal byte[] Topic { get; }
     internal string Key { get; }
 
+    /// <summary>The room key of a private room as text, null for a public room.</summary>
+    internal string? SecretText => _secret?.ToString();
+
     internal string RefFor(byte[] sessionId, PeerId prover)
     {
         if (_secret == null) return Key;

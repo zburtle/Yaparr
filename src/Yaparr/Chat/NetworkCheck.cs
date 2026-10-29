@@ -41,10 +41,13 @@ public sealed partial class ChatNode
     /// <summary>How Yaparr currently reaches one person.</summary>
     public PeerLink GetLink(PeerId peer)
     {
-        if (_peers.TryGetValue(peer, out var state))
+        // The id can be a device or a person; a person is reached through whichever of their devices is best connected.
+        var state = _peers.TryGetValue(peer, out var exact) ? exact : DevicesOf(peer).OrderBy(s => s.Connection.IsRelayed).FirstOrDefault();
+        if (state != null)
         {
+            var device = state.Id;
             if (_outbox.Values.Any(o => o.Last is { State: DeliveryState.NotDelivered or DeliveryState.PartlyDelivered }
-                                       && (o.DirectPeer == peer || (o.Room != null && o.Targets.Contains(peer) && !o.Acked.Contains(peer)))))
+                                       && (o.DirectPeer == peer || o.DirectPeer == device || (o.Room != null && o.Targets.Contains(device) && !o.Acked.Contains(device)))))
                 return PeerLink.NotResponding;
             return state.Connection.IsRelayed ? PeerLink.Relayed : PeerLink.Direct;
         }

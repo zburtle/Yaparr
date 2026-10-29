@@ -145,16 +145,25 @@ public sealed class AppData
         System.IO.Directory.Delete(staging, recursive: true);
     }
 
+    public bool HasIdentity => File.Exists(IdentityPath);
+
+    public string AccountStatePath => Path.Combine(Directory, "account.json");
+
+    public void SaveIdentity(PeerIdentity identity) => File.WriteAllBytes(IdentityPath, identity.Export());
+
     public PeerIdentity LoadOrCreateIdentity()
     {
         try
         {
             if (File.Exists(IdentityPath)) return PeerIdentity.Import(File.ReadAllBytes(IdentityPath));
         }
-        catch (Exception ex) when (ex is IOException or System.Security.Cryptography.CryptographicException) { }
+        catch (Exception ex) when (ex is IOException or System.Security.Cryptography.CryptographicException or ArgumentException or FormatException) { }
 
+        // A file we could not read is kept aside, not written over: it may be the key to an account.
+        try { if (File.Exists(IdentityPath)) File.Move(IdentityPath, IdentityPath + ".unreadable", overwrite: true); }
+        catch (IOException) { }
         var identity = PeerIdentity.Generate();
-        File.WriteAllBytes(IdentityPath, identity.ExportPrivateKey());
+        SaveIdentity(identity);
         return identity;
     }
 }

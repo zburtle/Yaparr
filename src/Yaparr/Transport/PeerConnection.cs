@@ -98,6 +98,12 @@ public sealed class PeerConnection : IDisposable
     public PeerId? RemoteId { get; private set; }
     public byte[]? RemotePublicKey { get; private set; }
 
+    /// <summary>
+    /// The person the remote device belongs to, proved by the certificate in its hello. The same as
+    /// <see cref="RemoteId"/> for a device that has no certificate, including every device of an older version.
+    /// </summary>
+    public PeerId? RemoteAccount { get; private set; }
+
     public byte[]? SessionId { get; private set; }
 
     public string? CloseReason { get; private set; }
@@ -202,6 +208,7 @@ public sealed class PeerConnection : IDisposable
     private void OnHelloLocked(ReadOnlySpan<byte> packet, List<Action> post)
     {
         byte[] idKey, ephKey, sig, instance;
+        byte[]? accountKey = null, certificate = null;
         try
         {
             int p = 2;
@@ -210,15 +217,23 @@ public sealed class PeerConnection : IDisposable
             ephKey = ReadBlock(packet, ref p);
             sig = ReadBlock(packet, ref p);
             instance = ReadBlock(packet, ref p);
+            // A device linked to a person's account also says whose it is. Older versions never read past the instance.
+            if (p < packet.Length)
+            {
+                accountKey = ReadBlock(packet, ref p);
+                certificate = ReadBlock(packet, ref p);
+            }
         }
         catch (Exception ex) when (ex is ArgumentOutOfRangeException or IndexOutOfRangeException) { return; }
 
         if (instance.Length != InstanceIdLength) return;
         if (!PeerIdentity.Verify(idKey, SignedHelloData(ephKey, instance), sig)) return;
+        if (accountKey != null && !PeerIdentity.VerifyDevice(accountKey, idKey, certificate!)) return;
 
         var remoteId = PeerId.FromPublicKey(idKey);
+        var remoteAccount = accountKey != null ? PeerId.FromPublicKey(accountKey) : remoteId;
         if (remoteId == _local.Id) { post.Add(() => CloseCore(false, "is ourselves")); return; }
-        if (_expected is { } want && want != remoteId) { post.Add(() => CloseCore(false, "presented an unexpected identity")); return; }
+        if (_expected is { } want && want != remoteId && want != remoteAccount) { post.Add(() => CloseCore(false, "presented an unexpected identity")); return; }
         if (State == ConnectionState.Established && RemoteId != remoteId) return;
 
         long now = Environment.TickCount64;
@@ -231,6 +246,7 @@ public sealed class PeerConnection : IDisposable
             _remoteEph = ephKey;
             _channels.Clear();
             RemoteId = remoteId;
+            RemoteAccount = remoteAccount;
             RemotePublicKey = idKey;
             RemoteInstance = instance;
             State = ConnectionState.Established;
@@ -326,6 +342,11 @@ public sealed class PeerConnection : IDisposable
         WriteBlock(ms, _ephPublic);
         WriteBlock(ms, sig);
         WriteBlock(ms, _instance);
+        if (_local.DeviceCertificate is { } certificate)
+        {
+            WriteBlock(ms, _local.AccountPublicKey);
+            WriteBlock(ms, certificate);
+        }
         _send(ms.ToArray(), RemoteEndPoint);
         _lastHelloSent = now;
     }

@@ -231,6 +231,32 @@ room and in the voice channel is announced again under the new name, so people y
 as well. New messages carry the new name; messages already sent are signed with the name they had and keep it. In the
 Desktop app it is **File > Change my name…**, and it is remembered for the next start.
 
+## Using several devices
+
+One person can use Yaparr on several devices. Every device has a key of its own, and the first device's key is the
+account key. A device linked later gets a certificate from the account key, which it shows in its hello, so everyone it
+meets can tell it belongs to the same person (`PeerInfo.Account`, `ChatNode.AccountId`). Older versions ignore the
+certificate and see another device as another person with the same name. Each device is an ordinary peer, so
+connections, relays, voice and delivery work per device; what is shared is the person.
+
+- **Linking.** On a device you already use choose **File > Link another device…**. It makes a code, encrypted with a
+  passphrase (about 100 bits, shown once), that holds a new identity for the other device plus your name, private rooms and
+  blocks. On the new device choose **Link this device** at first start, paste the code and type the passphrase. The code
+  holds your account key, so send it and the passphrase by different routes and delete it afterwards. It stops working
+  after a day. In the library: `DeviceLink.Create` and `DeviceLink.Open`.
+- **Sharing your id.** Give people your account id (**Copy my ID**), which is the same on every device. A direct chat
+  with a person reaches all of their devices, and counts as delivered when every connected device confirmed it.
+- **What stays in step.** Your name, blocks and the list of private rooms follow you between devices
+  (`ChatNode.SyncedRoomChanged`, `DisplayNameChanged`, `AccountEntries`), over connections whose certificate proves they
+  are your own. Changes are kept in `account.json` and a device that was off catches up when it meets another; the newest
+  change wins. Room history syncs between your devices like it does between any two members of the room.
+- **People.** The Desktop app lists a person once however many devices they use, and does not list your own other devices.
+  A block applies to the person, with all of their devices.
+
+Limits: a direct chat is not copied between your devices (a message sent or received on one is not shown on another),
+both devices can join the same voice channel, and every linked device holds the account key, so there is no way to take a
+lost device away from the account (it would need a new identity). Details are in [BACKLOG.md](BACKLOG.md).
+
 ## Notifications (Desktop app)
 
 A short sound plays when a message arrives in a conversation you are not looking at, or while the window is in the

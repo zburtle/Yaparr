@@ -21,8 +21,12 @@ internal static class TestUtil
 
     // Test nodes have no real network, so by default they count as having a connection that relays.
     public static ChatNode NewNode(InMemoryDiscoveryHub hub, string name, bool relaying = true, bool relayCapable = true,
-        TimeSpan? fallbackDelay = null, PeerNetworkOptions? network = null, IReadOnlyCollection<Yaparr.Identity.PeerId>? blocked = null) => new(new ChatNodeOptions
+        TimeSpan? fallbackDelay = null, PeerNetworkOptions? network = null, IReadOnlyCollection<Yaparr.Identity.PeerId>? blocked = null,
+        Yaparr.Identity.PeerIdentity? identity = null, string? accountStatePath = null, IReadOnlyList<AccountEntry>? accountEntries = null) => new(new ChatNodeOptions
     {
+        Identity = identity,
+        AccountStatePath = accountStatePath,
+        AccountEntries = accountEntries ?? Array.Empty<AccountEntry>(),
         BlockedPeers = blocked ?? Array.Empty<Yaparr.Identity.PeerId>(),
         EnableRelaying = relaying,
         RelayFallbackDelay = fallbackDelay ?? TimeSpan.FromMilliseconds(500),

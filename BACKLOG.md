@@ -38,6 +38,28 @@ Improvements we have agreed to do later, roughly in priority order. Done items a
 - Show the relay counters in the Desktop app's network dialog.
 - The "already connected" check for server addresses only knows an address's owner if we once connected to it directly; an address we have never reached is still dialled once.
 - Rate limits are fixed numbers; scale them to the relay's measured upload.
+- Relaying for people we share no room with ("Help others connect"), on by default with a setting to turn it off. A last tier: used only when no room member can relay and the TURN server is unavailable or overloaded. Needs a relay directory (capable peers announce under a DHT topic), choosing by latency, `MaySharedRoomRelay` relaxed to accept non-members, a separate and tighter budget for strangers, and a headless relay mode in the CLI so volunteers can run an always-on relay with bigger caps. This reverses the room-only rule, so the README's Relaying section changes when it is built.
+- What a stranger's relay learns: both IP addresses, both peer IDs, and when and how much they talk; never the contents (end to end encrypted). It is one hop, not Tor: there is no onion routing and no anonymity, and it cannot become an open proxy because it only forwards between two Yaparr peers. Say this plainly in a first-run notice, the Help menu and the README, since machines now carry strangers' traffic by default.
+- Anyone can generate identities, so there is no reputation to rely on: lean on the budgets, and drop a relay that misbehaves. Phones and metered connections never relay (see Android).
+
+## Multiple devices
+
+Built (see the README, "Using several devices"). Each device has its own key and a certificate from the account key, and is an ordinary peer; the account groups them. This replaced the first plan (one key on every device, with connections keyed by peer and device ID), which would have meant reworking every table keyed by peer ID and made older clients fight over the one slot.
+
+Not done:
+
+- Direct messages are not copied between your own devices: a message you send from one device, or receive while another is off, is not shown on the other. Make direct chats a signed log with IDs like room messages, so devices fill each other's gaps, and copy sent messages to your other devices. Check first how direct messages are kept (the Desktop app keeps them, not the library).
+- Voice: both devices can join the same channel and show up as two people. One device per account: joining on a second moves you there and the first is told to leave; the voice beacon names the device.
+- Show the account's devices in the app (a list, with the one in use) and a way to see which one a message came from.
+- A block is recognised for a device once we have seen its certificate on a connection. A message that arrives only through other members from a device we have never connected to is not covered; put the certificate in signed messages and presence beacons.
+- The mesh limits (`TargetConnections`, `MaxConnections`, introductions) count devices, not people, so a person on three devices uses three slots.
+- Address records in the DHT are looked up by id, so an account id finds the first device's record only; other devices are found through the account topic they announce under. Publish a record per device and look them up by account.
+- The CLI and the WPF app do not link devices (WPF is no longer updated).
+- Not tried on real networks, and the Desktop menus and dialogs have not been looked at on screen.
+- A linked device holds the account key, so a stolen device means a new identity. If the key stayed on one device, a lost one could be revoked: sign a revocation with the account key and pass it around with the account settings.
+- The link code is encrypted with a passphrase and expires in a day, but can be used more than once. A one-time code would need the two devices to talk, for example through the DHT the way a private room is found.
+- Sync needs two of your devices online together. An always-on device (the CLI in a headless mode on a Raspberry Pi, a VPS or a home server) is just another device that never sleeps, and could hold history and receive direct messages for you. It can share the headless mode with volunteer relays.
+- No network storage for backups. The mainline DHT (BEP 44) only fits tiny short-lived records: about 1000 bytes, expires in around two hours without a republish, and many nodes do not support it. To evaluate later if offline delivery without running anything is wanted: Nostr relays for encrypted store-and-forward. They are third-party servers, use secp256k1 where we use P-256, see connection metadata, and keep messages as long as each relay chooses.
 
 ## Android
 

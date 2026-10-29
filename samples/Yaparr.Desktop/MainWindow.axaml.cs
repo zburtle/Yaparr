@@ -222,19 +222,23 @@ public partial class MainWindow : Window
         _log.Write($"Yaparr {Updater.CurrentVersion} starting");
         SetUpNotifications();
 
+        if (Arg("--name") == null && _settings.DisplayName == null && !_data.HasIdentity) await OfferLinkAsync();
+
         var name = Arg("--name") ?? _settings.DisplayName
                    ?? await PromptDialog.AskAsync(this, "Choose a display name (others will see it next to your messages):", Environment.UserName);
         if (string.IsNullOrWhiteSpace(name)) { Close(); return; }
         _settings.DisplayName = name;
         _data.SaveSettings(_settings);
 
-        var identity = _data.LoadOrCreateIdentity();
+        var identity = _identity = _data.LoadOrCreateIdentity();
         var traversal = TraversalOptions.Load(Path.Combine(_data.Directory, "network.json"));
         _node = new ChatNode(new ChatNodeOptions
         {
             DisplayName = name,
             BlockedPeers = _settings.BlockedPeers.Select(b => new PeerId(b.Id)).ToList(),
             Identity = identity,
+            AccountStatePath = _data.AccountStatePath,
+            AccountEntries = _linkedEntries,
             HistoryStore = new FileHistoryStore(_data.HistoryDirectory),
             Traversal = traversal,
             AttachmentDirectory = Path.Combine(_data.Directory, "attachments"),
@@ -254,13 +258,17 @@ public partial class MainWindow : Window
         _node.VpnStateChanged += _ => UI(UpdateStatus);
         _node.BlockChanged += (id, blocked) => UI(() => OnBlockChanged(id, blocked));
         _node.PeerRenamed += p => UI(() => OnPeerRenamed(p));
+        _node.SyncedRoomChanged += OnSyncedRoomChanged;
+        _node.DisplayNameChanged += OnDisplayNameChanged;
         _node.PeerConnected += p => UI(() => { Remember(p); RefreshPeers(); UpdateStatus(); });
-        _node.PeerDisconnected += p => UI(() => { Remember(p); RefreshPeers(p.Id); UpdateStatus(); });
+        _node.PeerDisconnected += p => UI(() => { Remember(p); RefreshPeers(p.Account); UpdateStatus(); });
         _node.IncomingDirectChat += chat => _ = AddDirect(chat);
 
         ShowOwnName(name);
-        IdText.Text = _node.Id.Short;
-        ProfileIdText.Text = _node.Id.Value;
+        // The id to share is the account's, which is the same on every one of your devices.
+        IdText.Text = _node.AccountId.Short;
+        ProfileIdText.Text = _node.AccountId.Value;
+        ReconcileFromAccount();
         _node.Start();
         UpdateStatus();
         RefreshPeers();
@@ -397,6 +405,12 @@ public partial class MainWindow : Window
             $"Leave \"{conv.Title}\"? You will stop receiving its messages. To come back you need the invite again.");
         if (!answer) return;
 
+        await LeaveConversationAsync(conv);
+        StatusText.Text = $"Left {conv.Title}.";
+    }
+
+    private async Task LeaveConversationAsync(ConversationVm conv)
+    {
         var room = _roomConversations.FirstOrDefault(kv => kv.Value == conv).Key;
         if (room != null)
         {
@@ -406,7 +420,6 @@ public partial class MainWindow : Window
         _conversations.Remove(conv);
         if (_settings.PrivateRooms.RemoveAll(r => r.Key == conv.Invite) > 0) _data.SaveSettings(_settings);
         RefreshPeers();
-        StatusText.Text = $"Left {conv.Title}.";
     }
 
     private async Task<string?> ClipboardInviteAsync()
@@ -449,7 +462,7 @@ public partial class MainWindow : Window
         room.VoiceChanged += () => UI(() => RefreshVoice(conv, room));
         room.MemberRenamed += p => UI(() => { Remember(p); RefreshPeers(); });
         room.MemberJoined += p => UI(() => { Remember(p); RefreshPeers(); conv.Add(MessageVm.System($"{p.DisplayName} joined")); });
-        room.MemberLeft += p => UI(() => { Remember(p); RefreshPeers(p.Id); conv.Add(MessageVm.System($"{p.DisplayName} left")); });
+        room.MemberLeft += p => UI(() => { Remember(p); RefreshPeers(p.Account); conv.Add(MessageVm.System($"{p.DisplayName} left")); });
 
         foreach (var m in room.GetHistory()) conv.Add(ToVm(m));
         _conversations.Add(conv);
@@ -460,11 +473,11 @@ public partial class MainWindow : Window
 
     private void Remember(PeerInfo peer)
     {
-        if (_node == null || peer.Id == _node.Id) return;
-        var known = _settings.KnownPeers.FirstOrDefault(k => k.Id == peer.Id.Value);
+        if (_node == null || _node.IsMyDevice(peer.Id)) return;
+        var known = _settings.KnownPeers.FirstOrDefault(k => k.Id == peer.Account.Value);
         if (known == null)
         {
-            _settings.KnownPeers.Add(new KnownPeer { Id = peer.Id.Value, Name = peer.DisplayName, LastSeen = DateTimeOffset.Now });
+            _settings.KnownPeers.Add(new KnownPeer { Id = peer.Account.Value, Name = peer.DisplayName, LastSeen = DateTimeOffset.Now });
             _data.SaveSettings(_settings);
         }
         else if (known.Name != peer.DisplayName)
@@ -478,12 +491,17 @@ public partial class MainWindow : Window
     {
         if (_node == null) return;
 
+        // One entry per person, however many devices they are on; your own other devices are not listed.
         var live = new Dictionary<string, PeerInfo>();
-        foreach (var p in _node.ConnectedPeers) live[p.Id.Value] = p;
+        void Add(PeerInfo p)
+        {
+            if (_node.IsMyDevice(p.Id)) return;
+            if (!live.TryGetValue(p.Account.Value, out var seen) || (seen.IsRelayed && !p.IsRelayed)) live[p.Account.Value] = p;
+        }
+        foreach (var p in _node.ConnectedPeers) Add(p);
         foreach (var room in _roomConversations.Keys)
-            foreach (var p in room.Members) live.TryAdd(p.Id.Value, p);
-        if (gone is { } g) live.Remove(g.Value);
-        live.Remove(_node.Id.Value);
+            foreach (var p in room.Members) Add(p);
+        if (gone is { } g && !_node.ConnectedPeers.Any(c => c.Account == g)) live.Remove(g.Value);
 
         var now = DateTimeOffset.Now;
         bool changed = false;
@@ -499,10 +517,10 @@ public partial class MainWindow : Window
         if (changed) _data.SaveSettings(_settings);
 
         var blocked = _settings.BlockedPeers.Select(b => b.Id).ToHashSet();
-        var online = live.Values.Where(p => !blocked.Contains(p.Id.Value))
-            .Select(p => new PeerVm(p.Id.Value, p.DisplayName, true, now, p.IsRelayed, _node.GetLink(p.Id)));
+        var online = live.Values.Where(p => !blocked.Contains(p.Account.Value))
+            .Select(p => new PeerVm(p.Account.Value, p.DisplayName, true, now, p.IsRelayed, _node.GetLink(p.Account)));
         var offline = _settings.KnownPeers
-            .Where(k => !live.ContainsKey(k.Id) && k.Id != _node.Id.Value && !blocked.Contains(k.Id))
+            .Where(k => !live.ContainsKey(k.Id) && !_node.IsMyDevice(new PeerId(k.Id)) && !blocked.Contains(k.Id))
             .Select(k => new PeerVm(k.Id, string.IsNullOrWhiteSpace(k.Name) ? k.Id[..8] : k.Name, false, k.LastSeen, false, _node.GetLink(new PeerId(k.Id))));
         var shut = _settings.BlockedPeers
             .Select(b => new PeerVm(b.Id, string.IsNullOrWhiteSpace(b.Name) ? b.Id[..8] : b.Name, false, b.LastSeen, Blocked: true));
@@ -523,7 +541,7 @@ public partial class MainWindow : Window
         if (string.IsNullOrWhiteSpace(text)) return;
         text = text.ToLowerInvariant();
         if (text.Length != 64 || !text.All(Uri.IsHexDigit)) { await Dialogs.MessageAsync(this, "Yaparr", "A peer ID is 64 hex characters."); return; }
-        if (text == _node.Id.Value) { await Dialogs.MessageAsync(this, "Yaparr", "That's your own ID."); return; }
+        if (text == _node.AccountId.Value || text == _node.Id.Value) { await Dialogs.MessageAsync(this, "Yaparr", "That's your own ID."); return; }
 
         var id = new PeerId(text);
         StatusText.Text = $"Looking for {id.Short}… this can take a minute if they just came online.";
@@ -568,7 +586,7 @@ public partial class MainWindow : Window
     private MessageVm ToVm(ChatMessage m)
     {
         Remember(m.From);
-        var vm = new MessageVm(m.Timestamp, m.From.DisplayName, m.Text, m.IsCatchUp, isMine: _node != null && m.From.Id == _node.Id, id: m.Id, attachment: m.Attachment) { Source = m };
+        var vm = new MessageVm(m.Timestamp, m.From.DisplayName, m.Text, m.IsCatchUp, isMine: _node != null && _node.IsMyDevice(m.From.Id), id: m.Id, attachment: m.Attachment) { Source = m };
         if (m.Attachment != null) TrackAttachment(vm);
         return vm;
     }
@@ -783,7 +801,7 @@ public partial class MainWindow : Window
     private async void CopyId_Click(object? sender, RoutedEventArgs e)
     {
         if (_node == null) return;
-        StatusText.Text = await Dialogs.CopyAsync(this, _node.Id.Value)
+        StatusText.Text = await Dialogs.CopyAsync(this, _node.AccountId.Value)
             ? "Your peer ID was copied to the clipboard."
             : "Couldn't copy: another program is using the clipboard. Try again.";
     }
@@ -793,7 +811,7 @@ public partial class MainWindow : Window
         if (_selected is not { IsRoom: true } conv) return;
         var room = _roomConversations.FirstOrDefault(kv => kv.Value == conv).Key;
         if (room == null) return;
-        int others = room.Members.Count(m => m.Id != _node?.Id);
+        int others = room.Members.Where(m => _node?.IsMyDevice(m.Id) != true).Select(m => m.Account).Distinct().Count();
         conv.MembersText = others == 0 ? "Only you so far" : $"You and {others} other{(others == 1 ? "" : "s")} online";
     }
 

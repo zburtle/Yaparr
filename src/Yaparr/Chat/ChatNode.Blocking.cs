@@ -12,31 +12,45 @@ public sealed partial class ChatNode
     /// <summary>The people you have blocked.</summary>
     public IReadOnlyCollection<PeerId> BlockedPeers => _blocked.Keys.ToList();
 
-    public bool IsBlocked(PeerId peer) => _blocked.ContainsKey(peer);
+    /// <summary>Whether a device, or the person it belongs to, is blocked.</summary>
+    public bool IsBlocked(PeerId peer) => _blocked.ContainsKey(peer) || (_accounts.TryGetValue(peer, out var account) && _blocked.ContainsKey(account));
 
     /// <summary>Raised when someone is blocked (true) or unblocked (false), so the app can remember the list.</summary>
     public event Action<PeerId, bool>? BlockChanged;
 
     /// <summary>
-    /// Blocks someone. Their messages, pictures and voice no longer reach you, they leave your member lists and
-    /// voice channel, and your connection to them is closed and not opened again. You also stop relaying for them.
+    /// Blocks someone, with all of their devices. Their messages, pictures and voice no longer reach you, they leave
+    /// your member lists and voice channel, and your connection to them is closed and not opened again. You also stop
+    /// relaying for them. Pass either a device id or the person's account id; the person is what is remembered.
     /// </summary>
-    public void Block(PeerId peer)
+    public void Block(PeerId peer) => Block(peer, announce: true);
+
+    private void Block(PeerId peer, bool announce)
     {
-        if (peer == Id) throw new ArgumentException("You cannot block yourself.", nameof(peer));
-        if (!_blocked.TryAdd(peer, 0)) return;
-        _options.Log?.Invoke($"blocked {peer.Short}");
-        Network.Get(peer)?.Close(notifyPeer: true);
+        var person = AccountOf(peer);
+        if (peer == Id || IsMyDevice(peer) || person == AccountId) throw new ArgumentException("You cannot block yourself.", nameof(peer));
+        if (!_blocked.TryAdd(person, 0)) return;
+        _options.Log?.Invoke($"blocked {person.Short}");
+        foreach (var device in _accounts.Where(kv => kv.Value == person).Select(kv => kv.Key).Append(person))
+            Network.Get(device)?.Close(notifyPeer: true);
         RefreshBlockedViews();
-        BlockChanged?.Invoke(peer, true);
+        BlockChanged?.Invoke(person, true);
+        if (announce) NoteBlockChanged(person, true);
     }
 
-    public void Unblock(PeerId peer)
+    public void Unblock(PeerId peer) => Unblock(peer, announce: true);
+
+    private void Unblock(PeerId peer, bool announce)
     {
-        if (!_blocked.TryRemove(peer, out _)) return;
-        _options.Log?.Invoke($"unblocked {peer.Short}");
+        var person = AccountOf(peer);
+        // A block placed on a single device before we knew whose it was is lifted too.
+        bool removed = _blocked.TryRemove(person, out _);
+        removed |= _blocked.TryRemove(peer, out _);
+        if (!removed) return;
+        _options.Log?.Invoke($"unblocked {person.Short}");
         RefreshBlockedViews();
-        BlockChanged?.Invoke(peer, false);
+        BlockChanged?.Invoke(person, false);
+        if (announce) NoteBlockChanged(person, false);
     }
 
     private void RefreshBlockedViews()
