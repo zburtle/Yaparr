@@ -164,7 +164,7 @@ public sealed record PeerVm(string Id, string Name, bool Online, DateTimeOffset 
     public string StateText => Blocked ? "blocked" : Link switch
     {
         PeerLink.Direct => "direct",
-        PeerLink.ViaServer => "via server",
+        PeerLink.ViaServer => "via TURN",
         PeerLink.Relayed => "via member",
         PeerLink.Reconnecting => "reconnecting…",
         PeerLink.NotResponding => "not responding",
