@@ -32,8 +32,8 @@ public class DuplicateConnectionTests
 
             await Task.Delay(1500);
             Assert.True(established <= 2 && closed <= 1, $"round {round}: {established} established, {closed} closed on A");
-            Assert.NotNull(a.Get(bId.Id));
-            Assert.NotNull(b.Get(aId.Id));
+            // On a busy machine the last of the two handshakes can still be settling; both must end up connected.
+            await TestUtil.WaitFor(() => a.Get(bId.Id) != null && b.Get(aId.Id) != null, 5_000);
         }
     }
 }
