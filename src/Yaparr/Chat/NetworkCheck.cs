@@ -32,6 +32,8 @@ public enum PeerLink
     Reconnecting,
     /// <summary>Connected, but the last message was not confirmed.</summary>
     NotResponding,
+    /// <summary>Connected straight to the shared TURN server's address for them, which carries everything and has limited bandwidth.</summary>
+    ViaServer,
 }
 
 public sealed partial class ChatNode
@@ -49,7 +51,8 @@ public sealed partial class ChatNode
             if (_outbox.Values.Any(o => o.Last is { State: DeliveryState.NotDelivered or DeliveryState.PartlyDelivered }
                                        && (o.DirectPeer == peer || o.DirectPeer == device || (o.Room != null && o.Targets.Contains(device) && !o.Acked.Contains(device)))))
                 return PeerLink.NotResponding;
-            return state.Connection.IsRelayed ? PeerLink.Relayed : PeerLink.Direct;
+            if (state.Connection.IsRelayed) return PeerLink.Relayed;
+            return IsOnSharedServer(state.Connection) ? PeerLink.ViaServer : PeerLink.Direct;
         }
         return _redial.ContainsKey(peer) ? PeerLink.Reconnecting : PeerLink.Offline;
     }

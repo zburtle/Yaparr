@@ -131,5 +131,9 @@ public sealed partial class ChatNode
         return who is { } w && _peers.ContainsKey(w);
     }
 
-    private bool IsOnSharedServer(PeerConnection conn) => _turn is { } turn && !conn.IsRelayed && turn.UsesRelayFor(conn.RemoteEndPoint);
+    /// <summary>For tests: say which connections run through the shared server.</summary>
+    internal Func<PeerConnection, bool>? OnSharedServerOverride { get; set; }
+
+    private bool IsOnSharedServer(PeerConnection conn) =>
+        OnSharedServerOverride?.Invoke(conn) ?? (_turn is { } turn && !conn.IsRelayed && turn.UsesRelayFor(conn.RemoteEndPoint));
 }

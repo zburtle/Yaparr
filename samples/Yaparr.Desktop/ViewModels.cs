@@ -163,17 +163,19 @@ public sealed record PeerVm(string Id, string Name, bool Online, DateTimeOffset 
 
     public string StateText => Blocked ? "blocked" : Link switch
     {
-        PeerLink.Direct => "online",
-        PeerLink.Relayed => "relayed",
+        PeerLink.Direct => "direct",
+        PeerLink.ViaServer => "via server",
+        PeerLink.Relayed => "via member",
         PeerLink.Reconnecting => "reconnecting…",
         PeerLink.NotResponding => "not responding",
-        _ => Online ? (IsRelayed ? "relayed" : "online") : "offline",
+        _ => Online ? (IsRelayed ? "via member" : "online") : "offline",
     };
 
     public string Tip => (Blocked ? "Blocked. You see nothing from them. Right-click to unblock." : Link switch
     {
-        PeerLink.Direct => "Connected directly.",
-        PeerLink.Relayed => "Connected through another member who forwards messages.",
+        PeerLink.Direct => "Connected directly to them.",
+        PeerLink.ViaServer => "Connected through the shared relay server (TURN). It works, but its bandwidth is limited, so Yaparr keeps looking for a better path.",
+        PeerLink.Relayed => "Connected through another member who forwards your traffic. They cannot read it.",
         PeerLink.Reconnecting => "The connection dropped. Yaparr is trying again.",
         PeerLink.NotResponding => "Connected, but the last message was not confirmed.",
         _ => Online ? "Online." : $"Last seen {LastSeen.LocalDateTime:g}",

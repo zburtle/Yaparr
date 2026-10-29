@@ -240,4 +240,26 @@ public class PeerRelayTests
         Assert.True(budget.TryForward("b", "a", 100, 0)); // the same pair the other way round is not a new pair
         Assert.True(budget.TryForward("e", "f", 100, 61_000)); // the others went quiet a minute ago
     }
+
+    [Fact]
+    public async Task The_link_to_a_person_says_whether_it_is_direct_through_the_server_or_through_a_member()
+    {
+        var hub = new InMemoryDiscoveryHub();
+        using var relay = TestUtil.NewNode(hub, "relay");
+        using var a = TestUtil.NewNode(hub, "a");
+        using var b = TestUtil.NewNode(hub, "b");
+        Isolate(a, b);
+
+        await relay.JoinRoomAsync("mesh");
+        await a.JoinRoomAsync("mesh");
+        await b.JoinRoomAsync("mesh");
+        await TestUtil.WaitFor(() => a.Network.Get(b.Id) is { IsRelayed: true } && a.Network.Get(relay.Id) != null);
+
+        Assert.Equal(PeerLink.Relayed, a.GetLink(b.Id));
+        Assert.Equal(PeerLink.Direct, a.GetLink(relay.Id));
+
+        a.OnSharedServerOverride = c => c.RemoteId == relay.Id;
+        Assert.Equal(PeerLink.ViaServer, a.GetLink(relay.Id));
+        Assert.Equal(PeerLink.Relayed, a.GetLink(b.Id));
+    }
 }
