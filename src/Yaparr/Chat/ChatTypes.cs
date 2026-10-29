@@ -61,7 +61,7 @@ internal sealed class Wire
     /// <summary>Whether the sender's connection is good enough to relay for the other members of a room. Absent from older versions.</summary>
     public bool? Rly { get; set; }
 
-    public const string Caps = "caps";
+    public const string Caps = "caps", Rename = "name";
 
     public const string Ack = "ack", Hello = "hi", Join = "join", Leave = "leave", Message = "msg", Introduce = "peers", Sync = "sync", History = "hist", Links = "links", Presence = "pres", Voice = "voice";
 }

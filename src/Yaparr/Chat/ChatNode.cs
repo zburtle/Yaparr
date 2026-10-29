@@ -39,6 +39,9 @@ public sealed class ChatNodeOptions
 
     public bool EnableRelaying { get; init; } = true;
 
+    /// <summary>People blocked in an earlier run. <see cref="ChatNode.Block"/> and <see cref="ChatNode.BlockChanged"/> keep the list up to date.</summary>
+    public IReadOnlyCollection<PeerId> BlockedPeers { get; init; } = Array.Empty<PeerId>();
+
     public TimeSpan RelayFallbackDelay { get; init; } = TimeSpan.FromSeconds(8);
 
     public int TargetConnections { get; init; } = 8;
@@ -174,6 +177,7 @@ public sealed partial class ChatNode : IDisposable
 
     private readonly ChatNodeOptions _options;
     private readonly PeerIdentity _identity;
+    private volatile string _displayName;
     private readonly bool _ownsIdentity;
     private readonly UdpMux _mux;
     private readonly List<IPeerDiscovery> _discoveries;
@@ -247,6 +251,8 @@ public sealed partial class ChatNode : IDisposable
         _blobs = new BlobStore(_options.AttachmentDirectory);
         _turnOptions = _options.Traversal.Turn;
         _useDefaultRelay = _options.Traversal.UseDefaultRelay;
+        _displayName = _options.DisplayName;
+        foreach (var blocked in _options.BlockedPeers) _blocked[blocked] = 0;
         _ownsIdentity = _options.Identity == null;
         _identity = _options.Identity ?? PeerIdentity.Generate();
         _mux = new UdpMux(_options.ListenPort) { Log = _options.Log };
@@ -287,7 +293,7 @@ public sealed partial class ChatNode : IDisposable
     }
 
     public PeerId Id => _identity.Id;
-    public string DisplayName => _options.DisplayName;
+    public string DisplayName => _displayName;
     public int LocalPort => _mux.LocalPort;
 
     public PeerNetwork Network { get; }
@@ -303,6 +309,9 @@ public sealed partial class ChatNode : IDisposable
     public VpnState VpnState => _tunnel?.State ?? VpnState.Disconnected;
 
     public event Action<VpnState>? VpnStateChanged;
+
+    /// <summary>Someone we are connected to changed their display name.</summary>
+    public event Action<PeerInfo>? PeerRenamed;
 
     public event Action<PeerInfo>? PeerConnected;
     public event Action<PeerInfo>? PeerDisconnected;
@@ -529,7 +538,7 @@ public sealed partial class ChatNode : IDisposable
     {
         if (!_rooms.TryRemove(room.Key, out _)) return;
         room.ActiveVoice?.Dispose();
-        var gone = SignedPresence.Create(_identity, room.Key, _options.DisplayName, NextTimestamp(), gone: true);
+        var gone = SignedPresence.Create(_identity, room.Key, DisplayName, NextTimestamp(), gone: true);
         foreach (var peer in _peers.Values)
         {
             if (room.MemberStates.ContainsKey(peer.Id))
@@ -565,7 +574,7 @@ public sealed partial class ChatNode : IDisposable
 
     internal string SendRoomMessage(ChatRoom room, string text)
     {
-        var message = SignedMessage.Create(_identity, room.Key, _options.DisplayName, text, NextTimestamp());
+        var message = SignedMessage.Create(_identity, room.Key, DisplayName, text, NextTimestamp());
         room.History.TryAdd(message);
         _options.Log?.Invoke($"sending a message in '{room.Name}' to {room.MemberStates.Count} member(s)");
         var members = room.MemberStates.Values.ToList();
@@ -859,7 +868,7 @@ public sealed partial class ChatNode : IDisposable
     }
 
     internal IReadOnlyList<ChatMessage> GetHistory(ChatRoom room) =>
-        room.History.Snapshot().Select(m => ToChatMessage(room, m, catchUp: false)).ToList();
+        room.History.Snapshot().Where(m => !IsBlocked(new PeerId(m.From))).Select(m => ToChatMessage(room, m, catchUp: false)).ToList();
 
     private ChatMessage ToChatMessage(ChatRoom room, StoredMessage m, bool catchUp)
     {
@@ -905,10 +914,14 @@ public sealed partial class ChatNode : IDisposable
             if (live) _clocks.Observe(m.From, m.Ts, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
             bool fresh = live && m.Ts >= DateTimeOffset.UtcNow.Subtract(LiveWindow).ToUnixTimeMilliseconds();
             if (!room.History.TryAdd(m)) continue;
-            _options.Log?.Invoke($"message from {new PeerId(m.From).Short} in '{room.Name}' via {peer.Id.Short}{(fresh ? "" : " (catch-up)")}");
-            var shown = ToChatMessage(room, m, catchUp: !fresh);
-            room.RaiseMessage(shown);
-            AutoFetch(shown);
+            // A blocked author's message is kept (so it is not asked for again) but never shown or downloaded.
+            if (!IsBlocked(new PeerId(m.From)))
+            {
+                _options.Log?.Invoke($"message from {new PeerId(m.From).Short} in '{room.Name}' via {peer.Id.Short}{(fresh ? "" : " (catch-up)")}");
+                var shown = ToChatMessage(room, m, catchUp: !fresh);
+                room.RaiseMessage(shown);
+                AutoFetch(shown);
+            }
             if (fresh) ForwardToMembers(peer, room, m);
         }
     }
@@ -946,14 +959,14 @@ public sealed partial class ChatNode : IDisposable
 
     private void SendPresence(ChatRoom room)
     {
-        var beacon = SignedPresence.Create(_identity, room.Key, _options.DisplayName, NextTimestamp(), gone: false);
+        var beacon = SignedPresence.Create(_identity, room.Key, DisplayName, NextTimestamp(), gone: false);
         foreach (var member in room.MemberStates.Values)
             Send(member.Connection, new Wire { Type = Wire.Presence, Room = RefTo(room, member), Pres = new[] { beacon } });
     }
 
     private void SendPresenceTo(ChatRoom room, PeerState peer, bool includeCache)
     {
-        var beacons = new List<StoredPresence> { SignedPresence.Create(_identity, room.Key, _options.DisplayName, NextTimestamp(), gone: false) };
+        var beacons = new List<StoredPresence> { SignedPresence.Create(_identity, room.Key, DisplayName, NextTimestamp(), gone: false) };
         if (includeCache)
         {
             long cutoff = Environment.TickCount64 - (long)PresenceLifetime.TotalMilliseconds;
@@ -987,20 +1000,21 @@ public sealed partial class ChatNode : IDisposable
     {
         var joined = new List<PeerInfo>();
         var left = new List<PeerInfo>();
+        var renamed = new List<PeerInfo>();
         lock (room.IndirectGate)
         {
             var reachable = new Dictionary<PeerId, string>();
+            // A member's own signed announcement of their name beats what a neighbour says, which can be out of date after a rename.
+            long cutoff = Environment.TickCount64 - (long)PresenceLifetime.TotalMilliseconds;
+            foreach (var (id, entry) in room.Presence)
+                if (!entry.Beacon.Gone && entry.SeenAt >= cutoff && id != Id && !room.MemberStates.ContainsKey(id) && !IsBlocked(id))
+                    reachable.TryAdd(id, entry.Beacon.Name);
             foreach (var member in room.MemberStates.Values)
                 foreach (var kv in member.Links(room.Key))
                 {
                     var id = new PeerId(kv.Key);
-                    if (id != Id && !room.MemberStates.ContainsKey(id)) reachable.TryAdd(id, kv.Value);
+                    if (id != Id && !room.MemberStates.ContainsKey(id) && !IsBlocked(id)) reachable.TryAdd(id, kv.Value);
                 }
-
-            long cutoff = Environment.TickCount64 - (long)PresenceLifetime.TotalMilliseconds;
-            foreach (var (id, entry) in room.Presence)
-                if (!entry.Beacon.Gone && entry.SeenAt >= cutoff && id != Id && !room.MemberStates.ContainsKey(id))
-                    reachable.TryAdd(id, entry.Beacon.Name);
 
             foreach (var id in room.Indirect.Keys.ToList())
                 if (!reachable.ContainsKey(id) && room.Indirect.TryRemove(id, out var gone) && !room.MemberStates.ContainsKey(id)) left.Add(gone);
@@ -1008,11 +1022,16 @@ public sealed partial class ChatNode : IDisposable
             {
                 var info = new PeerInfo(id, name, null, IsRelayed: true);
                 if (room.Indirect.TryAdd(id, info)) joined.Add(info);
-                else room.Indirect[id] = info;
+                else
+                {
+                    if (room.Indirect.TryGetValue(id, out var before) && before.DisplayName != name) renamed.Add(info);
+                    room.Indirect[id] = info;
+                }
             }
         }
         foreach (var p in left) room.RaiseLeft(p);
         foreach (var p in joined) room.RaiseJoined(p);
+        foreach (var p in renamed) room.RaiseRenamed(p);
     }
 
     private void AfterMembershipChange(ChatRoom room)
@@ -1138,11 +1157,12 @@ public sealed partial class ChatNode : IDisposable
 
     private void OnConnectionEstablished(PeerConnection conn)
     {
+        if (IsBlocked(conn.RemoteId!.Value)) { conn.Close(notifyPeer: true); return; }
         var state = new PeerState(conn);
         bool isNew = !_peers.ContainsKey(state.Id);
         if (_candidates.TryGetValue(conn.RemoteEndPoint.ToString(), out var dialed)) { dialed.Failures = 0; dialed.NextDial = 0; }
         // The hello must be the first thing on the connection, so send it before anyone can find the state and write to it.
-        Send(conn, new Wire { Type = Wire.Hello, Name = _options.DisplayName, Deg = _peers.Count + (isNew ? 1 : 0), Rly = IsRelayCapable, Rooms = _rooms.Values.Select(r => RefTo(r, state)).ToArray() });
+        Send(conn, new Wire { Type = Wire.Hello, Name = DisplayName, Deg = _peers.Count + (isNew ? 1 : 0), Rly = IsRelayCapable, Rooms = _rooms.Values.Select(r => RefTo(r, state)).ToArray() });
         _peers[state.Id] = state;
         foreach (var room in _rooms.Values)
             if (room.MemberStates.ContainsKey(state.Id)) room.MemberStates[state.Id] = state;
@@ -1189,7 +1209,7 @@ public sealed partial class ChatNode : IDisposable
             AfterMembershipChange(room);
         }
         PeerDisconnected?.Invoke(state.Info);
-        if (!conn.IsRelayed && !IsBackedOff(id.Value, Environment.TickCount64) && !_cts.IsCancellationRequested)
+        if (!conn.IsRelayed && !IsBackedOff(id.Value, Environment.TickCount64) && !IsBlocked(id) && !_cts.IsCancellationRequested)
             _redial[id] = new Redial(conn.RemoteEndPoint) { Next = Environment.TickCount64 + 1000 };
         if (conn.IsRelayed) ScheduleRelayFallback(id, immediate: true);
         if (_introducedVia.ContainsKey(id) || conn.IsRelayed) ScheduleRelayFallback(id);
@@ -1235,6 +1255,10 @@ public sealed partial class ChatNode : IDisposable
                     if (wire.Rly == true && WantsPeerRelay(target)) ScheduleRelayFallback(target);
                 break;
 
+            case Wire.Rename when wire.Name != null:
+                OnRenamed(peer, wire.Name);
+                break;
+
             case Wire.Ack:
                 OnAck(peer, wire);
                 break;
@@ -1277,7 +1301,7 @@ public sealed partial class ChatNode : IDisposable
 
             case Wire.Message when wire.Room == null && wire.Text != null && wire.Id != null:
                 Send(conn, new Wire { Type = Wire.Ack, Have = new[] { wire.Id } });
-                if (!_seenDirect.TryAdd(peer.Id.Value + wire.Id, Environment.TickCount64)) break;
+                if (!_seenDirect.TryAdd(peer.Id.Value + wire.Id, Environment.TickCount64) || IsBlocked(peer.Id)) break;
                 _clocks.Observe(peer.Id.Value, wire.Ts, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                 var msg = BuildMessage(peer.Info, null, wire.Id, wire.Text, DateTimeOffset.FromUnixTimeMilliseconds(_clocks.Correct(peer.Id.Value, wire.Ts)));
                 bool existed = _directChats.ContainsKey(peer.Id);
@@ -1314,6 +1338,7 @@ public sealed partial class ChatNode : IDisposable
                 {
                     if (!IsValidPeerId(p.Id) || p.Id == Id.Value) continue;
                     var target = new PeerId(p.Id);
+                    if (IsBlocked(target)) continue;
                     if (_peers.ContainsKey(target) || peer.Connection.IsRelayed) continue;
                     if (!IPEndPoint.TryParse(p.EndPoint, out var ep)) continue;
 
@@ -1338,7 +1363,7 @@ public sealed partial class ChatNode : IDisposable
     private void ScheduleRelayFallback(PeerId target, bool immediate = false)
     {
         var pending = immediate ? _relayPendingNow : _relayPending;
-        if (!_options.EnableRelaying || !pending.TryAdd(target, 0)) return;
+        if (!_options.EnableRelaying || IsBlocked(target) || !pending.TryAdd(target, 0)) return;
         _ = Task.Run(async () =>
         {
             try
@@ -1428,7 +1453,7 @@ public sealed partial class ChatNode : IDisposable
         if (c.EndPoint.Port == _mux.LocalPort && IPAddress.IsLoopback(c.EndPoint.Address)) return false;
         if (_peerCache.IsSelf(c.EndPoint)) return false;
         if (IsBackedOff(c.EndPoint.ToString(), now)) return false;
-        if (c.Id is { } id && (IsBackedOff(id.Value, now) || _peers.ContainsKey(id))) return false;
+        if (c.Id is { } id && (IsBackedOff(id.Value, now) || _peers.ContainsKey(id) || IsBlocked(id))) return false;
         if (IsRedundantServerPath(c.EndPoint, c.Id)) return false;
         return !IsConnectedTo(c.EndPoint);
     }

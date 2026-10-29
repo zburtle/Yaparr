@@ -42,6 +42,38 @@ internal sealed class VoiceAudio : IDisposable
         protected override void GenerateAudio(Span<float> buffer, int channels) => _session.PullPlayback(buffer);
     }
 
+    // Plays a clip once and then goes silent.
+    private sealed class Clip : SoundComponent
+    {
+        private readonly float[] _samples;
+        private int _position;
+        public Clip(AudioEngine engine, AudioFormat format, float[] samples) : base(engine, format) => _samples = samples;
+        protected override void GenerateAudio(Span<float> buffer, int channels)
+        {
+            for (int frame = 0; frame + channels <= buffer.Length; frame += channels)
+            {
+                float value = _position < _samples.Length ? _samples[_position++] : 0;
+                for (int c = 0; c < channels; c++) buffer[frame + c] = value;
+            }
+        }
+    }
+
+    /// <summary>Plays a short mono clip (48 kHz) on the chosen speakers, and closes the device when it has finished.</summary>
+    public static void PlayOnce(float[] samples, string? output)
+    {
+        var engine = Engine;
+        DeviceInfo? info = engine.PlaybackDevices.Where(d => d.Name == output).Select(d => (DeviceInfo?)d).FirstOrDefault();
+        var device = engine.InitializePlaybackDevice(info, Format, new MiniAudioDeviceConfig());
+        device.MasterMixer.AddComponent(new Clip(engine, Format, samples));
+        device.Start();
+        int ms = samples.Length * 1000 / VoiceSession.SampleRate + 250;
+        _ = Task.Delay(ms).ContinueWith(_ =>
+        {
+            try { device.Stop(); } catch (Exception) { }
+            device.Dispose();
+        });
+    }
+
     private readonly AudioCaptureDevice _capture;
     private readonly AudioPlaybackDevice _playback;
 

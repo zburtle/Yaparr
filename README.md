@@ -212,9 +212,36 @@ A message can carry a picture or GIF (PNG, JPEG, GIF or WebP, up to 8 MB; you pi
 - The Desktop app shrinks and re-encodes still pictures before sending, which also removes camera and location metadata; GIFs are sent as they are.
 - Headers are checked before anything is decoded (size, dimensions, GIF frame count), so a malicious file cannot make the app decode something huge.
 
+## Blocking people
+
+`ChatNode.Block(peer)` is a personal block: it only changes what you see and hear. Their messages and pictures never
+reach you (they are kept quietly so they are not asked for again, but not shown or downloaded), they leave your member
+lists and your voice channel, your connection to them is closed and not opened again, and you stop relaying for them.
+They are not told, and everyone else still sees them. `Unblock` undoes it, `BlockedPeers` and `BlockChanged` let the
+app keep the list (`ChatNodeOptions.BlockedPeers` restores it on the next start). Your app still passes a room's
+messages along as it always did; a block does not decide what other people get. In the Desktop app, right-click someone
+in the People list or one of their messages. Blocked people stay in the People list, marked "blocked", so they can be
+unblocked.
+
+## Changing your name
+
+`ChatNode.Rename(name)` changes the name others see (trimmed, at most 64 characters, not empty). Everyone you are
+connected to is told straight away (`PeerRenamed` and `ChatRoom.MemberRenamed` on their side), and your presence in each
+room and in the voice channel is announced again under the new name, so people you are not directly connected to see it
+as well. New messages carry the new name; messages already sent are signed with the name they had and keep it. In the
+Desktop app it is **File > Change my name…**, and it is remembered for the next start.
+
+## Notifications (Desktop app)
+
+A short sound plays when a message arrives in a conversation you are not looking at, or while the window is in the
+background, and when someone joins or leaves the voice channel you are in (with a different sound for you joining or
+leaving). On Windows the taskbar button also flashes until you bring the window forward. Messages that arrive while
+catching up on history are never announced. Both can be switched off under **Notifications** in the menu; the sounds
+play on the speakers chosen in the voice settings.
+
 ## Voice channels
 
-Every room has a voice channel you can join and leave, like on Discord. Joining announces you with a small signed statement that spreads through the room like presence (and carries your muted and deafened state); everyone in the channel then connects directly to each other and sends Opus audio (48 kHz, mono, about 32 kbps, 20 ms frames, with forward error correction) as unreliable encrypted datagrams on channel 16. The roster is visible to the whole room, whether or not you have joined.
+Every room has a voice channel you can join and leave whenever you like, with no calls to place or answer. Joining announces you with a small signed statement that spreads through the room like presence (and carries your muted and deafened state); everyone in the channel then connects directly to each other and sends Opus audio (48 kHz, mono, about 32 kbps, 20 ms frames, with forward error correction) as unreliable encrypted datagrams on channel 16. The roster is visible to the whole room, whether or not you have joined.
 
 - `room.JoinVoice()` returns a `VoiceSession`; `Leave()` or `Dispose()` leaves. `room.VoiceParticipants` and `room.VoiceChanged` show who is in the channel.
 - The library does not touch audio devices: call `session.PushCapture(samples)` with microphone samples and play what `session.PullPlayback(buffer)` fills in. The Desktop app does this with SoundFlow (miniaudio) in `VoiceAudio.cs`.

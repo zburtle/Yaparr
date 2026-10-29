@@ -67,6 +67,9 @@ public sealed class ChatRoom
     public Yaparr.Voice.VoiceSession JoinVoice() => _node.JoinVoice(this);
     public event Action<PeerInfo>? MemberJoined;
     public event Action<PeerInfo>? MemberLeft;
+
+    /// <summary>A member of this room changed their display name.</summary>
+    public event Action<PeerInfo>? MemberRenamed;
     public event Action<DeliveryStatus>? DeliveryChanged;
 
     /// <summary>Sends a message and returns its id, which <see cref="DeliveryChanged"/> reports on.</summary>
@@ -80,6 +83,7 @@ public sealed class ChatRoom
     internal void RaiseMessage(ChatMessage m) => MessageReceived?.Invoke(m);
     internal void RaiseJoined(PeerInfo p) => MemberJoined?.Invoke(p);
     internal void RaiseLeft(PeerInfo p) => MemberLeft?.Invoke(p);
+    internal void RaiseRenamed(PeerInfo p) => MemberRenamed?.Invoke(p);
     internal void RaiseDelivery(DeliveryStatus s) => DeliveryChanged?.Invoke(s);
 }
 

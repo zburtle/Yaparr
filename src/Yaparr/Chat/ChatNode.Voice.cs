@@ -34,7 +34,7 @@ public sealed partial class ChatNode
     {
         room.SelfMuted = muted;
         room.SelfDeafened = deafened;
-        var state = SignedVoice.Create(_identity, room.Key, _options.DisplayName, NextTimestamp(), active, muted, deafened);
+        var state = SignedVoice.Create(_identity, room.Key, DisplayName, NextTimestamp(), active, muted, deafened);
         room.LastVoiceAt = Environment.TickCount64;
         foreach (var member in room.MemberStates.Values)
             Send(member.Connection, new Wire { Type = Wire.Voice, Room = RefTo(room, member), Vox = new[] { state } });
@@ -45,7 +45,7 @@ public sealed partial class ChatNode
     {
         var states = new List<StoredVoice>();
         if (room.ActiveVoice != null)
-            states.Add(SignedVoice.Create(_identity, room.Key, _options.DisplayName, NextTimestamp(), true, room.SelfMuted, room.SelfDeafened));
+            states.Add(SignedVoice.Create(_identity, room.Key, DisplayName, NextTimestamp(), true, room.SelfMuted, room.SelfDeafened));
         long cutoff = Environment.TickCount64 - (long)VoiceLifetime.TotalMilliseconds;
         lock (room.IndirectGate)
             states.AddRange(room.Voice.Values.Where(e => e.State.Active && e.SeenAt >= cutoff && e.State.From != peer.Id.Value).Take(15).Select(e => e.State));
@@ -98,17 +98,17 @@ public sealed partial class ChatNode
     {
         long cutoff = Environment.TickCount64 - (long)VoiceLifetime.TotalMilliseconds;
         lock (room.IndirectGate)
-            return room.Voice.Where(kv => kv.Value.State.Active && kv.Value.SeenAt >= cutoff).Select(kv => kv.Key).ToList();
+            return room.Voice.Where(kv => kv.Value.State.Active && kv.Value.SeenAt >= cutoff && !IsBlocked(kv.Key)).Select(kv => kv.Key).ToList();
     }
 
     internal IReadOnlyList<VoiceParticipant> GetVoiceParticipants(ChatRoom room)
     {
         var result = new List<VoiceParticipant>();
         if (room.ActiveVoice != null)
-            result.Add(new VoiceParticipant(new PeerInfo(Id, _options.DisplayName, null), room.SelfMuted, room.SelfDeafened, IsSelf: true));
+            result.Add(new VoiceParticipant(new PeerInfo(Id, DisplayName, null), room.SelfMuted, room.SelfDeafened, IsSelf: true));
         long cutoff = Environment.TickCount64 - (long)VoiceLifetime.TotalMilliseconds;
         lock (room.IndirectGate)
-            foreach (var (id, entry) in room.Voice.Where(kv => kv.Value.State.Active && kv.Value.SeenAt >= cutoff).OrderBy(kv => kv.Value.State.Name))
+            foreach (var (id, entry) in room.Voice.Where(kv => kv.Value.State.Active && kv.Value.SeenAt >= cutoff && !IsBlocked(kv.Key)).OrderBy(kv => kv.Value.State.Name))
             {
                 var info = _peers.TryGetValue(id, out var p) ? p.Info : new PeerInfo(id, entry.State.Name, null, IsRelayed: true);
                 result.Add(new VoiceParticipant(info with { DisplayName = entry.State.Name }, entry.State.Muted, entry.State.Deafened, IsSelf: false));
@@ -128,7 +128,7 @@ public sealed partial class ChatNode
 
     private void OnVoiceData(PeerConnection conn, byte channel, ReadOnlyMemory<byte> data, bool reliable)
     {
-        if (reliable || conn.RemoteId is not { } from) return;
+        if (reliable || conn.RemoteId is not { } from || IsBlocked(from)) return;
         foreach (var room in _rooms.Values)
         {
             var session = room.ActiveVoice;

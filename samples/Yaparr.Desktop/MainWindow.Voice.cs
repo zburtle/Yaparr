@@ -11,18 +11,28 @@ public partial class MainWindow
     private VoiceAudio? _voiceAudio;
     private ConversationVm? _voiceConv;
 
-    private void RefreshVoice(ConversationVm conv, ChatRoom room)
+    // With announce set, people arriving in or leaving the channel you are in are heard.
+    private void RefreshVoice(ConversationVm conv, ChatRoom room, bool announce = true)
     {
         var existing = conv.VoiceMembers.ToDictionary(m => m.Id);
         conv.VoiceMembers.Clear();
+        bool someoneJoined = false;
         foreach (var p in room.VoiceParticipants)
         {
-            var vm = existing.TryGetValue(p.Peer.Id.Value, out var old) ? old : new VoiceMemberVm(p.Peer.Id.Value, p.Peer.DisplayName, p.IsSelf);
+            if (!existing.TryGetValue(p.Peer.Id.Value, out var old) && !p.IsSelf) someoneJoined = true;
+            var vm = old ?? new VoiceMemberVm(p.Peer.Id.Value, p.Peer.DisplayName, p.IsSelf);
+            vm.Name = p.Peer.DisplayName;
             vm.Muted = p.Muted;
             vm.Deafened = p.Deafened;
             conv.VoiceMembers.Add(vm);
         }
         conv.VoiceMembersChanged();
+
+        if (!announce || !conv.InVoice || _voiceConv != conv) return;
+        var now = conv.VoiceMembers.Select(m => m.Id).ToHashSet();
+        bool someoneLeft = existing.Values.Any(m => !m.IsSelf && !now.Contains(m.Id));
+        if (someoneJoined) _sounds.SomeoneJoined();
+        else if (someoneLeft) _sounds.SomeoneLeft();
     }
 
     private void OnSpeaking(ConversationVm conv, Yaparr.Identity.PeerId id, bool speaking)
@@ -62,7 +72,8 @@ public partial class MainWindow
         _voiceConv = conv;
         conv.InVoice = true;
         conv.Muted = conv.Deafened = false;
-        RefreshVoice(conv, room);
+        RefreshVoice(conv, room, announce: false);
+        _sounds.YouJoined();
     }
 
     private void LeaveVoice_Click(object? sender, RoutedEventArgs e) => LeaveVoiceCore();
@@ -81,7 +92,8 @@ public partial class MainWindow
             conv.InVoice = false;
             conv.Muted = conv.Deafened = false;
             var room = _roomConversations.FirstOrDefault(kv => kv.Value == conv).Key;
-            if (room != null) RefreshVoice(conv, room);
+            if (room != null) RefreshVoice(conv, room, announce: false);
+            _sounds.YouLeft();
         }
     }
 

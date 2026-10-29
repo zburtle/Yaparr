@@ -31,7 +31,7 @@ public sealed partial class ChatNode
     public RelayStats RelayStats => Network.RelayStats;
 
     private bool MaySharedRoomRelay(PeerConnection a, PeerConnection b) =>
-        IsRelayCapable && a.RemoteId is { } x && b.RemoteId is { } y &&
+        IsRelayCapable && a.RemoteId is { } x && b.RemoteId is { } y && !IsBlocked(x) && !IsBlocked(y) &&
         _rooms.Values.Any(r => r.MemberStates.ContainsKey(x) && r.MemberStates.ContainsKey(y));
 
     /// <summary>Tells everyone we are connected to whether we relay, when that has changed since last time.</summary>
@@ -66,7 +66,7 @@ public sealed partial class ChatNode
     // Someone connecting to us through a member is accepted if that member introduced them, or says it is connected to them.
     // The handshake still proves who they are, so this only decides whether we answer at all.
     private bool MayAcceptRelayed(PeerConnection via, PeerId from) =>
-        via.RemoteId is { } v &&
+        via.RemoteId is { } v && !IsBlocked(from) && !IsBlocked(v) &&
         ((_introducedVia.TryGetValue(from, out var vias) && vias.ContainsKey(v)) ||
          (_peers.TryGetValue(v, out var state) && _rooms.Keys.Any(k => state.Links(k).ContainsKey(from.Value))));
 

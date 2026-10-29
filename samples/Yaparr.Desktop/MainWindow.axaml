@@ -186,11 +186,16 @@
                 <MenuItem Header="_Create private room…" Click="CreateRoom_Click" />
                 <MenuItem Header="_Join with invite…" Click="JoinRoom_Click" />
                 <Separator />
+                <MenuItem Header="Change my _name…" Click="Rename_Click" />
                 <MenuItem Header="Copy my _ID" Click="CopyId_Click" />
                 <MenuItem Header="_Import profile…" Click="ImportProfile_Click" />
                 <MenuItem Header="_Export profile…" Click="ExportProfile_Click" />
                 <Separator />
                 <MenuItem Header="E_xit" Click="Exit_Click" />
+            </MenuItem>
+            <MenuItem Header="_Notifications">
+                <MenuItem x:Name="SoundsItem" Header="Play _sounds" ToggleType="CheckBox" />
+                <MenuItem x:Name="FlashItem" Header="_Flash the taskbar button" ToggleType="CheckBox" />
             </MenuItem>
             <MenuItem Header="_Network">
                 <MenuItem Header="_VPN…" Click="Vpn_Click" />
@@ -377,7 +382,8 @@
                         </ListBox.ItemTemplate>
                         <ListBox.ContextMenu>
                             <ContextMenu Opening="MessageMenu_Opening">
-                                <MenuItem Header="_Retry sending" Click="RetryMessage_Click" />
+                                <MenuItem x:Name="RetryItem" Header="_Retry sending" Click="RetryMessage_Click" />
+                                <MenuItem x:Name="BlockSenderItem" Header="_Block sender" Click="BlockSender_Click" />
                             </ContextMenu>
                         </ListBox.ContextMenu>
                     </ListBox>
@@ -430,6 +436,12 @@
                         </ToggleButton>
                     </StackPanel>
                     <ListBox x:Name="PeopleList" Classes="flat people" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <ListBox.ContextMenu>
+                            <ContextMenu Opening="PeopleMenu_Opening">
+                                <MenuItem x:Name="BlockPersonItem" Header="_Block" Click="BlockPerson_Click" />
+                                <MenuItem x:Name="UnblockPersonItem" Header="_Unblock" Click="UnblockPerson_Click" />
+                            </ContextMenu>
+                        </ListBox.ContextMenu>
                         <ListBox.ItemTemplate>
                             <DataTemplate x:DataType="local:PeerVm">
                                 <Grid ColumnDefinitions="Auto,*" ToolTip.Tip="{Binding Tip}">

@@ -154,14 +154,14 @@ public sealed class MessageVm : Observable
     public static MessageVm System(string text) => new(DateTimeOffset.Now, "", text, isSystem: true);
 }
 
-public sealed record PeerVm(string Id, string Name, bool Online, DateTimeOffset LastSeen, bool IsRelayed = false, PeerLink Link = PeerLink.Offline)
+public sealed record PeerVm(string Id, string Name, bool Online, DateTimeOffset LastSeen, bool IsRelayed = false, PeerLink Link = PeerLink.Offline, bool Blocked = false)
 {
     public string Display => Name;
     public string Initial => Avatars.Initial(Name);
     public IBrush Avatar => Avatars.BrushFor(Name);
     public bool Warn => Link is PeerLink.NotResponding or PeerLink.Reconnecting;
 
-    public string StateText => Link switch
+    public string StateText => Blocked ? "blocked" : Link switch
     {
         PeerLink.Direct => "online",
         PeerLink.Relayed => "relayed",
@@ -170,7 +170,7 @@ public sealed record PeerVm(string Id, string Name, bool Online, DateTimeOffset 
         _ => Online ? (IsRelayed ? "relayed" : "online") : "offline",
     };
 
-    public string Tip => (Link switch
+    public string Tip => (Blocked ? "Blocked. You see nothing from them. Right-click to unblock." : Link switch
     {
         PeerLink.Direct => "Connected directly.",
         PeerLink.Relayed => "Connected through another member who forwards messages.",
@@ -305,14 +305,19 @@ public sealed class ConversationVm : Observable
 public sealed class VoiceMemberVm : Observable
 {
     private bool _speaking, _muted, _deafened;
+    private string _name;
 
     public VoiceMemberVm(string id, string name, bool isSelf)
     {
-        Id = id; Name = name; IsSelf = isSelf;
+        Id = id; _name = name; IsSelf = isSelf;
     }
 
     public string Id { get; }
-    public string Name { get; }
+    public string Name
+    {
+        get => _name;
+        set { if (_name == value) return; _name = value; Raise(); Raise(nameof(Initial)); Raise(nameof(Avatar)); }
+    }
     public bool IsSelf { get; }
     public string Initial => Avatars.Initial(Name);
     public IBrush Avatar => Avatars.BrushFor(Name);

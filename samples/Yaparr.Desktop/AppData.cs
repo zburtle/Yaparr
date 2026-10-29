@@ -33,6 +33,14 @@ public sealed class AppSettings
     public int VoiceSensitivity { get; set; } = 12;
     /// <summary>Send all the time instead of only when talking.</summary>
     public bool VoiceAlwaysOn { get; set; }
+
+    /// <summary>Play a sound for new messages and for people joining or leaving your voice channel.</summary>
+    public bool SoundsEnabled { get; set; } = true;
+    /// <summary>Flash the taskbar button when a message arrives while the window is in the background.</summary>
+    public bool FlashTaskbar { get; set; } = true;
+
+    /// <summary>People you have blocked, with the name they had when you blocked them.</summary>
+    public List<KnownPeer> BlockedPeers { get; set; } = new();
 }
 
 public sealed class AppData

@@ -13,6 +13,11 @@ Improvements we have agreed to do later, roughly in priority order. Done items a
 - **Rate limits per peer.** Limit incoming connections and messages per peer so one bad peer cannot flood a room.
 - **Updater and installer signing.** Check that the auto-updater verifies what it downloads, and code-sign the MSI so Windows does not show an "unknown publisher" warning.
 
+## Moderation
+
+- Only a personal block exists. Next: room admins with a signed ban list for private rooms (the invite carries the admin's public key), then rotating the room secret so a banned person cannot rejoin, and a vote-based ban (signed votes counted the same way on every app; only members present for a while get a vote; private rooms only, since in a public room anyone can make new identities). A block does not hide a blocked person's messages from others, by design.
+- Blocking someone does not stop them seeing you in rooms you share, or your messages: they can only be kept out by removing their access to the room.
+
 ## Voice
 
 - Push-to-talk in the Desktop app needs a global hotkey (Avalonia has none); the library already supports it.
@@ -37,7 +42,7 @@ Improvements we have agreed to do later, roughly in priority order. Done items a
 
 - Direct connections through symmetric NATs: try the ports just above and below the one a peer advertises ("birthday" or port-prediction punching), so fewer pairs need the relay. Needs a symmetric-NAT test setup to verify.
 - Pictures: a "Save picture as" and a larger view, animated WebP, and checking more than the sender (for example members that already have the file) before showing a download button.
-- Desktop notifications and unread counts (including in the taskbar).
+- Desktop notifications: system pop-ups, an unread count on the taskbar icon (Windows overlay icon), and the flashing taskbar button on Linux (needs the window manager's urgency hint, which Avalonia does not expose). Sounds are fixed tones; let people choose, set the volume, and turn off per room.
 - Queue messages typed while the app is offline and send them when it reconnects.
 - First-run guide that explains the VPN and TURN options in plain words.
 - Wire `network.json`, the VPN and the new connection/delivery status into `Yaparr.Host` and the Flutter UI (on the shelved `flutter-ui` branch).

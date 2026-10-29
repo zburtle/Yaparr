@@ -52,6 +52,7 @@ public partial class MainWindow : Window
         };
         SelectOnRightClick(ConversationList);
         SelectOnRightClick(MessageList);
+        SelectOnRightClick(PeopleList);
         Opened += async (_, _) =>
         {
             if (_started) return;
@@ -205,6 +206,7 @@ public partial class MainWindow : Window
         _vpn = new VpnController(_data, _settings, () => _node);
         _log = new FileLog(Path.Combine(_data.Directory, "yaparr.log"));
         _log.Write($"Yaparr {Updater.CurrentVersion} starting");
+        SetUpNotifications();
 
         var name = Arg("--name") ?? _settings.DisplayName
                    ?? await PromptDialog.AskAsync(this, "Choose a display name (others will see it next to your messages):", Environment.UserName);
@@ -217,6 +219,7 @@ public partial class MainWindow : Window
         _node = new ChatNode(new ChatNodeOptions
         {
             DisplayName = name,
+            BlockedPeers = _settings.BlockedPeers.Select(b => new PeerId(b.Id)).ToList(),
             Identity = identity,
             HistoryStore = new FileHistoryStore(_data.HistoryDirectory),
             Traversal = traversal,
@@ -235,14 +238,13 @@ public partial class MainWindow : Window
         _linkTimer.Tick += (_, _) => RefreshPeers();
         _linkTimer.Start();
         _node.VpnStateChanged += _ => UI(UpdateStatus);
+        _node.BlockChanged += (id, blocked) => UI(() => OnBlockChanged(id, blocked));
+        _node.PeerRenamed += p => UI(() => OnPeerRenamed(p));
         _node.PeerConnected += p => UI(() => { Remember(p); RefreshPeers(); UpdateStatus(); });
         _node.PeerDisconnected += p => UI(() => { Remember(p); RefreshPeers(p.Id); UpdateStatus(); });
         _node.IncomingDirectChat += chat => _ = AddDirect(chat);
 
-        Title = $"Yaparr — {name}";
-        NameText.Text = name;
-        ProfileInitial.Text = Avatars.Initial(name);
-        ProfileAvatar.Background = Avatars.BrushFor(name);
+        ShowOwnName(name);
         IdText.Text = _node.Id.Short;
         ProfileIdText.Text = _node.Id.Value;
         _node.Start();
@@ -340,11 +342,6 @@ public partial class MainWindow : Window
 
     private const string PrivatePrefix = "(private) ";
 
-    private void MessageMenu_Opening(object? sender, CancelEventArgs e)
-    {
-        if (MessageList.SelectedItem is not MessageVm { CanRetry: true }) e.Cancel = true;
-    }
-
     private void ConversationMenu_Opening(object? sender, CancelEventArgs e)
     {
         if (_selected is not { IsRoom: true }) e.Cancel = true;
@@ -434,8 +431,9 @@ public partial class MainWindow : Window
         _roomConversations[room] = conv;
         room.DeliveryChanged += s => UI(() => conv.ApplyDelivery(s));
 
-        room.MessageReceived += m => UI(() => OnMessage(conv, ToVm(m)));
+        room.MessageReceived += m => UI(() => OnMessage(conv, ToVm(m), announce: !m.IsCatchUp));
         room.VoiceChanged += () => UI(() => RefreshVoice(conv, room));
+        room.MemberRenamed += p => UI(() => { Remember(p); RefreshPeers(); });
         room.MemberJoined += p => UI(() => { Remember(p); RefreshPeers(); conv.Add(MessageVm.System($"{p.DisplayName} joined")); });
         room.MemberLeft += p => UI(() => { Remember(p); RefreshPeers(p.Id); conv.Add(MessageVm.System($"{p.DisplayName} left")); });
 
@@ -486,11 +484,15 @@ public partial class MainWindow : Window
         }
         if (changed) _data.SaveSettings(_settings);
 
-        var online = live.Values.Select(p => new PeerVm(p.Id.Value, p.DisplayName, true, now, p.IsRelayed, _node.GetLink(p.Id)));
+        var blocked = _settings.BlockedPeers.Select(b => b.Id).ToHashSet();
+        var online = live.Values.Where(p => !blocked.Contains(p.Id.Value))
+            .Select(p => new PeerVm(p.Id.Value, p.DisplayName, true, now, p.IsRelayed, _node.GetLink(p.Id)));
         var offline = _settings.KnownPeers
-            .Where(k => !live.ContainsKey(k.Id) && k.Id != _node.Id.Value)
+            .Where(k => !live.ContainsKey(k.Id) && k.Id != _node.Id.Value && !blocked.Contains(k.Id))
             .Select(k => new PeerVm(k.Id, string.IsNullOrWhiteSpace(k.Name) ? k.Id[..8] : k.Name, false, k.LastSeen, false, _node.GetLink(new PeerId(k.Id))));
-        var people = online.Concat(offline)
+        var shut = _settings.BlockedPeers
+            .Select(b => new PeerVm(b.Id, string.IsNullOrWhiteSpace(b.Name) ? b.Id[..8] : b.Name, false, b.LastSeen, Blocked: true));
+        var people = online.Concat(offline).Concat(shut)
             .OrderByDescending(p => p.Online)
             .ThenBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
@@ -537,7 +539,7 @@ public partial class MainWindow : Window
             _directConversations[chat.PeerId] = conv;
         }
 
-        chat.MessageReceived += m => UI(() => OnMessage(conv, ToVm(m)));
+        chat.MessageReceived += m => UI(() => OnMessage(conv, ToVm(m), announce: !m.IsCatchUp));
         UI(() =>
         {
             if (chat.Peer != null) Remember(chat.Peer);
@@ -648,11 +650,13 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnMessage(ConversationVm conv, MessageVm message)
+    // Messages that arrive while catching up on history are shown but never announced.
+    private void OnMessage(ConversationVm conv, MessageVm message, bool announce)
     {
         conv.Add(message);
         if (conv == _selected) ScrollToEnd();
         else conv.Unread++;
+        if (announce) NotifyMessage(conv);
     }
 
     private void ScrollToEnd()
