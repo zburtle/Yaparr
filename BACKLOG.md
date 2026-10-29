@@ -39,6 +39,21 @@ Improvements we have agreed to do later, roughly in priority order. Done items a
 - The "already connected" check for server addresses only knows an address's owner if we once connected to it directly; an address we have never reached is still dialled once.
 - Rate limits are fixed numbers; scale them to the relay's measured upload.
 
+## Android
+
+No technical blocker, but a lot of work. The core library is portable .NET and the audio libraries (miniaudio, SkiaSharp) ship Android builds. Not tried yet; everything below is from reading the code and the packages. Suggested order: an Android app reusing the library with text chat only as a side-loadable APK, then the foreground service, then voice, and Google Play last.
+
+- The UI: the Desktop app is a desktop `Window` with menus, context menus, drag and drop and pop-up dialogs. Android needs its own app project with a one-screen layout, its own navigation and the dialogs rewritten (Avalonia supports Android). This is most of the work.
+- Staying connected: there is no server, so no push notifications; messages only arrive while the app runs. Android freezes background apps, so it needs a foreground service with a permanent notification (and a microphone-type service for calls, with its extra rules).
+- Phone networks: mobile data is almost always behind carrier NAT, so the TURN server carries most of the traffic. Phones should not relay for others: the "ideal NAT" test needs to also exclude battery saver, mobile data and metered connections.
+- Network changes: `NetworkChange.NetworkAddressChanged` ([ChatNode.cs](src/Yaparr/Chat/ChatNode.cs)) may not work on Android; use Android's connectivity callback to call `NotifyNetworkChanged` when Wi-Fi and mobile data swap, and wrap the subscription so a missing implementation cannot crash.
+- Multicast: UPnP (and local discovery, off by default) need a Wi-Fi multicast lock on Android.
+- 16 KB pages: the WebRTC audio library for Android (`libwebrtc-apm.so`, arm64 and x64) is aligned to 4 KB, and Google Play needs 16 KB for new submissions. A side-loaded APK is fine, and on a 16 KB device the library fails to load, which `TryCreate` handles (no echo cancellation or noise suppression). Fix by building our own library or asking SoundFlow. miniaudio's Android library is already 16 KB aligned. There is no 32-bit ARM build of the WebRTC library at all.
+- Permissions and audio: runtime prompts for microphone, notifications and Bluetooth; audio focus; speaker versus earpiece routing.
+- Packaging and updates: the updater downloads an MSI or `.deb`, so Android needs another path. CI needs the Android SDK and Java, and a signing key kept as a secret.
+- Google Play: chat apps with user content need an in-app way to report people as well as block them (only blocking exists), and foreground service and microphone use must be declared. A side-loaded APK avoids all of it.
+- Testing: emulators have odd networking; use real phones.
+
 ## Polish
 
 - Direct connections through symmetric NATs: try the ports just above and below the one a peer advertises ("birthday" or port-prediction punching), so fewer pairs need the relay. Needs a symmetric-NAT test setup to verify.
