@@ -138,6 +138,20 @@ public partial class MainWindow : Window
 
     private async void CheckUpdates_Click(object? sender, RoutedEventArgs e) => await CheckForUpdateAsync(manual: true);
 
+    private async void OpenLicences_Click(object? sender, RoutedEventArgs e)
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "THIRD-PARTY-NOTICES.txt");
+        try
+        {
+            if (!await Launcher.LaunchFileInfoAsync(new FileInfo(path)))
+                await Dialogs.MessageAsync(this, "Yaparr", "The licences are in " + path);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException)
+        {
+            await Dialogs.MessageAsync(this, "Yaparr", "The licences are in " + path);
+        }
+    }
+
     private async void OpenLog_Click(object? sender, RoutedEventArgs e)
     {
         try

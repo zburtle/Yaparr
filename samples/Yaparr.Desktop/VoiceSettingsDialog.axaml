@@ -8,6 +8,11 @@
         <ComboBox x:Name="InputBox" HorizontalAlignment="Stretch" />
         <TextBlock Text="Speakers or headphones" FontWeight="SemiBold" Margin="0,8,0,0" />
         <ComboBox x:Name="OutputBox" HorizontalAlignment="Stretch" />
+        <CheckBox x:Name="EchoBox" Margin="0,10,0,0" Content="Echo cancellation (others do not hear themselves through your speakers)" />
+        <TextBlock Text="Noise suppression" FontWeight="SemiBold" Margin="0,8,0,0" />
+        <ComboBox x:Name="NoiseBox" HorizontalAlignment="Stretch" />
+        <TextBlock x:Name="ProcessingNote" Classes="muted small" TextWrapping="Wrap"
+                   Text="Takes steady noise such as fans and hiss out of your microphone. A headset works best and needs no echo cancellation." />
         <CheckBox x:Name="AlwaysBox" Margin="0,10,0,0" Content="Always send my microphone (no voice activation)" />
         <TextBlock Text="Voice activation sensitivity" FontWeight="SemiBold" Margin="0,8,0,0" />
         <TextBlock Classes="muted small" TextWrapping="Wrap"

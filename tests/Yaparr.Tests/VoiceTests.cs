@@ -210,6 +210,80 @@ public class VoiceTests
         Assert.Equal(new[] { b.Id }, ra.VoiceParticipants.Select(p => p.Peer.Id));
     }
 
+    private sealed class RecordingProcessor : IVoiceProcessor
+    {
+        public int CaptureFrames, WrongSizes;
+        public long Played;
+        public Action<Span<float>>? OnCapture;
+        public void ProcessCapture(Span<float> frame)
+        {
+            Interlocked.Increment(ref CaptureFrames);
+            if (frame.Length != VoiceSession.FrameSamples) Interlocked.Increment(ref WrongSizes);
+            OnCapture?.Invoke(frame);
+        }
+        public void ProcessPlayback(ReadOnlySpan<float> played) => Interlocked.Add(ref Played, played.Length);
+        public void Dispose() { }
+    }
+
+    [Fact]
+    public async Task A_processor_is_given_every_microphone_frame_and_everything_sent_to_the_speakers()
+    {
+        var hub = new InMemoryDiscoveryHub();
+        var (a, b, ra, rb) = await Pair(hub);
+        using var _ = a; using var __ = b;
+        using var va = ra.JoinVoice();
+        using var vb = rb.JoinVoice();
+        va.Activation = vb.Activation = VoiceActivation.Open;
+        var mic = new RecordingProcessor();
+        var speakers = new RecordingProcessor();
+        va.Processor = mic;
+        vb.Processor = speakers;
+        await TestUtil.WaitFor(() => rb.VoiceParticipants.Count == 2);
+
+        var heard = await Talk(va, vb, 440, 2); // 200 pushes of 480 samples = 100 frames of 20 ms
+        Assert.Equal(100, mic.CaptureFrames);
+        Assert.Equal(0, mic.WrongSizes);
+        Assert.Equal(96000, speakers.Played);
+        Assert.True(ShareAt(LongestAudibleRun(heard), 440) > 0.7); // a processor that changes nothing changes nothing
+    }
+
+    [Fact]
+    public async Task What_a_processor_does_to_the_microphone_is_what_gets_sent()
+    {
+        var hub = new InMemoryDiscoveryHub();
+        var (a, b, ra, rb) = await Pair(hub);
+        using var _ = a; using var __ = b;
+        using var va = ra.JoinVoice();
+        using var vb = rb.JoinVoice();
+        va.Activation = vb.Activation = VoiceActivation.Open;
+        va.Processor = new RecordingProcessor { OnCapture = frame => frame.Clear() };
+        await TestUtil.WaitFor(() => rb.VoiceParticipants.Count == 2);
+
+        var heard = await Talk(va, vb, 440, 1);
+        Assert.True(vb.Stats(a.Id).Received > 20);
+        Assert.True(heard.Max(Math.Abs) < 0.01f);
+    }
+
+    [Fact]
+    public async Task A_processor_that_fails_is_switched_off_and_the_microphone_carries_on()
+    {
+        var hub = new InMemoryDiscoveryHub();
+        var (a, b, ra, rb) = await Pair(hub);
+        using var _ = a; using var __ = b;
+        using var va = ra.JoinVoice();
+        using var vb = rb.JoinVoice();
+        va.Activation = vb.Activation = VoiceActivation.Open;
+        va.Processor = new RecordingProcessor { OnCapture = _ => throw new InvalidOperationException("broken") };
+        int failures = 0;
+        va.ProcessorFailed += _ => Interlocked.Increment(ref failures);
+        await TestUtil.WaitFor(() => rb.VoiceParticipants.Count == 2);
+
+        var heard = await Talk(va, vb, 440, 2);
+        Assert.Null(va.Processor);
+        Assert.Equal(1, failures);
+        Assert.True(ShareAt(LongestAudibleRun(heard), 440) > 0.7);
+    }
+
     [Fact]
     public async Task Voice_activation_sends_only_while_talking()
     {

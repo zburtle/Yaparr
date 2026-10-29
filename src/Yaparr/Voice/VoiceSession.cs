@@ -74,6 +74,21 @@ public sealed class VoiceSession : IDisposable
 
     public bool PushToTalkHeld { get; set; }
 
+    private volatile IVoiceProcessor? _processor;
+
+    /// <summary>
+    /// Cleans the microphone before it is sent, and is told what the speakers play. The session does not own it:
+    /// whoever created it disposes it. Set to null to send the microphone as it is.
+    /// </summary>
+    public IVoiceProcessor? Processor
+    {
+        get => _processor;
+        set => _processor = value;
+    }
+
+    /// <summary>The processor threw an error and was switched off; the microphone carries on unprocessed.</summary>
+    public event Action<Exception>? ProcessorFailed;
+
     private bool _muted, _deafened;
 
     /// <summary>Stops sending your microphone. Others see the muted state.</summary>
@@ -130,10 +145,25 @@ public sealed class VoiceSession : IDisposable
             samples = samples[n..];
             if (_frameFill == FrameSamples)
             {
+                CleanCapture(_frame);
                 _capture.Writer.TryWrite((float[])_frame.Clone());
                 _frameFill = 0;
             }
         }
+    }
+
+    // A processor that breaks must not stop the microphone: switch it off and carry on.
+    private void CleanCapture(float[] frame)
+    {
+        if (_processor is not { } processor) return;
+        try { processor.ProcessCapture(frame); }
+        catch (Exception ex) { Fail(processor, ex); }
+    }
+
+    private void Fail(IVoiceProcessor processor, Exception ex)
+    {
+        if (!ReferenceEquals(Interlocked.CompareExchange(ref _processor, null, processor), processor)) return;
+        ProcessorFailed?.Invoke(ex);
     }
 
     private async Task EncodeLoopAsync()
@@ -205,6 +235,7 @@ public sealed class VoiceSession : IDisposable
     /// <summary>Fills <paramref name="output"/> with what everyone else is saying (mono, 48 kHz). Silence when nobody is.</summary>
     public void PullPlayback(Span<float> output)
     {
+        var whole = output;
         lock (_playLock)
         {
             while (!output.IsEmpty)
@@ -216,6 +247,11 @@ public sealed class VoiceSession : IDisposable
                 _ringCount -= n;
                 output = output[n..];
             }
+        }
+        if (_processor is { } processor)
+        {
+            try { processor.ProcessPlayback(whole); }
+            catch (Exception ex) { Fail(processor, ex); }
         }
     }
 

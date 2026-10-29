@@ -37,8 +37,16 @@
     </AssemblyAttribute>
   </ItemGroup>
 
+  <!-- The licence texts travel with the app (the MSI takes the whole publish folder, the .deb copies them too). -->
+  <ItemGroup>
+    <None Include="..\..\LICENSE.txt" Link="LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\THIRD-PARTY-NOTICES.txt" Link="THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\THIRD-PARTY-NOTICES-SkiaSharp.txt" Link="THIRD-PARTY-NOTICES-SkiaSharp.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\src\Yaparr\Yaparr.csproj" />
+    <ProjectReference Include="..\..\src\Yaparr.Voice.WebRtc\Yaparr.Voice.WebRtc.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,6 +1,7 @@
 using Avalonia.Interactivity;
 using Yaparr.Chat;
 using Yaparr.Voice;
+using Yaparr.Voice.WebRtc;
 
 namespace Yaparr.Desktop;
 
@@ -10,6 +11,8 @@ public partial class MainWindow
     private VoiceSession? _voice;
     private VoiceAudio? _voiceAudio;
     private ConversationVm? _voiceConv;
+    private WebRtcVoiceProcessor? _processor;
+    private bool _processingWarned;
 
     // With announce set, people arriving in or leaving the channel you are in are heard.
     private void RefreshVoice(ConversationVm conv, ChatRoom room, bool announce = true)
@@ -47,6 +50,40 @@ public partial class MainWindow
         session.Sensitivity = _settings.VoiceSensitivity / 1000f;
     }
 
+    private VoiceProcessing ProcessingSettings => new(
+        _settings.VoiceEchoCancellation,
+        Enum.TryParse<NoiseSuppression>(_settings.VoiceNoiseSuppression, out var noise) ? noise : NoiseSuppression.Moderate);
+
+    // Echo cancellation and noise suppression on the microphone. If the library cannot load here, voice works without it.
+    private void ApplyProcessing(VoiceSession session)
+    {
+        var wanted = ProcessingSettings;
+        if (wanted.IsOff)
+        {
+            session.Processor = null;
+            _processor?.Dispose();
+            _processor = null;
+            return;
+        }
+        if (_processor != null)
+        {
+            _processor.Reconfigure(wanted);
+            session.Processor = _processor;
+            return;
+        }
+        if (WebRtcVoiceProcessor.TryCreate(wanted, out var processor, out var error))
+        {
+            _processor = processor;
+            session.Processor = processor;
+        }
+        else if (!_processingWarned)
+        {
+            _processingWarned = true;
+            _log.Write("voice processing is not available: " + error);
+            StatusText.Text = "Echo cancellation and noise suppression are not available on this system, so your microphone is sent as it is.";
+        }
+    }
+
     private void JoinVoice_Click(object? sender, RoutedEventArgs e)
     {
         if (_node == null || _selected is not { IsRoom: true } conv) return;
@@ -56,6 +93,14 @@ public partial class MainWindow
         LeaveVoiceCore();
         var session = room.JoinVoice();
         ApplyVoiceSettings(session);
+        ApplyProcessing(session);
+        session.ProcessorFailed += ex => UI(() =>
+        {
+            _log.Write("voice processing stopped: " + ex.Message);
+            _processor?.Dispose();
+            _processor = null;
+            StatusText.Text = "Echo cancellation and noise suppression stopped working, so your microphone is sent as it is.";
+        });
         try
         {
             _voiceAudio = new VoiceAudio(session, _settings.VoiceInput, _settings.VoiceOutput);
@@ -87,6 +132,8 @@ public partial class MainWindow
         _voiceAudio?.Dispose();
         _voiceAudio = null;
         session?.Leave();
+        _processor?.Dispose();
+        _processor = null;
         if (conv != null)
         {
             conv.InVoice = false;
@@ -120,6 +167,7 @@ public partial class MainWindow
         if (_voice == null) return;
 
         ApplyVoiceSettings(_voice);
+        ApplyProcessing(_voice);
         _voiceAudio?.Dispose();
         _voiceAudio = null;
         try { _voiceAudio = new VoiceAudio(_voice, _settings.VoiceInput, _settings.VoiceOutput); }

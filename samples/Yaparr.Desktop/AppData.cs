@@ -33,6 +33,10 @@ public sealed class AppSettings
     public int VoiceSensitivity { get; set; } = 12;
     /// <summary>Send all the time instead of only when talking.</summary>
     public bool VoiceAlwaysOn { get; set; }
+    /// <summary>Stop other people hearing themselves through your speakers.</summary>
+    public bool VoiceEchoCancellation { get; set; } = true;
+    /// <summary>Off, Low, Moderate or High: how much steady background noise is taken out of your microphone.</summary>
+    public string VoiceNoiseSuppression { get; set; } = "Moderate";
 
     /// <summary>Play a sound for new messages and for people joining or leaving your voice channel.</summary>
     public bool SoundsEnabled { get; set; } = true;

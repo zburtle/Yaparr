@@ -206,6 +206,7 @@
             <MenuItem Header="_Help">
                 <MenuItem Header="Check for _updates…" Click="CheckUpdates_Click" />
                 <MenuItem Header="Open _log file" Click="OpenLog_Click" />
+                <MenuItem Header="Open source _licences" Click="OpenLicences_Click" />
                 <Separator />
                 <MenuItem Header="_About Yaparr" Click="About_Click" />
             </MenuItem>

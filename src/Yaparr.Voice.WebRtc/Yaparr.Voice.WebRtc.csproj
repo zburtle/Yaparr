@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Yaparr.Voice.WebRtc</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Yaparr\Yaparr.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Google's WebRTC audio processing (BSD-3-Clause) through SoundFlow's wrapper (MIT). It ships a native library for
+         Windows and Linux; on Linux that library needs glibc 2.38 or newer, so loading it can fail on older systems. -->
+    <PackageReference Include="SoundFlow.Extensions.WebRtc.Apm" Version="1.4.2" />
+  </ItemGroup>
+
+</Project>

@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
+using Yaparr.Voice.WebRtc;
 
 namespace Yaparr.Desktop;
 
@@ -19,6 +20,14 @@ public partial class VoiceSettingsDialog : Window
         Fill(InputBox, VoiceAudio.InputNames(), settings.VoiceInput);
         Fill(OutputBox, VoiceAudio.OutputNames(), settings.VoiceOutput);
         AlwaysBox.IsChecked = settings.VoiceAlwaysOn;
+        NoiseBox.ItemsSource = Enum.GetNames<NoiseSuppression>();
+        NoiseBox.SelectedItem = Enum.TryParse<NoiseSuppression>(settings.VoiceNoiseSuppression, out var noise) ? noise.ToString() : nameof(NoiseSuppression.Moderate);
+        EchoBox.IsChecked = settings.VoiceEchoCancellation;
+        if (!WebRtcVoiceProcessor.IsAvailable(out var unavailable))
+        {
+            EchoBox.IsEnabled = NoiseBox.IsEnabled = false;
+            ProcessingNote.Text = "Not available on this system, so your microphone is sent as it is: " + unavailable;
+        }
         SensitivityBox.Value = settings.VoiceSensitivity;
         if (level != null)
         {
@@ -46,6 +55,8 @@ public partial class VoiceSettingsDialog : Window
         _settings.VoiceInput = Chosen(InputBox);
         _settings.VoiceOutput = Chosen(OutputBox);
         _settings.VoiceAlwaysOn = AlwaysBox.IsChecked == true;
+        _settings.VoiceEchoCancellation = EchoBox.IsChecked == true;
+        _settings.VoiceNoiseSuppression = NoiseBox.SelectedItem as string ?? nameof(NoiseSuppression.Moderate);
         _settings.VoiceSensitivity = (int)SensitivityBox.Value;
         Saved = true;
         Close();
