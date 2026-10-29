@@ -2,7 +2,6 @@
   <Folder Name="/samples/">
     <Project Path="samples/Yaparr.Cli/Yaparr.Cli.csproj" />
     <Project Path="samples/Yaparr.Desktop/Yaparr.Desktop.csproj" />
-    <Project Path="samples/Yaparr.Wpf/Yaparr.Wpf.csproj" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/Yaparr/Yaparr.csproj" />

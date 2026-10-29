@@ -54,7 +54,7 @@ Not done:
 - A block is recognised for a device once we have seen its certificate on a connection. A message that arrives only through other members from a device we have never connected to is not covered; put the certificate in signed messages and presence beacons.
 - The mesh limits (`TargetConnections`, `MaxConnections`, introductions) count devices, not people, so a person on three devices uses three slots.
 - Address records in the DHT are looked up by id, so an account id finds the first device's record only; other devices are found through the account topic they announce under. Publish a record per device and look them up by account.
-- The CLI and the WPF app do not link devices (WPF is no longer updated).
+- The CLI does not link devices.
 - Not tried on real networks, and the Desktop menus and dialogs have not been looked at on screen.
 - A linked device holds the account key, so a stolen device means a new identity. If the key stayed on one device, a lost one could be revoked: sign a revocation with the account key and pass it around with the account settings.
 - The link code is encrypted with a passphrase and expires in a day, but can be used more than once. A one-time code would need the two devices to talk, for example through the DHT the way a private room is found.
@@ -86,5 +86,5 @@ No technical blocker, but a lot of work. The core library is portable .NET and t
 - Wire `network.json`, the VPN and the new connection/delivery status into `Yaparr.Host` and the Flutter UI (on the shelved `flutter-ui` branch).
 - NAT-PMP / port mapping through the VPN tunnel.
 - Faster first DHT lookup.
-- Local network discovery is off by default in the WPF app for now; add a switch in the UI (it is the `localDiscovery` key in `network.json`).
+- Local network discovery is off by default in the Desktop app for now; add a switch in the UI (it is the `localDiscovery` key in `network.json`).
 - Show delivery status for each recipient in a room (today it is a count).

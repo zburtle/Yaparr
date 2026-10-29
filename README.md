@@ -24,7 +24,7 @@ Run tests: `dotnet test`.
 
 **Desktop UI.** `samples/Yaparr.Desktop` is the chat app, built with Avalonia so it runs on Windows and Linux: a list of rooms and direct chats,
 messages with delivery marks, the people in the room, and buttons to create or join a private room (the room key and copy-invite button are under the room title) or
-open a direct chat by peer ID. `samples/Yaparr.Wpf` is the older Windows-only version and is no longer released. Your name, identity key, joined rooms and message history are kept in
+open a direct chat by peer ID. Your name, identity key, joined rooms and message history are kept in
 `%LOCALAPPDATA%\\Yaparr` so you keep the same peer ID and rejoin your rooms on the next start. To run two copies on
 one machine, give each its own folder: `Yaparr.Desktop.exe --name alice --data C:\\temp\\alice` (the launch profiles
 `alice` and `bob` do this). Run it with `dotnet run --project samples/Yaparr.Desktop`.
@@ -34,7 +34,7 @@ machine) and wraps it in `artifacts\Yaparr-<version>-x64.msi` (about 48 MB) usin
 dotnet tool. The MSI installs per user to `%LOCALAPPDATA%\Programs\Yaparr` by default with a Start menu shortcut and needs no
 administrator rights. It is a single file: double-clicking opens a wizard (welcome, install folder, progress, finish
 with a "Launch Yaparr" checkbox), and `msiexec /i Yaparr-1.0.0-x64.msi /qn` installs it silently. Installing a newer version upgrades in place and uninstalling leaves your chats and identity in
-`%LOCALAPPDATA%\Yaparr`. Set the version in `samples/Yaparr.Wpf/Yaparr.Wpf.csproj` (or pass `-Version`). The
+`%LOCALAPPDATA%\Yaparr`. Set the version in `samples/Yaparr.Desktop/Yaparr.Desktop.csproj` (or pass `-Version`). The
 installer is unsigned, so Windows SmartScreen will warn on first run, and Windows Firewall will ask to allow the app
 (allow private networks for LAN discovery; allow public for internet peers).
 
@@ -164,14 +164,14 @@ Peers behind home routers have to punch through their NATs. Yaparr does this in 
 2. **STUN.** The node asks public STUN servers what address and port they see, from the same socket the DHT uses. If
    two servers see different ports the NAT is symmetric, and direct connections to strangers are unlikely. The result
    is shown in the status bar.
-3. **TURN (off by default).** The code is in place but disabled; turn it on from **Network > TURN relay…** in the WPF app (or set `"enabled": true` in the `turn` block of `network.json`). When enabled, if the NAT is symmetric (or `always` is set), the node allocates a relay
+3. **TURN (off by default).** The code is in place but disabled; turn it on from **Network > TURN relay…** in the Desktop app (or set `"enabled": true` in the `turn` block of `network.json`). When enabled, if the NAT is symmetric (or `always` is set), the node allocates a relay
    address, announces that address to the DHT through the relay, and mirrors handshake packets through it. Data
    switches to the relay only for peers that cannot be reached directly. A TURN server is the one piece of
    infrastructure involved; it forwards encrypted packets and cannot read them.
 
 ### Built-in WireGuard VPN
 
-Yaparr contains its own WireGuard client (Noise IKpsk2, ChaCha20-Poly1305, BLAKE2s). In the WPF app use
+Yaparr contains its own WireGuard client (Noise IKpsk2, ChaCha20-Poly1305, BLAKE2s). In the Desktop app use
 **Network > VPN…** to import a standard `.conf` file and connect. Nothing is installed on the machine and no admin
 rights are needed: only Yaparr's own UDP traffic is wrapped and sent to the VPN server, and every other program keeps
 using the normal connection. Traffic to local-network addresses stays direct. While the VPN is enabled but down,
@@ -183,7 +183,7 @@ tunnel and shown in the status bar. The config, including its private key, is sa
 folder and is therefore part of a profile export. Only IPv4 servers and a single peer are supported; the client does
 not answer handshakes started by the server, so it relies on its own 2-minute rekey.
 
-Settings live in `network.json` in the profile folder (all keys optional). The WPF app looks for peers on the local network only when `localDiscovery` is `true` (off by default for now):
+Settings live in `network.json` in the profile folder (all keys optional). The Desktop app looks for peers on the local network only when `localDiscovery` is `true` (off by default for now):
 
 ```json
 {
