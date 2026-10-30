@@ -51,19 +51,20 @@ public sealed class ScreenViewer : IDisposable
         {
             if (_disposed) return;
             decoder = _decoder;
-            if (frame.IsKey && Vp8.TryGetSize(data, out int w, out int h) && (decoder == null || decoder.Width != w || decoder.Height != h))
+            if (frame.IsKey && ScreenCodecs.TryGetKeyFrame(data, out var codec, out int w, out int h)
+                && (decoder == null || decoder.Codec != codec || decoder.Width != w || decoder.Height != h))
             {
                 decoder?.Stop();
-                decoder = _decoder = StartDecoder(w, h);
+                decoder = _decoder = StartDecoder(codec, w, h);
             }
         }
         decoder?.Enqueue(data, frame.IsKey);
     }
 
-    private Decoder StartDecoder(int width, int height)
+    private Decoder StartDecoder(ScreenCodec codec, int width, int height)
     {
         var psi = new ProcessStartInfo(_ffmpeg) { RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
-        foreach (var a in FfmpegArgs.Decode()) psi.ArgumentList.Add(a);
+        foreach (var a in FfmpegArgs.Decode(codec)) psi.ArgumentList.Add(a);
         var process = Process.Start(psi) ?? throw new InvalidOperationException("FFmpeg did not start.");
         process.ErrorDataReceived += (_, e) =>
         {
@@ -71,7 +72,7 @@ public sealed class ScreenViewer : IDisposable
             lock (_gate) { _errors.Enqueue(e.Data); while (_errors.Count > 5) _errors.Dequeue(); }
         };
         process.BeginErrorReadLine();
-        var decoder = new Decoder(this, process, width, height);
+        var decoder = new Decoder(this, process, codec, width, height);
         decoder.Start(_cts.Token);
         return decoder;
     }
@@ -85,12 +86,13 @@ public sealed class ScreenViewer : IDisposable
         private int _queued;
         private bool _waitForKey;
 
+        public ScreenCodec Codec { get; }
         public int Width { get; }
         public int Height { get; }
 
-        public Decoder(ScreenViewer owner, Process process, int width, int height)
+        public Decoder(ScreenViewer owner, Process process, ScreenCodec codec, int width, int height)
         {
-            _owner = owner; _process = process; Width = width; Height = height;
+            _owner = owner; _process = process; Codec = codec; Width = width; Height = height;
         }
 
         public void Start(CancellationToken ct)
@@ -118,13 +120,22 @@ public sealed class ScreenViewer : IDisposable
             try
             {
                 var stdin = _process.StandardInput.BaseStream;
-                await stdin.WriteAsync(new IvfHeader("VP80", Width, Height).ToBytes(), ct).ConfigureAwait(false);
+                bool h264 = Codec == ScreenCodec.H264;
+                if (!h264) await stdin.WriteAsync(new IvfHeader("VP80", Width, Height).ToBytes(), ct).ConfigureAwait(false);
                 long pts = 0;
                 await foreach (var frame in _input.Reader.ReadAllAsync(ct).ConfigureAwait(false))
                 {
                     Interlocked.Decrement(ref _queued);
-                    await stdin.WriteAsync(Ivf.FrameHeader(frame.Length, pts++), ct).ConfigureAwait(false);
-                    await stdin.WriteAsync(frame, ct).ConfigureAwait(false);
+                    if (h264)
+                    {
+                        await stdin.WriteAsync(frame, ct).ConfigureAwait(false);
+                        await stdin.WriteAsync(H264.EndMarker.ToArray(), ct).ConfigureAwait(false); // the picture is complete: no waiting for the next
+                    }
+                    else
+                    {
+                        await stdin.WriteAsync(Ivf.FrameHeader(frame.Length, pts++), ct).ConfigureAwait(false);
+                        await stdin.WriteAsync(frame, ct).ConfigureAwait(false);
+                    }
                     await stdin.FlushAsync(ct).ConfigureAwait(false);
                 }
             }

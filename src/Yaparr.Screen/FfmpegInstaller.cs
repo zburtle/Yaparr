@@ -1,4 +1,4 @@
-using System.IO.Compression;
+﻿using System.IO.Compression;
 using System.Security.Cryptography;
 
 namespace Yaparr.Screen;
@@ -11,9 +11,12 @@ namespace Yaparr.Screen;
 public sealed record FfmpegPackage(string Version, Uri Url, string Sha256, long SizeBytes, string ExePathInZip, string? LicensePathInZip)
 {
     /// <summary>
-    /// The LGPL Windows build of FFmpeg from BtbN/FFmpeg-Builds (no GPL parts such as x264: VP8 and VP9 in software, H.264 through
-    /// the graphics card's own encoder). That project's "latest" file changes every day, so the exact file is meant to be copied
-    /// to a Yaparr release (tag ffmpeg-1) and downloaded from there, where it stays and the hash below keeps holding.
+    /// The one build of FFmpeg that Yaparr is known to work with: an LGPL Windows build (no GPL parts such as x264) with libvpx
+    /// and a gfxcapture filter that has the Graphics Capture fixes of 24 October 2026. No numbered release has those fixes
+    /// yet (8.1.3 and 9.0.2 capture one frame and stop), so this is a build of FFmpeg's development branch, N-128212 of
+    /// 30 October 2026, checked with the FfmpegIntegration tests and the demo. Move to a numbered release when one includes
+    /// the fixes. The file is meant to be copied to a Yaparr release (tag ffmpeg-1) so that it stays put; see README.md next
+    /// to this file.
     /// </summary>
     public static FfmpegPackage Default { get; } = new(
         "n128212-lgpl-win64",

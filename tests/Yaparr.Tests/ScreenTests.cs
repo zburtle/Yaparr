@@ -59,7 +59,7 @@ public class ScreenTests
         var display = new Display(0, "x", 0, 0, 1920, 1080, true, Handle: 0x1A2B);
         var args = FfmpegArgs.Capture(new ScreenOptions { Fps = 15, Kbps = 900, MaxWidth = 1280, MaxHeight = 720, KeyFrameSeconds = 2, Display = display });
         string line = string.Join(' ', args);
-        Assert.Contains("gfxcapture=hmonitor=0x1A2B:max_framerate=15:capture_cursor=1:resize_mode=scale_aspect", line);
+        Assert.Contains("gfxcapture=hmonitor=0x1A2B:max_framerate=15:capture_cursor=1:resize_mode=scale_aspect:dup_frames=1", line);
         Assert.Contains("hwdownload,format=bgra", line);
         Assert.Contains("min(1280,iw)", line);
         Assert.Contains("-b:v 900k", line);
@@ -114,6 +114,8 @@ public class ScreenTests
         string line = string.Join(' ', FfmpegArgs.Decode());
         Assert.Contains("-f ivf -i pipe:0", line);
         Assert.Contains("-f rawvideo -pix_fmt bgra pipe:1", line);
+        Assert.DoesNotContain("nobuffer", line); // breaks decoding of frames that arrive in a burst
+
     }
 
     [Fact]

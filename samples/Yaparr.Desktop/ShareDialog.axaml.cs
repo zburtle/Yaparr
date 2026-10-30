@@ -14,6 +14,7 @@ public partial class ShareDialog : Window
         new("Low: 640p, 8 pictures a second, about 0.4 Mbit/s", 1138, 640, 8, 400),
         new("Normal: 720p, 10 pictures a second, about 0.8 Mbit/s", 1280, 720, 10, 800),
         new("Sharp: 1080p, 12 pictures a second, about 1.6 Mbit/s", 1920, 1080, 12, 1600),
+        new("Smooth: 720p, 30 pictures a second, up to 2 Mbit/s", 1280, 720, 30, 2000),
     };
 
     private readonly IReadOnlyList<Display> _displays = Displays.List();
