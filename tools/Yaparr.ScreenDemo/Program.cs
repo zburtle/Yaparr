@@ -3,6 +3,7 @@
 //
 //   Yaparr.ScreenDemo [--seconds 20] [--fps 10] [--kbps 800] [--width 1280] [--height 720] [--monitor N | --window N] [--codec auto|vp8|h264] [--save picture.bmp]
 //   Yaparr.ScreenDemo --list     shows the monitors and windows and their numbers
+//   Yaparr.ScreenDemo --install-ffmpeg <folder>     downloads the pinned FFmpeg into the folder (the installer build bundles it)
 //   Without --monitor or --window the primary monitor is shared.
 //
 // FFmpeg is found through YAPARR_FFMPEG, an 'ffmpeg' folder next to this program, or the PATH.
@@ -14,6 +15,14 @@ using Yaparr.Transport;
 
 string? Opt(string name) { int i = Array.IndexOf(args, name); return i >= 0 && i + 1 < args.Length ? args[i + 1] : null; }
 int Int(string name, int fallback) => int.TryParse(Opt(name), out var v) ? v : fallback;
+
+// Used by the installer build: fetches the pinned FFmpeg (hash checked) into the folder, as <folder>\<version>\ffmpeg.exe.
+if (Opt("--install-ffmpeg") is { } installDirectory)
+{
+    var installed = await FfmpegInstaller.InstallAsync(FfmpegPackage.Default, directory: installDirectory);
+    Console.WriteLine("Installed " + installed);
+    return 0;
+}
 
 if (!OperatingSystem.IsWindows()) { Console.Error.WriteLine("Sharing a screen works on Windows only for now."); return 2; }
 var ffmpeg = FfmpegLocator.Find();

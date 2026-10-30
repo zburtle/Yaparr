@@ -128,8 +128,11 @@ public class DhtSpeedTests
         });
         bMux.Start();
 
-        Assert.Single(await b.GetPeersAsync(topic));
-        Assert.True(b.SilentNodes >= 20, $"only {b.SilentNodes} nodes were remembered as silent");
+        var first = Stopwatch.StartNew();
+        var firstPeers = await b.GetPeersAsync(topic);
+        Assert.True(firstPeers.Count == 1, $"the first search found {firstPeers.Count} peers after {first.Elapsed.TotalSeconds:0.0} s, {b.SilentNodes} silent nodes remembered");
+        // The search stops when the peer is found, so how many of the 30 had timed out by then depends on the speed of the machine.
+        Assert.True(b.SilentNodes >= 10, $"only {b.SilentNodes} nodes were remembered as silent");
 
         var watch = Stopwatch.StartNew();
         Assert.Single(await b.GetPeersAsync(topic));

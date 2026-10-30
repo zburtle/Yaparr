@@ -378,6 +378,7 @@ public sealed class DhtNode : IDisposable
         // Keep `width` queries going. When one finishes, the next nearest node takes its place at once, so a node that
         // never answers holds one place for its timeout and not everyone else's.
         var inFlight = new List<Task>();
+        int reseeds = 0;
         while (true)
         {
             ct.ThrowIfCancellationRequested();
@@ -388,7 +389,20 @@ public sealed class DhtNode : IDisposable
                 started++;
                 inFlight.Add(Ask(next));
             }
-            if (inFlight.Count == 0) break;
+            if (inFlight.Count == 0)
+            {
+                // Nobody is left to ask. If the nearest nodes of the table were all dead (they are dropped from it as they fail),
+                // the table holds others that the first pick did not reach: take the nearest again, a few times at most.
+                if (reseeds++ >= 3) break;
+                bool more;
+                lock (candidates)
+                {
+                    foreach (var c in _table.Closest(target, _options.K * 2)) Offer(c);
+                    more = candidates.Values.Any(c => c.State == State.New);
+                }
+                if (!more) break;
+                continue;
+            }
             var finished = await Task.WhenAny(inFlight).ConfigureAwait(false);
             inFlight.Remove(finished);
             await finished.ConfigureAwait(false);
