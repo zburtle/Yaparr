@@ -34,11 +34,13 @@ public sealed class DhtOptions
 
     public bool ReadOnly { get; init; } = true;
 
-    public TimeSpan QueryTimeout { get; init; } = TimeSpan.FromSeconds(2);
+    /// <summary>How long a node gets to answer. About half the nodes on the real network never do, and each costs this much of a slot.</summary>
+    public TimeSpan QueryTimeout { get; init; } = TimeSpan.FromSeconds(1.5);
 
     public int K { get; init; } = 8;
 
-    public int Alpha { get; init; } = 4;
+    /// <summary>How many queries a lookup keeps in flight at once.</summary>
+    public int Alpha { get; init; } = 6;
 }
 
 public sealed class DhtNode : IDisposable
@@ -61,6 +63,7 @@ public sealed class DhtNode : IDisposable
     private readonly RoutingTable _table = new();
     private readonly ConcurrentDictionary<string, Pending> _pending = new();
     private readonly SemaphoreSlim _bootstrapLock = new(1, 1);
+    private readonly CancellationTokenSource _cts = new();
     private int _nextTid;
     private bool _bootstrapped;
 
@@ -98,18 +101,23 @@ public sealed class DhtNode : IDisposable
         {
             if (_bootstrapped && _table.Count > 0) return;
 
+            var started = System.Diagnostics.Stopwatch.StartNew();
             var seeds = new List<IPEndPoint>();
             var unresolved = new List<string>();
-            foreach (var host in _options.BootstrapHosts)
+            var lookups = await Task.WhenAll(_options.BootstrapHosts.Select(async host =>
             {
                 var (name, port) = SplitHostPort(host);
                 try
                 {
                     var addrs = await ResolveAsync(name, ct).ConfigureAwait(false);
-                    if (addrs.Count == 0) unresolved.Add(name);
-                    seeds.AddRange(addrs.Select(a => new IPEndPoint(a, port)));
+                    return (Name: name, Seeds: addrs.Select(a => new IPEndPoint(a, port)).ToList(), Error: addrs.Count == 0 ? name : null);
                 }
-                catch (SocketException ex) { unresolved.Add($"{name} ({ex.SocketErrorCode})"); }
+                catch (SocketException ex) { return (Name: name, Seeds: new List<IPEndPoint>(), Error: $"{name} ({ex.SocketErrorCode})"); }
+            })).ConfigureAwait(false);
+            foreach (var l in lookups)
+            {
+                seeds.AddRange(l.Seeds);
+                if (l.Error != null) unresolved.Add(l.Error);
             }
             if (unresolved.Count > 0) _mux.Log?.Invoke($"DHT: could not look up {string.Join(", ", unresolved)}");
 
@@ -129,8 +137,16 @@ public sealed class DhtNode : IDisposable
 
             if (_table.Count > 0)
             {
-                await LookupAsync(Id, LookupKind.FindNode, ct).ConfigureAwait(false);
+                // A couple of rounds are enough to start on; searching the whole neighbourhood takes a long time on the real
+                // network (half the nodes never answer) and the room lookup that follows fills the table as it goes.
+                await LookupAsync(Id, LookupKind.FindNode, ct, maxRounds: 2).ConfigureAwait(false);
                 _bootstrapped = true;
+                _mux.Log?.Invoke($"DHT: ready after {started.ElapsedMilliseconds} ms ({_table.Count} nodes known)");
+                _ = Task.Run(async () =>
+                {
+                    try { await LookupAsync(Id, LookupKind.FindNode, _cts.Token).ConfigureAwait(false); }
+                    catch (Exception) { }
+                });
             }
             else _mux.Log?.Invoke($"DHT: none of {seeds.Count} bootstrap node(s) answered; UDP may be blocked");
         }
@@ -227,7 +243,8 @@ public sealed class DhtNode : IDisposable
     public async Task<IReadOnlyList<IPEndPoint>> GetPeersAsync(byte[] infoHash, CancellationToken ct = default)
     {
         await BootstrapAsync(ct).ConfigureAwait(false);
-        var (peers, _) = await LookupAsync(new DhtId(infoHash), LookupKind.GetPeers, ct).ConfigureAwait(false);
+        // Someone is enough to start dialling; waiting for the silent nodes among the rest only delays that.
+        var (peers, _) = await LookupAsync(new DhtId(infoHash), LookupKind.GetPeers, ct, stopOnPeers: true).ConfigureAwait(false);
         return peers;
     }
 
@@ -271,8 +288,10 @@ public sealed class DhtNode : IDisposable
         return results.Count(ok => ok);
     }
 
-    private async Task<(List<IPEndPoint> Peers, List<Candidate> Closest)> LookupAsync(DhtId target, LookupKind kind, CancellationToken ct, Action<BDict>? onReply = null, Func<bool>? enough = null)
+    private async Task<(List<IPEndPoint> Peers, List<Candidate> Closest)> LookupAsync(DhtId target, LookupKind kind, CancellationToken ct,
+        Action<BDict>? onReply = null, Func<bool>? enough = null, int? maxRounds = null, bool stopOnPeers = false)
     {
+        var watch = System.Diagnostics.Stopwatch.StartNew();
         var candidates = new Dictionary<IPEndPoint, Candidate>();
         var peers = new HashSet<IPEndPoint>();
 
@@ -287,57 +306,86 @@ public sealed class DhtNode : IDisposable
 
         // Many nodes do not know BEP 44 and answer "get" with an error, so such a lookup has to ask more nodes at once.
         int width = kind == LookupKind.Get ? _options.Alpha * 2 : _options.Alpha;
-        int maxRounds = kind == LookupKind.Get ? 12 : 24;
-        for (int round = 0; round < maxRounds; round++)
+        int budget = (maxRounds ?? (kind == LookupKind.Get ? 12 : 24)) * width;
+        int started = 0;
+
+        // The nearest node among the K nearest that has not been asked yet; marked as asked so nobody else picks it.
+        Candidate? Next()
+        {
+            lock (candidates)
+            {
+                foreach (var c in candidates.Values.Where(c => c.State != State.Failed).Order(byDistance).Take(_options.K))
+                    if (c.State == State.New) { c.State = State.Queried; return c; }
+                return null;
+            }
+        }
+
+        async Task Ask(Candidate cand)
+        {
+            var args = new BDict();
+            string q;
+            switch (kind)
+            {
+                case LookupKind.GetPeers: q = "get_peers"; args["info_hash"] = target.Bytes; break;
+                case LookupKind.Get: q = "get"; args["target"] = target.Bytes; break;
+                default: q = "find_node"; args["target"] = target.Bytes; break;
+            }
+
+            var r = await QueryAsync(cand.Contact.EndPoint, q, args, ct).ConfigureAwait(false);
+            if (r == null)
+            {
+                cand.State = State.Failed;
+                // A node that does not know BEP 44 answers "get" with an error; that does not make it a dead node.
+                if (kind != LookupKind.Get) _table.Remove(cand.Contact.EndPoint);
+                return;
+            }
+
+            cand.State = State.Responded;
+            cand.Token = r.Bytes("token");
+            onReply?.Invoke(r);
+            lock (candidates)
+            {
+                foreach (var n in ParseCompactNodes(r.Bytes("nodes"))) Offer(n);
+                if (r.List("values") is { } values)
+                    foreach (var v in values.OfType<byte[]>())
+                        if (ParseCompactPeer(v) is { } ep) peers.Add(ep);
+            }
+        }
+
+        // Keep `width` queries going. When one finishes, the next nearest node takes its place at once, so a node that
+        // never answers holds one place for its timeout and not everyone else's.
+        var inFlight = new List<Task>();
+        while (true)
         {
             ct.ThrowIfCancellationRequested();
             if (enough?.Invoke() == true) break;
-            var closest = candidates.Values.Where(c => c.State != State.Failed).Order(byDistance).Take(_options.K).ToList();
-            var batch = closest.Where(c => c.State == State.New).Take(width).ToList();
-            if (batch.Count == 0) break;
-
-            await Task.WhenAll(batch.Select(async cand =>
+            if (stopOnPeers) { bool any; lock (candidates) any = peers.Count > 0; if (any) break; }
+            while (inFlight.Count < width && started < budget && Next() is { } next)
             {
-                cand.State = State.Queried;
-                var args = new BDict();
-                string q;
-                switch (kind)
-                {
-                    case LookupKind.GetPeers: q = "get_peers"; args["info_hash"] = target.Bytes; break;
-                    case LookupKind.Get: q = "get"; args["target"] = target.Bytes; break;
-                    default: q = "find_node"; args["target"] = target.Bytes; break;
-                }
-
-                var r = await QueryAsync(cand.Contact.EndPoint, q, args, ct).ConfigureAwait(false);
-                if (r == null)
-                {
-                    cand.State = State.Failed;
-                    // A node that does not know BEP 44 answers "get" with an error; that does not make it a dead node.
-                    if (kind != LookupKind.Get) _table.Remove(cand.Contact.EndPoint);
-                    return;
-                }
-
-                cand.State = State.Responded;
-                cand.Token = r.Bytes("token");
-                onReply?.Invoke(r);
-                lock (candidates)
-                {
-                    foreach (var n in ParseCompactNodes(r.Bytes("nodes"))) Offer(n);
-                    if (r.List("values") is { } values)
-                        foreach (var v in values.OfType<byte[]>())
-                            if (ParseCompactPeer(v) is { } ep) peers.Add(ep);
-                }
-            })).ConfigureAwait(false);
+                started++;
+                inFlight.Add(Ask(next));
+            }
+            if (inFlight.Count == 0) break;
+            var finished = await Task.WhenAny(inFlight).ConfigureAwait(false);
+            inFlight.Remove(finished);
+            await finished.ConfigureAwait(false);
         }
+        // Stopped early: what is still out will time out by itself.
+        foreach (var left in inFlight) _ = left.ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
 
-        var responded = candidates.Values.Where(c => c.State == State.Responded).Order(byDistance).Take(_options.K).ToList();
-        int queried = candidates.Values.Count(c => c.State != State.New);
-        int answered = candidates.Values.Count(c => c.State == State.Responded);
+        List<Candidate> responded;
+        int queried, answered;
+        lock (candidates)
+        {
+            responded = candidates.Values.Where(c => c.State == State.Responded).Order(byDistance).Take(_options.K).ToList();
+            queried = candidates.Values.Count(c => c.State != State.New);
+            answered = candidates.Values.Count(c => c.State == State.Responded);
+        }
         LastLookup = (queried, answered);
         if (kind == LookupKind.GetPeers && peers.Count == 0)
             _mux.Log?.Invoke(answered == 0
                 ? $"DHT lookup: none of {queried} node(s) answered ({_table.Count} known); UDP replies may be blocked or not coming back"
-                : $"DHT lookup: {answered} of {queried} node(s) answered, but none knew any peers for this room");
+                : $"DHT lookup: {answered} of {queried} node(s) answered in {watch.ElapsedMilliseconds} ms, but none knew any peers for this room");
         return (peers.ToList(), responded);
     }
 
@@ -589,6 +637,7 @@ public sealed class DhtNode : IDisposable
 
     public void Dispose()
     {
+        _cts.Cancel();
         foreach (var p in _pending.Values) p.Completion.TrySetCanceled();
     }
 }

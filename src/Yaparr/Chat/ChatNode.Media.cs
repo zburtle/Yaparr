@@ -57,6 +57,14 @@ internal sealed class MediaGroup
     public bool SeenAny, NackRunning;
     public uint HighestSeq;
     public readonly Dictionary<uint, long> Missing = new();
+    public readonly Dictionary<uint, long> Asked = new();
+
+    // A replay from the parent: which numbers it promised (first to last), which have come, and when the last one did.
+    public bool ReplayExpected, ReplayChecking;
+    public uint ReplayFirst, ReplayLast, ReplayMax;
+    public HashSet<uint> ReplayGot = new();
+    public readonly Dictionary<uint, long> ReplayAsked = new();
+    public long LastReplayPacketAt;
     public long Retransmitted, Recovered;
 
     public uint Seq;
@@ -196,7 +204,7 @@ public sealed class MediaView : IDisposable
     private FrameAssembler StartFraming()
     {
         _timer = new Timer(_ => Feed(null), null, 100, 100);
-        return new FrameAssembler(reorderWaitMs: 250, Environment.TickCount64);
+        return new FrameAssembler(reorderWaitMs: 400, Environment.TickCount64);
     }
 
     private void OnPacket(MediaPacket packet)
@@ -527,6 +535,7 @@ public sealed partial class ChatNode
             case "link": OnMediaLink(peer, g, m); break;
             case "key": OnMediaKey(peer, g); break;
             case "nack": OnMediaNack(peer, g, m); break;
+            case "replay": OnMediaReplay(peer, g, m); break;
         }
     }
 
@@ -564,7 +573,8 @@ public sealed partial class ChatNode
         else if (!hasCache) RequestKeyFrame(g);
     }
 
-    // A child is missing packets we may still have.
+    // A child is missing packets we may still have. For a replay (Add set) they are marked so the child takes them even
+    // if it saw the numbers before.
     private void OnMediaNack(PeerState peer, MediaGroup g, WireMedia m)
     {
         if (m.Seqs == null) return;
@@ -573,7 +583,13 @@ public sealed partial class ChatNode
         {
             if (!g.Children.ContainsKey(peer.Id)) return;
             foreach (var seq in m.Seqs.Take(32))
-                if (g.Recent.TryGetValue(seq, out var packet)) found.Add(packet);
+            {
+                if (g.Recent.TryGetValue(seq, out var packet) || g.Cache.TryGetValue(seq, out packet))
+                {
+                    if (m.Add) { packet = (byte[])packet.Clone(); packet[0] |= MediaWire.ReplayFlag; }
+                    found.Add(packet);
+                }
+            }
         }
         foreach (var packet in found)
         {
@@ -615,24 +631,77 @@ public sealed partial class ChatNode
         {
             try
             {
-                for (int round = 0; round < 4; round++)
+                for (int round = 0; ; round++)
                 {
-                    await Task.Delay(round == 0 ? 40 : 90, _cts.Token).ConfigureAwait(false);
+                    await Task.Delay(40, _cts.Token).ConfigureAwait(false);
                     List<uint> want;
                     PeerId? parent;
                     lock (g.Gate)
                     {
                         long now = Environment.TickCount64;
-                        foreach (var old in g.Missing.Where(kv => now - kv.Value > 1500).Select(kv => kv.Key).ToList()) g.Missing.Remove(old);
-                        if (g.Missing.Count == 0) return;
-                        want = g.Missing.Where(kv => now - kv.Value >= 30).Select(kv => kv.Key).Take(32).ToList();
+                        foreach (var old in g.Missing.Where(kv => now - kv.Value > 1500).Select(kv => kv.Key).ToList()) { g.Missing.Remove(old); g.Asked.Remove(old); }
+                        // Ending and clearing the flag happen together, so a gap noticed from now on starts a new round.
+                        if (g.Missing.Count == 0) { g.NackRunning = false; g.Asked.Clear(); return; }
+                        // Not again until the answer has had time to come.
+                        want = g.Missing.Where(kv => now - kv.Value >= 30 && now - g.Asked.GetValueOrDefault(kv.Key) >= 80).Select(kv => kv.Key).Take(32).ToList();
+                        foreach (var seq in want) g.Asked[seq] = now;
                         parent = g.Parent;
                     }
                     if (want.Count > 0 && parent is { } p) SendMedia(p, g, new WireMedia { Op = "nack", Seqs = want.ToArray() });
                 }
             }
+            catch (OperationCanceledException) { lock (g.Gate) g.NackRunning = false; }
+        });
+    }
+
+    // A replay is arriving: ask for the numbers it promised and left out. The packets come in order, so a number that is
+    // missing below the highest one that has come is lost; waiting for the end would be too late, because the viewer
+    // gives up on a frame after a quarter of a second. What is left at the end is asked for once it has gone quiet.
+    private void OnMediaReplay(PeerState peer, MediaGroup g, WireMedia m)
+    {
+        if (m.Seqs is not { Length: 2 }) return;
+        lock (g.Gate)
+        {
+            if (g.Parent != peer.Id) return;
+            g.ReplayExpected = true;
+            g.ReplayFirst = m.Seqs[0];
+            g.ReplayLast = m.Seqs[1];
+            g.ReplayMax = m.Seqs[0] - 1;
+            g.ReplayGot = new HashSet<uint>();
+            g.ReplayAsked.Clear();
+            g.LastReplayPacketAt = Environment.TickCount64;
+            if (g.ReplayChecking) return;
+            g.ReplayChecking = true;
+        }
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                long started = Environment.TickCount64;
+                while (Environment.TickCount64 - started < 5000)
+                {
+                    await Task.Delay(50, _cts.Token).ConfigureAwait(false);
+                    List<uint> missing = new();
+                    PeerId? parent;
+                    bool finished = false;
+                    lock (g.Gate)
+                    {
+                        long now = Environment.TickCount64;
+                        bool quiet = now - g.LastReplayPacketAt >= 120;
+                        // While it arrives, only what is behind the newest number; at the end, everything promised.
+                        uint limit = quiet ? g.ReplayLast : g.ReplayMax - 2;
+                        for (uint seq = g.ReplayFirst; (int)(limit - seq) >= 0 && missing.Count < 32; seq++)
+                            if (!g.ReplayGot.Contains(seq) && now - g.ReplayAsked.GetValueOrDefault(seq) >= 100) missing.Add(seq);
+                        foreach (var seq in missing) g.ReplayAsked[seq] = now;
+                        parent = g.Parent;
+                        finished = quiet && missing.Count == 0 && !g.ReplayAsked.Keys.Any(q => !g.ReplayGot.Contains(q));
+                    }
+                    if (missing.Count > 0 && parent is { } p) SendMedia(p, g, new WireMedia { Op = "nack", Add = true, Seqs = missing.ToArray() });
+                    if (finished) break;
+                }
+            }
             catch (OperationCanceledException) { }
-            finally { lock (g.Gate) g.NackRunning = false; }
+            finally { lock (g.Gate) { g.ReplayExpected = false; g.ReplayChecking = false; } }
         });
     }
 
@@ -982,12 +1051,17 @@ public sealed partial class ChatNode
     private void ReplayCache(MediaGroup g, PeerState to)
     {
         byte[][] packets;
+        uint first, last;
         lock (g.Gate)
         {
             if (!g.CacheUsable) return;
             packets = g.Cache.OrderBy(kv => (int)(kv.Key - g.CacheKeySeq)).Select(kv => kv.Value).ToArray();
+            first = g.CacheKeySeq;
+            last = g.CacheMaxSeq;
         }
         if (packets.Length == 0) return;
+        // Said first on the reliable connection, so the other side knows exactly which numbers to expect.
+        SendMedia(to.Id, g, new WireMedia { Op = "replay", Seqs = new[] { first, last } });
         _ = Task.Run(async () =>
         {
             try
@@ -1041,7 +1115,16 @@ public sealed partial class ChatNode
         if (isReplay)
         {
             packet[0] &= unchecked((byte)~MediaWire.ReplayFlag);
-            lock (g.Gate) if (g.Missing.Remove(seq)) g.Recovered++;
+            lock (g.Gate)
+            {
+                if (g.Missing.Remove(seq)) g.Recovered++;
+                if (g.ReplayExpected)
+                {
+                    g.ReplayGot.Add(seq);
+                    g.LastReplayPacketAt = Environment.TickCount64;
+                    if ((int)(seq - g.ReplayMax) > 0 && (int)(seq - g.ReplayLast) <= 0) g.ReplayMax = seq;
+                }
+            }
         }
         Remember(g, packet, seq, isKey);
         StoreRecent(g, seq, packet);

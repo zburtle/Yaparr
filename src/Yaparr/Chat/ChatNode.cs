@@ -570,7 +570,7 @@ public sealed partial class ChatNode : IDisposable
         foreach (var (cachedId, cachedEndPoint) in _peerCache.For(room.Key))
             if (cachedId != Id) AddCandidate(cachedEndPoint, cachedId, null).Rank = Math.Max(1, rank--);
 
-        _ = RunLoopAsync(() => DiscoverRoomAsync(room, _cts.Token), $"room {room.Name}", () => !_rooms.ContainsKey(room.Key));
+        _ = RunRoomDiscoveryAsync(room);
         _ = RunLoopAsync(() => MaintainRoomAsync(room), $"maintain {room.Name}", () => !_rooms.ContainsKey(room.Key), _options.MaintenanceInterval);
         return room;
     }
@@ -609,13 +609,45 @@ public sealed partial class ChatNode : IDisposable
         }
     }
 
-    private async Task DiscoverRoomAsync(ChatRoom room, CancellationToken ct)
+    // Looks for the room's members now and then. While nobody has been found, it searches again after a few seconds
+    // instead of waiting a whole interval: on a new machine the first search is slow, and whoever announced while it ran
+    // is not in its answer.
+    private async Task RunRoomDiscoveryAsync(ChatRoom room)
+    {
+        int quick = 0;
+        try
+        {
+            while (!_cts.IsCancellationRequested && _rooms.ContainsKey(room.Key))
+            {
+                bool alone = room.MemberStates.IsEmpty && room.Indirect.IsEmpty;
+                try { await DiscoverRoomAsync(room, announce: !alone || quick == 0, _cts.Token).ConfigureAwait(false); }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _options.Log?.Invoke($"room {room.Name} failed: {ex.Message}");
+                }
+                alone = room.MemberStates.IsEmpty && room.Indirect.IsEmpty;
+                var delay = NextDiscoveryDelay(_options.DiscoveryInterval, alone, quick);
+                quick = alone ? quick + 1 : 0;
+                await Task.Delay(delay, _cts.Token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private const int QuickSearches = 8;
+    private static readonly TimeSpan QuickSearchGap = TimeSpan.FromSeconds(4);
+
+    /// <summary>The wait before the next search: short for the first few while alone, the usual interval otherwise.</summary>
+    internal static TimeSpan NextDiscoveryDelay(TimeSpan interval, bool alone, int quickSoFar) =>
+        alone && quickSoFar < QuickSearches && interval > QuickSearchGap ? QuickSearchGap : interval;
+
+    private async Task DiscoverRoomAsync(ChatRoom room, bool announce, CancellationToken ct)
     {
         await Task.WhenAll(_discoveries.Select(async d =>
         {
             try
             {
-                await d.AnnounceAsync(room.Topic, ct).ConfigureAwait(false);
+                if (announce) await d.AnnounceAsync(room.Topic, ct).ConfigureAwait(false);
                 var found = await d.FindPeersAsync(room.Topic, ct).ConfigureAwait(false);
                 if (found.Any(IsSomeoneElse) && d is not LocalServiceDiscovery) _lastFoundAt = Environment.TickCount64;
                 _options.Log?.Invoke($"room '{room.Name}' via {d.GetType().Name}: {found.Count} endpoint(s){(found.Count > 0 ? ": " + string.Join(", ", found) : "")}");

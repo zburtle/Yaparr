@@ -20,7 +20,9 @@ public sealed class DhtDiscovery : IPeerDiscovery, IPeerRecords
     public DhtNode Node => _node;
 
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (long At, IReadOnlyList<IPEndPoint> Peers)> _recent = new();
-    private static readonly long ReuseMs = 10_000;
+    // What an announcement just found is reused for a moment; a search a few seconds later asks again, because
+    // someone else may have announced since.
+    private static readonly long ReuseMs = 3_000;
 
     public async Task AnnounceAsync(byte[] topic, CancellationToken ct = default)
     {

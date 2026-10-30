@@ -63,6 +63,10 @@ public sealed class ChatRoom
     public IReadOnlyList<MediaGroupInfo> MediaGroups =>
         Media.Values.Where(g => g.Kind != "voice").Select(g => g.Info).OrderBy(g => g.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
 
+    /// <summary>Where this node stands in the room's voice tree, if the channel is big enough to have one.</summary>
+    public MediaStatus? VoiceTreeStatus =>
+        Media.Values.FirstOrDefault(g => g.Kind == "voice" && g.Joined) is { } g ? _node.StatusOf(g) : null;
+
     /// <summary>A stream was shared or ended.</summary>
     public event Action? MediaGroupsChanged;
     internal void RaiseMediaChanged() => MediaGroupsChanged?.Invoke();

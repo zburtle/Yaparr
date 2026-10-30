@@ -189,8 +189,10 @@ public class StreamFrameTests
             }
             await TestUtil.WaitFor(() => got.Count >= 81, 20_000);
 
+            // Every frame arrives. If a retransmission was unlucky enough to miss its time, the viewer restarts from a key
+            // frame and is handed some frames again, which is the fallback working, so more than 81 is allowed.
             AssertDecodable(got);
-            Assert.Equal(81, got.Count);
+            Assert.True(got.Select(f => f.Id).Distinct().Count() >= 81, "some frame never arrived");
             Assert.True(views[first - 1].Status.Retransmitted > 0, "the first member should have sent some packets again");
             Assert.True(views[second - 1].Status.Recovered > 0);
         }
@@ -231,6 +233,39 @@ public class StreamFrameTests
             }
             AssertDecodable(got.ToArray());
             Assert.Equal(0, asked);   // the parent's copy of the key frame was enough, the sharer was not troubled
+        }
+        finally { foreach (var v in views) v.Dispose(); source.Dispose(); }
+    }
+
+    [Fact]
+    public async Task A_replay_over_a_link_that_keeps_losing_packets_is_repaired_and_still_completes()
+    {
+        var (c, source, views, first, second) = await Chain();
+        using var cluster = c;
+        try
+        {
+            var got = Watch(views[second - 1]);
+            await source.SendFrameAsync(Frame(0, 12_000), isKey: true);
+            for (int n = 1; n <= 20; n++) { await source.SendFrameAsync(Frame(n, 3000), false); await Task.Delay(20); }
+            await TestUtil.WaitFor(() => got.Count == 21, 10_000);
+
+            // A blackout too long to repair, then a link that loses 4% of what it carries for the rest of the test:
+            // the replay that restarts the viewer has to get through it as well.
+            var random = new Random(11);
+            bool blocked = true;
+            c.Nodes[first].Mux.OutboundFilter = (_, to) => to.Port != c.Nodes[second].LocalPort || (!Volatile.Read(ref blocked) && random.NextDouble() > 0.04);
+            for (int n = 21; n <= 320; n++) await source.SendFrameAsync(Frame(n, 500), false);
+            Volatile.Write(ref blocked, false);
+            for (int n = 321; n <= 350; n++) { await source.SendFrameAsync(Frame(n, 500), false); await Task.Delay(30); }
+
+            try { await TestUtil.WaitFor(() => got.Count(f => f.IsKey && f.Id == 1) >= 2 && got.Last().Id >= 345, 25_000); }
+            catch (TimeoutException)
+            {
+                var st = views[second - 1].Status;
+                Assert.Fail($"delivered {got.Count}, key id 1 delivered {got.Count(f => f.IsKey && f.Id == 1)} times, last id {got.Last().Id}, lost {views[second - 1].FramesLost}, " +
+                            $"viewer: parent={st.Parent?.Short} recovered={st.Recovered}; first: retransmitted={views[first - 1].Status.Retransmitted}");
+            }
+            AssertDecodable(got.ToArray());
         }
         finally { foreach (var v in views) v.Dispose(); source.Dispose(); }
     }
