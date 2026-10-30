@@ -1,7 +1,8 @@
 ﻿// Shares this computer's screen to a second Yaparr node in the same process and reports what it cost: how many pictures
 // arrived, the bitrate, and the processor time used by FFmpeg and by this program. Windows only (screen capture).
 //
-//   Yaparr.ScreenDemo [--seconds 20] [--fps 10] [--kbps 800] [--width 1280] [--height 720] [--monitor 0|1|..|all] [--window "title"] [--window-index N | --list-windows] [--save picture.bmp]
+//   Yaparr.ScreenDemo [--seconds 20] [--fps 10] [--kbps 800] [--width 1280] [--height 720] [--monitor N | --window N] [--save picture.bmp]
+//   Yaparr.ScreenDemo --list     shows the monitors and windows and their numbers
 //   Without --monitor or --window the primary monitor is shared.
 //
 // FFmpeg is found through YAPARR_FFMPEG, an 'ffmpeg' folder next to this program, or the PATH.
@@ -20,30 +21,34 @@ if (ffmpeg == null) { Console.Error.WriteLine("FFmpeg was not found. Set YAPARR_
 Console.WriteLine($"FFmpeg: {ffmpeg}");
 
 int seconds = Int("--seconds", 20);
-var screen = new ScreenOptions { Fps = Int("--fps", 10), Kbps = Int("--kbps", 800), MaxWidth = Int("--width", 1280), MaxHeight = Int("--height", 720), WindowTitle = Opt("--window") };
-string? savePath = Opt("--save");
 var displays = Displays.List();
-Console.WriteLine("Monitors: " + string.Join(", ", displays.Select(d => $"{d.Index}: {d.Width}x{d.Height}{(d.Primary ? " (primary)" : "")}")));
 var windows = ShareWindows.List(Environment.ProcessId);
-if (args.Contains("--list-windows"))
+if (args.Contains("--list"))
 {
-    for (int i = 0; i < windows.Count; i++) Console.WriteLine($"{i}: {windows[i].Label}");
+    Console.WriteLine("Monitors:");
+    foreach (var d in displays) Console.WriteLine($"  --monitor {d.Index}: {d.Width}x{d.Height}{(d.Primary ? " (primary)" : "")}");
+    Console.WriteLine("Windows:");
+    for (int i = 0; i < windows.Count; i++) Console.WriteLine($"  --window {i}: {windows[i].Label}");
     return 0;
 }
-if (Opt("--window-index") is { } wi && int.TryParse(wi, out int windowIndex))
+
+Display? display = null;
+long? windowHandle = null;
+if (Opt("--window") is { } wi)
 {
-    var w = windows.ElementAtOrDefault(windowIndex) ?? throw new InvalidOperationException("No such window; use --list-windows.");
+    var w = int.TryParse(wi, out int windowIndex) ? windows.ElementAtOrDefault(windowIndex) : null;
+    if (w == null) { Console.Error.WriteLine("No such window; use --list."); return 2; }
     Console.WriteLine("Sharing the window: " + w.Label);
-    screen = new ScreenOptions { Fps = screen.Fps, Kbps = screen.Kbps, MaxWidth = screen.MaxWidth, MaxHeight = screen.MaxHeight, WindowHandle = w.Handle };
+    windowHandle = w.Handle;
 }
-else if (Opt("--monitor") is { } m)
+else
 {
-    if (m == "all") screen = new ScreenOptions { Fps = screen.Fps, Kbps = screen.Kbps, MaxWidth = screen.MaxWidth, MaxHeight = screen.MaxHeight, WindowTitle = screen.WindowTitle };
-    else screen = new ScreenOptions { Fps = screen.Fps, Kbps = screen.Kbps, MaxWidth = screen.MaxWidth, MaxHeight = screen.MaxHeight, WindowTitle = screen.WindowTitle,
-        Display = displays.FirstOrDefault(d => d.Index.ToString() == m) ?? throw new InvalidOperationException("No such monitor.") };
+    display = displays.FirstOrDefault(d => d.Index.ToString() == (Opt("--monitor") ?? "0"));
+    if (display == null) { Console.Error.WriteLine("No such monitor; use --list."); return 2; }
+    Console.WriteLine($"Sharing monitor {display.Index}: {display.Width}x{display.Height}");
 }
-else if (displays.Count > 0 && screen.WindowTitle == null && screen.WindowHandle == null)
-    screen = new ScreenOptions { Fps = screen.Fps, Kbps = screen.Kbps, MaxWidth = screen.MaxWidth, MaxHeight = screen.MaxHeight, Display = displays[0] };
+var screen = new ScreenOptions { Fps = Int("--fps", 10), Kbps = Int("--kbps", 800), MaxWidth = Int("--width", 1280), MaxHeight = Int("--height", 720), Display = display, WindowHandle = windowHandle };
+string? savePath = Opt("--save");
 
 ChatNode Make(string name) => new(new ChatNodeOptions
 {

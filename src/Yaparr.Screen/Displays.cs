@@ -1,9 +1,9 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 
 namespace Yaparr.Screen;
 
 /// <summary>One monitor, in the coordinates of the whole desktop (which can start at a negative position).</summary>
-public sealed record Display(int Index, string Name, int X, int Y, int Width, int Height, bool Primary);
+public sealed record Display(int Index, string Name, int X, int Y, int Width, int Height, bool Primary, long Handle = 0);
 
 /// <summary>Lists the monitors, so that one of them can be shared instead of the whole desktop. Windows only.</summary>
 public static class Displays
@@ -34,7 +34,7 @@ public static class Displays
         {
             var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
             if (GetMonitorInfo(monitor, ref info))
-                found.Add(new Display(0, info.Device, info.Monitor.Left, info.Monitor.Top, info.Monitor.Right - info.Monitor.Left, info.Monitor.Bottom - info.Monitor.Top, (info.Flags & 1) != 0));
+                found.Add(new Display(0, info.Device, info.Monitor.Left, info.Monitor.Top, info.Monitor.Right - info.Monitor.Left, info.Monitor.Bottom - info.Monitor.Top, (info.Flags & 1) != 0, monitor.ToInt64()));
             return true;
         }, IntPtr.Zero);
         return found.OrderByDescending(d => d.Primary).ThenBy(d => d.X).ThenBy(d => d.Y)

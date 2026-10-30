@@ -27,7 +27,7 @@ public partial class ShareDialog : Window
         QualityBox.SelectedIndex = 1;
     }
 
-    // Monitors first, then "all monitors", then the windows.
+    // The monitors first, then the windows.
     private void FillChoices(bool selectFirst)
     {
         var keep = (WhatBox.SelectedItem as string, _windows);
@@ -35,7 +35,6 @@ public partial class ShareDialog : Window
         WhatBox.Items.Clear();
         foreach (var d in _displays)
             WhatBox.Items.Add($"Monitor {d.Index + 1}{(d.Primary ? " (main)" : "")}: {d.Width} x {d.Height}");
-        if (_displays.Count > 1) WhatBox.Items.Add("All monitors together");
         foreach (var w in _windows) WhatBox.Items.Add("Window: " + w.Label);
         WhatBox.SelectedIndex = selectFirst ? 0 : Math.Max(0, WhatBox.Items.IndexOf(keep.Item1));
     }
@@ -48,7 +47,7 @@ public partial class ShareDialog : Window
     {
         var q = Qualities[Math.Max(0, QualityBox.SelectedIndex)];
         int what = WhatBox.SelectedIndex;
-        int windowAt = what - _displays.Count - (_displays.Count > 1 ? 1 : 0);
+        int windowAt = what - _displays.Count;
         var window = windowAt >= 0 && windowAt < _windows.Count ? _windows[windowAt] : null;
         Result = new ScreenOptions
         {

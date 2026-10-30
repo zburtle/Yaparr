@@ -84,6 +84,8 @@ public sealed class ScreenSharer : IDisposable
             {
                 if (_options.WindowHandle is { } handle && !ShareWindows.Exists(handle))
                     throw new InvalidOperationException("The window you were sharing was closed.");
+                if (LastErrors.Contains("gfxcapture", StringComparison.OrdinalIgnoreCase) && LastErrors.Contains("No such filter", StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("This FFmpeg is too old for screen capture; version 8 or newer is needed.");
                 throw new InvalidOperationException("FFmpeg stopped. " + LastErrors);
             }
         }

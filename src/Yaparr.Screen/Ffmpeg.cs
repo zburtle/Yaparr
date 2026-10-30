@@ -51,17 +51,14 @@ public static class FfmpegLocator
 
 public enum ScreenCodec { Vp8 }
 
-/// <summary>What to capture and how hard to compress it.</summary>
+/// <summary>What to capture and how hard to compress it. Name a monitor or a window.</summary>
 public sealed class ScreenOptions
 {
-    /// <summary>Null for a monitor or the whole desktop, otherwise the exact title of a window. <see cref="WindowHandle"/> is better: titles are not unique.</summary>
-    public string? WindowTitle { get; init; }
-
-    /// <summary>A window to share, from <see cref="ShareWindows.List"/>. Takes the place of the monitor.</summary>
-    public long? WindowHandle { get; init; }
-
-    /// <summary>One monitor (see <see cref="Displays.List"/>) instead of the whole desktop, which spans every monitor. Ignored when sharing a window.</summary>
+    /// <summary>One monitor, from <see cref="Displays.List"/>. Ignored when <see cref="WindowHandle"/> is set.</summary>
     public Display? Display { get; init; }
+
+    /// <summary>One window, from <see cref="ShareWindows.List"/>.</summary>
+    public long? WindowHandle { get; init; }
 
     public int Fps { get; init; } = 10;
 
@@ -84,42 +81,41 @@ public sealed class ScreenOptions
 public static class FfmpegArgs
 {
     private static string Num(double v) => v.ToString("0.###", CultureInfo.InvariantCulture);
+    private static string Hex(long v) => "0x" + v.ToString("X", CultureInfo.InvariantCulture);
 
-    /// <summary>Capture the screen or a window and write VP8 in an IVF container to standard output.</summary>
+    /// <summary>
+    /// Capture a monitor or a window and write VP8 in an IVF container to standard output. The capture is Windows Graphics
+    /// Capture (FFmpeg's gfxcapture filter, FFmpeg 8 or newer): it gets the content of browsers and games, which the older
+    /// screen-copying way returns black, it is not spoiled by windows on top, and it takes less processor time.
+    /// </summary>
     public static List<string> Capture(ScreenOptions o)
     {
         if (o.Fps is < 1 or > 60) throw new ArgumentOutOfRangeException(nameof(o), "Frames per second must be between 1 and 60.");
         if (o.Kbps is < 50 or > 20_000) throw new ArgumentOutOfRangeException(nameof(o), "The bitrate must be between 50 and 20000 kbit/s.");
         if (o.MaxWidth < 16 || o.MaxHeight < 16) throw new ArgumentOutOfRangeException(nameof(o), "The picture box is too small.");
 
-        // Even sizes only: the encoder works on pairs of pixels.
-        var scale = $"scale='min({o.MaxWidth},iw)':'min({o.MaxHeight},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2";
-        var args = new List<string>
+        string source;
+        if (o.WindowHandle is { } window) source = "hwnd=" + Hex(window);
+        else if (o.Display is { Handle: not 0 } display) source = "hmonitor=" + Hex(display.Handle);
+        else throw new ArgumentException("Choose a monitor or a window to share.", nameof(o));
+
+        // Even sizes only: the encoder works on pairs of pixels. A window that is resized keeps its shape inside the first size.
+        var filter = $"gfxcapture={source}:max_framerate={o.Fps.ToString(CultureInfo.InvariantCulture)}:capture_cursor={(o.ShowCursor ? 1 : 0)}:resize_mode=scale_aspect,"
+            + "hwdownload,format=bgra,"
+            + $"scale='min({o.MaxWidth},iw)':'min({o.MaxHeight},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=yuv420p";
+        return new List<string>
         {
             "-hide_banner", "-loglevel", "error", "-nostdin",
-            "-f", "gdigrab", "-framerate", o.Fps.ToString(CultureInfo.InvariantCulture),
-            "-draw_mouse", o.ShowCursor ? "1" : "0",
-        };
-        bool wholeScreen = o.WindowHandle == null && o.WindowTitle is not { Length: > 0 };
-        if (wholeScreen && o.Display is { } d)
-        {
-            args.AddRange(new[] { "-offset_x", d.X.ToString(CultureInfo.InvariantCulture), "-offset_y", d.Y.ToString(CultureInfo.InvariantCulture),
-                "-video_size", $"{d.Width}x{d.Height}" });
-        }
-        args.AddRange(new[]
-        {
-            "-i", o.WindowHandle is { } h ? "hwnd=0x" + h.ToString("X", CultureInfo.InvariantCulture) : o.WindowTitle is { Length: > 0 } t ? "title=" + t : "desktop",
-            "-vf", scale + ",format=yuv420p",
+            "-filter_complex", filter,
             "-c:v", "libvpx", "-deadline", "realtime", "-cpu-used", "6", "-lag-in-frames", "0", "-auto-alt-ref", "0",
             "-error-resilient", "1", "-threads", "4",
             "-b:v", o.Kbps + "k", "-maxrate", Num(o.Kbps * 1.5) + "k", "-bufsize", Num(o.Kbps * 1.5) + "k",
             "-g", Math.Max(1, (int)Math.Round(o.Fps * o.KeyFrameSeconds)).ToString(CultureInfo.InvariantCulture),
             "-f", "ivf", "pipe:1",
-        });
-        return args;
+        };
     }
 
-    /// <summary>Read IVF from standard input and write the pictures as raw BGRA to standard output.</summary>
+/// <summary>Read IVF from standard input and write the pictures as raw BGRA to standard output.</summary>
     public static List<string> Decode() => new()
     {
         // No probing: by default FFmpeg reads several seconds of input before it shows the first picture.

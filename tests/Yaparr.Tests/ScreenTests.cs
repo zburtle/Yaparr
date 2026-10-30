@@ -54,37 +54,35 @@ public class ScreenTests
     }
 
     [Fact]
-    public void The_capture_command_follows_the_options()
+    public void A_monitor_is_captured_by_its_handle_with_windows_graphics_capture()
     {
-        var args = FfmpegArgs.Capture(new ScreenOptions { Fps = 15, Kbps = 900, MaxWidth = 1280, MaxHeight = 720, KeyFrameSeconds = 2 });
+        var display = new Display(0, "x", 0, 0, 1920, 1080, true, Handle: 0x1A2B);
+        var args = FfmpegArgs.Capture(new ScreenOptions { Fps = 15, Kbps = 900, MaxWidth = 1280, MaxHeight = 720, KeyFrameSeconds = 2, Display = display });
         string line = string.Join(' ', args);
-        Assert.Contains("-f gdigrab -framerate 15", line);
-        Assert.Contains("-i desktop", line);
+        Assert.Contains("gfxcapture=hmonitor=0x1A2B:max_framerate=15:capture_cursor=1:resize_mode=scale_aspect", line);
+        Assert.Contains("hwdownload,format=bgra", line);
+        Assert.Contains("min(1280,iw)", line);
         Assert.Contains("-b:v 900k", line);
         Assert.Contains("-g 30", line);
-        Assert.Contains("min(1280,iw)", line);
         Assert.EndsWith("-f ivf pipe:1", line);
-
-        var window = string.Join(' ', FfmpegArgs.Capture(new ScreenOptions { WindowTitle = "Notepad", ShowCursor = false }));
-        Assert.Contains("-i title=Notepad", window);
-        Assert.Contains("-draw_mouse 0", window);
+        Assert.DoesNotContain("gdigrab", line);
     }
 
     [Fact]
-    public void A_window_is_captured_by_its_handle_and_not_cropped_like_a_monitor()
+    public void A_window_is_captured_by_its_handle_and_a_window_beats_a_monitor()
     {
-        var display = new Display(0, "x", 1920, 0, 2560, 1440, false);
-        string window = string.Join(' ', FfmpegArgs.Capture(new ScreenOptions { WindowHandle = 0x1A2B, Display = display }));
-        Assert.Contains("-i hwnd=0x1A2B", window);
-        Assert.DoesNotContain("-offset_x", window);
-        Assert.DoesNotContain("-video_size", window);
+        var display = new Display(0, "x", 0, 0, 1920, 1080, true, Handle: 0x1A2B);
+        string line = string.Join(' ', FfmpegArgs.Capture(new ScreenOptions { WindowHandle = 0xFF, Display = display, ShowCursor = false }));
+        Assert.Contains("gfxcapture=hwnd=0xFF:", line);
+        Assert.DoesNotContain("hmonitor", line);
+        Assert.Contains("capture_cursor=0", line);
+    }
 
-        // A handle beats a title.
-        Assert.Contains("hwnd=0xFF", string.Join(' ', FfmpegArgs.Capture(new ScreenOptions { WindowHandle = 0xFF, WindowTitle = "Notepad" })));
-
-        string monitor = string.Join(' ', FfmpegArgs.Capture(new ScreenOptions { Display = display }));
-        Assert.Contains("-offset_x 1920 -offset_y 0 -video_size 2560x1440", monitor);
-        Assert.Contains("-i desktop", monitor);
+    [Fact]
+    public void Something_to_capture_has_to_be_chosen()
+    {
+        Assert.Throws<ArgumentException>(() => FfmpegArgs.Capture(new ScreenOptions()));
+        Assert.Throws<ArgumentException>(() => FfmpegArgs.Capture(new ScreenOptions { Display = new Display(0, "x", 0, 0, 10, 10, true) }));
     }
 
     [Fact]
@@ -104,9 +102,10 @@ public class ScreenTests
     [Fact]
     public void The_capture_command_refuses_silly_numbers()
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => FfmpegArgs.Capture(new ScreenOptions { Fps = 0 }));
-        Assert.Throws<ArgumentOutOfRangeException>(() => FfmpegArgs.Capture(new ScreenOptions { Kbps = 10 }));
-        Assert.Throws<ArgumentOutOfRangeException>(() => FfmpegArgs.Capture(new ScreenOptions { MaxWidth = 2 }));
+        var display = new Display(0, "x", 0, 0, 100, 100, true, Handle: 1);
+        Assert.Throws<ArgumentOutOfRangeException>(() => FfmpegArgs.Capture(new ScreenOptions { Display = display, Fps = 0 }));
+        Assert.Throws<ArgumentOutOfRangeException>(() => FfmpegArgs.Capture(new ScreenOptions { Display = display, Kbps = 10 }));
+        Assert.Throws<ArgumentOutOfRangeException>(() => FfmpegArgs.Capture(new ScreenOptions { Display = display, MaxWidth = 2 }));
     }
 
     [Fact]

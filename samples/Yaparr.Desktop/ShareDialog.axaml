@@ -7,7 +7,7 @@
         <TextBlock Text="What to share" FontWeight="SemiBold" />
         <ComboBox x:Name="WhatBox" HorizontalAlignment="Stretch" />
         <TextBlock Classes="muted small" TextWrapping="Wrap"
-                   Text="A window is shared as it looks on the screen: if another window is on top of it, that shows instead, and a minimised window shows nothing. Keep it open and its size as it is." />
+                   Text="A window is shared even when other windows are on top of it. A minimised window stops updating, and one that is resized keeps its shape inside the size it had when you started." />
         <Button Content="Refresh the list of windows" HorizontalAlignment="Left" Margin="0,2,0,0" Click="Refresh_Click" />
         <TextBlock Text="Quality" FontWeight="SemiBold" Margin="0,8,0,0" />
         <ComboBox x:Name="QualityBox" HorizontalAlignment="Stretch" />
