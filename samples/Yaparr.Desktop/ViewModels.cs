@@ -249,6 +249,23 @@ public sealed class ConversationVm : Observable
         set { if (_deafened == value) return; _deafened = value; Raise(); Raise(nameof(DeafenText)); }
     }
 
+    // ---- screen sharing ----
+
+    public ObservableCollection<ShareVm> Shares { get; } = new();
+    public bool HasShares => Shares.Count > 0;
+    public void SharesChanged() => Raise(nameof(HasShares));
+
+    private bool _sharing;
+    public bool IsSharing
+    {
+        get => _sharing;
+        set { if (_sharing == value) return; _sharing = value; Raise(); Raise(nameof(CanShare)); Raise(nameof(CanStopSharing)); }
+    }
+
+    /// <summary>Sharing a screen works on Windows only for now; watching works everywhere.</summary>
+    public bool CanShare => IsRoom && !_sharing && OperatingSystem.IsWindows();
+    public bool CanStopSharing => _sharing;
+
     public string MuteText => _muted ? "🔇 Unmute" : "🎤 Mute";
     public string DeafenText => _deafened ? "🎧 Undeafen" : "🎧 Deafen";
     public void VoiceMembersChanged() => Raise(nameof(HasVoiceMembers));
@@ -301,6 +318,30 @@ public sealed class ConversationVm : Observable
         Messages.Insert(i, message);
         MarkDays(i);
     }
+}
+
+/// <summary>A screen someone is sharing in a room.</summary>
+public sealed class ShareVm : Observable
+{
+    private bool _watching;
+
+    public ShareVm(string id, string name, bool isMine)
+    {
+        Id = id; Name = name; IsMine = isMine;
+    }
+
+    public string Id { get; }
+    public string Name { get; }
+    public bool IsMine { get; }
+    public bool CanWatch => !IsMine;
+
+    public bool Watching
+    {
+        get => _watching;
+        set { if (_watching == value) return; _watching = value; Raise(); Raise(nameof(ButtonText)); }
+    }
+
+    public string ButtonText => _watching ? "Stop watching" : "Watch";
 }
 
 public sealed class VoiceMemberVm : Observable

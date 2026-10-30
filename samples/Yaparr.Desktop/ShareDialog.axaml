@@ -1,0 +1,21 @@
+﻿<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Yaparr.Desktop.ShareDialog"
+        Title="Share your screen" SizeToContent="Height" Width="420" CanResize="False"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+    <StackPanel Margin="16" Spacing="4">
+        <TextBlock Text="What to share" FontWeight="SemiBold" />
+        <ComboBox x:Name="WhatBox" HorizontalAlignment="Stretch" />
+        <TextBlock Classes="muted small" TextWrapping="Wrap"
+                   Text="A window is shared as it looks on the screen: if another window is on top of it, that shows instead, and a minimised window shows nothing. Keep it open and its size as it is." />
+        <Button Content="Refresh the list of windows" HorizontalAlignment="Left" Margin="0,2,0,0" Click="Refresh_Click" />
+        <TextBlock Text="Quality" FontWeight="SemiBold" Margin="0,8,0,0" />
+        <ComboBox x:Name="QualityBox" HorizontalAlignment="Stretch" />
+        <TextBlock x:Name="Note" Classes="muted small" TextWrapping="Wrap" Margin="0,6,0,0"
+                   Text="Everyone in the room can watch. Each viewer passes the picture on to a few others, so a big room does not need a fast connection from you. Higher quality needs a faster upload." />
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,12,0,0">
+            <Button Content="Share" Classes="primary" MinWidth="80" HorizontalContentAlignment="Center" IsDefault="True" Click="Share_Click" />
+            <Button Content="Cancel" IsCancel="True" MinWidth="70" HorizontalContentAlignment="Center" Click="Cancel_Click" />
+        </StackPanel>
+    </StackPanel>
+</Window>

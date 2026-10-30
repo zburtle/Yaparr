@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -47,6 +47,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Yaparr\Yaparr.csproj" />
     <ProjectReference Include="..\..\src\Yaparr.Voice.WebRtc\Yaparr.Voice.WebRtc.csproj" />
+    <ProjectReference Include="..\..\src\Yaparr.Screen\Yaparr.Screen.csproj" />
   </ItemGroup>
 
   <ItemGroup>

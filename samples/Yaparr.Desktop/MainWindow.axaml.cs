@@ -285,6 +285,7 @@ public partial class MainWindow : Window
         _linkTimer.Stop();
         if (OperatingSystem.IsWindows()) Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         LeaveVoiceCore();
+        CloseScreens();
         _cts.Cancel();
         var node = _node;
         _node = null;
@@ -460,6 +461,7 @@ public partial class MainWindow : Window
 
         room.MessageReceived += m => UI(() => OnMessage(conv, ToVm(m), announce: !m.IsCatchUp));
         room.VoiceChanged += () => UI(() => RefreshVoice(conv, room));
+        room.MediaGroupsChanged += () => UI(() => RefreshShares(conv, room));
         room.MemberRenamed += p => UI(() => { Remember(p); RefreshPeers(); });
         room.MemberJoined += p => UI(() => { Remember(p); RefreshPeers(); conv.Add(MessageVm.System($"{p.DisplayName} joined")); });
         room.MemberLeft += p => UI(() => { Remember(p); RefreshPeers(p.Account); conv.Add(MessageVm.System($"{p.DisplayName} left")); });
@@ -787,6 +789,7 @@ public partial class MainWindow : Window
         EmptyPanel.IsVisible = !has;
         DetailsPanel.DataContext = _selected;
         VoicePanel.DataContext = _selected;
+        ScreenPanel.DataContext = _selected;
         RoomToggle.IsEnabled = has;
         if (!has) RoomToggle.IsChecked = false;
         RefreshMembers();

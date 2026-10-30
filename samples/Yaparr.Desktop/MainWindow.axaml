@@ -350,6 +350,25 @@
                                 </ItemsControl>
                             </StackPanel>
                         </Border>
+                        <Border x:Name="ScreenPanel" x:DataType="local:ConversationVm" IsVisible="{Binding IsRoom}" Margin="14,4,14,0">
+                            <StackPanel Spacing="6">
+                                <WrapPanel>
+                                    <Button Content="🖥 Share screen…" IsVisible="{Binding CanShare}" Click="ShareScreen_Click" Margin="0,0,6,4" />
+                                    <Button Content="Stop sharing" IsVisible="{Binding CanStopSharing}" Click="StopSharing_Click" Margin="0,0,6,4" />
+                                </WrapPanel>
+                                <ItemsControl ItemsSource="{Binding Shares}" IsVisible="{Binding HasShares}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="local:ShareVm">
+                                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,4">
+                                                <TextBlock Text="🖥" VerticalAlignment="Center" />
+                                                <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                                                <Button Content="{Binding ButtonText}" IsVisible="{Binding CanWatch}" Click="WatchScreen_Click" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
                         <Border Height="1" Margin="0,10,0,0" Background="{DynamicResource Line}" />
                     </StackPanel>
 
