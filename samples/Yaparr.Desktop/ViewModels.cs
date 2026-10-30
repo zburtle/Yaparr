@@ -240,13 +240,13 @@ public sealed class ConversationVm : Observable
     public bool Muted
     {
         get => _muted;
-        set { if (_muted == value) return; _muted = value; Raise(); Raise(nameof(MuteText)); }
+        set { if (_muted == value) return; _muted = value; Raise(); Raise(nameof(MuteText)); Raise(nameof(MuteGlyph)); Raise(nameof(MuteTip)); }
     }
 
     public bool Deafened
     {
         get => _deafened;
-        set { if (_deafened == value) return; _deafened = value; Raise(); Raise(nameof(DeafenText)); }
+        set { if (_deafened == value) return; _deafened = value; Raise(); Raise(nameof(DeafenText)); Raise(nameof(DeafenTip)); }
     }
 
     // ---- screen sharing ----
@@ -258,7 +258,7 @@ public sealed class ConversationVm : Observable
     public bool CanWatchShares => HasShares && _inVoice;
     public bool NeedsVoiceToWatch => HasShares && !_inVoice;
 
-    public void SharesChanged() { Raise(nameof(HasShares)); Raise(nameof(CanWatchShares)); Raise(nameof(NeedsVoiceToWatch)); }
+    public void SharesChanged() { Raise(nameof(HasShares)); Raise(nameof(CanWatchShares)); Raise(nameof(NeedsVoiceToWatch)); Raise(nameof(ShowVoiceRow)); }
 
     private bool _sharing;
     public bool IsSharing
@@ -271,9 +271,15 @@ public sealed class ConversationVm : Observable
     public bool CanShare => IsRoom && _inVoice && !_sharing && OperatingSystem.IsWindows();
     public bool CanStopSharing => _sharing;
 
+    public string MuteGlyph => _muted ? "🔇" : "🎤";
+    public string MuteTip => _muted ? "Unmute" : "Mute";
+    public string DeafenTip => _deafened ? "Undeafen" : "Deafen";
     public string MuteText => _muted ? "🔇 Unmute" : "🎤 Mute";
     public string DeafenText => _deafened ? "🎧 Undeafen" : "🎧 Deafen";
-    public void VoiceMembersChanged() => Raise(nameof(HasVoiceMembers));
+    public void VoiceMembersChanged() { Raise(nameof(HasVoiceMembers)); Raise(nameof(ShowVoiceRow)); }
+
+    /// <summary>The row of people in voice and shared screens, shown only when there is something in it.</summary>
+    public bool ShowVoiceRow => IsRoom && (HasVoiceMembers || HasShares);
 
     private string _membersText = "";
     public string MembersText

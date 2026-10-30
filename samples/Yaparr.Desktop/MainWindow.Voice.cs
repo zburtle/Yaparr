@@ -31,12 +31,25 @@ public partial class MainWindow
             conv.VoiceMembers.Add(vm);
         }
         conv.VoiceMembersChanged();
+        if (conv == _selected) UpdateHeaderSubtitle();
 
         if (!announce || !conv.InVoice || _voiceConv != conv) return;
         var now = conv.VoiceMembers.Select(m => m.Id).ToHashSet();
         bool someoneLeft = existing.Values.Any(m => !m.IsSelf && !now.Contains(m.Id));
         if (someoneJoined) _sounds.SomeoneJoined();
         else if (someoneLeft) _sounds.SomeoneLeft();
+    }
+
+    // Under the room's name: who is around, and who is in voice.
+    private void UpdateHeaderSubtitle()
+    {
+        if (_selected is not { } conv) return;
+        if (!conv.IsRoom) { HeaderSubtitle.Text = conv.Subtitle; return; }
+        var parts = new List<string>();
+        if (!string.IsNullOrEmpty(conv.MembersText)) parts.Add(conv.MembersText);
+        if (conv.InVoice) parts.Add("you're in voice");
+        else if (conv.VoiceMembers.Count > 0) parts.Add($"{conv.VoiceMembers.Count} in voice");
+        HeaderSubtitle.Text = parts.Count > 0 ? string.Join(" · ", parts) : conv.Subtitle;
     }
 
     private void OnSpeaking(ConversationVm conv, Yaparr.Identity.PeerId id, bool speaking)

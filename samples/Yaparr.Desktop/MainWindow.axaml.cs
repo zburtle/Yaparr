@@ -800,10 +800,11 @@ public partial class MainWindow : Window
         EmptyPanel.IsVisible = !has;
         DetailsPanel.DataContext = _selected;
         VoicePanel.DataContext = _selected;
-        ScreenPanel.DataContext = _selected;
+        VoiceBar.DataContext = _selected;
         RoomToggle.IsEnabled = has;
         if (!has) RoomToggle.IsChecked = false;
         RefreshMembers();
+        UpdateHeaderSubtitle();
         if (_selected != null)
         {
             _selected.Unread = 0;
@@ -827,6 +828,7 @@ public partial class MainWindow : Window
         if (room == null) return;
         int others = room.Members.Where(m => _node?.IsMyDevice(m.Id) != true).Select(m => m.Account).Distinct().Count();
         conv.MembersText = others == 0 ? "Only you so far" : $"You and {others} other{(others == 1 ? "" : "s")} online";
+        UpdateHeaderSubtitle();
     }
 
     private async void CopyPeerId_Click(object? sender, RoutedEventArgs e)

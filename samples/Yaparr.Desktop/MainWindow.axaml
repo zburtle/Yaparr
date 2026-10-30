@@ -43,6 +43,19 @@
         <Style Selector="ToggleButton.expander:disabled TextBlock.chevron">
             <Setter Property="IsVisible" Value="False" />
         </Style>
+        <!-- Square icon buttons for the voice bar; "on" marks a switch that is currently active (muted, deafened, sharing). -->
+        <Style Selector="Button.icon">
+            <Setter Property="Width" Value="34" />
+            <Setter Property="Height" Value="34" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Button.icon.on /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource Bad}" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
         <Style Selector="Border.details">
             <Setter Property="Background" Value="{DynamicResource AppBg}" />
             <Setter Property="CornerRadius" Value="10" />
@@ -287,16 +300,41 @@
             <Border Grid.Column="1" Classes="card" Margin="0,0,8,8">
                 <Grid RowDefinitions="Auto,*,Auto">
                     <StackPanel Grid.Row="0">
-                        <ToggleButton x:Name="RoomToggle" Classes="expander" Margin="10,8,10,0" IsEnabled="False">
-                            <Grid ColumnDefinitions="*,Auto" Margin="4,2">
-                                <StackPanel VerticalAlignment="Center">
-                                    <TextBlock x:Name="HeaderText" FontSize="17" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
-                                               Text="Welcome to Yaparr" />
-                                    <TextBlock x:Name="HeaderSubtitle" Classes="muted small" Text="Serverless chat between friends" />
-                                </StackPanel>
-                                <TextBlock Grid.Column="1" Classes="chevron" Margin="8,0,0,0" />
-                            </Grid>
-                        </ToggleButton>
+                        <Grid ColumnDefinitions="*,Auto" Margin="10,8,10,0">
+                            <ToggleButton x:Name="RoomToggle" Classes="expander" IsEnabled="False">
+                                <Grid ColumnDefinitions="*,Auto" Margin="4,2">
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock x:Name="HeaderText" FontSize="17" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                                   Text="Welcome to Yaparr" />
+                                        <TextBlock x:Name="HeaderSubtitle" Classes="muted small" TextTrimming="CharacterEllipsis" Text="Serverless chat between friends" />
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="1" Classes="chevron" Margin="8,0,0,0" />
+                                </Grid>
+                            </ToggleButton>
+                            <StackPanel x:Name="VoiceBar" Grid.Column="1" x:DataType="local:ConversationVm" Orientation="Horizontal" Spacing="6"
+                                        Margin="8,0,0,0" VerticalAlignment="Center" IsVisible="{Binding IsRoom}">
+                                <Button Content="🔊 Join voice" Classes="primary" IsVisible="{Binding CanJoinVoice}" Click="JoinVoice_Click" />
+                                <Button Classes="icon" Classes.on="{Binding Muted}" Content="{Binding MuteGlyph}" ToolTip.Tip="{Binding MuteTip}"
+                                        IsVisible="{Binding CanUseVoiceControls}" Click="MuteVoice_Click" />
+                                <Button Classes="icon" Classes.on="{Binding Deafened}" Content="🎧" ToolTip.Tip="{Binding DeafenTip}"
+                                        IsVisible="{Binding CanUseVoiceControls}" Click="DeafenVoice_Click" />
+                                <Button Classes="icon" Content="🎛" ToolTip.Tip="Soundboard" IsVisible="{Binding CanUseVoiceControls}" Click="Soundboard_Click" />
+                                <Button Classes="icon" Content="🖥" ToolTip.Tip="Share your screen" IsVisible="{Binding CanShare}" Click="ShareScreen_Click" />
+                                <Button Classes="icon on" Content="🖥" ToolTip.Tip="Stop sharing" IsVisible="{Binding CanStopSharing}" Click="StopSharing_Click" />
+                                <Button Content="Leave" Foreground="{DynamicResource Bad}" ToolTip.Tip="Leave voice" IsVisible="{Binding CanUseVoiceControls}" Click="LeaveVoice_Click" />
+                                <Button Classes="icon" Content="⋯" FontWeight="Bold" ToolTip.Tip="More">
+                                    <Button.Flyout>
+                                        <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                            <MenuItem Header="Voice settings…" Click="VoiceSettings_Click" />
+                                            <MenuItem Header="Copy invite" Click="CopyInvite_Click" IsVisible="{Binding HasInvite}" />
+                                            <Separator />
+                                            <MenuItem Header="Rename…" Click="RenameRoom_Click" />
+                                            <MenuItem Header="Leave room" Click="LeaveRoom_Click" />
+                                        </MenuFlyout>
+                                    </Button.Flyout>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
                         <Border x:Name="DetailsPanel" x:DataType="local:ConversationVm" Classes="details" Margin="14,6,14,0"
                                 IsVisible="{Binding #RoomToggle.IsChecked}">
                             <StackPanel Spacing="6">
@@ -314,24 +352,11 @@
 
                                 <TextBlock Classes="label" Text="PEOPLE" Margin="0,4,0,0" IsVisible="{Binding IsRoom}" />
                                 <TextBlock Classes="small" Text="{Binding MembersText}" IsVisible="{Binding IsRoom}" />
-
-                                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,6,0,0" IsVisible="{Binding IsRoom}">
-                                    <Button Content="Rename…" Click="RenameRoom_Click" />
-                                    <Button Content="Leave room" Click="LeaveRoom_Click" />
-                                </StackPanel>
                             </StackPanel>
                         </Border>
-                        <Border x:Name="VoicePanel" x:DataType="local:ConversationVm" IsVisible="{Binding IsRoom}" Margin="14,8,14,0">
-                            <StackPanel Spacing="6">
-                                <WrapPanel>
-                                    <Button Content="🔊 Join voice" Classes="primary" IsVisible="{Binding CanJoinVoice}" Click="JoinVoice_Click" Margin="0,0,6,4" />
-                                    <Button Content="{Binding MuteText}" IsVisible="{Binding CanUseVoiceControls}" Click="MuteVoice_Click" Margin="0,0,6,4" />
-                                    <Button Content="{Binding DeafenText}" IsVisible="{Binding CanUseVoiceControls}" Click="DeafenVoice_Click" Margin="0,0,6,4" />
-                                    <Button Content="🎛 Soundboard" IsVisible="{Binding CanUseVoiceControls}" Click="Soundboard_Click" Margin="0,0,6,4" />
-                                    <Button Content="Leave voice" IsVisible="{Binding CanUseVoiceControls}" Click="LeaveVoice_Click" Margin="0,0,6,4" />
-                                    <Button Content="⚙ Voice settings" Click="VoiceSettings_Click" Margin="0,0,6,4" />
-                                </WrapPanel>
-                                <ItemsControl ItemsSource="{Binding VoiceMembers}" IsVisible="{Binding HasVoiceMembers}">
+                        <Border x:Name="VoicePanel" x:DataType="local:ConversationVm" IsVisible="{Binding ShowVoiceRow}" Margin="14,8,14,0">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <ItemsControl ItemsSource="{Binding VoiceMembers}" IsVisible="{Binding HasVoiceMembers}" VerticalAlignment="Center">
                                     <ItemsControl.ItemsPanel>
                                         <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
                                     </ItemsControl.ItemsPanel>
@@ -351,27 +376,22 @@
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
-                            </StackPanel>
-                        </Border>
-                        <Border x:Name="ScreenPanel" x:DataType="local:ConversationVm" IsVisible="{Binding IsRoom}" Margin="14,4,14,0">
-                            <StackPanel Spacing="6">
-                                <WrapPanel>
-                                    <Button Content="🖥 Share screen…" IsVisible="{Binding CanShare}" Click="ShareScreen_Click" Margin="0,0,6,4" />
-                                    <Button Content="Stop sharing" IsVisible="{Binding CanStopSharing}" Click="StopSharing_Click" Margin="0,0,6,4" />
-                                </WrapPanel>
-                                <TextBlock Text="Someone is sharing a screen. Join voice to watch it." Opacity="0.7" IsVisible="{Binding NeedsVoiceToWatch}" />
-                                <ItemsControl ItemsSource="{Binding Shares}" IsVisible="{Binding CanWatchShares}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="local:ShareVm">
-                                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,4">
-                                                <TextBlock Text="🖥" VerticalAlignment="Center" />
-                                                <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
-                                                <Button Content="{Binding ButtonText}" IsVisible="{Binding CanWatch}" Click="WatchScreen_Click" />
-                                            </StackPanel>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </StackPanel>
+                                <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock Text="Someone is sharing a screen. Join voice to watch it." Classes="muted small" TextWrapping="Wrap" MaxWidth="260"
+                                               IsVisible="{Binding NeedsVoiceToWatch}" />
+                                    <ItemsControl ItemsSource="{Binding Shares}" IsVisible="{Binding CanWatchShares}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="local:ShareVm">
+                                                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,4">
+                                                    <TextBlock Text="🖥" VerticalAlignment="Center" />
+                                                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                                                    <Button Content="{Binding ButtonText}" IsVisible="{Binding CanWatch}" Click="WatchScreen_Click" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Grid>
                         </Border>
                         <Border Height="1" Margin="0,10,0,0" Background="{DynamicResource Line}" />
                     </StackPanel>
