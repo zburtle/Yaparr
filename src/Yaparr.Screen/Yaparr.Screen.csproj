@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Yaparr.Screen</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Yaparr\Yaparr.csproj" />
+  </ItemGroup>
+
+  <!-- Capturing, encoding and decoding are done by FFmpeg, run as a separate program (see FfmpegLocator): nothing of FFmpeg is
+       linked into Yaparr, which keeps its licence apart from Yaparr's own. -->
+
+</Project>

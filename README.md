@@ -324,6 +324,10 @@ the stream is announced like a voice beacon, signed by the sharer.
   threshold the root ends the tree. Voice trees are not signed (each packet would nearly double in size), so a member in
   the tree could pass off audio as someone else's.
 
+## Sharing a screen (work in progress)
+
+`src/Yaparr.Screen` shares a monitor, all monitors together or one window picked from a list (Windows only) with a room, and shows a share on any system. It needs FFmpeg, which it runs as a separate program: it looks in the `YAPARR_FFMPEG` variable, next to the app, in the app's own downloaded copy (`FfmpegInstaller`, which verifies a pinned file by its hash) and on the PATH. The picture is encoded as VP8 and travels through the same tree as any stream, so a big room does not load the sharer. In the Desktop app a room has a "Share screen" button (pick a monitor, all of them or a window, and a quality) and a list of the shares in the room with a Watch button that opens the picture in its own window; if FFmpeg is not on the computer the app asks before downloading it. `tools/Yaparr.ScreenDemo` shares this PC's screen to a second node in the same process and reports the first-picture time, bitrate and processor use (`Yaparr.ScreenDemo --seconds 20 --monitor 0 --save picture.bmp`).
+
 ## Reliability
 
 - **Delivery receipts.** `SendAsync` on a room or direct chat returns the message id. `DeliveryChanged` reports `Sending`, `Delivered`, `PartlyDelivered`, `NotDelivered` or `Queued` (nobody connected). Unconfirmed messages are sent again when the recipient reconnects, and `Retry(id)` sends them on demand.

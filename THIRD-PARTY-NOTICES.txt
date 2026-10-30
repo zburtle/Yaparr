@@ -225,3 +225,15 @@ INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
 DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
+
+
+SCREEN SHARING
+==============================================================================
+
+FFmpeg (the FFmpeg developers), downloaded on first use
+------------------------------------------------------------------------------
+Yaparr does not contain FFmpeg and does not link to it. When you share or watch a screen it offers to download an LGPL
+build of FFmpeg (without GPL components such as x264) into your own application data folder and runs it as a separate
+program. FFmpeg is licensed under the GNU Lesser General Public License, version 2.1 or later; the licence text is kept
+next to the downloaded program (LICENSE.txt), together with a note of where the source code and build scripts are
+(https://ffmpeg.org and https://github.com/BtbN/FFmpeg-Builds). The build includes libvpx (BSD-3-Clause, Google).
