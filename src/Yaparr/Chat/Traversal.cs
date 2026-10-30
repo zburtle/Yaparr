@@ -1,5 +1,6 @@
 ﻿using System.Net;
 using System.Text.Json;
+using Yaparr.Identity;
 using Yaparr.Transport;
 
 namespace Yaparr.Chat;
@@ -35,7 +36,7 @@ public sealed class TraversalOptions
                 UseDefaultRelay = dto.DefaultRelay ?? true,
                 StunServers = dto.Stun is { Length: > 0 } stun ? stun : NatProbe.DefaultServers,
                 Turn = dto.Turn is { Server: { Length: > 0 } server }
-                    ? new TurnOptions { Server = server, Username = dto.Turn.Username ?? "", Credential = dto.Turn.Credential ?? "", Enabled = dto.Turn.Enabled ?? false, Always = dto.Turn.Always ?? false }
+                    ? new TurnOptions { Server = server, Username = dto.Turn.Username ?? "", Credential = SecretStore.OpenText(dto.Turn.Credential ?? ""), Enabled = dto.Turn.Enabled ?? false, Always = dto.Turn.Always ?? false }
                     : null,
             };
         }
@@ -72,7 +73,7 @@ public sealed class TraversalOptions
             {
                 ["server"] = turn.Server,
                 ["username"] = turn.Username,
-                ["credential"] = turn.Credential,
+                ["credential"] = SecretStore.SealText(turn.Credential),
                 ["enabled"] = turn.Enabled,
                 ["always"] = turn.Always,
             };

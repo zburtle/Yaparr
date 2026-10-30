@@ -9,8 +9,9 @@ Improvements we have agreed to do later, roughly in priority order. Done items a
 
 ## Security and safety
 
-- **Protect secrets on disk.** The WireGuard config (`vpn.conf`, contains the private key) and the TURN password in `network.json` are plain text. Protect them with Windows DPAPI so they are tied to the user account. Profile export should keep working.
-- **Rate limits per peer.** Limit incoming connections and messages per peer so one bad peer cannot flood a room.
+- **Secrets on disk (mostly done).** On Windows the identity, settings (private room keys), account settings, the WireGuard config and the TURN password are sealed with DPAPI, so only that Windows user on that PC can read them; profile export writes them unsealed so a backup opens elsewhere, and importing seals them again. Still open: on Linux and macOS the files are only private to their owner (no password-free equivalent; a keyring would need libsecret), message history and pictures are not encrypted, and a Windows password reset by an administrator makes sealed files unreadable (restore from an export).
+- **The built-in relay's password ships inside the app.** Anyone can read the TURN user and credential out of the binary and use the relay. Fix it on the server: short-lived credentials (the TURN REST scheme), a quota per credential, and a ban on private address ranges.
+- **Rate limits per peer (done for chat).** Each connection has allowances for frames, bytes, messages, sound plays and sound lists, and a peer that keeps going past them is disconnected (`PeerLimits`). A reliable message is capped at 4 MB, a connection at 16 channels, 256 connections are kept, and silent connections are closed. Still open: limits on voice and media packets, on DHT requests, and a temporary ban for a peer that was disconnected for flooding (it can reconnect at once now).
 - **Updater and installer signing.** Check that the auto-updater verifies what it downloads, and code-sign the MSI so Windows does not show an "unknown publisher" warning.
 
 ## Moderation

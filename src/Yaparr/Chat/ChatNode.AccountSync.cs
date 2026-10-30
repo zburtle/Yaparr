@@ -51,10 +51,10 @@ public sealed partial class ChatNode
         {
             try
             {
-                var saved = JsonSerializer.Deserialize<AccountEntry[]>(File.ReadAllBytes(path), Json);
+                var saved = JsonSerializer.Deserialize<AccountEntry[]>(SecretStore.ReadAllBytes(path), Json);
                 foreach (var e in saved ?? Array.Empty<AccountEntry>()) if (IsValidEntry(e)) _acct[e.Key] = e;
             }
-            catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
+            catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException or System.Security.Cryptography.CryptographicException)
             {
                 _options.Log?.Invoke($"could not read the saved account settings: {ex.Message}");
             }
@@ -73,11 +73,7 @@ public sealed partial class ChatNode
         if (path == null) return;
         try
         {
-            var dir = Path.GetDirectoryName(Path.GetFullPath(path));
-            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-            var temp = path + ".tmp";
-            File.WriteAllBytes(temp, JsonSerializer.SerializeToUtf8Bytes(_acct.Values.ToArray(), Json));
-            File.Move(temp, path, overwrite: true);
+            SecretStore.WriteAllBytes(path, JsonSerializer.SerializeToUtf8Bytes(_acct.Values.ToArray(), Json));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

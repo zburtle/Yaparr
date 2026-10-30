@@ -9,6 +9,7 @@ public sealed class PeerNetwork : IDisposable
     public const byte RelayChannel = 2;
     private const byte RelayTo = 1, RelayFrom = 2;
     private const int IdLength = 32;
+    private const int MaxTransportConnections = 256;
 
     private readonly PeerIdentity _identity;
     private readonly UdpMux _mux;
@@ -205,7 +206,8 @@ public sealed class PeerNetwork : IDisposable
             return true;
         }
 
-        if (_options.AcceptIncoming && packet.Span[1] == 1)
+        // Anyone can start a connection, so only so many are kept at once. Real members are a handful.
+        if (_options.AcceptIncoming && packet.Span[1] == 1 && _byEndPoint.Count < MaxTransportConnections)
         {
             var inbound = new PeerConnection(_identity, from, null, (p, to) => _mux.Send(p, to), _options, _instance);
             Hook(inbound);

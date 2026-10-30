@@ -140,6 +140,9 @@ public sealed class ChatNodeOptions
     /// <summary>How long an unconfirmed message is kept for re-sending when its recipient reconnects.</summary>
     public TimeSpan ResendWindow { get; init; } = TimeSpan.FromMinutes(10);
 
+    /// <summary>How much any one peer may send before the excess is dropped.</summary>
+    public PeerLimits Limits { get; init; } = new();
+
     public Action<string>? Log { get; init; }
 }
 
@@ -190,6 +193,11 @@ public sealed partial class ChatNode : IDisposable
             return all;
         }
         public long HistoryExpectedUntil;
+
+        private PeerRate? _rate;
+        public PeerRate Rate(PeerLimits limits) =>
+            Volatile.Read(ref _rate) ?? Interlocked.CompareExchange(ref _rate, new PeerRate(limits), null) ?? _rate!;
+
         private readonly Dictionary<string, long> _lastServed = new();
         public bool TryStartServing(string roomKey)
         {
@@ -1276,6 +1284,7 @@ public sealed partial class ChatNode : IDisposable
         // The hello must be the first thing on the connection, so send it before anyone can find the state and write to it.
         Send(conn, new Wire { Type = Wire.Hello, Name = DisplayName, Deg = _peers.Count + (isNew ? 1 : 0), Rly = IsRelayCapable, Rooms = _rooms.Values.Select(r => RefTo(r, state)).ToArray() });
         _peers[state.Id] = state;
+        CloseIfSilent(state);
         foreach (var room in _rooms.Values)
             if (room.MemberStates.ContainsKey(state.Id)) room.MemberStates[state.Id] = state;
         ResendTo(state, o => o.DirectPeer == state.AccountId || o.DirectPeer == state.Id, o => o.DirectWire!);
@@ -1337,6 +1346,9 @@ public sealed partial class ChatNode : IDisposable
             return;
         }
 
+        var rate = peer.Rate(_options.Limits);
+        if (!rate.AdmitFrame(data.Length)) { Dropped(peer, rate, "sent too much"); return; }
+
         Wire? wire;
         try { wire = JsonSerializer.Deserialize<Wire>(data.Span, Json); }
         catch (JsonException ex)
@@ -1350,8 +1362,8 @@ public sealed partial class ChatNode : IDisposable
         {
             case Wire.Hello:
                 bool first = peer.Name == null;
-                peer.Name = string.IsNullOrWhiteSpace(wire.Name) ? peer.Id.Short : wire.Name;
-                peer.SetRooms(wire.Rooms ?? Array.Empty<string>());
+                peer.Name = CleanName(wire.Name) is { Length: > 0 } helloName ? helloName : peer.Id.Short;
+                peer.SetRooms((wire.Rooms ?? Array.Empty<string>()).Where(r => r.Length <= 128).Take(256));
                 peer.Degree = wire.Deg;
                 peer.CanRelay = wire.Rly;
                 LogPeerEvent(peer.Id, $"hello from {peer.Id.Short} ({peer.Name}): declares {wire.Rooms?.Length ?? 0} room(s); we are in {_rooms.Count}");
@@ -1424,28 +1436,37 @@ public sealed partial class ChatNode : IDisposable
 
             case Wire.Sound when wire.Room != null && wire.Snd != null
                                  && ResolveRoom(peer, wire.Room) is { } soundRoom && soundRoom.MemberStates.ContainsKey(peer.Id):
+                if (!rate.AdmitSoundList()) { Dropped(peer, rate, "sent too many sound lists"); break; }
                 OnSounds(peer, soundRoom, wire.Snd);
                 break;
 
             case Wire.Play when wire.Room != null && wire.Pl != null
                                 && ResolveRoom(peer, wire.Room) is { } playRoom && playRoom.MemberStates.ContainsKey(peer.Id):
+                if (!rate.AdmitPlay()) { Dropped(peer, rate, "played too many sounds"); break; }
                 OnPlay(peer, playRoom, wire.Pl);
                 break;
 
-            case Wire.Message when wire.Room == null && wire.Text != null && wire.Id != null:
+            case Wire.Message when wire.Room == null && wire.Text != null && wire.Id != null && wire.Text.Length <= DirectTextMax && wire.Id.Length <= 64:
+                if (peer.Name == null) break; // the hello comes first
+                // Not acknowledged, so a sender that is simply too fast sends it again later, when there is room.
+                if (!rate.AdmitMessages(1)) { Dropped(peer, rate, "sent too many messages"); break; }
                 Send(conn, new Wire { Type = Wire.Ack, Have = new[] { wire.Id } });
-                if (!_seenDirect.TryAdd(peer.Id.Value + wire.Id, Environment.TickCount64) || IsBlocked(peer.Id)) break;
+                if (_seenDirect.Count >= MaxSeenDirect || !_seenDirect.TryAdd(peer.Id.Value + wire.Id, Environment.TickCount64) || IsBlocked(peer.Id)) break;
                 _clocks.Observe(peer.Id.Value, wire.Ts, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                 var msg = BuildMessage(peer.Info, null, wire.Id, wire.Text, DateTimeOffset.FromUnixTimeMilliseconds(_clocks.Correct(peer.Id.Value, wire.Ts)));
                 bool existed = _directChats.ContainsKey(peer.AccountId);
                 var chat = GetDirectChat(peer.AccountId);
                 if (!existed) IncomingDirectChat?.Invoke(chat);
                 chat.RaiseMessage(msg);
-                AutoFetch(msg);
+                // Pictures from someone we have no connection to through a room or by our own choice wait for a click.
+                if (IsAcquaintance(peer)) AutoFetch(msg);
+                else if (msg.Attachment is { } waiting && !_blobs.Has(waiting.Hash)) RaiseAttachment(waiting.Hash, AttachmentState.NeedsConfirmation, 0, waiting.Size);
                 break;
 
             case Wire.Message when wire.Room != null && wire.Msgs != null
                                    && ResolveRoom(peer, wire.Room) is { } liveRoom && liveRoom.MemberStates.ContainsKey(peer.Id):
+                // Dropped messages are not lost for good: a member that missed them asks for them when it next syncs.
+                if (!rate.AdmitMessages(wire.Msgs.Length)) { Dropped(peer, rate, "sent too many messages"); break; }
                 OnGroupMessage(peer, liveRoom, wire.Msgs, live: true);
                 break;
 
@@ -1488,6 +1509,39 @@ public sealed partial class ChatNode : IDisposable
                 break;
         }
     }
+
+    private const int DirectTextMax = 16_000, MaxSeenDirect = 20_000;
+
+    // What a peer sends beyond its allowance is dropped; one that keeps on is disconnected.
+    private void Dropped(PeerState peer, PeerRate rate, string what)
+    {
+        bool close = rate.RecordDrop(out int total);
+        if (total == 1 || close) _options.Log?.Invoke($"{peer.Id.Short} {what}; dropping what is over the limit");
+        if (!close) return;
+        _options.Log?.Invoke($"{peer.Id.Short} kept sending past the limit; closing");
+        peer.Connection.Close(notifyPeer: true);
+    }
+
+    // A member of one of our rooms, or someone we sought out ourselves. Anyone else who reaches us is a stranger.
+    private bool IsAcquaintance(PeerState peer) =>
+        _pinned.ContainsKey(peer.Id.Value) || _pinned.ContainsKey(peer.AccountId.Value) || _rooms.Values.Any(r => r.MemberStates.ContainsKey(peer.Id));
+
+    // Connections get a short time to say hello; one that stays silent is only holding a place.
+    private void CloseIfSilent(PeerState state)
+    {
+        _ = Task.Run(async () =>
+        {
+            try { await Task.Delay(HelloGrace, _cts.Token).ConfigureAwait(false); }
+            catch (OperationCanceledException) { return; }
+            if (state.Name == null && _peers.TryGetValue(state.Id, out var current) && ReferenceEquals(current, state))
+            {
+                _options.Log?.Invoke($"{state.Id.Short} never said hello; closing");
+                state.Connection.Close(notifyPeer: false);
+            }
+        });
+    }
+
+    private static readonly TimeSpan HelloGrace = TimeSpan.FromSeconds(20);
 
     private static bool IsValidPeerId(string id) =>
         id.Length == 64 && id.All(c => c is (>= '0' and <= '9') or (>= 'a' and <= 'f'));

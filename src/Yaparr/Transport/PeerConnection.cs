@@ -57,6 +57,9 @@ public sealed class PeerConnection : IDisposable
 
     public const int MaxUnreliablePayload = 1100;
 
+    // Chat, relaying, files, voice and media use five; a peer asking for more is not playing by the rules.
+    private const int MaxChannels = 16;
+
     private readonly object _gate = new();
     private readonly PeerIdentity _local;
     private readonly PeerId? _expected;
@@ -280,10 +283,18 @@ public sealed class PeerConnection : IDisposable
                 byte ch = frame[1];
                 uint seq = BinaryPrimitives.ReadUInt32BigEndian(frame.AsSpan(2));
                 bool last = (frame[6] & 1) != 0;
-                if (!_channels.TryGetValue(ch, out var channel)) _channels[ch] = channel = new ReliableChannel();
+                if (!_channels.TryGetValue(ch, out var channel))
+                {
+                    if (_channels.Count >= MaxChannels) { post.Add(() => CloseCore(notifyPeer: false, "used too many channels")); break; }
+                    _channels[ch] = channel = new ReliableChannel();
+                }
 
                 var delivered = new List<byte[]>();
-                channel.OnSegment(seq, last, frame[7..], delivered);
+                if (!channel.OnSegment(seq, last, frame[7..], delivered))
+                {
+                    post.Add(() => CloseCore(notifyPeer: false, "sent a message that is too large"));
+                    break;
+                }
                 SendAckLocked(ch, channel.Expected);
                 foreach (var msg in delivered) post.Add(() => DataReceived?.Invoke(this, ch, msg, true));
                 break;

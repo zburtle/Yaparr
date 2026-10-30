@@ -78,8 +78,11 @@ public static class Updater
 
     public static async Task<string> DownloadAsync(UpdateInfo update, CancellationToken ct = default)
     {
-        var dir = Path.Combine(Path.GetTempPath(), "Yaparr-update");
-        Directory.CreateDirectory(dir);
+        // In the user's own folder, closed to other users: the package is installed as root on Linux, and a shared
+        // folder such as /tmp would let another user swap it after it was checked.
+        var dir = Path.Combine(AppData.DefaultDirectory, "update");
+        AppData.CreatePrivateDirectory(dir);
+        foreach (var old in Directory.EnumerateFiles(dir)) { try { File.Delete(old); } catch (IOException) { } }
         var path = Path.Combine(dir, Path.GetFileName(update.Name));
 
         using (var response = await Http.GetAsync(update.DownloadUrl, HttpCompletionOption.ResponseHeadersRead, ct))

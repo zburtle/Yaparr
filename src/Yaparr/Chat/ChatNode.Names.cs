@@ -8,7 +8,8 @@ public sealed partial class ChatNode
 
     private static string CleanName(string? name)
     {
-        var clean = (name ?? "").Trim();
+        // No control characters and no text-direction overrides, which can make one name pass for another.
+        var clean = new string((name ?? "").Where(c => !char.IsControl(c) && c is not ((>= '‪' and <= '‮') or (>= '⁦' and <= '⁩') or '‎' or '‏')).ToArray()).Trim();
         return clean.Length <= MaxNameLength ? clean : clean[..MaxNameLength].TrimEnd();
     }
 

@@ -1,5 +1,6 @@
 using System.IO;
 using Yaparr.Chat;
+using Yaparr.Identity;
 using Yaparr.Vpn;
 
 namespace Yaparr.Desktop;
@@ -23,16 +24,17 @@ public sealed class VpnController
 
     public WireGuardConfig? LoadConfig()
     {
-        try { return HasConfig ? WireGuardConfig.Load(_data.VpnConfigPath) : null; }
-        catch (Exception ex) when (ex is FormatException or IOException) { return null; }
+        try { return HasConfig ? WireGuardConfig.Parse(SecretStore.ReadAllText(_data.VpnConfigPath)) : null; }
+        catch (Exception ex) when (ex is FormatException or IOException or System.Security.Cryptography.CryptographicException) { return null; }
     }
 
     public WireGuardConfig? LoadConfigIfEnabled() => _settings.VpnEnabled ? LoadConfig() : null;
 
     public void Import(string path)
     {
-        WireGuardConfig.Load(path);
-        File.Copy(path, _data.VpnConfigPath, overwrite: true);
+        var text = File.ReadAllText(path);
+        WireGuardConfig.Parse(text);
+        SecretStore.WriteAllText(_data.VpnConfigPath, text);
     }
 
     public async Task<bool> ConnectAsync()

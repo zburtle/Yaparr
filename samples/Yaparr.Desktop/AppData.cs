@@ -73,7 +73,51 @@ public sealed class AppData
     public AppData(string directory)
     {
         Directory = directory;
-        System.IO.Directory.CreateDirectory(directory);
+        CreatePrivateDirectory(directory);
+        ProtectSecrets();
+    }
+
+    // Files with keys in them: sealed so only this Windows user can read them, and closed to other users elsewhere.
+    // Files from earlier versions are plain until this runs.
+    private static readonly string[] SecretFiles = { "identity.key", "settings.json", "account.json", "vpn.conf" };
+
+    private void ProtectSecrets()
+    {
+        foreach (var name in SecretFiles)
+        {
+            var path = Path.Combine(Directory, name);
+            try { SecretStore.Upgrade(path); }
+            catch (IOException) { }
+            MakePrivate(path);
+        }
+    }
+
+    // What a backup holds and a restore accepts. Anything else in the folder (the FFmpeg program, installers, the log) is not
+    // part of a profile, and a restore must never be able to place a program where Yaparr will later run it.
+    private static readonly string[] BackedUpFiles = { "identity.key", "settings.json", "account.json", "peers.json", "clocks.json", "network.json", "vpn.conf", "dht-nodes.txt" };
+    private static readonly string[] BackedUpFolders = { "history", "attachments", "soundboards" };
+    private const long MaxRestoreBytes = 2L * 1024 * 1024 * 1024;
+    private const int MaxRestoreEntries = 200_000;
+
+    internal static bool IsProfilePath(string relative)
+    {
+        var parts = relative.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0 || parts.Any(p => p is "." or "..")) return false;
+        return parts.Length == 1 ? BackedUpFiles.Contains(parts[0], StringComparer.OrdinalIgnoreCase)
+                                 : BackedUpFolders.Contains(parts[0], StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Creates a folder only its owner can use (on Linux and macOS; Windows keeps a profile folder private already).</summary>
+    public static void CreatePrivateDirectory(string path)
+    {
+        System.IO.Directory.CreateDirectory(path);
+        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+    }
+
+    /// <summary>Makes a file only its owner can read (on Linux and macOS).</summary>
+    public static void MakePrivate(string path)
+    {
+        if (!OperatingSystem.IsWindows() && File.Exists(path)) File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
     }
 
     public string Directory { get; }
@@ -84,12 +128,11 @@ public sealed class AppData
 
     public AppSettings LoadSettings()
     {
-        try { return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(SettingsPath)) ?? new(); }
-        catch (Exception ex) when (ex is IOException or JsonException) { return new(); }
+        try { return JsonSerializer.Deserialize<AppSettings>(SecretStore.ReadAllText(SettingsPath)) ?? new(); }
+        catch (Exception ex) when (ex is IOException or JsonException or System.Security.Cryptography.CryptographicException) { return new(); }
     }
 
-    public void SaveSettings(AppSettings settings) =>
-        File.WriteAllText(SettingsPath, JsonSerializer.Serialize(settings, Json));
+    public void SaveSettings(AppSettings settings) => SecretStore.WriteAllText(SettingsPath, JsonSerializer.Serialize(settings, Json));
 
     public void ExportProfile(string zipPath)
     {
@@ -97,8 +140,16 @@ public sealed class AppData
         using var zip = ZipFile.Open(zipPath, ZipArchiveMode.Create);
         foreach (var file in System.IO.Directory.EnumerateFiles(Directory, "*", SearchOption.AllDirectories))
         {
-            var entry = zip.CreateEntry(Path.GetRelativePath(Directory, file).Replace('\\', '/'), CompressionLevel.Optimal);
+            var relative = Path.GetRelativePath(Directory, file).Replace('\\', '/');
+            if (!IsProfilePath(relative)) continue;
+            var entry = zip.CreateEntry(relative, CompressionLevel.Optimal);
             using var target = entry.Open();
+            // A backup has to open on another computer, so the files sealed for this one go in as they are inside.
+            if (SecretFiles.Contains(relative, StringComparer.OrdinalIgnoreCase))
+            {
+                target.Write(SecretStore.ReadAllBytes(file));
+                continue;
+            }
             using var source = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
             source.CopyTo(target);
         }
@@ -112,14 +163,26 @@ public sealed class AppData
         {
             using var zip = ZipFile.OpenRead(zipPath);
             var root = Path.GetFullPath(staging) + Path.DirectorySeparatorChar;
+            if (zip.Entries.Count > MaxRestoreEntries) throw new InvalidDataException("This archive has too many files to be a backup.");
+            long total = 0;
             foreach (var entry in zip.Entries)
             {
                 if (entry.FullName.EndsWith('/')) continue;
                 var target = Path.GetFullPath(Path.Combine(staging, entry.FullName));
                 if (!target.StartsWith(root, StringComparison.OrdinalIgnoreCase))
                     throw new InvalidDataException("The archive contains an invalid path.");
+                if (!IsProfilePath(entry.FullName)) continue;
                 System.IO.Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                entry.ExtractToFile(target);
+                using var input = entry.Open();
+                using var output = File.Create(target);
+                var buffer = new byte[81920];
+                int n;
+                while ((n = input.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    total += n;
+                    if (total > MaxRestoreBytes) throw new InvalidDataException("This archive is too big to be a backup.");
+                    output.Write(buffer, 0, n);
+                }
             }
 
             var identity = Path.Combine(staging, "identity.key");
@@ -149,6 +212,7 @@ public sealed class AppData
             System.IO.Directory.CreateDirectory(Path.GetDirectoryName(target)!);
             File.Copy(file, target, overwrite: true);
         }
+        ProtectSecrets();
         System.IO.Directory.Delete(staging, recursive: true);
     }
 
@@ -156,13 +220,13 @@ public sealed class AppData
 
     public string AccountStatePath => Path.Combine(Directory, "account.json");
 
-    public void SaveIdentity(PeerIdentity identity) => File.WriteAllBytes(IdentityPath, identity.Export());
+    public void SaveIdentity(PeerIdentity identity) => SecretStore.WriteAllBytes(IdentityPath, identity.Export());
 
     public PeerIdentity LoadOrCreateIdentity()
     {
         try
         {
-            if (File.Exists(IdentityPath)) return PeerIdentity.Import(File.ReadAllBytes(IdentityPath));
+            if (File.Exists(IdentityPath)) return PeerIdentity.Import(SecretStore.ReadAllBytes(IdentityPath));
         }
         catch (Exception ex) when (ex is IOException or System.Security.Cryptography.CryptographicException or ArgumentException or FormatException) { }
 

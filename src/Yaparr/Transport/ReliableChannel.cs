@@ -6,6 +6,13 @@ internal sealed class ReliableChannel
     private const int Window = 64;
     private const int MaxQueuedSegments = 8192;
     private const int MaxReorder = 1024;
+
+    /// <summary>
+    /// The most a single message may hold while it is being put together, and the most that waits out of order. Anyone can
+    /// open a connection, so what a peer is allowed to make us hold has to be bounded here.
+    /// </summary>
+    internal const int MaxMessageBytes = 4 * 1024 * 1024;
+    private const int MaxReorderBytes = 1024 * 1024;
     private const long BaseRtoMs = 300;
     private const long MaxRtoMs = 3000;
 
@@ -25,6 +32,7 @@ internal sealed class ReliableChannel
     private uint _expected;
     private readonly Dictionary<uint, (byte[] Payload, bool Last)> _reorder = new();
     private readonly List<byte[]> _assembling = new();
+    private int _reorderBytes, _assemblingBytes;
 
     public uint Expected => _expected;
 
@@ -69,20 +77,35 @@ internal sealed class ReliableChannel
             _inFlight.Remove(seq);
     }
 
-    public void OnSegment(uint seq, bool last, byte[] payload, List<byte[]> delivered)
+    /// <summary>False when the peer broke a limit; the connection should be closed.</summary>
+    public bool OnSegment(uint seq, bool last, byte[] payload, List<byte[]> delivered)
     {
         int ahead = (int)(seq - _expected);
-        if (ahead < 0 || ahead >= MaxReorder) return;
-        _reorder.TryAdd(seq, (payload, last));
+        if (ahead < 0 || ahead >= MaxReorder || _reorder.ContainsKey(seq)) return true;
+        if (ahead > 0 && _reorderBytes + payload.Length > MaxReorderBytes) return true;
+        _reorder[seq] = (payload, last);
+        _reorderBytes += payload.Length;
 
         while (_reorder.Remove(_expected, out var seg))
         {
             _expected++;
+            _reorderBytes = Math.Max(0, _reorderBytes - seg.Payload.Length);
+            _assemblingBytes += seg.Payload.Length;
+            if (_assemblingBytes > MaxMessageBytes)
+            {
+                _assembling.Clear();
+                _assemblingBytes = 0;
+                _reorder.Clear();
+                _reorderBytes = 0;
+                return false;
+            }
             _assembling.Add(seg.Payload);
             if (!seg.Last) continue;
 
             delivered.Add(_assembling.Count == 1 ? _assembling[0] : _assembling.SelectMany(a => a).ToArray());
             _assembling.Clear();
+            _assemblingBytes = 0;
         }
+        return true;
     }
 }
