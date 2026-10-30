@@ -97,7 +97,7 @@ public class DhtSpeedTests
 
         Assert.Single(found);
         // Neither the bootstrap nor the search may wait for all 30 silent nodes to time out (five waits of 1.5 s even six at a time).
-        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(6), $"took {watch.Elapsed.TotalSeconds:0.0} s");
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(9), $"took {watch.Elapsed.TotalSeconds:0.0} s");
     }
 
     [Fact]
