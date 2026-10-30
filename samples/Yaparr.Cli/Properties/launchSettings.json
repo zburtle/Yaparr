@@ -3,31 +3,23 @@
   "profiles": {
     "alice (local room)": {
       "commandName": "Project",
-      "commandLineArgs": "--local --history alice room debug-lobby"
+      "commandLineArgs": "--local --history alice room AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
     },
     "bob (local room)": {
       "commandName": "Project",
-      "commandLineArgs": "--local --history bob room debug-lobby"
+      "commandLineArgs": "--local --history bob room AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
     },
     "carol (local room)": {
       "commandName": "Project",
-      "commandLineArgs": "--local --history carol room debug-lobby"
-    },
-    "alice (local private room)": {
-      "commandName": "Project",
-      "commandLineArgs": "--local alice private AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
-    },
-    "bob (local private room)": {
-      "commandName": "Project",
-      "commandLineArgs": "--local bob private AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+      "commandLineArgs": "--local --history carol room AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
     },
     "dave (local, waits for a DM)": {
       "commandName": "Project",
       "commandLineArgs": "--local dave wait"
     },
-    "debug-lobby (real DHT)": {
+    "debug room (real DHT)": {
       "commandName": "Project",
-      "commandLineArgs": "debug-user room yaparr-debug-lobby"
+      "commandLineArgs": "debug-user room AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA"
     }
   }
 }

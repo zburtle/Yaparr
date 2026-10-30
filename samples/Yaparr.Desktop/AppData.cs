@@ -23,7 +23,6 @@ public sealed class AppSettings
     public List<KnownPeer> KnownPeers { get; set; } = new();
     public string? DisplayName { get; set; }
     public bool VpnEnabled { get; set; }
-    public List<string> Rooms { get; set; } = new();
     public List<PrivateRoomSetting> PrivateRooms { get; set; } = new();
 
     /// <summary>Names of the microphone and speakers to use; empty means the system default.</summary>

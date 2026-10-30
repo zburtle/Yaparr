@@ -205,18 +205,17 @@ public sealed class ConversationVm : Observable
     }
     public bool IsRoom { get; }
 
-    /// <summary>The title without the "(private) " and "(direct)" decorations used in headers.</summary>
+    /// <summary>The title without the "(direct)" decoration used in headers.</summary>
     public string Name
     {
         get
         {
             var name = _title;
-            if (name.StartsWith("(private) ")) name = name["(private) ".Length..];
             if (name.EndsWith(" (direct)")) name = name[..^" (direct)".Length];
             return name;
         }
     }
-    public string Subtitle => IsRoom ? "Private room" : "Direct chat";
+    public string Subtitle => IsRoom ? "Room" : "Direct chat";
     public bool IsDirect => !IsRoom;
 
     /// <summary>Full peer ID of the other person in a direct chat.</summary>

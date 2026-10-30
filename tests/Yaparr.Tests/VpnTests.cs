@@ -441,8 +441,8 @@ public class VpnChatTests
         aEndPoint = natEndPoint;
 
         var key = Yaparr.Chat.RoomKey.Generate();
-        var ra = await a.JoinPrivateRoomAsync(key, "vpn");
-        var rb = await b.JoinPrivateRoomAsync(key, "vpn");
+        var ra = await a.JoinRoomAsync(key, "vpn");
+        var rb = await b.JoinRoomAsync(key, "vpn");
         var gotB = new System.Collections.Concurrent.ConcurrentQueue<string>();
         var gotA = new System.Collections.Concurrent.ConcurrentQueue<string>();
         rb.MessageReceived += m => gotB.Enqueue(m.Text);

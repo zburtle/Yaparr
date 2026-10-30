@@ -74,8 +74,8 @@ public partial class MainWindow : Window
     {
         if (_node == null) return;
         var proceed = await Dialogs.ConfirmAsync(this, "Export profile",
-            "The export contains your private identity key, your private room keys and your message history. " +
-            "Anyone with the file can impersonate you and read your private rooms.\n\nKeep it somewhere safe. Continue?",
+            "The export contains your private identity key, your room keys and your message history. " +
+            "Anyone with the file can impersonate you and read your rooms.\n\nKeep it somewhere safe. Continue?",
             "Continue", "Cancel");
         if (!proceed) return;
 
@@ -109,7 +109,7 @@ public partial class MainWindow : Window
         }
 
         var proceed = await Dialogs.ConfirmAsync(this, "Import profile",
-            "Importing replaces your current identity, private rooms and message history with the ones in the file. " +
+            "Importing replaces your current identity, rooms and message history with the ones in the file. " +
             "Your current profile will be lost unless you exported it first.\n\nYaparr will restart. Continue?",
             "Continue", "Cancel");
         if (!proceed)
@@ -275,7 +275,7 @@ public partial class MainWindow : Window
 
         foreach (var priv in _settings.PrivateRooms.ToList())
         {
-            try { await JoinPrivateAsync(priv.Label, RoomKey.Parse(priv.Key), persist: false); }
+            try { await JoinKeyedRoomAsync(priv.Label, RoomKey.Parse(priv.Key), persist: false); }
             catch (FormatException) { }
         }
     }
@@ -330,9 +330,9 @@ public partial class MainWindow : Window
 
     private async void CreateRoom_Click(object? sender, RoutedEventArgs e)
     {
-        var label = await PromptDialog.AskAsync(this, "A name for the new private room (only you see it):", "Private room");
+        var label = await PromptDialog.AskAsync(this, "A name for the new room (only you see it):", "Room");
         if (string.IsNullOrWhiteSpace(label)) return;
-        await JoinPrivateAsync(label, RoomKey.Generate(), persist: true);
+        await JoinKeyedRoomAsync(label, RoomKey.Generate(), persist: true);
     }
 
     private async void JoinRoom_Click(object? sender, RoutedEventArgs e)
@@ -357,12 +357,12 @@ public partial class MainWindow : Window
             return;
         }
 
-        var label = await PromptDialog.AskAsync(this, "A name for this private room (only you see it):", "Private room");
+        var label = await PromptDialog.AskAsync(this, "A name for this room (only you see it):", "Room");
         if (string.IsNullOrWhiteSpace(label)) return;
-        await JoinPrivateAsync(label, key, persist: true);
+        await JoinKeyedRoomAsync(label, key, persist: true);
     }
 
-    private const string PrivatePrefix = "(private) ";
+    private const string PrivatePrefix = "";
 
     private void ConversationMenu_Opening(object? sender, CancelEventArgs e)
     {
@@ -437,10 +437,10 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task JoinPrivateAsync(string label, RoomKey key, bool persist)
+    private async Task JoinKeyedRoomAsync(string label, RoomKey key, bool persist)
     {
         if (_node == null) return;
-        var room = await _node.JoinPrivateRoomAsync(key, label);
+        var room = await _node.JoinRoomAsync(key, label);
         if (persist)
         {
             _settings.PrivateRooms.Add(new PrivateRoomSetting { Label = label, Key = key.ToString() });
@@ -827,7 +827,7 @@ public partial class MainWindow : Window
     {
         if (_selected?.Invite is not { } invite) return;
         StatusText.Text = await Dialogs.CopyAsync(this, invite)
-            ? "Invite copied. Anyone who has it can join this private room, so share it carefully."
+            ? "Invite copied. Anyone who has it can join this room, so share it carefully."
             : "Couldn't copy: another program is using the clipboard. Try again.";
     }
 }

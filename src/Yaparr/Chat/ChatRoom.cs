@@ -10,14 +10,14 @@ public sealed class ChatRoom
     private readonly ChatNode _node;
     internal readonly ConcurrentDictionary<PeerId, ChatNode.PeerState> MemberStates = new();
 
-    private readonly RoomKey? _secret;
+    private readonly RoomKey _secret;
 
-    internal ChatRoom(ChatNode node, string name, RoomKey? secret)
+    internal ChatRoom(ChatNode node, string name, RoomKey secret)
     {
         _node = node;
         _secret = secret;
         Name = name;
-        Topic = secret?.Topic ?? Topics.ForRoom(name);
+        Topic = secret.Topic;
         Key = Convert.ToHexString(Topic).ToLowerInvariant();
     }
 
@@ -27,17 +27,14 @@ public sealed class ChatRoom
 
     public IReadOnlyList<ChatMessage> GetHistory() => _node.GetHistory(this);
 
-    public bool IsPrivate => _secret != null;
-
     internal byte[] Topic { get; }
     internal string Key { get; }
 
-    /// <summary>The room key of a private room as text, null for a public room.</summary>
-    internal string? SecretText => _secret?.ToString();
+    /// <summary>The room key as text.</summary>
+    internal string SecretText => _secret.ToString();
 
     internal string RefFor(byte[] sessionId, PeerId prover)
     {
-        if (_secret == null) return Key;
         var data = sessionId.Concat(Encoding.UTF8.GetBytes(prover.Value)).ToArray();
         return Convert.ToBase64String(HMACSHA256.HashData(_secret.AuthKey, data));
     }

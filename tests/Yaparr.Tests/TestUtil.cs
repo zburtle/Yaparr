@@ -71,3 +71,17 @@ internal sealed record MediaOptions
         VoiceRankDelay = TimeSpan.FromMilliseconds(300),
     };
 }
+
+/// <summary>
+/// A room is its key, so tests that only want "everyone who uses this name meets" get a key worked out from the name.
+/// </summary>
+internal static class TestRooms
+{
+    public static RoomKey KeyFor(string name) =>
+        RoomKey.Parse(System.Buffers.Text.Base64Url.EncodeToString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes("test-room:" + name))));
+
+    public static byte[] Topic(string name) => System.Security.Cryptography.SHA1.HashData(System.Text.Encoding.UTF8.GetBytes("test-topic:" + name));
+
+    public static Task<ChatRoom> JoinRoomAsync(this ChatNode node, string name, CancellationToken ct = default) =>
+        node.JoinRoomAsync(KeyFor(name), name, ct);
+}

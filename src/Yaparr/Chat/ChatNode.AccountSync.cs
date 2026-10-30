@@ -10,8 +10,8 @@ namespace Yaparr.Chat;
 /// </summary>
 public sealed record AccountEntry(string Key, string? Value, long Ts, bool Deleted = false);
 
-/// <summary>A room one of your devices joined: a public room by its name, or a private one with its key.</summary>
-public sealed record SyncedRoom(string Name, string? Key);
+/// <summary>A room one of your devices joined: its key, and the name you gave it.</summary>
+public sealed record SyncedRoom(string Name, string Key);
 
 // Your devices keep your name, your blocks and your list of rooms the same. The entries only travel between
 // connections whose certificate says they belong to the same account, and they are saved so a device that was
@@ -24,7 +24,7 @@ public sealed partial class ChatNode
     private readonly object _acctGate = new();
     private readonly Dictionary<string, AccountEntry> _acct = new();
 
-    private sealed record RoomValue(string N, string? K);
+    private sealed record RoomValue(string N, string K);
 
     /// <summary>A sibling device added a room (true) or removed one (false). Join or leave it, and remember the change.</summary>
     public event Action<SyncedRoom, bool>? SyncedRoomChanged;
@@ -100,7 +100,7 @@ public sealed partial class ChatNode
 
     private static SyncedRoom? ParseRoom(AccountEntry e)
     {
-        try { return JsonSerializer.Deserialize<RoomValue>(e.Value ?? "", Json) is { N.Length: > 0 } v ? new SyncedRoom(v.N, v.K) : null; }
+        try { return JsonSerializer.Deserialize<RoomValue>(e.Value ?? "", Json) is { N.Length: > 0, K.Length: > 0 } v ? new SyncedRoom(v.N, v.K) : null; }
         catch (JsonException) { return null; }
     }
 

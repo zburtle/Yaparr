@@ -60,7 +60,7 @@ public class DialLimitTests
             DiscoveryInterval = TimeSpan.FromMilliseconds(300),
         });
         node.Start();
-        await node.JoinPrivateRoomAsync(RoomKey.Generate(), "flood");
+        await node.JoinRoomAsync(RoomKey.Generate(), "flood");
 
         await Task.Delay(TimeSpan.FromSeconds(3));
         Assert.InRange(silent.Contacted, 1, 24);
@@ -99,7 +99,7 @@ public class DialLimitTests
             Log = log.Enqueue,
         });
         node.Start();
-        await node.JoinPrivateRoomAsync(RoomKey.Generate(), "quiet");
+        await node.JoinRoomAsync(RoomKey.Generate(), "quiet");
 
         await TestUtil.WaitFor(() => log.Any(l => l.Contains("could not connect to")), timeoutMs: 10_000);
         await Task.Delay(TimeSpan.FromSeconds(4));

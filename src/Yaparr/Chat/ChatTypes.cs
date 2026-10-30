@@ -44,9 +44,6 @@ public sealed record ChatMessage(PeerInfo From, string? Room, string Id, string 
 
 public static class Topics
 {
-    public static byte[] ForRoom(string roomName) =>
-        SHA1.HashData(Encoding.UTF8.GetBytes("yaparr/room/v1/" + roomName.Trim().ToLowerInvariant()));
-
     public static byte[] ForPeer(PeerId id) =>
         SHA1.HashData(Encoding.UTF8.GetBytes("yaparr/peer/v1/" + id.Value));
 }

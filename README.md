@@ -9,21 +9,20 @@ using var node = new ChatNode(new ChatNodeOptions { DisplayName = "zach" });
 node.Start();
 Console.WriteLine(node.Id);                       // share this id; others can call you by it
 
-var room = await node.JoinRoomAsync("my-room");   // group chat: anyone using the same name joins
+var key = RoomKey.Generate();                     // a room is its key; share key.ToString() with the people you want in
+var room = await node.JoinRoomAsync(key, "my room");
 room.MessageReceived += m => Console.WriteLine($"{m.From.DisplayName}: {m.Text}");
 await room.SendAsync("hello");
-
-var secret = await node.JoinPrivateRoomAsync(RoomKey.Generate());   // invite-only; share key.ToString()
 
 var dm = await node.OpenDirectChatAsync(new PeerId("…"));   // one-to-one by peer id
 await dm.SendAsync("hi");
 ```
 
-Try it: `dotnet run --project samples/Yaparr.Cli -- alice room lobby` in two terminals/machines.
+Try it: `dotnet run --project samples/Yaparr.Cli -- alice room` prints an invite; `dotnet run --project samples/Yaparr.Cli -- bob room <invite>` joins it, in two terminals or on two machines.
 Run tests: `dotnet test`.
 
 **Desktop UI.** `samples/Yaparr.Desktop` is the chat app, built with Avalonia so it runs on Windows and Linux: a list of rooms and direct chats,
-messages with delivery marks, the people in the room, and buttons to create or join a private room (the room key and copy-invite button are under the room title) or
+messages with delivery marks, the people in the room, and buttons to create or join a room (the room key and copy-invite button are under the room title) or
 open a direct chat by peer ID. Under each connected person in the People list it says how you reach them: *direct*, *via server* (through the shared TURN relay, whose bandwidth is limited) or *via member* (another member forwards your traffic; they cannot read it). Your name, identity key, joined rooms and message history are kept in
 `%LOCALAPPDATA%\\Yaparr` so you keep the same peer ID and rejoin your rooms on the next start. To run two copies on
 one machine, give each its own folder: `Yaparr.Desktop.exe --name alice --data C:\\temp\\alice` (the launch profiles
@@ -39,7 +38,7 @@ installer is unsigned, so Windows SmartScreen will warn on first run, and Window
 (allow private networks for LAN discovery; allow public for internet peers).
 
 **Debugging the CLI.** `samples/Yaparr.Cli/Properties/launchSettings.json` has profiles for Visual Studio / Rider
-(or `dotnet run --launch-profile "<name>"`): alice/bob/carol in a shared local room, two in a local private room,
+(or `dotnet run --launch-profile "<name>"`): alice/bob/carol in a shared local room,
 a "wait for a DM" instance, and one on the real DHT. The local ones pass `--local`, which swaps the DHT for a
 temp-directory discovery so instances on one machine find each other in seconds. Start one profile at a time,
 e.g. from separate terminals. `--history` keeps each name's group history on disk under the temp directory: run
@@ -130,12 +129,12 @@ last beacon (so a crash takes up to 90 s to show), and beacons from non-members 
 
 **Security.** Identity is an ECDSA P-256 key; `PeerId` = SHA-256 of the public key. The hello carries an ephemeral
 ECDH key signed by the identity key; session keys come from HKDF and traffic is AES-256-GCM with replay protection.
-**Public rooms** (`JoinRoomAsync(name)`) are open: anyone who knows the name can join. **Private rooms**
-(`JoinPrivateRoomAsync(RoomKey)`) use a random 256-bit key instead: the DHT topic is derived from it, so outsiders
-can't find the room or its members, and each connection proves key knowledge with an HMAC bound to that
+**Rooms** (`JoinRoomAsync(RoomKey)`) are invite-only: a room is a random 256-bit key. The DHT topic is derived from it,
+so outsiders can't find the room or its members, and each connection proves key knowledge with an HMAC bound to that
 connection's session and the prover's id (not replayable or reflectable, and it reveals nothing to non-members).
 Peers without the key never become members, receive introductions or see messages. Share `key.ToString()` out of
-band. Anyone holding the key is in, and removing one person means making a new key.
+band. Anyone holding the key is in, and removing one person means making a new key. There are no open rooms that
+anyone can join by name; versions before 1.4 had them, and those rooms are not found by this version.
 
 **Catch-up.** Group messages are signed by their author (ECDSA, bound to the room) and kept in a bounded history
 (500 messages / 7 days by default, in memory or persisted with `HistoryStore = new FileHistoryStore(dir)`). When two
@@ -240,13 +239,13 @@ certificate and see another device as another person with the same name. Each de
 connections, relays, voice and delivery work per device; what is shared is the person.
 
 - **Linking.** On a device you already use choose **File > Link another device…**. It makes a code, encrypted with a
-  passphrase (about 100 bits, shown once), that holds a new identity for the other device plus your name, private rooms and
+  passphrase (about 100 bits, shown once), that holds a new identity for the other device plus your name, rooms and
   blocks. On the new device choose **Link this device** at first start, paste the code and type the passphrase. The code
   holds your account key, so send it and the passphrase by different routes and delete it afterwards. It stops working
   after a day. In the library: `DeviceLink.Create` and `DeviceLink.Open`.
 - **Sharing your id.** Give people your account id (**Copy my ID**), which is the same on every device. A direct chat
   with a person reaches all of their devices, and counts as delivered when every connected device confirmed it.
-- **What stays in step.** Your name, blocks and the list of private rooms follow you between devices
+- **What stays in step.** Your name, blocks and the list of rooms follow you between devices
   (`ChatNode.SyncedRoomChanged`, `DisplayNameChanged`, `AccountEntries`), over connections whose certificate proves they
   are your own. Changes are kept in `account.json` and a device that was off catches up when it meets another; the newest
   change wins. Room history syncs between your devices like it does between any two members of the room.

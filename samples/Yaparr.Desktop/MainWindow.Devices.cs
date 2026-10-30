@@ -84,7 +84,6 @@ public partial class MainWindow
     // Another of your devices added or removed a room.
     private void OnSyncedRoomChanged(SyncedRoom room, bool joined)
     {
-        if (room.Key == null) return;   // this app only has private rooms
         UI(async () =>
         {
             try
@@ -92,7 +91,7 @@ public partial class MainWindow
                 if (joined)
                 {
                     if (_settings.PrivateRooms.Any(r => r.Key == room.Key)) return;
-                    await JoinPrivateAsync(room.Name, RoomKey.Parse(room.Key), persist: true);
+                    await JoinKeyedRoomAsync(room.Name, RoomKey.Parse(room.Key), persist: true);
                     StatusText.Text = $"Joined \"{room.Name}\" because you joined it on another device.";
                 }
                 else if (_conversations.FirstOrDefault(c => c.Invite == room.Key) is { } conv)
@@ -119,8 +118,8 @@ public partial class MainWindow
     {
         if (_node == null) return;
         bool changed = false;
-        foreach (var room in _node.SyncedRooms.Where(r => r.Key != null))
-            if (_settings.PrivateRooms.All(r => r.Key != room.Key)) { _settings.PrivateRooms.Add(new PrivateRoomSetting { Label = room.Name, Key = room.Key! }); changed = true; }
+        foreach (var room in _node.SyncedRooms)
+            if (_settings.PrivateRooms.All(r => r.Key != room.Key)) { _settings.PrivateRooms.Add(new PrivateRoomSetting { Label = room.Name, Key = room.Key }); changed = true; }
         foreach (var blocked in _node.BlockedPeers)
             if (_settings.BlockedPeers.All(b => b.Id != blocked.Value)) { _settings.BlockedPeers.Add(new KnownPeer { Id = blocked.Value, Name = "", LastSeen = DateTimeOffset.Now }); changed = true; }
         if (changed) _data.SaveSettings(_settings);

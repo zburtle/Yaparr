@@ -57,9 +57,10 @@ public class ChatTests
             return r;
         }
 
-        var ra = Wire(a, await a.JoinRoomAsync("Lobby"));
-        var rb = Wire(b, await b.JoinRoomAsync("lobby "));
-        var rc = Wire(c, await c.JoinRoomAsync("LOBBY"));
+        var key = RoomKey.Generate();
+        var ra = Wire(a, await a.JoinRoomAsync(key)); 
+        var rb = Wire(b, await b.JoinRoomAsync(key));
+        var rc = Wire(c, await c.JoinRoomAsync(key));
 
         await TestUtil.WaitFor(() => ra.Members.Count == 2 && rb.Members.Count == 2 && rc.Members.Count == 2);
 
@@ -111,7 +112,6 @@ public class PrivateRoomTests
         Assert.Equal(key.ToString(), parsed.ToString());
         Assert.Equal(key.Topic, parsed.Topic);
         Assert.NotEqual(key.Topic, RoomKey.Generate().Topic);
-        Assert.NotEqual(key.Topic, Topics.ForRoom("lobby"));
         Assert.Throws<FormatException>(() => RoomKey.Parse("not-a-key"));
     }
 
@@ -124,16 +124,15 @@ public class PrivateRoomTests
         using var c = TestUtil.NewNode(hub, "c");
         var key = RoomKey.Generate();
 
-        var ra = await a.JoinPrivateRoomAsync(key);
-        var rb = await b.JoinPrivateRoomAsync(RoomKey.Parse(key.ToString()));
-        var rc = await c.JoinPrivateRoomAsync(key);
+        var ra = await a.JoinRoomAsync(key);
+        var rb = await b.JoinRoomAsync(RoomKey.Parse(key.ToString()));
+        var rc = await c.JoinRoomAsync(key);
         await TestUtil.WaitFor(() => ra.Members.Count == 2 && rb.Members.Count == 2 && rc.Members.Count == 2);
 
         var got = new TaskCompletionSource<string>();
         rc.MessageReceived += m => got.TrySetResult(m.Text);
         await ra.SendAsync("secret hello");
         Assert.Equal("secret hello", await got.Task.WaitAsync(TimeSpan.FromSeconds(5)));
-        Assert.True(ra.IsPrivate);
     }
 
     [Fact]
@@ -145,11 +144,11 @@ public class PrivateRoomTests
         using var intruder = TestUtil.NewNode(hub, "intruder");
         var key = RoomKey.Generate();
 
-        var r1 = await member1.JoinPrivateRoomAsync(key);
-        var r2 = await member2.JoinPrivateRoomAsync(key);
+        var r1 = await member1.JoinRoomAsync(key);
+        var r2 = await member2.JoinRoomAsync(key);
         await TestUtil.WaitFor(() => r1.Members.Count == 1 && r2.Members.Count == 1);
 
-        var wrong = await intruder.JoinPrivateRoomAsync(RoomKey.Generate());
+        var wrong = await intruder.JoinRoomAsync(RoomKey.Generate());
         var guessed = await intruder.JoinRoomAsync("lobby");
         await intruder.ConnectAsync(new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, member1.LocalPort));
         await TestUtil.WaitFor(() => member1.ConnectedPeers.Count == 2);
@@ -484,7 +483,7 @@ public class DiscoveryTests
         var hub = new InMemoryDiscoveryHub();
         var ep = new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 4000);
         var composite = new CompositeDiscovery(new[] { new FailingDiscovery(), hub.CreateClient(ep) });
-        var topic = Topics.ForRoom("x");
+        var topic = TestRooms.Topic("x");
         await composite.AnnounceAsync(topic);
         Assert.Contains(ep, await composite.FindPeersAsync(topic));
     }
@@ -499,7 +498,7 @@ public class DiscoveryTests
 
         using var a = new LocalServiceDiscovery(41001);
         using var b = new LocalServiceDiscovery(41002);
-        var topic = Topics.ForRoom("lan-" + Guid.NewGuid());
+        var topic = TestRooms.Topic("lan-" + Guid.NewGuid());
 
         await a.AnnounceAsync(topic);
         await TestUtil.WaitFor(() => b.FindPeersAsync(topic).Result.Any(e => e.Port == 41001));

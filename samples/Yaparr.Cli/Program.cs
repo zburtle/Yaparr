@@ -7,7 +7,7 @@ args = args.Where(a => !a.StartsWith("--")).ToArray();
 
 if (args.Length < 2)
 {
-    Console.WriteLine("usage: Yaparr.Cli [--local] [--history] <display-name> room <name> | private [invite] | dm <peer-id> | wait");
+    Console.WriteLine("usage: Yaparr.Cli [--local] [--history] <display-name> room [invite] | dm <peer-id> | wait");
     return;
 }
 
@@ -33,22 +33,15 @@ Func<string, Task> send;
 switch (args[1])
 {
     case "room":
-        var room = await node.JoinRoomAsync(args[2], cts.Token);
+        // With an invite this joins that room; without one it makes a new room and prints its invite.
+        var key = args.Length > 2 ? RoomKey.Parse(args[2]) : RoomKey.Generate();
+        Console.WriteLine($"Room invite (share it only with people you want in): {key}");
+        var room = await node.JoinRoomAsync(key, ct: cts.Token);
         room.MessageReceived += Print;
         room.MemberJoined += p => Console.WriteLine($"* {p.DisplayName} joined");
         room.MemberLeft += p => Console.WriteLine($"* {p.DisplayName} left");
         send = room.SendAsync;
-        Console.WriteLine($"Joined '{room.Name}'. Type to chat, Ctrl+C to quit.");
-        break;
-    case "private":
-        var key = args.Length > 2 ? RoomKey.Parse(args[2]) : RoomKey.Generate();
-        Console.WriteLine($"Room invite (share privately): {key}");
-        var priv = await node.JoinPrivateRoomAsync(key, ct: cts.Token);
-        priv.MessageReceived += Print;
-        priv.MemberJoined += p => Console.WriteLine($"* {p.DisplayName} joined");
-        priv.MemberLeft += p => Console.WriteLine($"* {p.DisplayName} left");
-        send = priv.SendAsync;
-        Console.WriteLine("Joined private room. Type to chat, Ctrl+C to quit.");
+        Console.WriteLine("Joined the room. Type to chat, Ctrl+C to quit.");
         break;
     case "dm":
         Console.WriteLine("Looking for peer (this can take a minute)...");

@@ -183,7 +183,7 @@
     <DockPanel>
         <Menu DockPanel.Dock="Top" Margin="4,2,4,0">
             <MenuItem Header="_File">
-                <MenuItem Header="_Create private room…" Click="CreateRoom_Click" />
+                <MenuItem Header="_Create room…" Click="CreateRoom_Click" />
                 <MenuItem Header="_Join with invite…" Click="JoinRoom_Click" />
                 <Separator />
                 <MenuItem Header="Change my _name…" Click="Rename_Click" />
@@ -246,7 +246,7 @@
                     </StackPanel>
 
                     <StackPanel DockPanel.Dock="Bottom" Margin="12,6,12,12" Spacing="6">
-                        <Button Content="New private room" Classes="primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="CreateRoom_Click" />
+                        <Button Content="New room" Classes="primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="CreateRoom_Click" />
                         <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
                             <Button Content="Join with invite" Padding="8,7" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="JoinRoom_Click" />
                             <Button Grid.Column="1" Content="Direct chat" Padding="8,7" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="DirectChat_Click" />
@@ -396,7 +396,7 @@
                         </Border>
                         <TextBlock Text="No conversation open" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,8,0,0" />
                         <TextBlock Classes="muted" TextAlignment="Center" TextWrapping="Wrap"
-                                   Text="Create a private room, join one with an invite, or open a direct chat to begin." />
+                                   Text="Create a room, join one with an invite, or open a direct chat to begin." />
                     </StackPanel>
 
                     <Border Grid.Row="2" Margin="14,4,14,14" Padding="14,2,6,2" CornerRadius="22"

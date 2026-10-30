@@ -265,11 +265,11 @@ public class MultiDeviceTests
         d.Second.SyncedRoomChanged += (room, joined) =>
         {
             lock (events) events.Add((room, joined));
-            if (joined) _ = d.Second.JoinPrivateRoomAsync(RoomKey.Parse(room.Key!), room.Name);
+            if (joined) _ = d.Second.JoinRoomAsync(RoomKey.Parse(room.Key!), room.Name);
         };
 
         var key = RoomKey.Generate();
-        var secret = await d.First.JoinPrivateRoomAsync(key, "book club");
+        var secret = await d.First.JoinRoomAsync(key, "book club");
         await TestUtil.WaitFor(() => { lock (events) return events.Count == 1; });
         lock (events) Assert.Equal((new SyncedRoom("book club", key.ToString()), true), events[0]);
         Assert.Contains(d.Second.SyncedRooms, r => r.Key == key.ToString());
@@ -391,7 +391,7 @@ public class DeviceLinkTests
         var nuisance = PeerIdentity.Generate().Id;
         first.Block(nuisance);
         var key = RoomKey.Generate();
-        var room = await first.JoinPrivateRoomAsync(key, "book club");
+        var room = await first.JoinRoomAsync(key, "book club");
 
         var pass = DeviceLink.GeneratePassphrase();
         var linked = DeviceLink.Open(DeviceLink.Create(firstId, first.DisplayName, first.AccountEntries, pass), pass);
@@ -404,7 +404,7 @@ public class DeviceLinkTests
         Assert.Contains(second.SyncedRooms, r => r.Key == key.ToString() && r.Name == "book club");
         Assert.True(second.IsBlocked(nuisance));
 
-        var room2 = await second.JoinPrivateRoomAsync(key, "book club");
+        var room2 = await second.JoinRoomAsync(key, "book club");
         await TestUtil.WaitFor(() => room.Members.Count == 1 && room2.Members.Count == 1);
         Assert.Contains(room.Members, m => m.Id == second.Id && m.Account == first.AccountId);
 

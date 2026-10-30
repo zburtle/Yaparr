@@ -538,10 +538,11 @@ public sealed partial class ChatNode : IDisposable
         if (_ownsIdentity) _identity.Dispose();
     }
 
-    public Task<ChatRoom> JoinRoomAsync(string name, CancellationToken ct = default) =>
-        JoinCoreAsync(new ChatRoom(this, name, secret: null), ct);
-
-    public Task<ChatRoom> JoinPrivateRoomAsync(RoomKey key, string label = "private", CancellationToken ct = default) =>
+    /// <summary>
+    /// Joins a room. A room is its key: the DHT topic is derived from it, so only people who hold it can find the room
+    /// or its members, and each connection proves it knows the key. The label is only for display and is not shared.
+    /// </summary>
+    public Task<ChatRoom> JoinRoomAsync(RoomKey key, string label = "room", CancellationToken ct = default) =>
         JoinCoreAsync(new ChatRoom(this, label, key), ct);
 
     private async Task<ChatRoom> JoinCoreAsync(ChatRoom room, CancellationToken ct)

@@ -15,7 +15,7 @@ Improvements we have agreed to do later, roughly in priority order. Done items a
 
 ## Moderation
 
-- Only a personal block exists. Next: room admins with a signed ban list for private rooms (the invite carries the admin's public key), then rotating the room secret so a banned person cannot rejoin, and a vote-based ban (signed votes counted the same way on every app; only members present for a while get a vote; private rooms only, since in a public room anyone can make new identities). A block does not hide a blocked person's messages from others, by design.
+- Only a personal block exists. Next: room admins with a signed ban list (the invite carries the admin's public key), then rotating the room secret so a banned person cannot rejoin, and a vote-based ban (signed votes counted the same way on every app; only members present for a while get a vote, since anyone can make new identities). A block does not hide a blocked person's messages from others, by design.
 - Blocking someone does not stop them seeing you in rooms you share, or your messages: they can only be kept out by removing their access to the room.
 
 ## Voice
@@ -59,7 +59,7 @@ Not done:
 - The CLI does not link devices.
 - Not tried on real networks, and the Desktop menus and dialogs have not been looked at on screen.
 - A linked device holds the account key, so a stolen device means a new identity. If the key stayed on one device, a lost one could be revoked: sign a revocation with the account key and pass it around with the account settings.
-- The link code is encrypted with a passphrase and expires in a day, but can be used more than once. A one-time code would need the two devices to talk, for example through the DHT the way a private room is found.
+- The link code is encrypted with a passphrase and expires in a day, but can be used more than once. A one-time code would need the two devices to talk, for example through the DHT the way a room is found.
 - Sync needs two of your devices online together. An always-on device (the CLI in a headless mode on a Raspberry Pi, a VPS or a home server) is just another device that never sleeps, and could hold history and receive direct messages for you. It can share the headless mode with volunteer relays.
 - No network storage for backups. The mainline DHT (BEP 44) only fits tiny short-lived records: about 1000 bytes, expires in around two hours without a republish, and many nodes do not support it. To evaluate later if offline delivery without running anything is wanted: Nostr relays for encrypted store-and-forward. They are third-party servers, use secp256k1 where we use P-256, see connection metadata, and keep messages as long as each relay chooses.
 
