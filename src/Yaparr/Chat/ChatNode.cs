@@ -114,6 +114,12 @@ public sealed class ChatNodeOptions
     /// <summary>Where pictures and GIFs from messages are kept. Without a folder they are only kept in memory.</summary>
     public string? AttachmentDirectory { get; init; }
 
+    /// <summary>Where each room's soundboard list is kept. Without a folder it is only kept in memory (the sounds themselves go with the pictures).</summary>
+    public string? SoundboardDirectory { get; init; }
+
+    /// <summary>The shortest time between two sounds from the same person that are played; sounds sooner than that are dropped.</summary>
+    public TimeSpan SoundboardMinInterval { get; init; } = TimeSpan.FromSeconds(3);
+
     /// <summary>Files up to this size are downloaded without asking.</summary>
     public long MaxAutoFetchBytes { get; init; } = Attachment.MaxBytes;
 
@@ -558,6 +564,7 @@ public sealed partial class ChatNode : IDisposable
         room.History = _histories.GetOrAdd(room.Key, k =>
             new RoomHistory(k, _options.HistoryStore, _options.MaxHistoryMessages, _options.MaxHistoryAge));
         if (!_rooms.TryAdd(room.Key, room)) return _rooms[room.Key];
+        LoadSounds(room);
         NoteRoomChanged(room, joined: true);
 
         foreach (var peer in _peers.Values)
@@ -1170,6 +1177,7 @@ public sealed partial class ChatNode : IDisposable
         AfterMembershipChange(room);
         SendPresenceTo(room, peer, includeCache: true);
         SendVoiceStateTo(room, peer);
+        SendSoundsTo(room, peer);
         SendMediaAnnouncesTo(room, peer);
         ResendTo(peer, o => o.Room == room, o => new Wire { Type = Wire.Message, Room = RefTo(room, peer), Msgs = new[] { o.Signed! } });
 
@@ -1412,6 +1420,16 @@ public sealed partial class ChatNode : IDisposable
             case Wire.Voice when wire.Room != null && wire.Vox != null
                                  && ResolveRoom(peer, wire.Room) is { } voiceRoom && voiceRoom.MemberStates.ContainsKey(peer.Id):
                 OnVoiceState(peer, voiceRoom, wire.Vox);
+                break;
+
+            case Wire.Sound when wire.Room != null && wire.Snd != null
+                                 && ResolveRoom(peer, wire.Room) is { } soundRoom && soundRoom.MemberStates.ContainsKey(peer.Id):
+                OnSounds(peer, soundRoom, wire.Snd);
+                break;
+
+            case Wire.Play when wire.Room != null && wire.Pl != null
+                                && ResolveRoom(peer, wire.Room) is { } playRoom && playRoom.MemberStates.ContainsKey(peer.Id):
+                OnPlay(peer, playRoom, wire.Pl);
                 break;
 
             case Wire.Message when wire.Room == null && wire.Text != null && wire.Id != null:
@@ -1681,6 +1699,7 @@ public sealed partial class ChatNode : IDisposable
         long now = Environment.TickCount64;
         TopUpConnections(room);
         MaintainVoice(room, now);
+        MaintainSounds(room, now);
         foreach (var member in room.MemberStates.Values) EnsureStandby(member);
 
         if (now - room.LastPresenceAt >= _options.PresenceInterval.TotalMilliseconds)

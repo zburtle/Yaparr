@@ -73,10 +73,16 @@ internal sealed class Wire
     /// <summary>Announcements of shared streams (a screen, a large voice channel), passed around the room.</summary>
     public StoredMedia[]? Ann { get; set; }
 
+    /// <summary>Entries of a room's soundboard.</summary>
+    public StoredSound[]? Snd { get; set; }
+
+    /// <summary>Someone played a sound.</summary>
+    public StoredPlay? Pl { get; set; }
+
     /// <summary>A control message between neighbours in a stream's tree.</summary>
     public WireMedia? Mx { get; set; }
 
-    public const string Caps = "caps", Rename = "name", Account = "acct", Media = "media";
+    public const string Caps = "caps", Rename = "name", Account = "acct", Media = "media", Sound = "snd", Play = "play";
 
     public const string Ack = "ack", Hello = "hi", Join = "join", Leave = "leave", Message = "msg", Introduce = "peers", Sync = "sync", History = "hist", Links = "links", Presence = "pres", Voice = "voice";
 }

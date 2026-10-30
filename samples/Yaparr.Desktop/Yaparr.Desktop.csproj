@@ -56,6 +56,8 @@
     <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.4" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.4" />
     <PackageReference Include="Microsoft.Win32.SystemEvents" Version="10.0.14" />
+    <PackageReference Include="NLayer" Version="3.0.0" />
+    <PackageReference Include="NVorbis" Version="0.10.5" />
     <PackageReference Include="SoundFlow" Version="1.4.2" />
   </ItemGroup>
 

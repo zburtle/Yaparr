@@ -26,6 +26,7 @@ public partial class MainWindow
             var vm = old ?? new VoiceMemberVm(p.Peer.Id.Value, p.Peer.DisplayName, p.IsSelf);
             vm.Name = p.Peer.DisplayName;
             vm.Muted = p.Muted;
+            vm.SoundboardMuted = IsPersonSoundboardMuted(p.Peer.Id.Value);
             vm.Deafened = p.Deafened;
             conv.VoiceMembers.Add(vm);
         }
@@ -94,6 +95,7 @@ public partial class MainWindow
         var session = room.JoinVoice();
         ApplyVoiceSettings(session);
         ApplyProcessing(session);
+        ApplySoundboardSettings(session);
         session.ProcessorFailed += ex => UI(() =>
         {
             _log.Write("voice processing stopped: " + ex.Message);
@@ -132,6 +134,7 @@ public partial class MainWindow
         // Sharing a screen and watching one go with being in voice.
         if (_sharer != null && _sharerConv == conv) StopSharingCore();
         foreach (var window in _screenViews.Values.ToList()) window.Close();
+        _soundboard?.Close();
         _voiceAudio?.Dispose();
         _voiceAudio = null;
         session?.Leave();

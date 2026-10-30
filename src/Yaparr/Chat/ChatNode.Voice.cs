@@ -20,6 +20,7 @@ public sealed partial class ChatNode
         room.SelfMuted = room.SelfDeafened = false;
         PublishVoiceState(room, active: true, muted: false, deafened: false);
         session.RosterChanged(ActiveVoiceOthers(room));
+        FetchMissingSounds(room);
         return session;
     }
 

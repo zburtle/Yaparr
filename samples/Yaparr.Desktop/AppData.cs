@@ -37,6 +37,13 @@ public sealed class AppSettings
     /// <summary>Off, Low, Moderate or High: how much steady background noise is taken out of your microphone.</summary>
     public string VoiceNoiseSuppression { get; set; } = "Moderate";
 
+    /// <summary>People whose soundboard sounds you have silenced (their voice is not affected), by id.</summary>
+    public List<string> SoundboardMuted { get; set; } = new();
+    /// <summary>Silence everybody's soundboard sounds.</summary>
+    public bool SoundboardsMuted { get; set; }
+    /// <summary>How loud soundboard sounds are against voices, in percent (100 is as loud as a voice).</summary>
+    public int SoundboardVolume { get; set; } = 80;
+
     /// <summary>Play a sound for new messages and for people joining or leaving your voice channel.</summary>
     public bool SoundsEnabled { get; set; } = true;
     /// <summary>Flash the taskbar button when a message arrives while the window is in the background.</summary>

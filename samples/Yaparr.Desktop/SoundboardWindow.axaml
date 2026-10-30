@@ -1,0 +1,41 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="using:Yaparr.Desktop"
+        x:Class="Yaparr.Desktop.SoundboardWindow"
+        Title="Soundboard" Width="580" Height="480" MinWidth="380" MinHeight="260"
+        WindowStartupLocation="CenterOwner">
+    <Grid RowDefinitions="Auto,*,Auto" Margin="14">
+        <WrapPanel Grid.Row="0">
+            <Button Content="＋ Add a sound…" Classes="primary" Click="Add_Click" Margin="0,0,12,6" />
+            <CheckBox x:Name="MuteAllBox" Content="Mute all soundboards" Margin="0,0,12,6" IsCheckedChanged="MuteAll_Changed" />
+            <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,0,6">
+                <TextBlock Text="Volume" VerticalAlignment="Center" Classes="muted" />
+                <Slider x:Name="VolumeBox" Minimum="0" Maximum="200" Width="130" VerticalAlignment="Center" ValueChanged="Volume_Changed" />
+            </StackPanel>
+        </WrapPanel>
+        <Grid Grid.Row="1">
+            <ScrollViewer>
+                <ItemsControl x:Name="Tiles">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="local:SoundVm">
+                            <Button Width="150" Height="78" Margin="0,0,8,8" HorizontalContentAlignment="Left" VerticalContentAlignment="Center"
+                                    IsEnabled="{Binding Available}" Click="Tile_Click" ContextRequested="Tile_ContextRequested"
+                                    ToolTip.Tip="Click to play it for everyone in voice. Right-click for more.">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding Caption}" Classes="muted small" TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+            <TextBlock x:Name="EmptyText" Classes="muted" TextWrapping="Wrap" HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center"
+                       Text="No sounds yet. Add one and everyone in the room can play it while they are in voice." />
+        </Grid>
+        <TextBlock x:Name="Footer" Grid.Row="2" Classes="muted small" TextWrapping="Wrap" Margin="0,6,0,0" />
+    </Grid>
+</Window>

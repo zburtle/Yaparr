@@ -351,7 +351,7 @@ public sealed class ShareVm : Observable
 
 public sealed class VoiceMemberVm : Observable
 {
-    private bool _speaking, _muted, _deafened;
+    private bool _speaking, _muted, _deafened, _soundboardMuted;
     private string _name;
 
     public VoiceMemberVm(string id, string name, bool isSelf)
@@ -386,6 +386,17 @@ public sealed class VoiceMemberVm : Observable
         get => _deafened;
         set { if (_deafened == value) return; _deafened = value; Raise(); Raise(nameof(Status)); }
     }
+
+    public bool CanMuteSoundboard => !IsSelf;
+
+    public bool SoundboardMuted
+    {
+        get => _soundboardMuted;
+        set { if (_soundboardMuted == value) return; _soundboardMuted = value; Raise(); Raise(nameof(SoundboardGlyph)); Raise(nameof(SoundboardTip)); }
+    }
+
+    public string SoundboardGlyph => _soundboardMuted ? "🔕" : "🔔";
+    public string SoundboardTip => _soundboardMuted ? "Their soundboard sounds are muted. Click to unmute." : "Mute only their soundboard sounds";
 
     public string Status => _deafened ? "🎧✕" : _muted ? "🎤✕" : "";
     public IBrush Ring => _speaking ? new SolidColorBrush(Color.Parse("#46A758")) : Brushes.Transparent;

@@ -1,0 +1,26 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Yaparr.Desktop.AddSoundDialog"
+        Title="Add a sound" SizeToContent="Height" Width="440" CanResize="False"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+    <StackPanel Margin="16" Spacing="4">
+        <TextBlock Text="Sound file" FontWeight="SemiBold" />
+        <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Content="Choose a file…" Click="Choose_Click" />
+            <TextBlock x:Name="FileText" Text="WAV, MP3 or OGG" Classes="muted" VerticalAlignment="Center" />
+        </StackPanel>
+        <TextBlock Text="Name" FontWeight="SemiBold" Margin="0,8,0,0" />
+        <TextBox x:Name="NameBox" MaxLength="64" Watermark="What the tile says" />
+        <StackPanel x:Name="TrimPanel" IsVisible="False" Spacing="4" Margin="0,8,0,0">
+            <TextBlock Text="Where it starts" FontWeight="SemiBold" />
+            <Slider x:Name="StartBox" Minimum="0" Maximum="1" ValueChanged="Start_Changed" />
+        </StackPanel>
+        <TextBlock x:Name="InfoText" Classes="muted small" TextWrapping="Wrap" Margin="0,4,0,0"
+                   Text="A sound can be up to 20 seconds. It is made as loud as the other sounds, and everyone in the room can use it." />
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,12,0,0">
+            <Button x:Name="PreviewButton" Content="▶ Preview" IsEnabled="False" Click="Preview_Click" />
+            <Button x:Name="AddButton" Content="Add" Classes="primary" MinWidth="80" HorizontalContentAlignment="Center" IsDefault="True" IsEnabled="False" Click="Add_Click" />
+            <Button Content="Cancel" IsCancel="True" MinWidth="70" HorizontalContentAlignment="Center" Click="Cancel_Click" />
+        </StackPanel>
+    </StackPanel>
+</Window>

@@ -36,6 +36,8 @@ public partial class MainWindow : Window
         DragDrop.SetAllowDrop(this, true);
         AddHandler(DragDrop.DragOverEvent, OnDragOver);
         AddHandler(DragDrop.DropEvent, OnDrop);
+        // The message box handles Ctrl+V itself (and marks it handled), so its own key handler never sees it: look on the way down.
+        AddHandler(KeyDownEvent, OnPasteKey, RoutingStrategies.Tunnel);
         ConversationList.ItemsSource = _conversations;
         VersionText.Text = "Yaparr v" + Updater.CurrentVersion;
 
@@ -242,6 +244,7 @@ public partial class MainWindow : Window
             HistoryStore = new FileHistoryStore(_data.HistoryDirectory),
             Traversal = traversal,
             AttachmentDirectory = Path.Combine(_data.Directory, "attachments"),
+            SoundboardDirectory = Path.Combine(_data.Directory, "soundboards"),
             DefaultTurn = BuiltInRelay.Load(),
             EnableLocalDiscovery = traversal.LocalDiscovery,
             PeerCachePath = Path.Combine(_data.Directory, "peers.json"),
@@ -753,9 +756,17 @@ public partial class MainWindow : Window
             await SendFileAsync(file);
     }
 
+    // Ctrl+V (Command+V on a Mac, Shift+Insert) pastes a picture from anywhere in the window except another text box.
+    private void OnPasteKey(object? sender, KeyEventArgs e)
+    {
+        bool paste = (e.Key == Key.V && e.KeyModifiers is KeyModifiers.Control or KeyModifiers.Meta) || (e.Key == Key.Insert && e.KeyModifiers == KeyModifiers.Shift);
+        if (!paste || !InputBox.IsEnabled) return;
+        if (FocusManager?.GetFocusedElement() is TextBox focused && focused != InputBox) return;
+        _ = PasteImageAsync();
+    }
+
     private async void InputBox_KeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key == Key.V && e.KeyModifiers == KeyModifiers.Control) _ = PasteImageAsync();
         if (e.Key == Key.Enter && e.KeyModifiers == KeyModifiers.None) { e.Handled = true; await SendAsync(); }
     }
 

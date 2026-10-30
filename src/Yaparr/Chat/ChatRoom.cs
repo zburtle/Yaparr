@@ -48,6 +48,9 @@ public sealed class ChatRoom
     internal bool SelfMuted, SelfDeafened;
     internal long LastVoiceAt;
     internal readonly object IndirectGate = new();
+    internal readonly Dictionary<string, StoredSound> SoundEntries = new();
+    internal readonly object SoundGate = new();
+    internal long LastSoundFetchAt;
     internal long LastPresenceAt, LastShuffleAt;
 
     public IReadOnlyCollection<PeerInfo> Members =>
@@ -70,6 +73,32 @@ public sealed class ChatRoom
     /// <summary>A stream was shared or ended.</summary>
     public event Action? MediaGroupsChanged;
     internal void RaiseMediaChanged() => MediaGroupsChanged?.Invoke();
+
+    /// <summary>The room's soundboard, by name. Anyone in the room can add sounds; only the person who added one can change or remove it.</summary>
+    public IReadOnlyList<SoundInfo> Sounds => _node.GetSounds(this);
+
+    /// <summary>A sound was added, changed, removed or finished downloading.</summary>
+    public event Action? SoundsChanged;
+    internal void RaiseSoundsChanged() => SoundsChanged?.Invoke();
+
+    /// <summary>A sound is being played into the voice channel you are in (possibly by you).</summary>
+    public event Action<PeerId, SoundInfo>? SoundPlayed;
+    internal void RaiseSoundPlayed(PeerId by, SoundInfo sound) => SoundPlayed?.Invoke(by, sound);
+
+    /// <summary>Adds a sound to the soundboard (see <see cref="SoundClip.FromPcm"/> and <see cref="SoundClip.FromWav"/>).</summary>
+    public SoundInfo AddSound(string name, SoundClip clip) => _node.AddSound(this, name, clip);
+
+    /// <summary>Renames a sound you added.</summary>
+    public void RenameSound(string id, string name) => _node.RenameSound(this, id, name);
+
+    /// <summary>Removes a sound you added.</summary>
+    public void RemoveSound(string id) => _node.RemoveSound(this, id);
+
+    /// <summary>The sound itself, if it is on this computer, for previewing.</summary>
+    public SoundClip? GetSound(string id) => _node.ReadSound(this, id);
+
+    /// <summary>Plays a sound into the voice channel. False if you are not in voice, have deafened yourself, or do not have the sound yet.</summary>
+    public bool PlaySound(string id) => _node.PlaySound(this, id);
 
     /// <summary>The people currently in this room's voice channel, including you if you have joined.</summary>
     public IReadOnlyList<VoiceParticipant> VoiceParticipants => _node.GetVoiceParticipants(this);

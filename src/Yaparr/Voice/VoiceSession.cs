@@ -120,6 +120,35 @@ public sealed class VoiceSession : IDisposable
 
     public void SetLocalMute(PeerId peer, bool muted) => Remote(peer).LocalMute = muted;
 
+    private readonly ConcurrentDictionary<PeerId, bool> _soundboardMuted = new();
+    private readonly List<SoundPlayback> _sounds = new();
+    private volatile bool _allSoundboardsMuted;
+
+    /// <summary>Silences one person's soundboard sounds without muting their voice.</summary>
+    public void SetSoundboardMute(PeerId peer, bool muted)
+    {
+        if (muted) _soundboardMuted[peer] = true; else _soundboardMuted.TryRemove(peer, out _);
+        if (muted) lock (_playLock) _sounds.RemoveAll(s => s.By == peer);
+    }
+
+    public bool IsSoundboardMuted(PeerId peer) => _soundboardMuted.ContainsKey(peer);
+
+    /// <summary>Silences everybody's soundboard sounds (and yours) but not voices.</summary>
+    public bool SoundboardsMuted
+    {
+        get => _allSoundboardsMuted;
+        set { _allSoundboardsMuted = value; if (value) lock (_playLock) _sounds.Clear(); }
+    }
+
+    /// <summary>How loud soundboard sounds are against voices, 0 to 2.</summary>
+    public float SoundboardVolume { get; set; } = 0.8f;
+
+    internal void PlaySound(PeerId by, SoundClip clip)
+    {
+        if (_disposed || _deafened || _allSoundboardsMuted || _soundboardMuted.ContainsKey(by)) return;
+        lock (_playLock) _sounds.Add(new SoundPlayback(by, clip));
+    }
+
     /// <summary>How many packets we got from a person, how many had to be concealed and how often we ran dry.</summary>
     public (int Received, int Lost, int Underruns) Stats(PeerId peer) =>
         _remotes.TryGetValue(peer, out var r) ? (r.Received, r.Lost, r.Underruns) : (0, 0, 0);
@@ -265,6 +294,14 @@ public sealed class VoiceSession : IDisposable
             if (remote.LocalMute || _deafened) continue;
             float gain = remote.Gain;
             for (int i = 0; i < FrameSamples; i++) _mix[i] += _tmp[i] * gain;
+        }
+        float soundGain = _deafened || _allSoundboardsMuted ? 0f : SoundboardVolume;
+        for (int k = _sounds.Count - 1; k >= 0; k--)
+        {
+            var sound = _sounds[k];
+            if (soundGain == 0f || !sound.ReadFrame(_tmp)) { _sounds.RemoveAt(k); continue; }
+            for (int i = 0; i < FrameSamples; i++) _mix[i] += _tmp[i] * soundGain;
+            if (sound.Finished) _sounds.RemoveAt(k);
         }
         for (int i = 0; i < FrameSamples; i++)
         {

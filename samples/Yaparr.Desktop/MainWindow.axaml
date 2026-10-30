@@ -327,6 +327,7 @@
                                     <Button Content="🔊 Join voice" Classes="primary" IsVisible="{Binding CanJoinVoice}" Click="JoinVoice_Click" Margin="0,0,6,4" />
                                     <Button Content="{Binding MuteText}" IsVisible="{Binding CanUseVoiceControls}" Click="MuteVoice_Click" Margin="0,0,6,4" />
                                     <Button Content="{Binding DeafenText}" IsVisible="{Binding CanUseVoiceControls}" Click="DeafenVoice_Click" Margin="0,0,6,4" />
+                                    <Button Content="🎛 Soundboard" IsVisible="{Binding CanUseVoiceControls}" Click="Soundboard_Click" Margin="0,0,6,4" />
                                     <Button Content="Leave voice" IsVisible="{Binding CanUseVoiceControls}" Click="LeaveVoice_Click" Margin="0,0,6,4" />
                                     <Button Content="⚙ Voice settings" Click="VoiceSettings_Click" Margin="0,0,6,4" />
                                 </WrapPanel>
@@ -344,6 +345,8 @@
                                                 </Border>
                                                 <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
                                                 <TextBlock Text="{Binding Status}" Classes="muted small" VerticalAlignment="Center" />
+                                                <Button Content="{Binding SoundboardGlyph}" IsVisible="{Binding CanMuteSoundboard}" Click="SoundboardMute_Click"
+                                                        ToolTip.Tip="{Binding SoundboardTip}" Classes="ghost" Padding="4,0" FontSize="11" VerticalAlignment="Center" />
                                             </StackPanel>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
