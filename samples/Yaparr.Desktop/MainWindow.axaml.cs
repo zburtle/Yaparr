@@ -463,8 +463,8 @@ public partial class MainWindow : Window
         room.VoiceChanged += () => UI(() => RefreshVoice(conv, room));
         room.MediaGroupsChanged += () => UI(() => RefreshShares(conv, room));
         room.MemberRenamed += p => UI(() => { Remember(p); RefreshPeers(); });
-        room.MemberJoined += p => UI(() => { Remember(p); RefreshPeers(); conv.Add(MessageVm.System($"{p.DisplayName} joined")); });
-        room.MemberLeft += p => UI(() => { Remember(p); RefreshPeers(p.Account); conv.Add(MessageVm.System($"{p.DisplayName} left")); });
+        room.MemberJoined += p => UI(() => { Remember(p); RefreshPeers(); });
+        room.MemberLeft += p => UI(() => { Remember(p); RefreshPeers(p.Account); });
 
         foreach (var m in room.GetHistory()) conv.Add(ToVm(m));
         _conversations.Add(conv);
