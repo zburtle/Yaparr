@@ -49,7 +49,7 @@ public partial class MainWindow
 
     private async void ShareScreen_Click(object? sender, RoutedEventArgs e)
     {
-        if (_node == null || _selected is not { IsRoom: true } conv || _sharer != null) return;
+        if (_node == null || _selected is not { IsRoom: true, InVoice: true } conv || _sharer != null) return;
         var room = _roomConversations.FirstOrDefault(kv => kv.Value == conv).Key;
         if (room == null) return;
 
@@ -103,7 +103,7 @@ public partial class MainWindow
 
     private async void WatchScreen_Click(object? sender, RoutedEventArgs e)
     {
-        if (_node == null || _selected is not { IsRoom: true } conv || (sender as Button)?.DataContext is not ShareVm share) return;
+        if (_node == null || _selected is not { IsRoom: true, InVoice: true } conv || (sender as Button)?.DataContext is not ShareVm share) return;
         var room = _roomConversations.FirstOrDefault(kv => kv.Value == conv).Key;
         if (room == null) return;
 

@@ -234,7 +234,7 @@ public sealed class ConversationVm : Observable
     public bool InVoice
     {
         get => _inVoice;
-        set { if (_inVoice == value) return; _inVoice = value; Raise(); Raise(nameof(CanJoinVoice)); Raise(nameof(CanUseVoiceControls)); }
+        set { if (_inVoice == value) return; _inVoice = value; Raise(); Raise(nameof(CanJoinVoice)); Raise(nameof(CanUseVoiceControls)); Raise(nameof(CanShare)); Raise(nameof(CanWatchShares)); Raise(nameof(NeedsVoiceToWatch)); }
     }
 
     public bool Muted
@@ -253,7 +253,12 @@ public sealed class ConversationVm : Observable
 
     public ObservableCollection<ShareVm> Shares { get; } = new();
     public bool HasShares => Shares.Count > 0;
-    public void SharesChanged() => Raise(nameof(HasShares));
+
+    /// <summary>Shares are listed, and can be watched, only while you are in the room's voice channel.</summary>
+    public bool CanWatchShares => HasShares && _inVoice;
+    public bool NeedsVoiceToWatch => HasShares && !_inVoice;
+
+    public void SharesChanged() { Raise(nameof(HasShares)); Raise(nameof(CanWatchShares)); Raise(nameof(NeedsVoiceToWatch)); }
 
     private bool _sharing;
     public bool IsSharing
@@ -262,8 +267,8 @@ public sealed class ConversationVm : Observable
         set { if (_sharing == value) return; _sharing = value; Raise(); Raise(nameof(CanShare)); Raise(nameof(CanStopSharing)); }
     }
 
-    /// <summary>Sharing a screen works on Windows only for now; watching works everywhere.</summary>
-    public bool CanShare => IsRoom && !_sharing && OperatingSystem.IsWindows();
+    /// <summary>Sharing a screen needs being in the room's voice channel, and works on Windows only for now; watching works everywhere.</summary>
+    public bool CanShare => IsRoom && _inVoice && !_sharing && OperatingSystem.IsWindows();
     public bool CanStopSharing => _sharing;
 
     public string MuteText => _muted ? "🔇 Unmute" : "🎤 Mute";

@@ -356,7 +356,8 @@
                                     <Button Content="🖥 Share screen…" IsVisible="{Binding CanShare}" Click="ShareScreen_Click" Margin="0,0,6,4" />
                                     <Button Content="Stop sharing" IsVisible="{Binding CanStopSharing}" Click="StopSharing_Click" Margin="0,0,6,4" />
                                 </WrapPanel>
-                                <ItemsControl ItemsSource="{Binding Shares}" IsVisible="{Binding HasShares}">
+                                <TextBlock Text="Someone is sharing a screen. Join voice to watch it." Opacity="0.7" IsVisible="{Binding NeedsVoiceToWatch}" />
+                                <ItemsControl ItemsSource="{Binding Shares}" IsVisible="{Binding CanWatchShares}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="local:ShareVm">
                                             <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,4">

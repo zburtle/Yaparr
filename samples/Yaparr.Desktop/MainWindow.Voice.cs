@@ -129,6 +129,9 @@ public partial class MainWindow
         var conv = _voiceConv;
         _voice = null;
         _voiceConv = null;
+        // Sharing a screen and watching one go with being in voice.
+        if (_sharer != null && _sharerConv == conv) StopSharingCore();
+        foreach (var window in _screenViews.Values.ToList()) window.Close();
         _voiceAudio?.Dispose();
         _voiceAudio = null;
         session?.Leave();
