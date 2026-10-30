@@ -59,7 +59,7 @@ public sealed partial class ChatNode
         if (now - room.VoiceTreeWantedSince < rank * _options.VoiceTreeRankDelay.TotalMilliseconds) return;
 
         _options.Log?.Invoke($"voice in '{room.Name}' has {count} people; starting a voice tree");
-        var group = CreateRootGroup(room, "voice", "voice", signed: false, upstream: true, _options.VoiceRootFanout);
+        var group = CreateRootGroup(room, "voice", "voice", signed: false, upstream: true, _options.VoiceRootFanout, kbps: 64);
         BindVoice(room, group);
         room.VoiceTreeWantedSince = 0;
     }

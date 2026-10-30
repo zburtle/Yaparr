@@ -9,6 +9,7 @@ internal sealed class ChildLink
 {
     public long HeardAt;
     public int Cap;
+    public long LastReplayAt;
 }
 
 internal sealed record MapNode(PeerId Parent, int Cap);
@@ -42,11 +43,33 @@ internal sealed class MediaGroup
     public readonly Dictionary<PeerId, MapNode> Map = new();
     public Action<MediaPacket>? Deliver;
 
+    /// <summary>Called at the root when a viewer needs a new key frame.</summary>
+    public Action? KeyRequested;
+    public long LastKeyRequestAt;
+
+    /// <summary>The stream is too big for the shared server, and every way we could reach the tree runs through it.</summary>
+    public bool ServerBlocked;
+    public int ServerRefusals;
+
+    // Packets recently seen, to give again to a child that missed them; and what we are missing ourselves.
+    public readonly Dictionary<uint, byte[]> Recent = new();
+    public readonly Queue<uint> RecentOrder = new();
+    public bool SeenAny, NackRunning;
+    public uint HighestSeq;
+    public readonly Dictionary<uint, long> Missing = new();
+    public long Retransmitted, Recovered;
+
     public uint Seq;
     public readonly Dictionary<ulong, SeqWindow> Windows = new();
     public readonly Dictionary<ulong, PeerId> Origins = new();
-    public readonly Queue<byte[]> Cache = new();
+    // The packets since the last key, by number, for a viewer that joins late or has to start over.
+    public readonly Dictionary<uint, byte[]> Cache = new();
     public int CacheBytes;
+    public bool CacheHasKey;
+    public uint CacheKeySeq, CacheMaxSeq;
+
+    /// <summary>True when the cache holds every packet from the key to the newest one, with no hole.</summary>
+    public bool CacheUsable => CacheHasKey && Cache.Count == (int)(CacheMaxSeq - CacheKeySeq) + 1;
     public long Forwarded, Delivered, Dropped, Duplicates;
 
     public string Kind => Info.Kind;
@@ -58,8 +81,17 @@ public sealed class MediaSource : IDisposable
 {
     private readonly ChatNode _node;
     private readonly MediaGroup _group;
+    private uint _frameId;
+    private Timer? _probe;
+    private long _lastSendAt;
+    private int _probesLeft;
 
-    internal MediaSource(ChatNode node, MediaGroup group) { _node = node; _group = group; }
+    internal MediaSource(ChatNode node, MediaGroup group)
+    {
+        _node = node;
+        _group = group;
+        group.KeyRequested = () => KeyFrameRequested?.Invoke();
+    }
 
     public MediaGroupInfo Info => _group.Info;
 
@@ -69,9 +101,59 @@ public sealed class MediaSource : IDisposable
     /// <summary>Sends one packet to everyone watching. Mark the first packet of each independently decodable section as a key.</summary>
     public void Send(ReadOnlySpan<byte> payload, bool isKey = false) => _node.PublishMedia(_group, payload, isKey);
 
+    /// <summary>
+    /// Sends one frame of any size (up to 4 MB): it is cut into packets, spread out over time so a big key frame does not
+    /// arrive as one burst, and put back together by <see cref="MediaView.FrameReceived"/>. A key frame is one a viewer can
+    /// start from; send one first, and again whenever <see cref="KeyFrameRequested"/> is raised.
+    /// </summary>
+    public async Task SendFrameAsync(ReadOnlyMemory<byte> frame, bool isKey, CancellationToken ct = default)
+    {
+        if (frame.Length == 0 || frame.Length > Fragments.MaxFrameBytes) throw new ArgumentException("A frame is between 1 byte and 4 MB.", nameof(frame));
+        int count = Fragments.Count(frame.Length, MaxPayload);
+        int per = MaxPayload - Fragments.HeaderSize;
+        uint id = Interlocked.Increment(ref _frameId);
+        // Fast enough for a key frame to go out in a fraction of a second, slow enough not to overflow the buffers on the way.
+        double rate = Math.Max(256 * 1024, _group.Info.Kbps * 125.0 * 4);
+        long started = System.Diagnostics.Stopwatch.GetTimestamp();
+        long sent = 0;
+        for (int i = 0; i < count; i++)
+        {
+            var piece = frame.Slice(i * per, Math.Min(per, frame.Length - i * per));
+            _node.PublishMedia(_group, Fragments.Pack(id, i, count, isKey, piece.Span), isKey && i == 0);
+            sent += piece.Length + MediaWire.HeaderSize + Fragments.HeaderSize;
+            double ahead = sent * 1000.0 / rate - System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+            if (ahead > 2) await Task.Delay((int)ahead, ct).ConfigureAwait(false);
+        }
+        ArmProbe();
+    }
+
+    // Receivers only notice a lost packet when a later one arrives. After the last frame nothing does, so two tiny
+    // packets follow a moment later; they carry numbers, and so show what is missing before them.
+    private void ArmProbe()
+    {
+        Volatile.Write(ref _lastSendAt, Environment.TickCount64);
+        Volatile.Write(ref _probesLeft, 2);
+        (_probe ??= new Timer(_ => Probe(), null, Timeout.Infinite, Timeout.Infinite)).Change(80, Timeout.Infinite);
+    }
+
+    private void Probe()
+    {
+        if (Environment.TickCount64 - Volatile.Read(ref _lastSendAt) < 70) return;
+        try { _node.PublishMedia(_group, new byte[] { 0 }, false); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { return; }
+        if (Interlocked.Decrement(ref _probesLeft) > 0) _probe?.Change(80, Timeout.Infinite);
+    }
+
+    /// <summary>A viewer lost something it cannot do without; send a key frame soon. Raised at most once a second.</summary>
+    public event Action? KeyFrameRequested;
+
     public MediaStatus Status => _node.StatusOf(_group);
 
-    public void Dispose() => _node.StopMedia(_group);
+    public void Dispose()
+    {
+        _probe?.Dispose();
+        _node.StopMedia(_group);
+    }
 }
 
 /// <summary>Watching a stream someone shares with the room. Dispose it to stop.</summary>
@@ -79,12 +161,16 @@ public sealed class MediaView : IDisposable
 {
     private readonly ChatNode _node;
     private readonly MediaGroup _group;
+    private readonly object _gate = new();
+    private FrameAssembler? _assembler;
+    private Timer? _timer;
+    private Action<MediaFrame>? _frame;
 
     internal MediaView(ChatNode node, MediaGroup group)
     {
         _node = node;
         _group = group;
-        lock (group.Gate) { group.Joined = true; group.Deliver = p => Received?.Invoke(p); }
+        lock (group.Gate) { group.Joined = true; group.Deliver = OnPacket; }
     }
 
     public MediaGroupInfo Info => _group.Info;
@@ -92,9 +178,56 @@ public sealed class MediaView : IDisposable
     /// <summary>A packet arrived. It can come from any thread.</summary>
     public event Action<MediaPacket>? Received;
 
+    /// <summary>
+    /// A whole frame arrived (for streams sent with <see cref="MediaSource.SendFrameAsync"/>), in order and without gaps.
+    /// After a loss nothing is delivered until the next key frame, which this asks the sharer for.
+    /// </summary>
+    public event Action<MediaFrame>? FrameReceived
+    {
+        add { lock (_gate) { _frame += value; _assembler ??= StartFraming(); } }
+        remove { lock (_gate) _frame -= value; }
+    }
+
+    public long FramesDelivered { get { lock (_gate) return _assembler?.Delivered ?? 0; } }
+    public long FramesLost { get { lock (_gate) return _assembler?.Lost ?? 0; } }
+
     public MediaStatus Status => _node.StatusOf(_group);
 
-    public void Dispose() => _node.LeaveMedia(_group);
+    private FrameAssembler StartFraming()
+    {
+        _timer = new Timer(_ => Feed(null), null, 100, 100);
+        return new FrameAssembler(reorderWaitMs: 250, Environment.TickCount64);
+    }
+
+    private void OnPacket(MediaPacket packet)
+    {
+        Received?.Invoke(packet);
+        Feed(packet);
+    }
+
+    private void Feed(MediaPacket? packet)
+    {
+        bool ask;
+        lock (_gate)
+        {
+            if (_assembler == null) return;
+            var ready = new List<MediaFrame>();
+            long now = Environment.TickCount64;
+            ask = packet != null ? _assembler.Add(packet.Origin, packet.Payload.Span, now, ready) : _assembler.Tick(now, ready);
+            foreach (var frame in ready)
+            {
+                try { _frame?.Invoke(frame); }
+                catch (Exception) { }
+            }
+        }
+        if (ask) _node.RequestKeyFrame(_group);
+    }
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+        _node.LeaveMedia(_group);
+    }
 }
 
 // Streams that many people take part in, such as a shared screen or a large voice channel, cannot be sent to each
@@ -104,7 +237,7 @@ public sealed class MediaView : IDisposable
 public sealed partial class ChatNode
 {
     private const int MaxMediaGroupsPerRoom = 16;
-    private const long PlaceValidMs = 10_000, RequestGapMs = 300, ExcludeMs = 30_000, DialGiveUpMs = 8_000;
+    private const long PlaceValidMs = 10_000, RequestGapMs = 300, ExcludeMs = 30_000, DialGiveUpMs = 8_000, ServerBlockedRetryMs = 10_000;
     private const int MaxCacheBytes = 512 * 1024, MediaGraceConnections = 24;
     private const int MediaGraceMs = 8_000;
 
@@ -130,11 +263,12 @@ public sealed partial class ChatNode
     /// </summary>
     /// <param name="signed">You sign every packet, so members passing it on cannot alter it. Only you send.</param>
     /// <param name="upstream">Everyone in the group can send, not only you.</param>
-    public MediaSource StartMedia(ChatRoom room, string kind, string name, bool signed = true, bool upstream = false, int? fanout = null)
+    /// <param name="kbps">The bitrate the stream needs, in kilobits per second. Streams above <see cref="ChatNodeOptions.MaxMeteredStreamKbps"/> are not carried over the shared relay server.</param>
+    public MediaSource StartMedia(ChatRoom room, string kind, string name, bool signed = true, bool upstream = false, int? fanout = null, int kbps = 1000)
     {
         if (!_rooms.ContainsKey(room.Key)) throw new InvalidOperationException("You are not in that room.");
         if (string.IsNullOrWhiteSpace(kind) || kind.Length > 16 || kind == "voice") throw new ArgumentException("Choose another kind of stream.", nameof(kind));
-        return new MediaSource(this, CreateRootGroup(room, kind, name, signed, upstream, fanout ?? _options.MediaRootFanout));
+        return new MediaSource(this, CreateRootGroup(room, kind, name, signed, upstream, fanout ?? _options.MediaRootFanout, kbps));
     }
 
     /// <summary>Starts receiving a stream someone shared (see <see cref="ChatRoom.MediaGroups"/>).</summary>
@@ -152,15 +286,15 @@ public sealed partial class ChatNode
     internal MediaStatus StatusOf(MediaGroup g)
     {
         lock (g.Gate)
-            return new MediaStatus(g.Id, g.IsRoot, g.Parent, g.Children.Keys.ToList(), g.Delivered, g.Forwarded, g.Dropped, g.Duplicates);
+            return new MediaStatus(g.Id, g.IsRoot, g.Parent, g.Children.Keys.ToList(), g.Delivered, g.Forwarded, g.Dropped, g.Duplicates, g.Retransmitted, g.Recovered, g.ServerBlocked);
     }
 
     // ---- starting, announcing, ending -------------------------------------------------------
 
-    private MediaGroup CreateRootGroup(ChatRoom room, string kind, string name, bool signed, bool upstream, int fanout)
+    private MediaGroup CreateRootGroup(ChatRoom room, string kind, string name, bool signed, bool upstream, int fanout, int kbps)
     {
         var id = Convert.ToHexString(RandomNumberGenerator.GetBytes(8)).ToLowerInvariant();
-        var ann = SignedMedia.Create(_identity, room.Key, kind, id, name, NextTimestamp(), active: true, Math.Clamp(fanout, 1, 64), signed, upstream);
+        var ann = SignedMedia.Create(_identity, room.Key, kind, id, name, NextTimestamp(), active: true, Math.Clamp(fanout, 1, 64), signed, upstream, Math.Clamp(kbps, 0, 100_000));
         var g = AddMediaGroup(room, ann) ?? throw new InvalidOperationException("Could not start the stream; try again.");
         lock (g.Gate) { g.IsRoot = true; g.Joined = upstream; }
         SendMediaAnnounce(room, g, active: true);
@@ -179,7 +313,7 @@ public sealed partial class ChatNode
             Ann = ann,
             RootPub = Convert.FromBase64String(ann.Pub),
             RootFanout = ann.Fanout,
-            Info = new MediaGroupInfo(ann.Group, ann.Kind, ann.Name, new PeerId(ann.From), ann.Signed, ann.Upstream),
+            Info = new MediaGroupInfo(ann.Group, ann.Kind, ann.Name, new PeerId(ann.From), ann.Signed, ann.Upstream, ann.Kbps),
             AnnSeenAt = Environment.TickCount64,
         };
         if (!_mediaByTag.TryAdd(g.Tag, g)) return null;
@@ -189,7 +323,7 @@ public sealed partial class ChatNode
 
     private void SendMediaAnnounce(ChatRoom room, MediaGroup g, bool active)
     {
-        var ann = SignedMedia.Create(_identity, room.Key, g.Info.Kind, g.Id, g.Info.Name, NextTimestamp(), active, g.RootFanout, g.Info.Signed, g.Info.Upstream);
+        var ann = SignedMedia.Create(_identity, room.Key, g.Info.Kind, g.Id, g.Info.Name, NextTimestamp(), active, g.RootFanout, g.Info.Signed, g.Info.Upstream, g.Info.Kbps);
         lock (g.Gate) { g.Ann = ann; g.LastAnnouncedAt = g.AnnSeenAt = Environment.TickCount64; }
         foreach (var member in room.MemberStates.Values)
             Send(member.Connection, new Wire { Type = Wire.Media, Room = RefTo(room, member), Ann = new[] { ann } });
@@ -311,6 +445,9 @@ public sealed partial class ChatNode
         });
     }
 
+    private bool TooBigForServer(MediaGroup g, PeerConnection conn) =>
+        g.Info.Kbps > _options.MaxMeteredStreamKbps && IsOnSharedServer(conn);
+
     private int FanoutOf(MediaGroup g) => g.IsRoot ? g.RootFanout : IsRelayCapable ? _options.MediaFanout : 0;
 
     // Gets us attached if we want to be: asks the root where to go, or goes where it said.
@@ -324,7 +461,8 @@ public sealed partial class ChatNode
         {
             if (!g.Joined || g.Parent != null) return;
             if (g.Exclude.Count > 0 && now - g.ExcludeSince > ExcludeMs) g.Exclude.Clear();
-            if (now - g.LastRequestAt < RequestGapMs) return;
+            // Having found that only the shared server would carry it, ask again only now and then.
+            if (now - g.LastRequestAt < (g.ServerBlocked ? ServerBlockedRetryMs : RequestGapMs)) return;
             g.LastRequestAt = now;
             if (g.Placed != null && now - g.PlacedAt > PlaceValidMs) g.Placed = null;
             placed = g.Placed;
@@ -333,7 +471,7 @@ public sealed partial class ChatNode
 
         if (placed is { } parent)
         {
-            if (!TryPeer(parent, out _))
+            if (!TryPeer(parent, out var parentState))
             {
                 EnsureConnected(parent);
                 lock (g.Gate)
@@ -344,6 +482,18 @@ public sealed partial class ChatNode
                 return;
             }
             lock (g.Gate) g.AttachDialSince = 0;
+            // A stream too big for the shared server is not carried over it: look for a parent we reach another way.
+            if (TooBigForServer(g, parentState.Connection))
+            {
+                lock (g.Gate)
+                {
+                    g.Exclude.Add(parent);
+                    g.ExcludeSince = now;
+                    g.Placed = null;
+                    if (++g.ServerRefusals >= 2) g.ServerBlocked = true;
+                }
+                return;
+            }
             SendMedia(parent, g, new WireMedia { Op = "attach", Cap = FanoutOf(g) });
             return;
         }
@@ -375,7 +525,115 @@ public sealed partial class ChatNode
             case "leave": OnMediaLeave(peer, g); break;
             case "ping": OnMediaPing(peer, g); break;
             case "link": OnMediaLink(peer, g, m); break;
+            case "key": OnMediaKey(peer, g); break;
+            case "nack": OnMediaNack(peer, g, m); break;
         }
+    }
+
+    // A viewer needs a place to start from. The cache of whoever is closest may have one; if not, the sharer has to make one.
+    internal void RequestKeyFrame(MediaGroup g)
+    {
+        PeerId? up;
+        bool root;
+        lock (g.Gate)
+        {
+            long now = Environment.TickCount64;
+            if (now - g.LastKeyRequestAt < 1000) return;
+            g.LastKeyRequestAt = now;
+            up = g.Parent;
+            root = g.IsRoot;
+        }
+        if (root) g.KeyRequested?.Invoke();
+        else if (up is { } parent) SendMedia(parent, g, new WireMedia { Op = "key" });
+    }
+
+    private void OnMediaKey(PeerState peer, MediaGroup g)
+    {
+        bool known, hasCache, replay = false;
+        lock (g.Gate)
+        {
+            known = g.Children.TryGetValue(peer.Id, out var child);
+            hasCache = g.CacheUsable;
+            long now = Environment.TickCount64;
+            if (known && hasCache && now - child!.LastReplayAt > 1500) { child.LastReplayAt = now; replay = true; }
+        }
+        if (!known) return;
+        if (replay) ReplayCache(g, peer);
+        // A copy was given a moment ago and is still arriving. Only when ours has holes, or is gone, the request goes up
+        // to someone whose copy is whole, and in the end to the sharer.
+        else if (!hasCache) RequestKeyFrame(g);
+    }
+
+    // A child is missing packets we may still have.
+    private void OnMediaNack(PeerState peer, MediaGroup g, WireMedia m)
+    {
+        if (m.Seqs == null) return;
+        var found = new List<byte[]>();
+        lock (g.Gate)
+        {
+            if (!g.Children.ContainsKey(peer.Id)) return;
+            foreach (var seq in m.Seqs.Take(32))
+                if (g.Recent.TryGetValue(seq, out var packet)) found.Add(packet);
+        }
+        foreach (var packet in found)
+        {
+            if (!MediaBudget.TryTake(packet.Length, Environment.TickCount64)) { lock (g.Gate) g.Dropped++; continue; }
+            try { peer.Connection.SendUnreliable(ChannelIds.Media, packet); }
+            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return; }
+            lock (g.Gate) g.Retransmitted++;
+        }
+    }
+
+    // Notes which packets of a one-way stream have arrived, and asks our parent for the ones that did not.
+    private void TrackSeq(MediaGroup g, uint seq)
+    {
+        bool gap = false;
+        lock (g.Gate)
+        {
+            long now = Environment.TickCount64;
+            if (!g.SeenAny) { g.SeenAny = true; g.HighestSeq = seq; return; }
+            int ahead = (int)(seq - g.HighestSeq);
+            if (ahead > 0)
+            {
+                if (ahead <= 256)
+                    for (uint s = g.HighestSeq + 1; s != seq; s++) { g.Missing[s] = now; gap = true; }
+                g.HighestSeq = seq;
+            }
+            else if (g.Missing.Remove(seq)) g.Recovered++;
+        }
+        if (gap) ScheduleNack(g);
+    }
+
+    private void ScheduleNack(MediaGroup g)
+    {
+        lock (g.Gate)
+        {
+            if (g.NackRunning) return;
+            g.NackRunning = true;
+        }
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                for (int round = 0; round < 4; round++)
+                {
+                    await Task.Delay(round == 0 ? 40 : 90, _cts.Token).ConfigureAwait(false);
+                    List<uint> want;
+                    PeerId? parent;
+                    lock (g.Gate)
+                    {
+                        long now = Environment.TickCount64;
+                        foreach (var old in g.Missing.Where(kv => now - kv.Value > 1500).Select(kv => kv.Key).ToList()) g.Missing.Remove(old);
+                        if (g.Missing.Count == 0) return;
+                        want = g.Missing.Where(kv => now - kv.Value >= 30).Select(kv => kv.Key).Take(32).ToList();
+                        parent = g.Parent;
+                    }
+                    if (want.Count > 0 && parent is { } p) SendMedia(p, g, new WireMedia { Op = "nack", Seqs = want.ToArray() });
+                }
+            }
+            catch (OperationCanceledException) { }
+            finally { lock (g.Gate) g.NackRunning = false; }
+        });
     }
 
     // At the root: someone wants in. Say who they should attach to.
@@ -452,7 +710,15 @@ public sealed partial class ChatNode
         lock (g.Gate)
         {
             if (!g.Joined || g.Parent != null) return;
-            if (parent == null) { g.Placed = null; g.LastRequestAt = now + 1500; return; }   // no room anywhere yet: try again shortly
+            if (parent == null)
+            {
+                // No room anywhere that we have not ruled out. The ones we gave up on may be fine again (a network
+                // blip looks like a dead parent), and they are all there is, so they get another chance.
+                g.Placed = null;
+                g.Exclude.Clear();
+                g.LastRequestAt = now + 1500;
+                return;
+            }
             g.Placed = parent;
             g.PlacedAt = now;
             g.LastRequestAt = 0;
@@ -468,7 +734,8 @@ public sealed partial class ChatNode
         lock (g.Gate)
         {
             bool already = g.Children.ContainsKey(peer.Id);
-            accept = (g.IsRoot || g.Parent != null) && peer.Id != g.Parent && (already || g.Children.Count < FanoutOf(g));
+            accept = (g.IsRoot || g.Parent != null) && peer.Id != g.Parent && (already || g.Children.Count < FanoutOf(g))
+                && !TooBigForServer(g, peer.Connection);
             if (accept) g.Children[peer.Id] = new ChildLink { HeardAt = Environment.TickCount64, Cap = cap };
         }
         SendMedia(peer.Id, g, new WireMedia { Op = accept ? "ok" : "refuse" });
@@ -492,6 +759,8 @@ public sealed partial class ChatNode
                 g.AttachDialSince = g.UnreachableSince = 0;
                 g.Exclude.Clear();
                 g.Suspect = false;
+                g.ServerBlocked = false;
+                g.ServerRefusals = 0;
             }
         }
         if (!wanted) { SendMedia(peer.Id, g, new WireMedia { Op = "leave" }); return; }
@@ -649,7 +918,8 @@ public sealed partial class ChatNode
         uint seq;
         lock (g.Gate) seq = ++g.Seq;
         var packet = MediaWire.Pack(g.Tag, MediaWire.Origin8(Id), seq, MediaWire.DefaultHops, isKey, payload, g.Info.Signed ? _identity : null);
-        Remember(g, packet, isKey);
+        Remember(g, packet, seq, isKey);
+        StoreRecent(g, seq, packet);
         SendToNeighbours(g, packet, except: null, charge: false);
     }
 
@@ -672,35 +942,75 @@ public sealed partial class ChatNode
     }
 
     // The packets since the last key, so a newcomer can start straight away without asking the sharer for another key.
-    private void Remember(MediaGroup g, byte[] packet, bool isKey)
+    private void Remember(MediaGroup g, byte[] packet, uint seq, bool isKey)
     {
         if (g.Kind == "voice") return;
         lock (g.Gate)
         {
-            if (isKey) { g.Cache.Clear(); g.CacheBytes = 0; }
-            else if (g.Cache.Count == 0) return;
-            if (g.CacheBytes + packet.Length > MaxCacheBytes) { g.Cache.Clear(); g.CacheBytes = 0; return; }
-            g.Cache.Enqueue(packet);
+            if (isKey)
+            {
+                // A key that turns up late (given again after a loss) is not a new start.
+                if (g.CacheHasKey && (int)(seq - g.CacheKeySeq) <= 0) return;
+                g.Cache.Clear();
+                g.CacheBytes = 0;
+                g.CacheHasKey = true;
+                g.CacheKeySeq = g.CacheMaxSeq = seq;
+            }
+            else if (!g.CacheHasKey || (int)(seq - g.CacheKeySeq) < 0) return;
+            if (g.Cache.ContainsKey(seq)) return;
+            if (g.CacheBytes + packet.Length > MaxCacheBytes) { g.Cache.Clear(); g.CacheBytes = 0; g.CacheHasKey = false; return; }
+            g.Cache[seq] = packet;
             g.CacheBytes += packet.Length;
+            if ((int)(seq - g.CacheMaxSeq) > 0) g.CacheMaxSeq = seq;
         }
     }
 
+    // The last few hundred packets of a one-way stream, for children that missed one.
+    private void StoreRecent(MediaGroup g, uint seq, byte[] packet)
+    {
+        if (g.Info.Upstream) return;
+        lock (g.Gate)
+        {
+            if (!g.Recent.TryAdd(seq, packet)) return;
+            g.RecentOrder.Enqueue(seq);
+            while (g.RecentOrder.Count > 600) g.Recent.Remove(g.RecentOrder.Dequeue());
+        }
+    }
+
+    // Gives a neighbour the packets since the last key, a few at a time: a long burst overflows the receiver's buffer
+    // and loses the very packets that were meant to make up for a loss.
     private void ReplayCache(MediaGroup g, PeerState to)
     {
         byte[][] packets;
-        lock (g.Gate) packets = g.Cache.ToArray();
-        foreach (var p in packets)
+        lock (g.Gate)
         {
-            try { to.Connection.SendUnreliable(ChannelIds.Media, p); }
-            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return; }
+            if (!g.CacheUsable) return;
+            packets = g.Cache.OrderBy(kv => (int)(kv.Key - g.CacheKeySeq)).Select(kv => kv.Value).ToArray();
         }
+        if (packets.Length == 0) return;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                for (int i = 0; i < packets.Length; i++)
+                {
+                    // Marked as a replay: the receiver may have had these numbers before, and needs them again to start over.
+                    var packet = (byte[])packets[i].Clone();
+                    packet[0] |= MediaWire.ReplayFlag;
+                    try { to.Connection.SendUnreliable(ChannelIds.Media, packet); }
+                    catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return; }
+                    if ((i + 1) % 12 == 0) await Task.Delay(10, _cts.Token).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException) { }
+        });
     }
 
     private void OnMediaData(PeerConnection conn, byte channel, ReadOnlyMemory<byte> data, bool reliable)
     {
         if (reliable || conn.RemoteId is not { } from) return;
         var span = data.Span;
-        if (!MediaWire.TryParseHeader(span, out var tag, out var origin, out var seq, out var hops, out var isKey)) return;
+        if (!MediaWire.TryParseHeader(span, out var tag, out var origin, out var seq, out var hops, out var isKey, out var isReplay)) return;
         if (!_mediaByTag.TryGetValue(tag, out var g)) return;
 
         int tail = g.Info.Signed ? MediaWire.SignatureSize : 0;
@@ -721,13 +1031,21 @@ public sealed partial class ChatNode
         lock (g.Gate)
         {
             if (!g.Windows.TryGetValue(origin, out var window)) g.Windows[origin] = window = new SeqWindow();
-            if (!window.Accept(seq)) { g.Duplicates++; return; }
+            if (!isReplay && !window.Accept(seq)) { g.Duplicates++; return; }
             if (g.Parent == from) g.ParentHeardAt = Environment.TickCount64;
             else if (g.Children.TryGetValue(from, out var child)) child.HeardAt = Environment.TickCount64;
         }
 
         var packet = data.ToArray();
-        Remember(g, packet, isKey);
+        // What we keep for others is the packet as it was first sent, not as it happened to reach us.
+        if (isReplay)
+        {
+            packet[0] &= unchecked((byte)~MediaWire.ReplayFlag);
+            lock (g.Gate) if (g.Missing.Remove(seq)) g.Recovered++;
+        }
+        Remember(g, packet, seq, isKey);
+        StoreRecent(g, seq, packet);
+        if (!g.Info.Upstream && !isReplay) TrackSeq(g, seq);
 
         Action<MediaPacket>? deliver;
         bool joined;
@@ -736,11 +1054,11 @@ public sealed partial class ChatNode
         {
             var payload = new ReadOnlyMemory<byte>(packet, MediaWire.HeaderSize, packet.Length - MediaWire.HeaderSize - tail);
             lock (g.Gate) g.Delivered++;
-            try { deliver(new MediaPacket(who, payload, isKey)); }
+            try { deliver(new MediaPacket(who, payload, isKey, seq)); }
             catch (Exception ex) { _options.Log?.Invoke($"a stream handler failed: {ex.Message}"); }
         }
 
-        if (hops > 1)
+        if (hops > 1 && !isReplay)
         {
             var onward = (byte[])packet.Clone();
             onward[17] = (byte)(hops - 1);

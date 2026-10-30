@@ -54,6 +54,12 @@ public sealed class ChatNodeOptions
     /// <summary>How many other members a viewer passes a stream on to, when its connection can relay. Zero for one that cannot.</summary>
     public int MediaFanout { get; init; } = 3;
 
+    /// <summary>
+    /// Streams that need more than this many kilobits per second are not carried over the shared TURN server, whose
+    /// bandwidth is limited. A member who can only reach the tree through it cannot watch them. Voice is well below it.
+    /// </summary>
+    public int MaxMeteredStreamKbps { get; init; } = 128;
+
     /// <summary>How many members the sharer of a stream sends to itself.</summary>
     public int MediaRootFanout { get; init; } = 3;
 

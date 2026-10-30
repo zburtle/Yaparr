@@ -10,7 +10,7 @@ namespace Yaparr.Tests;
 
 public class MediaTreeTests
 {
-    private sealed class Cluster : IDisposable
+    internal sealed class Cluster : IDisposable
     {
         public readonly InMemoryDiscoveryHub Hub = new();
         public readonly List<ChatNode> Nodes = new();

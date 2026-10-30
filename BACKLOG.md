@@ -84,7 +84,9 @@ Built for screen sharing and large voice channels. Not done:
 - The members that can be parents are those with a relay-capable connection; nothing measures upload speed, so `MediaFanout` and `MediaBytesPerSecond` are fixed numbers. Scale them to a measured upload (also the Relaying item about rate limits).
 - Placement is only swapped at the root: if the sharer's places go to members who cannot pass the stream on, one steps aside; lower down, a capable newcomer waits if every place is held by a member who cannot.
 - The root believes what members report about who sits under whom. A member can only mislead where newcomers are placed, but it should be checked or repaired by the root asking.
-- No adaptive bitrate and no quality layers: every viewer gets the same stream, and a viewer with a bad link just loses packets. Forwarders could drop layers per child.
+- No adaptive bitrate and no quality layers: every viewer gets the same stream, and a viewer with a bad link just loses packets. Forwarders could drop layers per child. A viewer whose only way in is the shared server gets nothing from a big stream; a lower layer would give it something.
+- Lost packets are asked for again from the parent, which keeps about 600; there is no forward error correction, so a burst of loss longer than that, or a parent that missed the same packet, costs a key frame. Pacing is a fixed multiple of the declared bitrate, not what the link can take. Measure on a real link with loss (and tune the quarter-second wait for a late frame, the four requests and their spacing).
+- The probe packets after a frame (two, 80 ms apart) are an extra 20 or so bytes; a stream that never pauses does not need them.
 - Forwarders see the stream (they are viewers). Members who forward without viewing, such as the planned volunteer relays, would need a key held only by the viewers.
 - A viewer sees the addresses of its parent and children, whom it might not otherwise connect to in a large room.
 - The Desktop app has nothing for it yet: voice trees work without any UI, and a screen sharing UI needs the capture work above.

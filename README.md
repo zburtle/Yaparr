@@ -295,9 +295,24 @@ the stream is announced like a voice beacon, signed by the sharer.
 - **What is protected.** Packets are encrypted hop by hop like everything else. In a `signed` stream the sharer signs every
   packet and a member passing it on cannot change it or add to it; the viewers check. Forwarders see the content, as they
   are viewers themselves. Each member forwards at most `MediaBytesPerSecond` (about 3 Mbit/s) for others.
-- **Using it.** `node.StartMedia(room, kind, name)` returns a `MediaSource` to `Send` packets into; `room.MediaGroups` lists
-  what is shared; `node.WatchMedia(room, id)` returns a `MediaView` with a `Received` event. Packet contents are up to
-  the caller. The library does not capture or encode a screen.
+- **Using it.** `node.StartMedia(room, kind, name, kbps: 1000)` returns a `MediaSource`; `room.MediaGroups` lists what is
+  shared; `node.WatchMedia(room, id)` returns a `MediaView`. For small things use `Send` and the `Received` event, one
+  packet each. For video use `await source.SendFrameAsync(frame, isKey)` (a frame can be up to 4 MB) and the
+  `FrameReceived` event. The library does not capture or encode a screen.
+- **Frames and loss.** A frame is cut into packets, spread out over time (at about four times its declared bitrate, so a
+  big key frame does not arrive as one burst) and put back together by the viewer, who gets frames in order and without
+  gaps. Every member keeps the last 600 or so packets. A member that sees a gap asks its parent for the missing
+  packets, up to four times, so one lost packet costs a round trip and not a key frame; after the last frame, two tiny
+  probe packets show what was missing at the end. A frame that is still incomplete after a quarter of a second counts as
+  lost: the viewer drops everything until the next key frame and asks for one. The request goes up the tree, and the
+  first member whose copy runs without a hole from the key to now replays it (paced, so the replay itself is not lost);
+  only if nobody has one, the sharer gets `KeyFrameRequested` (at most once a second) and should send a key frame. A
+  viewer that joins late is given the same copy at once. A replay starts again from the key, so the viewer is handed
+  every frame since it, quickly; it is a catch-up, not a jump to the present.
+- **The shared server.** The TURN server's bandwidth is limited, so a stream that declares more than
+  `MaxMeteredStreamKbps` (128) is not carried over a connection that runs through it. A member who can only reach the tree
+  that way is not attached; `MediaStatus.OverServer` says so, and it tries again every ten seconds. Voice (declared at
+  64) is carried as before. A stream sent without a declared bitrate is taken to be 1000.
 - **Voice.** When a voice channel reaches `VoiceTreeThreshold` people, the member who sorts first by id and can relay starts
   a tree (the others wait a little longer for each place further down, so only one does). Everybody joins it and sends
   their audio up it; the root and the other members pass it on. The root sends to `VoiceRootFanout` (6) members. Until
