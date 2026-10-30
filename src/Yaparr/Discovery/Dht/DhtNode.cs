@@ -62,6 +62,25 @@ public sealed class DhtNode : IDisposable
     private readonly DhtOptions _options;
     private readonly RoutingTable _table = new();
     private readonly ConcurrentDictionary<string, Pending> _pending = new();
+
+    // Nodes that did not answer, and when. About half of the nodes other nodes tell us about never answer; without this every
+    // lookup asks them all again and waits for each to time out.
+    private readonly ConcurrentDictionary<IPEndPoint, long> _silent = new();
+    private const long SilentForMs = 5 * 60_000;
+    private const int MaxSilentRemembered = 2_000;
+
+    private bool IsKnownSilent(IPEndPoint ep) =>
+        _silent.TryGetValue(ep, out var at) && Environment.TickCount64 - at < SilentForMs;
+
+    private void RememberSilent(IPEndPoint ep)
+    {
+        if (_silent.Count >= MaxSilentRemembered)
+            foreach (var old in _silent.Where(kv => Environment.TickCount64 - kv.Value >= SilentForMs).Select(kv => kv.Key).ToList()) _silent.TryRemove(old, out _);
+        if (_silent.Count < MaxSilentRemembered) _silent[ep] = Environment.TickCount64;
+    }
+
+    /// <summary>How many nodes are being skipped because they did not answer recently.</summary>
+    public int SilentNodes => _silent.Count(kv => Environment.TickCount64 - kv.Value < SilentForMs);
     private readonly SemaphoreSlim _bootstrapLock = new(1, 1);
     private readonly CancellationTokenSource _cts = new();
     private int _nextTid;
@@ -297,7 +316,7 @@ public sealed class DhtNode : IDisposable
 
         void Offer(DhtContact c)
         {
-            if (c.Id.Equals(Id)) return;
+            if (c.Id.Equals(Id) || IsKnownSilent(c.EndPoint)) return;
             candidates.TryAdd(c.EndPoint, new Candidate { Contact = c });
         }
         foreach (var c in _table.Closest(target, _options.K * 2)) Offer(c);
@@ -336,7 +355,11 @@ public sealed class DhtNode : IDisposable
             {
                 cand.State = State.Failed;
                 // A node that does not know BEP 44 answers "get" with an error; that does not make it a dead node.
-                if (kind != LookupKind.Get) _table.Remove(cand.Contact.EndPoint);
+                if (kind != LookupKind.Get)
+                {
+                    _table.Remove(cand.Contact.EndPoint);
+                    RememberSilent(cand.Contact.EndPoint);
+                }
                 return;
             }
 
@@ -427,6 +450,7 @@ public sealed class DhtNode : IDisposable
                 if (msg.Bytes("t") is { } tid && _pending.TryGetValue(Convert.ToHexString(tid), out var p) && p.From.Equals(from)
                     && msg.Dict("r") is { } r)
                 {
+                    _silent.TryRemove(from, out _);
                     if (r.Bytes("id") is { Length: DhtId.Length } id) _table.Add(new DhtContact(new DhtId(id), from));
                     p.Completion.TrySetResult(r);
                 }

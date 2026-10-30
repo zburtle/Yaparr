@@ -101,6 +101,42 @@ public class DhtSpeedTests
     }
 
     [Fact]
+    public async Task A_second_search_does_not_wait_for_nodes_that_stayed_silent_the_first_time()
+    {
+        using var liveMux = new UdpMux();
+        using var live = new DhtNode(liveMux, new DhtOptions { ReadOnly = false, BootstrapHosts = Array.Empty<string>() });
+        liveMux.Start();
+        var topic = System.Security.Cryptography.SHA1.HashData("silent-twice"u8);
+
+        using (var aMux = new UdpMux())
+        using (var a = new DhtNode(aMux, new DhtOptions { BootstrapHosts = new[] { $"127.0.0.1:{liveMux.LocalPort}" } }))
+        {
+            aMux.Start();
+            Assert.True(await a.AnnounceAsync(topic) >= 1);
+        }
+
+        // The node that knows the peer is the farthest of all from the topic, behind 30 that never answer.
+        var far = (byte[])topic.Clone();
+        far[0] ^= 0xFF;
+        using var directory = new Directory(30, far, liveMux.LocalPort);
+        using var bMux = new UdpMux();
+        using var b = new DhtNode(bMux, new DhtOptions
+        {
+            BootstrapHosts = new[] { $"127.0.0.1:{directory.Port}" },
+            FallbackSeeds = Array.Empty<string>(),
+            QueryTimeout = TimeSpan.FromSeconds(1),
+        });
+        bMux.Start();
+
+        Assert.Single(await b.GetPeersAsync(topic));
+        Assert.True(b.SilentNodes >= 20, $"only {b.SilentNodes} nodes were remembered as silent");
+
+        var watch = Stopwatch.StartNew();
+        Assert.Single(await b.GetPeersAsync(topic));
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(2.5), $"the second search took {watch.Elapsed.TotalSeconds:0.0} s");
+    }
+
+    [Fact]
     public void Searches_come_quickly_while_alone_and_at_the_usual_pace_otherwise()
     {
         var interval = TimeSpan.FromSeconds(30);
