@@ -78,9 +78,18 @@ public class DialLimitTests
             Log = log.Enqueue,
         });
         node.Start();
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1.5));
-        try { await node.OpenDirectChatAsync(new Yaparr.Identity.PeerId(new string('a', 64)), cts.Token); }
-        catch (OperationCanceledException) { }
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var search = Task.Run(async () =>
+        {
+            try { await node.OpenDirectChatAsync(new Yaparr.Identity.PeerId(new string('a', 64)), cts.Token); }
+            catch (OperationCanceledException) { }
+        });
+        // A busy machine can take a while to get the first packets out; wait for them instead of judging after a fixed time,
+        // then give any further dials a moment (a second round only starts three seconds after the first).
+        try { await TestUtil.WaitFor(() => silent.Contacted >= 1, 20_000); } catch (TimeoutException) { }
+        await Task.Delay(1000);
+        cts.Cancel();
+        await search;
 
         Assert.True(silent.Contacted is >= 1 and <= 16, $"contacted {silent.Contacted} addresses; node log: {string.Join(" | ", log)}");
     }
