@@ -4,11 +4,14 @@ using System.Text;
 internal static class Scripts
 {
     /// <summary>Runs once when a machine first starts: the tools for shaping the network and, for the TURN machine, the server.</summary>
-    public static string CloudInit(bool turn, string turnPassword)
+    /// <param name="shaping">Whether the scenario degrades the network (tc netem), which needs a large kernel module package.
+    /// Installing that on many small machines at once can make them too slow to answer, so it is left out when not needed.</param>
+    /// <param name="baked">The machine starts from the snapshot made by 'bake', so nothing needs installing.</param>
+    public static string CloudInit(bool turn, string turnPassword, bool shaping = true, bool baked = false)
     {
         var sb = new StringBuilder();
         sb.AppendLine("#cloud-config");
-        sb.AppendLine("package_update: true");
+        if (!baked && (turn || shaping)) sb.AppendLine("package_update: true");
         if (turn)
         {
             sb.AppendLine("write_files:");
@@ -22,17 +25,63 @@ internal static class Scripts
             })
                 sb.AppendLine("      " + line);
         }
+        if (baked)
+        {
+            // An empty runcmd list is an error for cloud-init, so the key is only written when there is something to run.
+            if (shaping || turn) sb.AppendLine("runcmd:");
+            if (shaping) sb.AppendLine("  - [ sh, -c, \"modprobe sch_netem || true\" ]");
+            if (turn) sb.AppendLine("  - [ sh, -c, \"systemctl enable coturn && systemctl restart coturn\" ]");
+            return sb.ToString().Replace("\r\n", "\n");
+        }
         sb.AppendLine("runcmd:");
-        sb.AppendLine("  - [ sh, -c, \"DEBIAN_FRONTEND=noninteractive apt-get install -y -qq iproute2 iptables linux-modules-extra-$(uname -r) || true\" ]");
-        sb.AppendLine("  - [ sh, -c, \"modprobe sch_netem || true\" ]");
+        if (shaping)
+        {
+            sb.AppendLine("  - [ sh, -c, \"DEBIAN_FRONTEND=noninteractive apt-get install -y -qq iproute2 iptables linux-modules-extra-$(uname -r) || true\" ]");
+            sb.AppendLine("  - [ sh, -c, \"modprobe sch_netem || true\" ]");
+        }
+        else
+            sb.AppendLine("  - [ sh, -c, \"command -v iptables >/dev/null && command -v ip >/dev/null || (apt-get update -qq; DEBIAN_FRONTEND=noninteractive apt-get install -y -qq iproute2 iptables) || true\" ]");
         if (turn)
         {
             sb.AppendLine("  - [ sh, -c, \"DEBIAN_FRONTEND=noninteractive apt-get install -y -qq coturn\" ]");
             sb.AppendLine("  - [ sh, -c, \"sed -i 's/^#TURNSERVER_ENABLED=1/TURNSERVER_ENABLED=1/' /etc/default/coturn || true\" ]");
             sb.AppendLine("  - [ sh, -c, \"systemctl enable coturn && systemctl restart coturn\" ]");
         }
-        return sb.ToString();
+        return sb.ToString().Replace("\r\n", "\n");
     }
+
+    /// <summary>First-start script for the machine that becomes the snapshot: every tool a scenario can need, nothing running.</summary>
+    public static string BakeInit() => string.Join("\n", new[]
+    {
+        "#cloud-config",
+        "package_update: true",
+        "runcmd:",
+        "  - [ sh, -c, \"DEBIAN_FRONTEND=noninteractive apt-get install -y -qq iproute2 iptables coturn\" ]",
+        "  - [ sh, -c, \"DEBIAN_FRONTEND=noninteractive apt-get install -y -qq linux-modules-extra-$(uname -r) || true\" ]",
+        "  - [ sh, -c, \"systemctl disable --now coturn || true\" ]",
+        "",
+    });
+
+    /// <summary>
+    /// What a machine started from the snapshot still needs before it is ready: the traffic shaping module, and for the
+    /// TURN machine the server once its settings file has been written.
+    /// </summary>
+    public static string BakedReady(bool turn, bool shaping)
+    {
+        var sb = new StringBuilder();
+        if (shaping) sb.AppendLine("modprobe sch_netem || true");
+        if (turn)
+        {
+            sb.AppendLine("for i in $(seq 1 60); do grep -q '^user=nettest:' /etc/turnserver.conf 2>/dev/null && break; sleep 2; done");
+            sb.AppendLine("grep -q '^user=nettest:' /etc/turnserver.conf");
+            sb.AppendLine("systemctl enable coturn >/dev/null 2>&1; systemctl restart coturn");
+        }
+        sb.AppendLine("true");
+        return sb.ToString().Replace("\r\n", "\n");
+    }
+
+    /// <summary>Checks on the machine that everything the scenarios use is there.</summary>
+    public const string BakeCheck = "command -v iptables && command -v ip && command -v tc && command -v turnserver && (modprobe sch_netem && echo netem-ok)";
 
     /// <summary>The network interface that reaches the internet.</summary>
     public const string FindInterface = "ip -o -4 route show to default | awk '{print $5}' | head -n 1";

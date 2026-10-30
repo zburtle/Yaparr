@@ -12,6 +12,12 @@ internal sealed class Settings
 
     public string Size { get; set; } = "s-1vcpu-1gb";
     public string Image { get; set; } = "ubuntu-24-04-x64";
+    /// <summary>
+    /// A snapshot of a machine with everything installed (made by the 'bake' command). When it exists and covers a node's
+    /// region, nodes start from it and skip installing packages. Set to an empty string to always use the plain image.
+    /// </summary>
+    public string SnapshotName { get; set; } = "yaparr-nettest-base";
+
     public string SshUser { get; set; } = "root";
 
     /// <summary>The tool refuses to create more machines than this in one run.</summary>

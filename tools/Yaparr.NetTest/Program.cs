@@ -2,6 +2,7 @@
 //
 //   Yaparr.NetTest run <scenario.json> [--local] [--dry-run] [--keep] [--settings nettest.json]
 //   Yaparr.NetTest setup             First time: makes an SSH key, adds it to your DigitalOcean account, writes nettest.json.
+//   Yaparr.NetTest bake              Makes a snapshot with the tools installed so machines start ready (--regions a,b to limit, --delete to remove).
 //   Yaparr.NetTest check             Verifies your DigitalOcean token and SSH key.
 //   Yaparr.NetTest cleanup           Deletes every machine the tool created (tag yaparr-nettest).
 //   Yaparr.NetTest list              Lists the scenarios that come with the tool.
@@ -62,6 +63,14 @@ try
                 return 0;
             }
 
+        case "bake":
+            {
+                var settings = Settings.Load(Option("--settings"));
+                var delete = Flag("--delete");
+                var regions = Option("--regions")?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                return await Bake.RunAsync(settings, regions, delete, cts.Token);
+            }
+
         case "cleanup":
             {
                 var settings = Settings.Load(Option("--settings"));
@@ -84,7 +93,7 @@ try
             }
 
         default:
-            Console.WriteLine("usage: Yaparr.NetTest setup | run <scenario> [--local] [--dry-run] [--keep] | check | cleanup | list");
+            Console.WriteLine("usage: Yaparr.NetTest setup | bake [--regions a,b] [--delete] | run <scenario> [--local] [--dry-run] [--keep] | check | cleanup | list");
             return 2;
     }
 }

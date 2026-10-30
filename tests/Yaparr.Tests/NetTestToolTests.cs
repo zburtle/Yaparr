@@ -92,6 +92,41 @@ public class NetTestToolTests
         Assert.Contains("defer: true", turn);
     }
 
+    [Fact]
+    public void A_machine_started_from_the_snapshot_installs_nothing()
+    {
+        var baked = Scripts.CloudInit(turn: false, "", shaping: true, baked: true);
+        Assert.DoesNotContain("apt-get", baked);
+        Assert.DoesNotContain("package_update", baked);
+        Assert.Contains("modprobe sch_netem", baked);
+
+        var turn = Scripts.CloudInit(turn: true, "s3cret", shaping: false, baked: true);
+        Assert.DoesNotContain("apt-get", turn);
+        Assert.Contains("systemctl enable coturn && systemctl restart coturn", turn);
+        Assert.Contains("user=nettest:s3cret", turn);
+
+        // The machine that becomes the snapshot has every tool and leaves the TURN server off.
+        // A machine with nothing to run must not get an empty runcmd, which cloud-init rejects.
+        var idle = Scripts.CloudInit(turn: false, "", shaping: false, baked: true);
+        Assert.DoesNotContain("runcmd", idle);
+
+        // Such a machine is ready without waiting for cloud-init, which can stay busy with the provider's own installer.
+        Assert.Contains("modprobe sch_netem", Scripts.BakedReady(turn: false, shaping: true));
+        Assert.Contains("systemctl restart coturn", Scripts.BakedReady(turn: true, shaping: false));
+        Assert.DoesNotContain("coturn", Scripts.BakedReady(turn: false, shaping: false));
+
+        // Scripts run on Linux, where a carriage return would become part of the last word of a line.
+        Assert.DoesNotContain("\r", Scripts.BakedReady(turn: true, shaping: true));
+        Assert.DoesNotContain("\r", Scripts.CloudInit(turn: true, "x", shaping: true));
+        Assert.DoesNotContain("\r", Scripts.CloudInit(turn: false, "", shaping: false, baked: true));
+
+        var bake = Scripts.BakeInit();
+        Assert.Contains("iptables", bake);
+        Assert.Contains("coturn", bake);
+        Assert.Contains("linux-modules-extra", bake);
+        Assert.Contains("disable --now coturn", bake);
+    }
+
     // ---- judging a run -----------------------------------------------------------------------
 
     private static NodeResult Node(string name, string role, params string[] lines)

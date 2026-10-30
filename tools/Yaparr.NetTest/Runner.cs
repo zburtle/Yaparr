@@ -176,6 +176,16 @@ internal sealed class Runner
         string runTag = "yaparr-run-" + _runId;
         var tags = new[] { _settings.Tag, runTag };
 
+        DigitalOcean.SnapshotInfo? snapshot = null;
+        if (_settings.SnapshotName.Length > 0)
+        {
+            snapshot = await _api.FindSnapshotAsync(_settings.SnapshotName, ct) ?? await _api.FindSnapshotAsync(_settings.SnapshotName + "-new", ct);
+            Log(snapshot == null
+                ? $"No snapshot named '{_settings.SnapshotName}': machines install their tools at first start. Run 'bake' once to make starts faster."
+                : $"Snapshot '{snapshot.Name}' is available in {string.Join(", ", snapshot.Regions)}.");
+        }
+
+        var bakedNames = new HashSet<string>();
         Log($"Creating {need} machines...");
         var created = new List<(string Name, Task<DigitalOcean.DropletInfo> Task, bool Turn)>();
         foreach (var n in _scenario.Nodes)
@@ -184,7 +194,11 @@ internal sealed class Runner
 
         async Task<DigitalOcean.DropletInfo> CreateAsync(string name, string region, bool turn)
         {
-            var d = await _api!.CreateAsync(name, region, _settings.Size, _settings.Image, keyId, tags, Scripts.CloudInit(turn, _turnPassword), ct);
+            bool baked = snapshot != null && snapshot.Regions.Contains(region);
+            if (baked) lock (bakedNames) bakedNames.Add(name);
+            if (snapshot != null && !baked) Log($"  the snapshot is not in {region}; {name} installs its tools at first start (bake with that region to fix).");
+            var d = await _api!.CreateAsync(name, region, _settings.Size, baked ? snapshot!.Id : _settings.Image, keyId, tags,
+                Scripts.CloudInit(turn, _turnPassword, _scenario.Timeline.Any(t => t.Action == "netem"), baked), ct);
             return await _api.WaitActiveAsync(d.Id, ct);
         }
 
@@ -193,6 +207,7 @@ internal sealed class Runner
         {
             var d = await task;
             var machine = new SshMachine(turn ? "turn" : name, d.Ip!, _settings.SshUser, _settings.SshKeyFile);
+            if (bakedNames.Contains(d.Name)) machine.ReadyScript = Scripts.BakedReady(turn, _scenario.Timeline.Any(t => t.Action == "netem"));
             all.Add(machine);
             if (turn) { _turnAddress = $"{d.Ip}:3478"; _machines["turn"] = machine; }
             else _machines[name] = machine;
@@ -202,15 +217,22 @@ internal sealed class Runner
         Log("Waiting for the machines to answer and finish setting themselves up...");
         using var ready = CancellationTokenSource.CreateLinkedTokenSource(ct);
         Exception? firstFailure = null;
+        var readyNames = new HashSet<string>();
         await Task.WhenAll(all.Select(async m =>
         {
-            try { await m.WaitReadyAsync(ready.Token, Log); }
+            try { await m.WaitReadyAsync(ready.Token, Log); lock (readyNames) readyNames.Add(m.Name); }
             catch (Exception ex)
             {
                 // The first real failure is the cause; the others only stop because of it.
                 if (Interlocked.CompareExchange(ref firstFailure, ex, null) == null) ready.Cancel();
             }
         }));
+        if (firstFailure != null && !ct.IsCancellationRequested)
+        {
+            Log("These machines were not ready; checking why:");
+            await Task.WhenAll(all.Where(m => !readyNames.Contains(m.Name)).Select(async m =>
+                Log($"  {m.Name} ({m.Address}): {await m.DiagnoseAsync(ct)}")));
+        }
         if (firstFailure != null && !ct.IsCancellationRequested) throw new InvalidOperationException(firstFailure.Message, firstFailure);
         ct.ThrowIfCancellationRequested();
         Log("Copying the agent...");

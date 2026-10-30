@@ -41,14 +41,24 @@ internal abstract class Machine
     /// <summary>Process id of the agent as it said in its first line, for kill and freeze.</summary>
     public int AgentPid { get; set; }
 
+    /// <summary>
+    /// For a machine started from the snapshot: what to run once it answers instead of waiting for cloud-init to finish.
+    /// (On a fresh droplet cloud-init can stay busy for minutes with the provider's own agent installer waiting on
+    /// the package lock, although nothing of ours is left to do.)
+    /// </summary>
+    public string? ReadyScript { get; set; }
+
     public abstract Task<string> RunAsync(string shellCommand, TimeSpan timeout, CancellationToken ct);
     public abstract Task WaitReadyAsync(CancellationToken ct, Action<string> log);
+
+    /// <summary>For a machine that never became ready: what can be told about why (network, ssh server, or setup).</summary>
+    public virtual Task<string> DiagnoseAsync(CancellationToken ct) => Task.FromResult("");
     public abstract Task DeployAsync(string archive, CancellationToken ct);
     public abstract RunningAgent StartAgent(string[] agentArgs, bool behindNat, Action<string> onLine);
 
     /// <summary>Runs a script that needs a shell and root: NAT, traffic shaping.</summary>
     public Task<string> RunScriptAsync(string script, CancellationToken ct) =>
-        RunAsync("echo " + Convert.ToBase64String(Encoding.UTF8.GetBytes(script)) + " | base64 -d | sh -e", TimeSpan.FromSeconds(60), ct);
+        RunAsync("echo " + Convert.ToBase64String(Encoding.UTF8.GetBytes(script.Replace("\r\n", "\n"))) + " | base64 -d | sh -e", TimeSpan.FromSeconds(60), ct);
 }
 
 /// <summary>This computer. Used to try scenarios without any cloud: no NAT, no traffic shaping.</summary>
@@ -88,10 +98,13 @@ internal sealed class SshMachine : Machine
 
     private static string NullDevice => OperatingSystem.IsWindows() ? "NUL" : "/dev/null";
 
+    /// <summary>While waiting for a machine, ssh logs how far it gets so that a hang can be placed (connect, key exchange, login).</summary>
+    private bool _debug;
+
     private IEnumerable<string> Common()
     {
         yield return "-i"; yield return _keyFile;
-        foreach (var o in new[] { "BatchMode=yes", "StrictHostKeyChecking=no", $"UserKnownHostsFile={NullDevice}", "LogLevel=ERROR", "ConnectTimeout=10", "ServerAliveInterval=10", "ServerAliveCountMax=3" })
+        foreach (var o in new[] { "BatchMode=yes", "StrictHostKeyChecking=no", $"UserKnownHostsFile={NullDevice}", _debug ? "LogLevel=DEBUG1" : "LogLevel=ERROR", "ConnectTimeout=10", "ServerAliveInterval=10", "ServerAliveCountMax=3" })
         { yield return "-o"; yield return o; }
     }
 
@@ -99,6 +112,8 @@ internal sealed class SshMachine : Machine
     {
         var psi = new ProcessStartInfo("ssh") { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
         foreach (var a in Common()) psi.ArgumentList.Add(a);
+        // No input: with piped output, Windows ssh can wait for stdin after the command has finished.
+        psi.ArgumentList.Add("-n");
         psi.ArgumentList.Add($"{_user}@{Address}");
         psi.ArgumentList.Add(command);
         return psi;
@@ -119,7 +134,9 @@ internal sealed class SshMachine : Machine
         catch (OperationCanceledException)
         {
             try { process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
-            throw new TimeoutException($"'{Name}': the command took more than {timeout.TotalSeconds:0} s.");
+            string tail;
+            lock (output) tail = string.Join(" | ", output.ToString().Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).TakeLast(_debug ? 4 : 0));
+            throw new TimeoutException($"'{Name}': the command took more than {timeout.TotalSeconds:0} s." + (tail.Length > 0 ? $" ssh got as far as: {tail}" : ""));
         }
         if (process.ExitCode != 0) throw new InvalidOperationException($"'{Name}': the command failed ({process.ExitCode}): {output.ToString().Trim()}");
         return output.ToString();
@@ -128,33 +145,68 @@ internal sealed class SshMachine : Machine
     private static string Short(string text)
     {
         var line = text.Replace("\r", " ").Replace("\n", " ").Trim();
-        return line.Length <= 200 ? line : line[..200] + "...";
+        return line.Length <= 900 ? line : line[..900] + "...";
     }
 
     public override async Task WaitReadyAsync(CancellationToken ct, Action<string> log)
     {
+        _debug = true;
         var waited = System.Diagnostics.Stopwatch.StartNew();
         string last = "no answer yet";
         int tries = 0;
         while (true)
         {
-            try { await RunAsync("true", TimeSpan.FromSeconds(20), ct); break; }
+            try { await RunAsync("true", TimeSpan.FromSeconds(45), ct); break; }
             catch (Exception ex) when (ex is InvalidOperationException or TimeoutException)
             {
                 last = Short(ex.Message);
                 tries++;
-                if (waited.Elapsed > TimeSpan.FromMinutes(4))
-                    throw new TimeoutException($"'{Name}' ({Address}) did not accept SSH within 4 minutes ({tries} tries). Last answer: {last}");
+                if (waited.Elapsed > TimeSpan.FromMinutes(8))
+                    throw new TimeoutException($"'{Name}' ({Address}) did not accept SSH within 8 minutes ({tries} tries). Last answer: {last}");
                 if (tries % 6 == 0) log($"  still waiting for SSH on {Name} ({Address}) after {waited.Elapsed.TotalSeconds:0} s. Last answer: {last}");
                 await Task.Delay(5000, ct);
             }
         }
+        _debug = false;
         log($"  {Name}: SSH answers after {waited.Elapsed.TotalSeconds:0} s");
 
         // The machine sets itself up on first start (traffic shaping tools, and for the TURN machine the server).
-        try { await RunAsync("cloud-init status --wait || true", TimeSpan.FromMinutes(5), ct); }
+        try
+        {
+            if (ReadyScript != null) await RunScriptAsync(ReadyScript, ct);
+            else await RunAsync("cloud-init status --wait || true", TimeSpan.FromMinutes(5), ct);
+        }
         catch (TimeoutException) { throw new TimeoutException($"'{Name}' ({Address}) was still setting itself up after 5 more minutes."); }
         log($"  {Name}: set up after {waited.Elapsed.TotalSeconds:0} s");
+    }
+
+    public override async Task<string> DiagnoseAsync(CancellationToken ct)
+    {
+        var sb = new StringBuilder();
+        try
+        {
+            // Does the port accept a connection, and does the ssh server greet us? That separates the network from the machine.
+            var watch = Stopwatch.StartNew();
+            using var tcp = new System.Net.Sockets.TcpClient();
+            using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            limit.CancelAfter(TimeSpan.FromSeconds(12));
+            await tcp.ConnectAsync(Address!, 22, limit.Token);
+            sb.Append($"port 22 accepted a connection in {watch.ElapsedMilliseconds} ms; ");
+            var buffer = new byte[64];
+            watch.Restart();
+            int n = await tcp.GetStream().ReadAsync(buffer, limit.Token);
+            sb.Append(n > 0 ? $"the ssh greeting came after {watch.ElapsedMilliseconds} ms; " : "the connection closed without a greeting; ");
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { sb.Append("no connection or greeting within 12 s; "); }
+        catch (Exception ex) { sb.Append($"connecting failed ({ex.GetType().Name}: {Short(ex.Message)}); "); }
+
+        try
+        {
+            var state = await RunAsync("uptime; cloud-init status --long 2>&1 | head -12; journalctl -u cloud-init -u cloud-final -u ssh --no-pager -n 12 2>&1 | cut -c1-160; tail -n 8 /var/log/cloud-init-output.log 2>&1 | cut -c1-160", TimeSpan.FromSeconds(25), ct);
+            sb.Append("it answers a command now: " + Short(state));
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException) { sb.Append("a command still gets no answer: " + Short(ex.Message)); }
+        return sb.ToString();
     }
 
     public override async Task DeployAsync(string archive, CancellationToken ct)

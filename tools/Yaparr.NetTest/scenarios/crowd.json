@@ -1,0 +1,29 @@
+{
+  "name": "crowd",
+  "description": "Twelve viewers on a mix of connections: some on public addresses, some behind an ordinary router, some with a port forwarded and some behind a symmetric one. The sharer sends to only three and viewers pass the stream on to two, so the tree must be at least two deep and everyone still gets the video.",
+  "durationSeconds": 90,
+  "settleSeconds": 150,
+  "nodes": [
+    { "name": "sharer", "region": "nyc3", "role": "share", "args": { "kbps": 1200, "fps": 15, "root-fanout": 3 } },
+    { "name": "open1", "region": "sfo3", "role": "watch", "nat": "none", "startAfterSeconds": 3, "args": { "fanout": 2 } },
+    { "name": "open2", "region": "ams3", "role": "watch", "nat": "none", "startAfterSeconds": 5, "args": { "fanout": 2 } },
+    { "name": "open3", "region": "fra1", "role": "watch", "nat": "none", "startAfterSeconds": 7, "args": { "fanout": 2 } },
+    { "name": "home1", "region": "lon1", "role": "watch", "nat": "cone", "startAfterSeconds": 9, "args": { "fanout": 2 } },
+    { "name": "home2", "region": "tor1", "role": "watch", "nat": "cone", "startAfterSeconds": 11, "args": { "fanout": 2 } },
+    { "name": "home3", "region": "sgp1", "role": "watch", "nat": "cone", "startAfterSeconds": 13, "args": { "fanout": 2 } },
+    { "name": "home4", "region": "syd1", "role": "watch", "nat": "cone", "startAfterSeconds": 15, "args": { "fanout": 2 } },
+    { "name": "forwarded1", "region": "nyc3", "role": "watch", "nat": "fullcone", "startAfterSeconds": 17, "args": { "fanout": 2 } },
+    { "name": "forwarded2", "region": "blr1", "role": "watch", "nat": "fullcone", "startAfterSeconds": 19, "args": { "fanout": 2 } },
+    { "name": "symmetric1", "region": "sfo3", "role": "watch", "nat": "symmetric", "startAfterSeconds": 21 },
+    { "name": "symmetric2", "region": "ams3", "role": "watch", "nat": "symmetric", "startAfterSeconds": 23 },
+    { "name": "symmetric3", "region": "fra1", "role": "watch", "nat": "symmetric", "startAfterSeconds": 25 }
+  ],
+  "assertions": [
+    { "type": "natIs", "nodes": ["symmetric1", "symmetric2", "symmetric3"], "text": "Symmetric" },
+    { "type": "relayCapable", "nodes": ["symmetric1", "symmetric2", "symmetric3"], "value": 0 },
+    { "type": "treeDepthAtLeast", "value": 2 },
+    { "type": "viewersReceive", "value": 0.9 },
+    { "type": "attachWithin", "value": 45 },
+    { "type": "latencyP95Below", "value": 2000 }
+  ]
+}

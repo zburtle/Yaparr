@@ -65,7 +65,8 @@ internal sealed class DigitalOcean : IDisposable
     {
         var body = new JsonObject
         {
-            ["name"] = name, ["region"] = region, ["size"] = size, ["image"] = image,
+            ["name"] = name, ["region"] = region, ["size"] = size,
+            ["image"] = long.TryParse(image, out var imageId) ? JsonValue.Create(imageId) : JsonValue.Create(image),
             ["ssh_keys"] = new JsonArray(keyId), ["tags"] = new JsonArray(tags.Select(t => (JsonNode)t).ToArray()),
             ["user_data"] = userData, ["monitoring"] = false, ["ipv6"] = false,
         };
@@ -85,6 +86,60 @@ internal sealed class DigitalOcean : IDisposable
     public async Task DeleteByTagAsync(string tag, CancellationToken ct)
     {
         var response = await _http.DeleteAsync($"droplets?tag_name={Uri.EscapeDataString(tag)}", ct);
+        if (response.StatusCode != System.Net.HttpStatusCode.NoContent) await ReadAsync(response, ct);
+    }
+
+    public sealed record SnapshotInfo(string Id, string Name, List<string> Regions);
+
+    public async Task<List<SnapshotInfo>> ListSnapshotsAsync(CancellationToken ct)
+    {
+        var json = await ReadAsync(await _http.GetAsync("snapshots?resource_type=droplet&per_page=200", ct), ct);
+        return json["snapshots"]!.AsArray().Select(x => new SnapshotInfo(
+            x!["id"]!.ToString(), x["name"]!.GetValue<string>(),
+            x["regions"]?.AsArray().Select(r => r!.GetValue<string>()).ToList() ?? new List<string>())).ToList();
+    }
+
+    public async Task<SnapshotInfo?> FindSnapshotAsync(string name, CancellationToken ct) =>
+        (await ListSnapshotsAsync(ct)).FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
+
+    private async Task<long> ActionAsync(string path, JsonObject body, CancellationToken ct)
+    {
+        var json = await ReadAsync(await _http.PostAsync(path, JsonContent.Create(body), ct), ct);
+        return json["action"]!["id"]!.GetValue<long>();
+    }
+
+    /// <summary>Waits for an action (shut down, snapshot, transfer) to finish.</summary>
+    public async Task WaitActionAsync(long actionId, TimeSpan limit, CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow + limit;
+        while (true)
+        {
+            var status = (await ReadAsync(await _http.GetAsync($"actions/{actionId}", ct), ct))["action"]!["status"]!.GetValue<string>();
+            if (status == "completed") return;
+            if (status == "errored") throw new InvalidOperationException($"DigitalOcean action {actionId} failed.");
+            if (DateTime.UtcNow > deadline) throw new TimeoutException($"DigitalOcean action {actionId} took more than {limit.TotalMinutes:0} minutes.");
+            await Task.Delay(5000, ct);
+        }
+    }
+
+    public async Task ShutdownAsync(long dropletId, CancellationToken ct) =>
+        await WaitActionAsync(await ActionAsync($"droplets/{dropletId}/actions", new JsonObject { ["type"] = "shutdown" }, ct), TimeSpan.FromMinutes(5), ct);
+
+    public async Task SnapshotAsync(long dropletId, string name, CancellationToken ct) =>
+        await WaitActionAsync(await ActionAsync($"droplets/{dropletId}/actions", new JsonObject { ["type"] = "snapshot", ["name"] = name }, ct), TimeSpan.FromMinutes(20), ct);
+
+    public async Task TransferAsync(string imageId, string region, CancellationToken ct) =>
+        await WaitActionAsync(await ActionAsync($"images/{imageId}/actions", new JsonObject { ["type"] = "transfer", ["region"] = region }, ct), TimeSpan.FromMinutes(30), ct);
+
+    public async Task DeleteImageAsync(string imageId, CancellationToken ct)
+    {
+        var response = await _http.DeleteAsync($"images/{imageId}", ct);
+        if (response.StatusCode != System.Net.HttpStatusCode.NoContent) await ReadAsync(response, ct);
+    }
+
+    public async Task DeleteDropletAsync(long id, CancellationToken ct)
+    {
+        var response = await _http.DeleteAsync($"droplets/{id}", ct);
         if (response.StatusCode != System.Net.HttpStatusCode.NoContent) await ReadAsync(response, ct);
     }
 

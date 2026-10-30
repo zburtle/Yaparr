@@ -33,6 +33,18 @@ Nothing here is part of the app. It is for finding out how the tree, the loss re
 
 `ssh`, `scp` and `dotnet` must be on the PATH (Windows 10 and 11 include the OpenSSH client).
 
+## Faster starts: a snapshot (optional)
+
+Every new machine otherwise installs its tools (traffic shaping, and coturn for the TURN machine) while it starts, which is slow on small droplets and slower still when a dozen start at once. `bake` does that once:
+
+```bash
+dotnet run --project tools/Yaparr.NetTest -- bake
+```
+
+It creates one machine, installs everything, switches it off, saves a snapshot called `yaparr-nettest-base` (change it with `snapshotName` in `nettest.json`), copies that snapshot to every region the bundled scenarios use, and deletes the machine. This takes about 10 to 20 minutes the first time and costs a few cents a month to keep (DigitalOcean charges for snapshot storage). Use `--regions nyc3,sfo3` to limit the regions and `--delete` to remove the snapshot.
+
+After that, `run` finds the snapshot by name and starts machines from it in any region it covers; in a region it does not cover, or if there is no snapshot, the machine installs its tools as before and the run says so. Run `bake` again only if the tools change. A new snapshot gets the name `yaparr-nettest-base-new` while an older one exists (DigitalOcean cannot rename it through the tool); `run` finds it under that name too, so there is nothing to do.
+
 ## Running
 
 ```powershell
@@ -53,6 +65,7 @@ A run takes the scenario's length plus two or three minutes for creating the mac
 |---|---|---|
 | `basic` | 3 | Two viewers on public addresses: attach time, first frame, loss, delay. |
 | `tree` | 7 | The sharer sends to only two, each viewer to two: a tree at least two deep, and everyone still gets the video. |
+| `crowd` | 13 | Twelve viewers on public, ordinary-router, port-forwarded and symmetric connections, the sharer sending to only three: a tree at least two deep, and everyone still gets the video. Needs `maxDroplets` of 13 or more in `nettest.json`, and a DigitalOcean droplet limit to match. |
 | `loss` | 3 | A chain; the middle machine drops 4% of packets for 30 s. Lost packets are asked for again. |
 | `failover` | 4 | The first viewer disappears; the second finds a new parent, the third keeps its video. |
 | `nat` | 4 | Viewers behind an ordinary router, a router with a forwarded port, and a symmetric one. |
