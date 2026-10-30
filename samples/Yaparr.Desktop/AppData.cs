@@ -140,6 +140,7 @@ public sealed class AppData
     {
         if (File.Exists(IdentityPath)) File.Delete(IdentityPath);
         if (File.Exists(SettingsPath)) File.Delete(SettingsPath);
+        if (File.Exists(AccountStatePath)) File.Delete(AccountStatePath);
         if (System.IO.Directory.Exists(HistoryDirectory)) System.IO.Directory.Delete(HistoryDirectory, recursive: true);
 
         foreach (var file in System.IO.Directory.EnumerateFiles(staging, "*", SearchOption.AllDirectories))

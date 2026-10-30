@@ -72,64 +72,41 @@ public partial class MainWindow : Window
             if ((e.Source as Visual)?.FindAncestorOfType<ListBoxItem>() is { } item) item.IsSelected = true;
         }, RoutingStrategies.Tunnel);
 
-    private async void ExportProfile_Click(object? sender, RoutedEventArgs e)
+    // A backup is a copy of everything Yaparr keeps for you. It is restored on a computer that has no account yet, from the
+    // first-start screen. To use the same account on a second computer at the same time, link it instead.
+    private async void BackupProfile_Click(object? sender, RoutedEventArgs e)
     {
         if (_node == null) return;
-        var proceed = await Dialogs.ConfirmAsync(this, "Export profile",
-            "The export contains your private identity key, your room keys and your message history. " +
-            "Anyone with the file can impersonate you and read your rooms.\n\nKeep it somewhere safe. Continue?",
+        var proceed = await Dialogs.ConfirmAsync(this, "Back up profile",
+            "A backup holds your private identity key, your room keys and your message history. " +
+            "Anyone with the file can impersonate you and read your rooms, so keep it somewhere safe.\n\n" +
+            "Restore it from the first-start screen if you lose this computer or move to a new one. " +
+            "To use your account on a second computer at the same time, use Link another device instead: " +
+            "two computers running the same backup would clash.\n\nContinue?",
             "Continue", "Cancel");
         if (!proceed) return;
 
-        var path = await Dialogs.PickSaveAsync(this, "Export profile",
-            $"Yaparr-profile-{_settings.DisplayName}-{DateTime.Now:yyyyMMdd}.zip", Dialogs.Zip);
+        var path = await Dialogs.PickSaveAsync(this, "Back up profile",
+            $"Yaparr-backup-{_settings.DisplayName}-{DateTime.Now:yyyyMMdd}.zip", Dialogs.Zip);
         if (path == null) return;
 
         try
         {
             _data.ExportProfile(path);
-            StatusText.Text = "Profile exported to " + path;
+            StatusText.Text = "Backup saved to " + path;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            StatusText.Text = "Export failed: " + ex.Message;
+            StatusText.Text = "Backup failed: " + ex.Message;
         }
     }
 
-    private async void ImportProfile_Click(object? sender, RoutedEventArgs e)
+    private bool _restarting;
+
+    // Starts Yaparr again with the same arguments and closes this one.
+    private void RestartApp()
     {
-        if (_node == null) return;
-        var path = await Dialogs.PickOpenAsync(this, "Import profile", Dialogs.Zip);
-        if (path == null) return;
-
-        string staging;
-        try { staging = _data.StageProfile(path); }
-        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
-        {
-            await Dialogs.MessageAsync(this, "Import profile", ex.Message);
-            return;
-        }
-
-        var proceed = await Dialogs.ConfirmAsync(this, "Import profile",
-            "Importing replaces your current identity, rooms and message history with the ones in the file. " +
-            "Your current profile will be lost unless you exported it first.\n\nYaparr will restart. Continue?",
-            "Continue", "Cancel");
-        if (!proceed)
-        {
-            Directory.Delete(staging, recursive: true);
-            return;
-        }
-
-        Shutdown();
-        try
-        {
-            _data.ApplyStagedProfile(staging);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            await Dialogs.MessageAsync(this, "Import profile", "Import failed: " + ex.Message);
-        }
-
+        _restarting = true;
         var args = Environment.GetCommandLineArgs().Skip(1).Select(a => $"\"{a}\"");
         if (Environment.ProcessPath is { } exe)
             Process.Start(new ProcessStartInfo(exe, string.Join(' ', args)) { UseShellExecute = false });
@@ -225,6 +202,7 @@ public partial class MainWindow : Window
         SetUpNotifications();
 
         if (Arg("--name") == null && _settings.DisplayName == null && !_data.HasIdentity) await OfferLinkAsync();
+        if (_restarting) return;
 
         var name = Arg("--name") ?? _settings.DisplayName
                    ?? await PromptDialog.AskAsync(this, "Choose a display name (others will see it next to your messages):", Environment.UserName);

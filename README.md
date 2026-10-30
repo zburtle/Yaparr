@@ -181,7 +181,7 @@ Yaparr's internet traffic is dropped instead of leaking out directly.
 Peers then see the VPN server's address, so a symmetric NAT on your side stops mattering as long as the server's
 outbound mapping is stable (a plain Linux WireGuard server with masquerading is). The NAT check is re-run through the
 tunnel and shown in the status bar. The config, including its private key, is saved as `vpn.conf` in the profile
-folder and is therefore part of a profile export. Only IPv4 servers and a single peer are supported; the client does
+folder and is therefore part of a backup. Only IPv4 servers and a single peer are supported; the client does
 not answer handshakes started by the server, so it relies on its own 2-minute rekey.
 
 Settings live in `network.json` in the profile folder (all keys optional). The Desktop app looks for peers on the local network only when `localDiscovery` is `true` (off by default for now):
@@ -242,9 +242,11 @@ connections, relays, voice and delivery work per device; what is shared is the p
 
 - **Linking.** On a device you already use choose **File > Link another device…**. It makes a code, encrypted with a
   passphrase (about 100 bits, shown once), that holds a new identity for the other device plus your name, rooms and
-  blocks. On the new device choose **Link this device** at first start, paste the code and type the passphrase. The code
+  blocks. You can save it as a link file (`.ylnk`, a text file holding the code) to carry to the new device, or copy it. On
+  the new device choose **Link this device** at first start, open the link file (or paste the code) and type the passphrase. The code
   holds your account key, so send it and the passphrase by different routes and delete it afterwards. It stops working
   after a day. In the library: `DeviceLink.Create` and `DeviceLink.Open`.
+- **Backup and restore.** **File > Back up profile…** saves a zip of everything Yaparr keeps for you: your identity key, rooms, message history, pictures and settings. To restore it, choose **Restore a backup** on the first-start screen of a computer that has no account yet. There is no restore for a computer that already has an account, so nothing is replaced by accident. A backup is for losing or replacing a computer: two computers running the same backup would clash, so to use your account on a second computer at the same time, link it.
 - **Sharing your id.** Give people your account id (**Copy my ID**), which is the same on every device. A direct chat
   with a person reaches all of their devices, and counts as delivered when every connected device confirmed it.
 - **What stays in step.** Your name, blocks and the list of rooms follow you between devices
