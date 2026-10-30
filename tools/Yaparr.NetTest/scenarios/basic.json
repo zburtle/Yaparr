@@ -1,0 +1,19 @@
+{
+  "name": "basic",
+  "description": "One sharer and two viewers on public addresses in different regions. The baseline: do they find each other, how long does attaching take, and does the video arrive.",
+  "settleSeconds": 120,
+  "durationSeconds": 60,
+  "nodes": [
+    { "name": "sharer", "region": "nyc3", "role": "share", "args": { "kbps": 1500, "fps": 15 } },
+    { "name": "viewer1", "region": "sfo3", "role": "watch", "startAfterSeconds": 5 },
+    { "name": "viewer2", "region": "ams3", "role": "watch", "startAfterSeconds": 8 }
+  ],
+  "assertions": [
+    { "type": "discoveryWithin", "value": 120 },
+    { "type": "viewersReceive", "value": 0.9 },
+    { "type": "maxFrameGapBelow", "value": 5 },
+    { "type": "attachWithin", "value": 25 },
+    { "type": "firstFrameWithin", "value": 30 },
+    { "type": "latencyP95Below", "value": 1000 }
+  ]
+}

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Yaparr\Yaparr.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- Small Linux machines often have no ICU libraries; the agent does not need them. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <AssemblyName>Yaparr.NetAgent</AssemblyName>
+  </PropertyGroup>
+
+</Project>

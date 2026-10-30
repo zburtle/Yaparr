@@ -1,0 +1,13 @@
+{
+  "name": "turn-big",
+  "description": "Two machines that both sit behind symmetric routers, so they can only reach each other through the TURN server. A 1500 kbit/s stream is too big for it: the viewer must be refused with a clear reason, not left hanging.",
+  "durationSeconds": 70,
+  "turn": true,
+  "nodes": [
+    { "name": "sharer", "region": "nyc3", "role": "share", "nat": "symmetric", "args": { "kbps": 1500, "fps": 15 } },
+    { "name": "viewer", "region": "fra1", "role": "watch", "nat": "symmetric", "startAfterSeconds": 10 }
+  ],
+  "assertions": [
+    { "type": "overServer", "nodes": ["viewer"] }
+  ]
+}

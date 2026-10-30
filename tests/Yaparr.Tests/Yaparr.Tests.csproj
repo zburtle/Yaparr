@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Yaparr\Yaparr.csproj" />
     <ProjectReference Include="..\..\src\Yaparr.Voice.WebRtc\Yaparr.Voice.WebRtc.csproj" />
+    <ProjectReference Include="..\..\tools\Yaparr.NetTest\Yaparr.NetTest.csproj" />
   </ItemGroup>
 
 </Project>

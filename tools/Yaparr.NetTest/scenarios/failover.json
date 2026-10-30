@@ -1,0 +1,19 @@
+{
+  "name": "failover",
+  "description": "A chain of three viewers. The first one disappears; the second must find a new parent and the third, below it, must keep getting video.",
+  "durationSeconds": 80,
+  "nodes": [
+    { "name": "sharer", "region": "nyc3", "role": "share", "args": { "kbps": 1000, "fps": 15, "root-fanout": 1 } },
+    { "name": "v1", "region": "sfo3", "role": "watch", "startAfterSeconds": 5, "args": { "fanout": 1 } },
+    { "name": "v2", "region": "ams3", "role": "watch", "startAfterSeconds": 10, "args": { "fanout": 1 } },
+    { "name": "v3", "region": "fra1", "role": "watch", "startAfterSeconds": 15, "args": { "fanout": 1 } }
+  ],
+  "timeline": [
+    { "atSeconds": 35, "action": "kill", "node": "v1" }
+  ],
+  "assertions": [
+    { "type": "parentChangesAtLeast", "nodes": ["v2"], "value": 2 },
+    { "type": "maxFrameGapBelow", "nodes": ["v2", "v3"], "value": 25 },
+    { "type": "viewersReceive", "nodes": ["v2", "v3"], "value": 0.7 }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "name": "tree",
+  "description": "Six viewers, but the sharer sends to only two and each viewer passes the stream on to two. The tree has to be at least two levels deep, and everyone still gets the video.",
+  "durationSeconds": 75,
+  "nodes": [
+    { "name": "sharer", "region": "nyc3", "role": "share", "args": { "kbps": 1200, "fps": 15, "root-fanout": 2 } },
+    { "name": "v1", "region": "sfo3", "role": "watch", "startAfterSeconds": 5, "args": { "fanout": 2 } },
+    { "name": "v2", "region": "ams3", "role": "watch", "startAfterSeconds": 7, "args": { "fanout": 2 } },
+    { "name": "v3", "region": "fra1", "role": "watch", "startAfterSeconds": 9, "args": { "fanout": 2 } },
+    { "name": "v4", "region": "lon1", "role": "watch", "startAfterSeconds": 11, "args": { "fanout": 2 } },
+    { "name": "v5", "region": "tor1", "role": "watch", "startAfterSeconds": 13, "args": { "fanout": 2 } },
+    { "name": "v6", "region": "sgp1", "role": "watch", "startAfterSeconds": 15, "args": { "fanout": 2 } }
+  ],
+  "assertions": [
+    { "type": "treeDepthAtLeast", "value": 2 },
+    { "type": "viewersReceive", "value": 0.95 },
+    { "type": "attachWithin", "value": 30 },
+    { "type": "latencyP95Below", "value": 1500 }
+  ]
+}

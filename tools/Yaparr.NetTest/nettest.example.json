@@ -1,0 +1,11 @@
+{
+  // The token is not stored here: set the DIGITALOCEAN_TOKEN environment variable.
+  // The private key whose public half you added in DigitalOcean (Settings, Security, SSH keys).
+  "sshKeyFile": "~/.ssh/id_ed25519",
+  // The name that key has in DigitalOcean.
+  "sshKeyName": "my-pc",
+  "size": "s-1vcpu-1gb",
+  "image": "ubuntu-24-04-x64",
+  "maxDroplets": 10,
+  "udpPort": 41000
+}

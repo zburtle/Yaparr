@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Yaparr.Tests" />
+    <InternalsVisibleTo Include="Yaparr.NetAgent" />
   </ItemGroup>
 
   <ItemGroup>

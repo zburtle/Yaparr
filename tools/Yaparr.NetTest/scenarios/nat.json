@@ -1,0 +1,17 @@
+{
+  "name": "nat",
+  "description": "Viewers behind different kinds of router: an ordinary one, one with a port forwarded, and a symmetric one. The library has to classify each correctly, and every viewer must still get the video.",
+  "durationSeconds": 75,
+  "nodes": [
+    { "name": "sharer", "region": "nyc3", "role": "share", "args": { "kbps": 1000, "fps": 15 } },
+    { "name": "home", "region": "fra1", "role": "watch", "nat": "cone", "startAfterSeconds": 5 },
+    { "name": "forwarded", "region": "lon1", "role": "watch", "nat": "fullcone", "startAfterSeconds": 8 },
+    { "name": "symmetric", "region": "sgp1", "role": "watch", "nat": "symmetric", "startAfterSeconds": 11 }
+  ],
+  "assertions": [
+    { "type": "natIs", "nodes": ["symmetric"], "text": "Symmetric" },
+    { "type": "relayCapable", "nodes": ["symmetric"], "value": 0 },
+    { "type": "viewersReceive", "value": 0.95 },
+    { "type": "attachWithin", "value": 40 }
+  ]
+}

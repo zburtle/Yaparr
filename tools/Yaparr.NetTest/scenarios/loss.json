@@ -1,0 +1,19 @@
+{
+  "name": "loss",
+  "description": "A chain of three. For 30 seconds the middle machine drops 4% of packets and adds 40 ms of delay. Lost packets must be asked for again and the viewers must keep the video.",
+  "durationSeconds": 80,
+  "nodes": [
+    { "name": "sharer", "region": "nyc3", "role": "share", "args": { "kbps": 1500, "fps": 15, "root-fanout": 1 } },
+    { "name": "mid", "region": "nyc1", "role": "watch", "startAfterSeconds": 5, "args": { "fanout": 1 } },
+    { "name": "end", "region": "nyc3", "role": "watch", "startAfterSeconds": 10, "args": { "fanout": 1 } }
+  ],
+  "timeline": [
+    { "atSeconds": 25, "action": "netem", "node": "mid", "args": "loss 4% delay 40ms" },
+    { "atSeconds": 55, "action": "netem-clear", "node": "mid" }
+  ],
+  "assertions": [
+    { "type": "viewersReceive", "value": 0.9 },
+    { "type": "retransmitsAtLeast", "value": 5 },
+    { "type": "maxFrameGapBelow", "value": 6 }
+  ]
+}

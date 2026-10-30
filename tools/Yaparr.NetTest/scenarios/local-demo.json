@@ -1,0 +1,20 @@
+{
+  "name": "local-demo",
+  "description": "Used to try the tool on this computer: one sharer and three viewers. The sharer sends to only one, so the tree has to be deep, and one viewer is killed part-way.",
+  "durationSeconds": 40,
+  "nodes": [
+    { "name": "sharer", "role": "share", "args": { "kbps": 600, "fps": 10, "root-fanout": 1, "key-every": 3 } },
+    { "name": "a", "role": "watch", "startAfterSeconds": 3, "args": { "fanout": 1 } },
+    { "name": "b", "role": "watch", "startAfterSeconds": 4, "args": { "fanout": 1 } },
+    { "name": "c", "role": "watch", "startAfterSeconds": 5, "args": { "fanout": 1 } }
+  ],
+  "timeline": [
+    { "atSeconds": 22, "action": "kill", "node": "a" }
+  ],
+  "assertions": [
+    { "type": "treeDepthAtLeast", "value": 2 },
+    { "type": "viewersReceive", "nodes": ["b", "c"], "value": 0.7 },
+    { "type": "parentChangesAtLeast", "nodes": ["b"], "value": 2 },
+    { "type": "maxFrameGapBelow", "nodes": ["b", "c"], "value": 15 }
+  ]
+}

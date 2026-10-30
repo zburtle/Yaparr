@@ -1,0 +1,21 @@
+{
+  "name": "voice",
+  "description": "Ten people in one voice channel across the world, two of them talking. From nine people the channel must switch to a tree, and everyone must hear both speakers.",
+  "durationSeconds": 100,
+  "nodes": [
+    { "name": "p1", "region": "nyc3", "role": "voice", "args": { "speak": true, "tone": 440 } },
+    { "name": "p2", "region": "sfo3", "role": "voice", "startAfterSeconds": 3 },
+    { "name": "p3", "region": "ams3", "role": "voice", "startAfterSeconds": 3 },
+    { "name": "p4", "region": "fra1", "role": "voice", "startAfterSeconds": 4 },
+    { "name": "p5", "region": "lon1", "role": "voice", "startAfterSeconds": 4, "args": { "speak": true, "tone": 660 } },
+    { "name": "p6", "region": "tor1", "role": "voice", "startAfterSeconds": 5 },
+    { "name": "p7", "region": "sgp1", "role": "voice", "startAfterSeconds": 5 },
+    { "name": "p8", "region": "blr1", "role": "voice", "startAfterSeconds": 6 },
+    { "name": "p9", "region": "syd1", "role": "voice", "startAfterSeconds": 6 },
+    { "name": "p10", "region": "nyc1", "role": "voice", "startAfterSeconds": 7 }
+  ],
+  "assertions": [
+    { "type": "voiceTreeUsed" },
+    { "type": "voiceHeard", "nodes": ["p2", "p3", "p4", "p6", "p7", "p8", "p9", "p10"], "value": 150 }
+  ]
+}

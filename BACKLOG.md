@@ -85,11 +85,26 @@ Built for screen sharing and large voice channels. Not done:
 - Placement is only swapped at the root: if the sharer's places go to members who cannot pass the stream on, one steps aside; lower down, a capable newcomer waits if every place is held by a member who cannot.
 - The root believes what members report about who sits under whom. A member can only mislead where newcomers are placed, but it should be checked or repaired by the root asking.
 - No adaptive bitrate and no quality layers: every viewer gets the same stream, and a viewer with a bad link just loses packets. Forwarders could drop layers per child. A viewer whose only way in is the shared server gets nothing from a big stream; a lower layer would give it something.
-- Lost packets are asked for again from the parent, which keeps about 600; there is no forward error correction, so a burst of loss longer than that, or a parent that missed the same packet, costs a key frame. Pacing is a fixed multiple of the declared bitrate, not what the link can take. Measure on a real link with loss (and tune the quarter-second wait for a late frame, the four requests and their spacing).
+- Lost packets are asked for again from the parent, which keeps about 600; there is no forward error correction, so a burst of loss longer than that, or a parent that missed the same packet, costs a key frame. Pacing is a fixed multiple of the declared bitrate, not what the link can take. Measure on a real link with loss (and tune the 0.4 s wait for a late frame, the 80 ms between requests and the 40 ms before the first).
 - The probe packets after a frame (two, 80 ms apart) are an extra 20 or so bytes; a stream that never pauses does not need them.
 - Forwarders see the stream (they are viewers). Members who forward without viewing, such as the planned volunteer relays, would need a key held only by the viewers.
 - A viewer sees the addresses of its parent and children, whom it might not otherwise connect to in a large room.
 - The Desktop app has nothing for it yet: voice trees work without any UI, and a screen sharing UI needs the capture work above.
+
+## Network tests
+
+Built: `tools/Yaparr.NetAgent` and `tools/Yaparr.NetTest` (see tools/README.md). They create DigitalOcean machines, run the agents with simulated NATs, packet loss, blocked paths and failures, and check the result. Everything that can run on one PC has been run (the local demo scenario, the tests of scenario files, scripts and judging); nothing has run on real machines yet. Still to do:
+
+- Second real run (basic, nyc3 / sfo3 / ams3, all public addresses): everyone found everyone after 39 to 44 s and the stream worked: attached in 0.2 s, delay 59 to 82 ms median and 103 to 109 ms at the 95th percentile, 129 lost packets repaired on one path, and one 2.4 s outage on New York to Amsterdam that cost 33 frames (the viewer resumed by itself within a second of data returning). The time to find each other is the first DHT lookup on a cold node: about 31 s, then one more cycle. The code explains it: the bootstrap runs a full self-lookup (up to 24 rounds) before anything else, each round waits for its slowest query, and about half the nodes asked never answer, so most rounds cost the full 2 s timeout; the room lookup then does the same. Fixes to try, in order: do not wait for the bootstrap self-lookup (a couple of rounds, the rest in the background), keep four queries in flight instead of waiting for the whole batch, a 1.5 s query timeout, and a quicker second search while no one has been found. The agent keeps no node cache; the Desktop app does, so a real second start is quicker.
+- Discovery speed-ups for that (done, not yet measured on DigitalOcean): the bootstrap waits for two rounds only and finishes the self-lookup in the background; a lookup keeps six queries in flight and replaces each as it finishes instead of waiting for the slowest of a batch; the query timeout is 1.5 s; a plain search stops as soon as it has a peer; while alone a room is searched again every 4 s (eight times) instead of every interval, without announcing again each time. Re-run `basic` and compare "Found a peer s" with the 39 to 44 s above.
+- Each node also learned an extra address for itself from the DHT (for example 170.150.28.27:11604 for the San Francisco machine, outside DigitalOcean's ranges), dialled it and got "is ourselves"; the sharer even ended up connected to a viewer through such an address. Harmless, but not understood.
+- The first real run will need fixes: the DigitalOcean calls, machine setup (cloud-init), the NAT and traffic-shaping scripts and the TURN server are untried. Try `check`, then `run basic`, then the others.
+- Measure the delay properly: the agents compare the sender's and the receiver's clocks, good to about 50 ms. A frame carrying a ping-pong round trip would give true delays.
+- A GitHub Actions job started by hand, running the suite and attaching the report.
+- Carrier-grade NAT and Wi-Fi cannot be simulated on a datacentre machine; keep a manual run with a laptop on a phone hotspot.
+- The voice scenario needs ten machines; the default account limit is lower.
+- The agent plays a tone and does not use audio devices or echo cancellation, so it says nothing about the audio processing.
+- Scenarios for: a member on the shared TURN server among direct viewers, many viewers joining at once, a viewer that joins late after a long stream, and a sharer that restarts.
 
 ## Android
 

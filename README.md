@@ -37,6 +37,8 @@ with a "Launch Yaparr" checkbox), and `msiexec /i Yaparr-1.0.0-x64.msi /qn` inst
 installer is unsigned, so Windows SmartScreen will warn on first run, and Windows Firewall will ask to allow the app
 (allow private networks for LAN discovery; allow public for internet peers).
 
+**Network tests.** `tools/` has a headless agent and a tool that runs it on DigitalOcean machines (with simulated NATs, packet loss and failures) and checks the result; see [tools/README.md](tools/README.md).
+
 **Debugging the CLI.** `samples/Yaparr.Cli/Properties/launchSettings.json` has profiles for Visual Studio / Rider
 (or `dotnet run --launch-profile "<name>"`): alice/bob/carol in a shared local room,
 a "wait for a DM" instance, and one on the real DHT. The local ones pass `--local`, which swaps the DHT for a
@@ -302,10 +304,11 @@ the stream is announced like a voice beacon, signed by the sharer.
 - **Frames and loss.** A frame is cut into packets, spread out over time (at about four times its declared bitrate, so a
   big key frame does not arrive as one burst) and put back together by the viewer, who gets frames in order and without
   gaps. Every member keeps the last 600 or so packets. A member that sees a gap asks its parent for the missing
-  packets, up to four times, so one lost packet costs a round trip and not a key frame; after the last frame, two tiny
-  probe packets show what was missing at the end. A frame that is still incomplete after a quarter of a second counts as
+  packets, every 80 ms until it comes, so one lost packet costs a round trip and not a key frame; after the last frame, two tiny
+  probe packets show what was missing at the end. A frame that is still incomplete after 0.4 seconds counts as
   lost: the viewer drops everything until the next key frame and asks for one. The request goes up the tree, and the
-  first member whose copy runs without a hole from the key to now replays it (paced, so the replay itself is not lost);
+  first member whose copy runs without a hole from the key to now replays it (paced; the receiver is told which numbers to expect and asks for any that do not come, while the replay is still
+  arriving);
   only if nobody has one, the sharer gets `KeyFrameRequested` (at most once a second) and should send a key frame. A
   viewer that joins late is given the same copy at once. A replay starts again from the key, so the viewer is handed
   every frame since it, quickly; it is a catch-up, not a jump to the present.
