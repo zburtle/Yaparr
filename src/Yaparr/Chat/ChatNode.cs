@@ -70,7 +70,8 @@ public sealed class ChatNodeOptions
     public TimeSpan MediaAnnounceInterval { get; init; } = TimeSpan.FromSeconds(10);
 
     /// <summary>How long a neighbour in a stream's tree can be silent before it is given up on and another is found.</summary>
-    public TimeSpan MediaEdgeTimeout { get; init; } = TimeSpan.FromSeconds(6);
+    /// <summary>How long a parent or child of a stream may stay silent before it is given up. Pings go out four times in this time.</summary>
+    public TimeSpan MediaEdgeTimeout { get; init; } = TimeSpan.FromSeconds(3);
 
     /// <summary>
     /// A voice channel with this many people (counting you) or more stops using a connection between every pair and
@@ -572,6 +573,9 @@ public sealed partial class ChatNode : IDisposable
 
         _ = RunRoomDiscoveryAsync(room);
         _ = RunLoopAsync(() => MaintainRoomAsync(room), $"maintain {room.Name}", () => !_rooms.ContainsKey(room.Key), _options.MaintenanceInterval);
+        // Streams are watched on their own, more often: a viewer below a parent that vanished should not wait for the next general round.
+        _ = RunLoopAsync(() => { MaintainMedia(room, Environment.TickCount64); return Task.CompletedTask; }, $"streams {room.Name}", () => !_rooms.ContainsKey(room.Key),
+            TimeSpan.FromMilliseconds(Math.Clamp(_options.MediaEdgeTimeout.TotalMilliseconds / 4, 100, 2000)));
         return room;
     }
 
@@ -1677,7 +1681,6 @@ public sealed partial class ChatNode : IDisposable
         long now = Environment.TickCount64;
         TopUpConnections(room);
         MaintainVoice(room, now);
-        MaintainMedia(room, now);
         foreach (var member in room.MemberStates.Values) EnsureStandby(member);
 
         if (now - room.LastPresenceAt >= _options.PresenceInterval.TotalMilliseconds)

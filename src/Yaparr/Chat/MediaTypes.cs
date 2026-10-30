@@ -91,6 +91,8 @@ internal sealed class WireMedia
     /// <summary>How many children the sender could take.</summary>
     public int Cap { get; set; }
     public string[]? Exclude { get; set; }
+    /// <summary>For join: members the joiner is connected to now. A parent among them can be attached to at once; another may need a connection first, which can take long behind some routers.</summary>
+    public string[]? Reach { get; set; }
     public bool Add { get; set; }
     /// <summary>For nack: the packets the sender is missing.</summary>
     public uint[]? Seqs { get; set; }

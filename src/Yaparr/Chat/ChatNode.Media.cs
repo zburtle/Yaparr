@@ -245,6 +245,7 @@ public sealed class MediaView : IDisposable
 public sealed partial class ChatNode
 {
     private const int MaxMediaGroupsPerRoom = 16;
+    private const int MaxReach = 32;
     private const long PlaceValidMs = 10_000, RequestGapMs = 300, ExcludeMs = 30_000, DialGiveUpMs = 8_000, ServerBlockedRetryMs = 10_000;
     private const int MaxCacheBytes = 512 * 1024, MediaGraceConnections = 24;
     private const int MediaGraceMs = 8_000;
@@ -517,7 +518,8 @@ public sealed partial class ChatNode
             return;
         }
         lock (g.Gate) g.UnreachableSince = 0;
-        SendMedia(g.Info.Root, g, new WireMedia { Op = "join", Cap = FanoutOf(g), Exclude = exclude.ToArray() });
+        var reach = g.Room.MemberStates.Keys.Where(id => id != g.Info.Root && TryPeer(id, out _)).Take(MaxReach).Select(id => id.Value).ToArray();
+        SendMedia(g.Info.Root, g, new WireMedia { Op = "join", Cap = FanoutOf(g), Exclude = exclude.ToArray(), Reach = reach });
     }
 
     private void OnMediaControl(PeerState peer, ChatRoom room, WireMedia m)
@@ -714,7 +716,8 @@ public sealed partial class ChatNode
         PeerId? evicted = null;
         lock (g.Gate)
         {
-            place = ChoosePlace(g, peer.Id, exclude);
+            var reach = (m.Reach ?? Array.Empty<string>()).Take(MaxReach).Where(IsValidPeerId).Select(x => new PeerId(x)).ToHashSet();
+            place = ChoosePlace(g, peer.Id, exclude, reach);
             // No room, and the one asking can pass the stream on: if the sharer's own places are held by members who
             // cannot, one of them steps aside. It asks again and is placed under someone who can carry it.
             if (place == null && m.Cap > 0 && !g.Children.ContainsKey(peer.Id))
@@ -732,8 +735,10 @@ public sealed partial class ChatNode
         SendMedia(peer.Id, g, new WireMedia { Op = "place", Parent = place?.Value ?? "" });
     }
 
-    // The shallowest member with a free place, or the root itself. Never someone under the joiner, which would make a loop.
-    private PeerId? ChoosePlace(MediaGroup g, PeerId joiner, HashSet<PeerId> exclude)
+    // A member with a free place that the joiner is already connected to, and failing that any; the shallowest of those,
+    // or the root itself. Never someone under the joiner, which would make a loop. A joiner that cannot be reached from
+    // outside (behind a symmetric router) otherwise spends many seconds trying to connect to a parent it was never in touch with.
+    internal static PeerId? ChoosePlace(MediaGroup g, PeerId joiner, HashSet<PeerId> exclude, HashSet<PeerId>? reach = null)
     {
         var barred = new HashSet<PeerId> { joiner };
         for (bool grew = true; grew;)
@@ -755,13 +760,13 @@ public sealed partial class ChatNode
         }
 
         PeerId? best = null;
-        (int Depth, int Free, string Id) bestKey = default;
+        (int Unreached, int Depth, int Free, string Id) bestKey = default;
         void Consider(PeerId id, int depth, int cap)
         {
             if (barred.Contains(id) || exclude.Contains(id) || depth < 0) return;
             int free = cap - g.Map.Values.Count(n => n.Parent == id);
             if (free <= 0) return;
-            var key = (depth, -free, id.Value);
+            var key = (reach != null && id != g.Info.Root && !reach.Contains(id) ? 1 : 0, depth, -free, id.Value);
             if (best == null || key.CompareTo(bestKey) < 0) { best = id; bestKey = key; }
         }
 

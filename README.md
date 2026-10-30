@@ -291,7 +291,7 @@ the stream is announced like a voice beacon, signed by the sharer.
   (`IsRelayCapable`) are ever used as parents. If the sharer's places are all held by members who cannot pass the stream
   on, one of them steps aside for one who can.
 - **When someone leaves.** Neighbours ping each other every maintenance interval. A member whose parent goes silent
-  (`MediaEdgeTimeout`, 6 s) or whose connection closes asks the root again and is placed elsewhere, with its own
+  (`MediaEdgeTimeout`, 3 s) or whose connection closes asks the root again and is placed elsewhere, with its own
   children still attached to it. A newcomer is given the packets since the last key straight away by whoever it
   attaches to, so it does not wait for the sharer to produce another.
 - **What is protected.** Packets are encrypted hop by hop like everything else. In a `signed` stream the sharer signs every
