@@ -82,7 +82,10 @@ public sealed partial class ChatNode
         SaveRoles(room);
         foreach (var member in room.MemberStates.Values)
             Send(member.Connection, new Wire { Type = Wire.Roles, Room = RefTo(room, member), Rol = new[] { entry } });
+        Interlocked.Increment(ref room.ModVersion);
         room.RaiseRolesChanged();
+        // An order counts only while the one who gave it is an admin, so a change of admins can change who is banned.
+        if (room.ModEntries.Count > 0) ApplyModeration(room);
     }
 
     private void SendRolesTo(ChatRoom room, PeerState peer)
@@ -117,6 +120,8 @@ public sealed partial class ChatNode
         SaveRoles(room);
         foreach (var r in accepted)
             Relay(peer, room, PeerId.FromPublicKey(Convert.FromBase64String(r.Pub)).Value, reference => new Wire { Type = Wire.Roles, Room = reference, Rol = new[] { r } });
+        Interlocked.Increment(ref room.ModVersion);
         room.RaiseRolesChanged();
+        if (room.ModEntries.Count > 0) ApplyModeration(room);
     }
 }

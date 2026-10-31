@@ -60,7 +60,7 @@ public sealed partial class ChatNode
         bool changed = false;
         foreach (var s in states.Take(16))
         {
-            if (!IsValidPeerId(s.From) || s.From == Id.Value || !SignedVoice.Verify(s, room.Key)) continue;
+            if (!IsValidPeerId(s.From) || s.From == Id.Value || IsBannedIn(room, new PeerId(s.From)) || !SignedVoice.Verify(s, room.Key)) continue;
             var id = new PeerId(s.From);
             lock (room.IndirectGate)
             {

@@ -584,6 +584,7 @@ public sealed partial class ChatNode : IDisposable
         if (!_rooms.TryAdd(room.Key, room)) return _rooms[room.Key];
         LoadSounds(room);
         LoadRoles(room);
+        LoadMods(room);
         NoteRoomChanged(room, joined: true);
 
         foreach (var peer in _peers.Values)
@@ -992,7 +993,7 @@ public sealed partial class ChatNode : IDisposable
     }
 
     internal IReadOnlyList<ChatMessage> GetHistory(ChatRoom room) =>
-        room.History.Snapshot().Where(m => !IsBlocked(new PeerId(m.From))).Select(m => ToChatMessage(room, m, catchUp: false)).ToList();
+        room.History.Snapshot().Where(m => !IsBlocked(new PeerId(m.From)) && !IsBannedIn(room, new PeerId(m.From)) && !IsMessageDeleted(room, m)).Select(m => ToChatMessage(room, m, catchUp: false)).ToList();
 
     private ChatMessage ToChatMessage(ChatRoom room, StoredMessage m, bool catchUp)
     {
@@ -1035,6 +1036,8 @@ public sealed partial class ChatNode : IDisposable
                 continue;
             }
             received.Add(m.Id);
+            // Acknowledged so the sender stops trying, but a banned author's message, or one an admin deleted, goes no further.
+            if (IsBannedIn(room, new PeerId(m.From)) || IsMessageDeleted(room, m)) continue;
             if (live) _clocks.Observe(m.From, m.Ts, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
             bool fresh = live && m.Ts >= DateTimeOffset.UtcNow.Subtract(LiveWindow).ToUnixTimeMilliseconds();
             if (!room.History.TryAdd(m)) continue;
@@ -1131,13 +1134,13 @@ public sealed partial class ChatNode : IDisposable
             // A member's own signed announcement of their name beats what a neighbour says, which can be out of date after a rename.
             long cutoff = Environment.TickCount64 - (long)PresenceLifetime.TotalMilliseconds;
             foreach (var (id, entry) in room.Presence)
-                if (!entry.Beacon.Gone && entry.SeenAt >= cutoff && id != Id && !room.MemberStates.ContainsKey(id) && !IsBlocked(id))
+                if (!entry.Beacon.Gone && entry.SeenAt >= cutoff && id != Id && !room.MemberStates.ContainsKey(id) && !IsBlocked(id) && !IsBannedIn(room, id))
                     reachable.TryAdd(id, entry.Beacon.Name);
             foreach (var member in room.MemberStates.Values)
                 foreach (var kv in member.Links(room.Key))
                 {
                     var id = new PeerId(kv.Key);
-                    if (id != Id && !room.MemberStates.ContainsKey(id) && !IsBlocked(id)) reachable.TryAdd(id, kv.Value);
+                    if (id != Id && !room.MemberStates.ContainsKey(id) && !IsBlocked(id) && !IsBannedIn(room, id)) reachable.TryAdd(id, kv.Value);
                 }
 
             foreach (var id in room.Indirect.Keys.ToList())
@@ -1174,6 +1177,8 @@ public sealed partial class ChatNode : IDisposable
 
     private void OnPeerEntersRoom(PeerState peer, ChatRoom room)
     {
+        // Someone the admins banned is not a member as far as we are concerned: nothing is sent to them or taken from them.
+        if (IsBannedIn(room, peer.Id) || IsBannedIn(room, peer.AccountId)) return;
         if (!room.MemberStates.TryAdd(peer.Id, peer)) return;
         LogPeerEvent(peer.Id, $"{peer.Id.Short} entered room '{room.Name}'");
         if (!peer.Connection.IsRelayed) _peerCache.Remember(room.Key, peer.Id, peer.Connection.RemoteEndPoint);
@@ -1198,6 +1203,7 @@ public sealed partial class ChatNode : IDisposable
         SendVoiceStateTo(room, peer);
         SendSoundsTo(room, peer);
         SendRolesTo(room, peer);
+        SendModsTo(room, peer);
         SendMediaAnnouncesTo(room, peer);
         ResendTo(peer, o => o.Room == room, o => new Wire { Type = Wire.Message, Room = RefTo(room, peer), Msgs = new[] { o.Signed! } });
 
@@ -1472,6 +1478,12 @@ public sealed partial class ChatNode : IDisposable
                                  && ResolveRoom(peer, wire.Room) is { } roleRoom && roleRoom.MemberStates.ContainsKey(peer.Id):
                 if (!rate.AdmitRoleList()) { Dropped(peer, rate, "sent too many admin lists"); break; }
                 OnRoles(peer, roleRoom, wire.Rol);
+                break;
+
+            case Wire.Moderate when wire.Room != null && wire.Mod != null
+                                    && ResolveRoom(peer, wire.Room) is { } modRoom && modRoom.MemberStates.ContainsKey(peer.Id):
+                if (!rate.AdmitModList()) { Dropped(peer, rate, "sent too many bans or deletions"); break; }
+                OnMods(peer, modRoom, wire.Mod);
                 break;
 
             case Wire.Play when wire.Room != null && wire.Pl != null

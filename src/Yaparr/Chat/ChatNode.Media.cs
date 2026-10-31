@@ -349,7 +349,7 @@ public sealed partial class ChatNode
         bool changed = false;
         foreach (var a in anns.Take(8))
         {
-            if (!IsValidPeerId(a.From) || a.From == Id.Value || !SignedMedia.Verify(a, room.Key) || IsBlocked(new PeerId(a.From))) continue;
+            if (!IsValidPeerId(a.From) || a.From == Id.Value || !SignedMedia.Verify(a, room.Key) || IsBlocked(new PeerId(a.From)) || IsBannedIn(room, new PeerId(a.From))) continue;
             if (room.Media.TryGetValue(a.Group, out var g))
             {
                 if (g.Ann.From != a.From || g.Ann.Ts >= a.Ts) continue;

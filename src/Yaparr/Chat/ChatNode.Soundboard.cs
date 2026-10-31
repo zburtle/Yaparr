@@ -62,7 +62,7 @@ public sealed partial class ChatNode
     {
         List<StoredSound> live;
         lock (room.SoundGate) live = room.SoundEntries.Values.Where(s => !s.Deleted).ToList();
-        return live.Where(s => IsValidPeerId(s.From) && !IsBlocked(new PeerId(s.From)))
+        return live.Where(s => IsValidPeerId(s.From) && !IsBlocked(new PeerId(s.From)) && !IsBannedIn(room, new PeerId(s.From)) && !IsSoundDeleted(room, s.Id))
             .OrderBy(s => s.Name, StringComparer.CurrentCultureIgnoreCase).ThenBy(s => s.Id, StringComparer.Ordinal).Select(ToInfo).ToList();
     }
 
@@ -70,7 +70,7 @@ public sealed partial class ChatNode
     {
         StoredSound? s;
         lock (room.SoundGate) room.SoundEntries.TryGetValue(id, out s);
-        if (s == null || s.Deleted || _blobs.Read(s.Hash) is not { } data) return null;
+        if (s == null || s.Deleted || IsSoundDeleted(room, id) || _blobs.Read(s.Hash) is not { } data) return null;
         return SoundClip.TryParse(data, out var clip) ? clip : null;
     }
 
@@ -131,7 +131,7 @@ public sealed partial class ChatNode
         var accepted = new List<StoredSound>();
         foreach (var s in sounds.Take(SoundBatch * 2))
         {
-            if (!IsValidPeerId(s.From) || !SignedSound.Verify(s, room.Key)) continue;
+            if (!IsValidPeerId(s.From) || IsBannedIn(room, new PeerId(s.From)) || !SignedSound.Verify(s, room.Key)) continue;
             lock (room.SoundGate)
             {
                 if (room.SoundEntries.TryGetValue(s.Id, out var old) && (old.From != s.From || old.Ts >= s.Ts)) continue;
@@ -151,7 +151,7 @@ public sealed partial class ChatNode
     private void FetchMissingSounds(ChatRoom room)
     {
         List<StoredSound> missing;
-        lock (room.SoundGate) missing = room.SoundEntries.Values.Where(s => !s.Deleted && !_blobs.Has(s.Hash)).ToList();
+        lock (room.SoundGate) missing = room.SoundEntries.Values.Where(s => !s.Deleted && !IsSoundDeleted(room, s.Id) && !_blobs.Has(s.Hash)).ToList();
         foreach (var s in missing.Where(s => IsValidPeerId(s.From) && !IsBlocked(new PeerId(s.From))))
             _ = FetchSoundAsync(room, s);
     }
@@ -205,7 +205,7 @@ public sealed partial class ChatNode
         Relay(peer, room, play.From, reference => new Wire { Type = Wire.Play, Room = reference, Pl = play });
 
         var from = new PeerId(play.From);
-        if (from == Id || IsBlocked(from) || room.ActiveVoice is not { } session) return;
+        if (from == Id || IsBlocked(from) || IsBannedIn(room, from) || room.ActiveVoice is not { } session) return;
         // Only people in the voice channel can play sounds into it.
         lock (room.IndirectGate)
             if (!room.Voice.TryGetValue(from, out var voice) || !voice.State.Active) return;
@@ -217,7 +217,7 @@ public sealed partial class ChatNode
 
         StoredSound? s;
         lock (room.SoundGate) room.SoundEntries.TryGetValue(play.Sound, out s);
-        if (s == null || s.Deleted || s.Hash != play.Hash) return;
+        if (s == null || s.Deleted || IsSoundDeleted(room, s.Id) || s.Hash != play.Hash) return;
         if (ReadSound(room, s.Id) is not { } clip)
         {
             _ = FetchSoundAsync(room, s);

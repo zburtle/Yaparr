@@ -104,8 +104,10 @@ internal static class SignedMessage
         catch (FormatException) { return false; }
     }
 
-    public static string Key(StoredMessage m) =>
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(m.From + ":" + m.Id)))[..32].ToLowerInvariant();
+    public static string Key(StoredMessage m) => KeyOf(m.From, m.Id);
+
+    public static string KeyOf(string from, string id) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(from + ":" + id)))[..32].ToLowerInvariant();
 
     private static byte[] Payload(string roomKey, StoredMessage m)
     {
@@ -155,6 +157,17 @@ internal sealed class RoomHistory
             _store?.Append(_roomKey, m);
             Trim();
             return true;
+        }
+    }
+
+    /// <summary>Forgets messages (by key), here and in the store, so they are not served to anyone else either.</summary>
+    public void Remove(IEnumerable<string> keys)
+    {
+        lock (_gate)
+        {
+            bool any = false;
+            foreach (var k in keys) any |= _messages.Remove(k);
+            if (any) _store?.Compact(_roomKey, _messages.Values.ToList());
         }
     }
 

@@ -52,6 +52,11 @@ public sealed class ChatRoom
     internal readonly object SoundGate = new();
     internal readonly Dictionary<string, StoredRole> RoleEntries = new();
     internal readonly object RoleGate = new();
+    internal readonly Dictionary<string, StoredMod> ModEntries = new();
+    internal readonly object ModGate = new();
+    internal int ModVersion;
+    internal ModView? ModCache;
+    internal int ModCacheVersion = -1;
     internal long LastSoundFetchAt;
     internal long LastPresenceAt, LastShuffleAt;
 
@@ -90,6 +95,32 @@ public sealed class ChatRoom
 
     /// <summary>Appoints or removes an admin. Only the owner can; everyone in the room sees it.</summary>
     public void SetAdmin(PeerId account, bool admin) => _node.SetAdmin(this, account, admin);
+
+    /// <summary>The people this room's admins have banned, as far as this device knows. Empty for a room with no owner.</summary>
+    public IReadOnlyList<BannedPerson> Banned => _node.GetBanned(this);
+
+    /// <summary>Whether this account is banned from the room.</summary>
+    public bool IsBanned(PeerId account) => _node.IsBannedIn(this, account);
+
+    /// <summary>
+    /// Bans an account from the room (owner or admin only; an admin cannot ban another admin or the owner). Every member's app
+    /// then ignores the person: their messages are hidden, they leave the member list and voice, and nothing is sent to them.
+    /// This does not take the room key away from them; it holds until they come back under another identity.
+    /// </summary>
+    public void Ban(PeerId account, string name) => _node.Ban(this, account, name);
+
+    /// <summary>Lifts a ban.</summary>
+    public void Unban(PeerId account) => _node.Unban(this, account);
+
+    /// <summary>Deletes a message for everyone in the room (owner or admin only).</summary>
+    public void DeleteMessage(ChatMessage message) => _node.DeleteMessage(this, message);
+
+    /// <summary>Removes a sound from the soundboard, whoever added it (owner or admin only).</summary>
+    public void DeleteSound(string id) => _node.DeleteSound(this, id);
+
+    /// <summary>A ban, an unban, or a deleted message or sound changed what the room shows. Read <see cref="GetHistory"/> and the member lists again.</summary>
+    public event Action? ModerationChanged;
+    internal void RaiseModerationChanged() => ModerationChanged?.Invoke();
 
     /// <summary>The owner appointed or removed an admin.</summary>
     public event Action? RolesChanged;
