@@ -1190,7 +1190,8 @@ public sealed partial class ChatNode : IDisposable
 
     private void OnSyncRequest(PeerState peer, ChatRoom room, string[] have)
     {
-        if (!_options.SyncHistory || !peer.TryStartServing(room.Key)) return;
+        // One reply every few seconds per person and room; a new secret starts afresh, since people ask again as soon as they have switched.
+        if (!_options.SyncHistory || !peer.TryStartServing($"{room.Key}:{room.Epoch}")) return;
         var missing = room.History.Missing(new HashSet<string>(have), cap: 500);
         for (int i = 0; i < missing.Count; i += 20)
             Send(peer.Connection, new Wire { Type = Wire.History, Room = RefTo(room, peer), Msgs = missing.Skip(i).Take(20).ToArray() });
