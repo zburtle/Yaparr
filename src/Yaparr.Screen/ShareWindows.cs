@@ -31,6 +31,14 @@ public static class ShareWindows
 
     private const int GWL_EXSTYLE = -20, WS_EX_TOOLWINDOW = 0x80, DWMWA_CLOAKED = 14;
 
+    /// <summary>The program that owns the window, or 0 if it is gone.</summary>
+    public static int ProcessId(long handle)
+    {
+        if (!OperatingSystem.IsWindows()) return 0;
+        GetWindowThreadProcessId((IntPtr)handle, out uint pid);
+        return (int)pid;
+    }
+
     /// <summary>Whether the window is still open.</summary>
     public static bool Exists(long handle) => OperatingSystem.IsWindows() && IsWindow((IntPtr)handle);
 

@@ -54,6 +54,7 @@ public partial class ShareDialog : Window
             Display = what >= 0 && what < _displays.Count ? _displays[what] : null,
             WindowHandle = window?.Handle,
             MaxWidth = q.Width, MaxHeight = q.Height, Fps = q.Fps, Kbps = q.Kbps,
+            ShareSound = true,
         };
         Close(true);
     }

@@ -6,6 +6,7 @@ using Avalonia.Platform;
 using Avalonia.Threading;
 using Yaparr.Chat;
 using Yaparr.Screen;
+using Yaparr.Voice;
 
 namespace Yaparr.Desktop;
 
@@ -38,6 +39,31 @@ public partial class ScreenViewWindow : Window
 
     /// <summary>Raised when the window is closed, so the owner can mark the share as not watched any more.</summary>
     public event Action? Stopped;
+
+    private MediaView? _soundView;
+    private StreamAudioReceiver? _sound;
+    private IDisposable? _speaker;
+
+    /// <summary>Plays the sound that goes with the picture, on the chosen speakers. Failing to open them leaves the picture without sound.</summary>
+    public void AttachSound(MediaView soundView, string? output)
+    {
+        _soundView = soundView;
+        try
+        {
+            _sound = new StreamAudioReceiver(soundView);
+            _speaker = VoiceAudio.PlayStream(_sound, output);
+            SoundPanel.IsVisible = true;
+            SoundBox.PropertyChanged += (_, e) =>
+            {
+                if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty && _sound != null) _sound.Gain = (float)SoundBox.Value / 100f;
+            };
+        }
+        catch (Exception)
+        {
+            _sound?.Dispose(); _sound = null;
+            _soundView.Dispose(); _soundView = null;
+        }
+    }
 
     // Over the internet pictures arrive unevenly: a few close together, then a gap. Drawn as they come, that looks like
     // stutter. They wait in a short queue and are drawn on a steady clock set by how fast they arrive on average. The
@@ -132,6 +158,9 @@ public partial class ScreenViewWindow : Window
         _draw.Stop();
         _viewer?.Dispose();
         _view?.Dispose();
+        _speaker?.Dispose();
+        _sound?.Dispose();
+        _soundView?.Dispose();
         Stopped?.Invoke();
     }
 }

@@ -77,6 +77,12 @@ public sealed class ScreenOptions
 
     public ScreenCodec Codec { get; init; } = ScreenCodec.Auto;
 
+    /// <summary>
+    /// Whether to share the sound too: a shared window's own sound, or for a monitor everything but Yaparr (so the voice chat
+    /// does not go round). Needs Windows 10 version 2004 or newer; without it the picture is shared alone.
+    /// </summary>
+    public bool ShareSound { get; init; }
+
     /// <summary>Whether to draw the mouse pointer into the picture.</summary>
     public bool ShowCursor { get; init; } = true;
 }

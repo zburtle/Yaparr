@@ -42,6 +42,40 @@ internal sealed class VoiceAudio : IDisposable
         protected override void GenerateAudio(Span<float> buffer, int channels) => _session.PullPlayback(buffer);
     }
 
+    private static AudioFormat StereoFormat => new()
+    {
+        Format = SampleFormat.F32, Channels = 2, SampleRate = VoiceSession.SampleRate, Layout = AudioFormat.GetLayoutFromChannels(2),
+    };
+
+    private sealed class StreamSpeaker : SoundComponent
+    {
+        private readonly StreamAudioReceiver _sound;
+        public StreamSpeaker(AudioEngine engine, AudioFormat format, StreamAudioReceiver sound) : base(engine, format) => _sound = sound;
+        protected override void GenerateAudio(Span<float> buffer, int channels) => _sound.Pull(buffer);
+    }
+
+    /// <summary>Plays the sound of a shared screen on the chosen speakers until the returned object is disposed.</summary>
+    public static IDisposable PlayStream(StreamAudioReceiver sound, string? output)
+    {
+        var engine = Engine;
+        DeviceInfo? info = engine.PlaybackDevices.Where(d => d.Name == output).Select(d => (DeviceInfo?)d).FirstOrDefault();
+        var device = engine.InitializePlaybackDevice(info, StereoFormat, new MiniAudioDeviceConfig());
+        device.MasterMixer.AddComponent(new StreamSpeaker(engine, StereoFormat, sound));
+        device.Start();
+        return new Closer(device);
+    }
+
+    private sealed class Closer : IDisposable
+    {
+        private readonly AudioPlaybackDevice _device;
+        public Closer(AudioPlaybackDevice device) => _device = device;
+        public void Dispose()
+        {
+            try { _device.Stop(); } catch (Exception) { }
+            _device.Dispose();
+        }
+    }
+
     // Plays a clip once and then goes silent.
     private sealed class Clip : SoundComponent
     {

@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using Yaparr.Chat;
+using Yaparr.Voice;
 
 namespace Yaparr.Screen;
 
@@ -37,8 +38,56 @@ public sealed class ScreenSharer : IDisposable
         if (options.WindowHandle is { } handle && !ShareWindows.Exists(handle)) throw new InvalidOperationException("That window is not open any more.");
         var source = node.StartMedia(room, "screen", name, signed: true, upstream: false, kbps: options.Kbps);
         var sharer = new ScreenSharer(source, options, ffmpegPath);
+        if (options.ShareSound) sharer.StartSound(node, room);
         sharer._run = Task.Run(() => sharer.PumpAsync(sharer._cts.Token));
         return sharer;
+    }
+
+    /// <summary>The kind of the stream that carries a share's sound; its name says which share it belongs to (see <see cref="SoundNameFor"/>).</summary>
+    public const string SoundKind = "screen-audio";
+
+    public static string SoundNameFor(string shareId) => "audio:" + shareId;
+
+    private MediaSource? _soundSource;
+    private StreamAudioSender? _soundSender;
+    private ProcessLoopback? _soundCapture;
+
+    /// <summary>Whether the sound is being shared along with the picture.</summary>
+    public bool SharingSound => _soundCapture != null;
+
+    /// <summary>When sound was asked for but could not be shared: why. The picture is shared anyway.</summary>
+    public string? SoundProblem { get; private set; }
+
+    // The sound is a stream of its own beside the picture, so a stalled picture never holds the sound back.
+    private void StartSound(ChatNode node, ChatRoom room)
+    {
+        try
+        {
+            if (!ProcessLoopback.IsSupported) throw new PlatformNotSupportedException("Sharing sound needs Windows 10 version 2004 or newer.");
+            // A window's own program, or for a monitor everything except Yaparr, so what others say in the voice chat is not sent back to them.
+            int pid = _options.WindowHandle is { } handle ? ShareWindows.ProcessId(handle) : Environment.ProcessId;
+            bool exclude = _options.WindowHandle == null;
+            if (pid == 0) throw new InvalidOperationException("That window is not open any more.");
+            _soundSource = node.StartMedia(room, SoundKind, SoundNameFor(_source.Info.Id), signed: true, upstream: false, kbps: 96);
+            _soundSender = new StreamAudioSender(_soundSource);
+            var sender = _soundSender;
+            _soundCapture = ProcessLoopback.Start(pid, exclude, (samples, count) => sender.Push(samples.AsSpan(0, count)));
+        }
+        catch (Exception ex)
+        {
+            SoundProblem = ex.Message;
+            StopSound();
+        }
+    }
+
+    private void StopSound()
+    {
+        var capture = _soundCapture; _soundCapture = null;
+        var sender = _soundSender; _soundSender = null;
+        var source = _soundSource; _soundSource = null;
+        capture?.Dispose();
+        sender?.Dispose();
+        source?.Dispose();
     }
 
     public MediaSource Source => _source;
@@ -167,6 +216,7 @@ public sealed class ScreenSharer : IDisposable
         _cts.Cancel();
         KillProcess();
         try { _run?.Wait(TimeSpan.FromSeconds(2)); } catch (AggregateException) { }
+        StopSound();
         _source.Dispose();
         _cts.Dispose();
     }

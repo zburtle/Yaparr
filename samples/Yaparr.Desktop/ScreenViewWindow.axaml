@@ -7,6 +7,12 @@
         <Image x:Name="Picture" Stretch="Uniform" />
         <TextBlock x:Name="Waiting" Text="Waiting for the first picture..." Foreground="#bbbbbb"
                    HorizontalAlignment="Center" VerticalAlignment="Center" />
-        <TextBlock x:Name="Info" Grid.Row="1" Foreground="#999999" FontSize="11" Margin="8,4" />
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto">
+            <TextBlock x:Name="Info" Foreground="#999999" FontSize="11" Margin="8,4" VerticalAlignment="Center" />
+            <StackPanel x:Name="SoundPanel" Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="8,4" IsVisible="False">
+                <TextBlock Text="Sound" Foreground="#999999" FontSize="11" VerticalAlignment="Center" />
+                <Slider x:Name="SoundBox" Minimum="0" Maximum="200" Value="100" Width="120" VerticalAlignment="Center" />
+            </StackPanel>
+        </Grid>
     </Grid>
 </Window>

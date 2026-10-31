@@ -38,19 +38,29 @@ internal static class VoicePacket
 internal sealed class RemoteVoice : IDisposable
 {
     public const int FrameSamples = 960;
-    private const int MinTarget = 2, MaxTarget = 8, MaxBuffered = 40, SilentFramesBeforeStop = 4;
+    private const int MaxBuffered = 40, SilentFramesBeforeStop = 4;
 
+    private readonly int _minTarget, _maxTarget;
     private readonly object _gate = new();
-    private readonly IOpusDecoder _decoder = OpusCodecFactory.CreateDecoder(48000, 1);
+    private readonly IOpusDecoder _decoder;
     private readonly Dictionary<ushort, byte[]> _packets = new();
     private bool _playing;
     private ushort _first, _expected;
-    private int _target = MinTarget;
+    private int _target;
     private int _silent;
     private long _lastUnderrunAt;
     private long _lastRaisedAt;
 
-    public RemoteVoice(PeerId id) => Id = id;
+    /// <param name="channels">1 for a voice; 2 for the sound of a shared screen, whose frames then hold <see cref="FrameSamples"/> x 2 interleaved samples.</param>
+    /// <param name="minTarget">How many 20 ms packets to hold back before playing, which is also the least delay.</param>
+    public RemoteVoice(PeerId id, int channels = 1, int minTarget = 2)
+    {
+        Id = id;
+        _decoder = OpusCodecFactory.CreateDecoder(48000, channels);
+        _minTarget = minTarget;
+        _maxTarget = Math.Max(8, minTarget + 6);
+        _target = minTarget;
+    }
 
     public PeerId Id { get; }
     public float Gain { get; set; } = 1f;
@@ -145,12 +155,12 @@ internal sealed class RemoteVoice : IDisposable
     private void GrowTarget(long nowMs)
     {
         _lastUnderrunAt = nowMs;
-        if (_target < MaxTarget) _target++;
+        if (_target < _maxTarget) _target++;
     }
 
     private void RelaxTarget(long nowMs)
     {
-        if (_target > MinTarget && nowMs - _lastUnderrunAt > 8000 && nowMs - _lastRaisedAt > 8000)
+        if (_target > _minTarget && nowMs - _lastUnderrunAt > 8000 && nowMs - _lastRaisedAt > 8000)
         {
             _target--;
             _lastRaisedAt = nowMs;

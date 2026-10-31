@@ -11,6 +11,8 @@
         <Button Content="Refresh the list of windows" HorizontalAlignment="Left" Margin="0,2,0,0" Click="Refresh_Click" />
         <TextBlock Text="Quality" FontWeight="SemiBold" Margin="0,8,0,0" />
         <ComboBox x:Name="QualityBox" HorizontalAlignment="Stretch" />
+        <TextBlock Classes="muted small" TextWrapping="Wrap" Margin="0,6,0,0"
+                   Text="The sound is shared too: a window's own sound, or for a monitor everything you hear except Yaparr, so the voice chat is not sent back. Needs Windows 10 version 2004 or newer." />
         <TextBlock x:Name="Note" Classes="muted small" TextWrapping="Wrap" Margin="0,6,0,0"
                    Text="Everyone in the room can watch. Each viewer passes the picture on to a few others, so a big room does not need a fast connection from you. Higher quality needs a faster upload." />
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,12,0,0">

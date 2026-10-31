@@ -80,6 +80,10 @@ public partial class MainWindow
             _sharerStats.Show(this);
             conv.IsSharing = true;
             conv.Add(MessageVm.System($"You are sharing your {what}. Everyone in the room can watch it."));
+            if (dialog.Result.ShareSound)
+                conv.Add(MessageVm.System(sharer.SharingSound
+                    ? (dialog.Result.WindowHandle != null ? "The sound of that window is shared too." : "The sound of your computer is shared too, except Yaparr's own, so the voice chat does not go round.")
+                    : "The sound could not be shared, so only the picture is: " + sharer.SoundProblem));
         }
         catch (Exception ex)
         {
@@ -121,6 +125,12 @@ public partial class MainWindow
         {
             var view = _node.WatchMedia(room, share.Id);
             var window = new ScreenViewWindow(share.Name, view, ffmpeg);
+            // The sound, if the sharer shares it, is a stream of its own that names this share.
+            if (room.MediaGroups.FirstOrDefault(g => g.Kind == ScreenSharer.SoundKind && g.Name == ScreenSharer.SoundNameFor(share.Id)) is { } sound)
+            {
+                try { window.AttachSound(_node.WatchMedia(room, sound.Id), _settings.VoiceOutput); }
+                catch (Exception ex) { _log.Write("could not watch the sound of the screen: " + ex.Message); }
+            }
             _screenViews[share.Id] = window;
             share.Watching = true;
             window.Stopped += () => UI(() =>
