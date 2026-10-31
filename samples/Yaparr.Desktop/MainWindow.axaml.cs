@@ -446,7 +446,11 @@ public partial class MainWindow : Window
     {
         if (_roomConversations.TryGetValue(room, out var existing)) { ConversationList.SelectedItem = existing; return existing; }
 
-        var conv = new ConversationVm(title, isRoom: true, room.SendAsync, room.Retry) { Invite = invite };
+        ConversationVm conv = null!;
+        // A message goes to the text channel on show; the first one needs no channel named.
+        conv = new ConversationVm(title, isRoom: true,
+            text => conv.CurrentChannel == RoomChannels.DefaultText ? room.SendAsync(text) : room.SendAsync(text, conv.CurrentChannel),
+            room.Retry) { Invite = invite };
         _roomConversations[room] = conv;
         room.DeliveryChanged += s => UI(() => conv.ApplyDelivery(s));
 
@@ -457,8 +461,10 @@ public partial class MainWindow : Window
         room.MemberJoined += p => UI(() => { Remember(p); RefreshPeers(); });
         room.MemberLeft += p => UI(() => { Remember(p); RefreshPeers(p.Account); });
         room.RolesChanged += () => UI(() => { RefreshPeers(); RefreshMembers(); });
+        room.ChannelsChanged += () => UI(() => RefreshChannels(conv, room));
         room.ModerationChanged += () => UI(() => { conv.Reload(room.GetHistory().Select(ToVm).ToList()); RefreshPeers(); RefreshMembers(); });
 
+        RefreshChannels(conv, room);
         foreach (var m in room.GetHistory()) conv.Add(ToVm(m));
         _conversations.Add(conv);
         ConversationList.SelectedItem = conv;
@@ -592,7 +598,7 @@ public partial class MainWindow : Window
     private MessageVm ToVm(ChatMessage m)
     {
         Remember(m.From);
-        var vm = new MessageVm(m.Timestamp, m.From.DisplayName, m.Text, m.IsCatchUp, isMine: _node != null && _node.IsMyDevice(m.From.Id), id: m.Id, attachment: m.Attachment) { Source = m };
+        var vm = new MessageVm(m.Timestamp, m.From.DisplayName, m.Text, m.IsCatchUp, isMine: _node != null && _node.IsMyDevice(m.From.Id), id: m.Id, attachment: m.Attachment) { Source = m, Channel = m.Channel };
         if (m.Attachment != null) TrackAttachment(vm);
         return vm;
     }
@@ -677,7 +683,7 @@ public partial class MainWindow : Window
             var caption = InputBox.Text?.Trim() ?? "";
             var id = await conv.Send(attachment.ToText(caption));
             InputBox.Text = "";
-            var vm = new MessageVm(DateTimeOffset.Now, _node.DisplayName, caption, isMine: true, id: id, attachment: attachment);
+            var vm = new MessageVm(DateTimeOffset.Now, _node.DisplayName, caption, isMine: true, id: id, attachment: attachment) { Channel = conv.IsRoom ? conv.CurrentChannel : null };
             vm.SetImage(prepared.Bytes);
             conv.Add(vm);
             ScrollToEnd();
@@ -692,8 +698,10 @@ public partial class MainWindow : Window
     private void OnMessage(ConversationVm conv, MessageVm message, bool announce)
     {
         conv.Add(message);
-        if (conv == _selected) { ScrollToEnd(); MarkRead(conv); }
-        else if (!message.IsMine) conv.Unread++;
+        // A message in another channel of the open room waits like one in another room.
+        bool viewing = conv == _selected && (message.Channel == null || message.Channel == conv.CurrentChannel);
+        if (viewing) { ScrollToEnd(); MarkRead(conv); }
+        else if (!message.IsMine) conv.NoteUnread(message.Channel);
         // What you wrote on another device needs no announcing.
         if (announce && !message.IsMine) NotifyMessage(conv);
     }
@@ -789,7 +797,7 @@ public partial class MainWindow : Window
         {
             var id = await conv.Send(text);
             InputBox.Text = "";
-            conv.Add(new MessageVm(DateTimeOffset.Now, _node.DisplayName, text, isMine: true, id: id));
+            conv.Add(new MessageVm(DateTimeOffset.Now, _node.DisplayName, text, isMine: true, id: id) { Channel = conv.IsRoom ? conv.CurrentChannel : null });
             ScrollToEnd();
         }
         catch (InvalidOperationException ex)
@@ -810,6 +818,7 @@ public partial class MainWindow : Window
         DetailsPanel.DataContext = _selected;
         VoicePanel.DataContext = _selected;
         VoiceBar.DataContext = _selected;
+        ChannelStrip.DataContext = _selected;
         RoomToggle.IsEnabled = has;
         if (!has) RoomToggle.IsChecked = false;
         RefreshMembers();
@@ -817,7 +826,8 @@ public partial class MainWindow : Window
         UpdateHeaderSubtitle();
         if (_selected != null)
         {
-            _selected.Unread = 0;
+            _selected.Opened();
+            UpdateComposer();
             MarkRead(_selected);
             ScrollToEnd();
             InputBox.Focus();

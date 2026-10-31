@@ -20,6 +20,7 @@ public partial class MainWindow
         var existing = conv.VoiceMembers.ToDictionary(m => m.Id);
         conv.VoiceMembers.Clear();
         bool someoneJoined = false;
+        var voiceChannels = room.Channels.Where(c => c.Kind == ChannelKind.Voice).ToList();
         foreach (var p in room.VoiceParticipants)
         {
             if (!existing.TryGetValue(p.Peer.Id.Value, out var old) && !p.IsSelf) someoneJoined = true;
@@ -28,8 +29,10 @@ public partial class MainWindow
             vm.Muted = p.Muted;
             vm.SoundboardMuted = IsPersonSoundboardMuted(p.Peer.Id.Value);
             vm.Deafened = p.Deafened;
+            vm.Where = voiceChannels.Count > 1 && voiceChannels.FirstOrDefault(c => c.Id == p.Channel)?.Name is { } where ? "\u00B7 " + where : "";
             conv.VoiceMembers.Add(vm);
         }
+        UpdateVoiceChannels(conv, room);
         conv.VoiceMembersChanged();
         if (conv == _selected) UpdateHeaderSubtitle();
 
@@ -104,9 +107,18 @@ public partial class MainWindow
         if (_node == null || _selected is not { IsRoom: true } conv) return;
         var room = _roomConversations.FirstOrDefault(kv => kv.Value == conv).Key;
         if (room == null) return;
+        JoinVoiceIn(conv, room, RoomChannels.DefaultVoice);
+    }
 
+    // Joins a voice channel of the room, leaving the one you are in (in this room or another).
+    private void JoinVoiceIn(ConversationVm conv, ChatRoom room, string channelId)
+    {
+        if (_node == null) return;
+        if (_voice != null && _voiceConv == conv && _voice.ChannelId == channelId) return;
         LeaveVoiceCore();
-        var session = room.JoinVoice();
+        VoiceSession session;
+        try { session = room.JoinVoice(channelId); }
+        catch (InvalidOperationException ex) { StatusText.Text = ex.Message; return; }
         ApplyVoiceSettings(session);
         ApplyProcessing(session);
         ApplySoundboardSettings(session);
@@ -134,6 +146,7 @@ public partial class MainWindow
         conv.InVoice = true;
         conv.Muted = conv.Deafened = false;
         RefreshVoice(conv, room, announce: false);
+        RefreshShares(conv, room);
         _sounds.YouJoined();
     }
 
@@ -159,7 +172,7 @@ public partial class MainWindow
             conv.InVoice = false;
             conv.Muted = conv.Deafened = false;
             var room = _roomConversations.FirstOrDefault(kv => kv.Value == conv).Key;
-            if (room != null) RefreshVoice(conv, room, announce: false);
+            if (room != null) { RefreshVoice(conv, room, announce: false); RefreshShares(conv, room); }
             _sounds.YouLeft();
         }
     }

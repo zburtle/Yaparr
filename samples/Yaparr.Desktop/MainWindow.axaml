@@ -335,6 +335,30 @@
                                 </Button>
                             </StackPanel>
                         </Grid>
+                        <Border x:Name="ChannelStrip" x:DataType="local:ConversationVm" IsVisible="{Binding ShowChannels}" Margin="14,8,14,0">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <ItemsControl ItemsSource="{Binding Channels}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="local:ChannelVm">
+                                            <Button Content="{Binding Label}" Classes.primary="{Binding Highlight}" Padding="10,4" Margin="0,0,6,6"
+                                                    Click="Channel_Click" ContextRequested="Channel_ContextRequested" />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <Button Grid.Column="1" Content="+" IsVisible="{Binding CanManageChannels}" VerticalAlignment="Top" Padding="10,4"
+                                        ToolTip.Tip="Add a channel">
+                                    <Button.Flyout>
+                                        <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                            <MenuItem Header="New text channel…" Click="NewTextChannel_Click" />
+                                            <MenuItem Header="New voice channel…" Click="NewVoiceChannel_Click" />
+                                        </MenuFlyout>
+                                    </Button.Flyout>
+                                </Button>
+                            </Grid>
+                        </Border>
                         <Border x:Name="DetailsPanel" x:DataType="local:ConversationVm" Classes="details" Margin="14,6,14,0"
                                 IsVisible="{Binding #RoomToggle.IsChecked}">
                             <StackPanel Spacing="6">
@@ -370,6 +394,7 @@
                                                 </Border>
                                                 <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
                                                 <TextBlock Text="{Binding Status}" Classes="muted small" VerticalAlignment="Center" />
+                                                <TextBlock Text="{Binding Where}" Classes="muted small" VerticalAlignment="Center" />
                                                 <Button Content="{Binding SoundboardGlyph}" IsVisible="{Binding CanMuteSoundboard}" Click="SoundboardMute_Click"
                                                         ToolTip.Tip="{Binding SoundboardTip}" Classes="ghost" Padding="4,0" FontSize="11" VerticalAlignment="Center" />
                                             </StackPanel>
@@ -429,7 +454,7 @@
                             <ContextMenu Opening="MessageMenu_Opening">
                                 <MenuItem x:Name="RetryItem" Header="_Retry sending" Click="RetryMessage_Click" />
                                 <MenuItem x:Name="DeleteMessageItem" Header="_Delete for everyone" Click="DeleteMessage_Click" />
-                                <MenuItem x:Name="BanSenderItem" Header="Ban sender from this _room�" Click="BanSender_Click" />
+                                <MenuItem x:Name="BanSenderItem" Header="Ban sender from this _room…" Click="BanSender_Click" />
                                 <MenuItem x:Name="BlockSenderItem" Header="_Block sender" Click="BlockSender_Click" />
                             </ContextMenu>
                         </ListBox.ContextMenu>
@@ -487,7 +512,7 @@
                             <ContextMenu Opening="PeopleMenu_Opening">
                                 <MenuItem x:Name="MakeAdminItem" Header="Make _admin of this room" Click="MakeAdmin_Click" />
                                 <MenuItem x:Name="RemoveAdminItem" Header="Remove _admin from this room" Click="RemoveAdmin_Click" />
-                                <MenuItem x:Name="BanPersonItem" Header="Ban from this _room�" Click="BanPerson_Click" />
+                                <MenuItem x:Name="BanPersonItem" Header="Ban from this _room…" Click="BanPerson_Click" />
                                 <MenuItem x:Name="UnbanPersonItem" Header="Unban from this _room" Click="UnbanPerson_Click" />
                                 <MenuItem x:Name="BlockPersonItem" Header="_Block" Click="BlockPerson_Click" />
                                 <MenuItem x:Name="UnblockPersonItem" Header="_Unblock" Click="UnblockPerson_Click" />

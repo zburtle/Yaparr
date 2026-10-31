@@ -16,7 +16,9 @@ public partial class MainWindow
 
     private void RefreshShares(ConversationVm conv, ChatRoom room)
     {
-        var shares = room.MediaGroups.Where(g => g.Kind == "screen").ToList();
+        // In voice, the shares are those of the voice channel you are in; otherwise all of them, so you know to join.
+        string? inChannel = _voiceConv == conv ? _voice?.ChannelId : null;
+        var shares = room.MediaGroups.Where(g => g.Kind == "screen" && (inChannel == null || (g.Channel ?? RoomChannels.DefaultVoice) == inChannel)).ToList();
         var watching = _screenViews.Keys.ToHashSet();
         conv.Shares.Clear();
         foreach (var g in shares)

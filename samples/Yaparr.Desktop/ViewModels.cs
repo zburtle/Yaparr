@@ -52,6 +52,9 @@ public sealed class MessageVm : Observable
 
     public Attachment? Attachment { get; }
     public ChatMessage? Source { get; init; }
+
+    /// <summary>The text channel of a room message; null for direct messages and notices.</summary>
+    public string? Channel { get; init; }
     public bool HasAttachment => Attachment != null;
     public bool HasText => Text.Length > 0;
     public byte[]? Image => _image;
@@ -296,7 +299,7 @@ public sealed class ConversationVm : Observable
     public void ApplyDelivery(DeliveryStatus status)
     {
         _delivery[status.MessageId] = status;
-        foreach (var m in Messages)
+        foreach (var m in Messages.Concat(_stored.Values.SelectMany(l => l)))
             if (m.Id == status.MessageId) m.Delivery = status;
     }
 
@@ -330,10 +333,95 @@ public sealed class ConversationVm : Observable
         for (int i = 0; i < Messages.Count; i++) MarkDays(i);
     }
 
+    // ---- channels ----
+
+    // Every message of a room is kept by channel; Messages holds the ones of the channel on show.
+    private readonly Dictionary<string, List<MessageVm>> _stored = new();
+    private bool _showChannels, _canManageChannels;
+
+    /// <summary>The room's text channels and voice channels, as buttons.</summary>
+    public ObservableCollection<ChannelVm> Channels { get; } = new();
+
+    /// <summary>Rooms made with an owner have channels beyond the first; older rooms show none.</summary>
+    public bool ShowChannels
+    {
+        get => _showChannels;
+        set { if (_showChannels == value) return; _showChannels = value; Raise(); }
+    }
+
+    public bool CanManageChannels
+    {
+        get => _canManageChannels;
+        set { if (_canManageChannels == value) return; _canManageChannels = value; Raise(); }
+    }
+
+    public string CurrentChannel { get; private set; } = RoomChannels.DefaultText;
+    public string CurrentChannelName => Channels.FirstOrDefault(c => c.IsText && c.Id == CurrentChannel)?.Name ?? "general";
+
+    public void SelectChannel(string id)
+    {
+        if (!IsRoom) return;
+        CurrentChannel = id;
+        Messages.Clear();
+        if (_stored.TryGetValue(id, out var list)) foreach (var m in list) Messages.Add(m);
+        for (int i = 0; i < Messages.Count; i++) MarkDays(i);
+        foreach (var c in Channels) c.Selected = c.IsText && c.Id == id;
+        if (Channels.FirstOrDefault(c => c.IsText && c.Id == id) is { } shown)
+        {
+            Unread = Math.Max(0, Unread - shown.Unread);
+            shown.Unread = 0;
+        }
+        Raise(nameof(CurrentChannel));
+        Raise(nameof(CurrentChannelName));
+    }
+
+    /// <summary>The room was opened: what is on show is read, and what waits in other channels still counts.</summary>
+    public void Opened()
+    {
+        foreach (var c in Channels.Where(c => c.Id == CurrentChannel)) c.Unread = 0;
+        Unread = Channels.Where(c => c.IsText && c.Id != CurrentChannel).Sum(c => c.Unread);
+    }
+
+    public void NoteUnread(string? channel)
+    {
+        Unread++;
+        if (channel != null && Channels.FirstOrDefault(c => c.IsText && c.Id == channel) is { } c) c.Unread++;
+    }
+
+    /// <summary>Makes the buttons match the room's channels, keeping the one on show unless it is gone.</summary>
+    public void SetChannels(IReadOnlyList<ChannelInfo> infos)
+    {
+        var existing = Channels.ToDictionary(c => c.Id);
+        for (int i = Channels.Count - 1; i >= 0; i--)
+            if (infos.All(w => w.Id != Channels[i].Id)) Channels.RemoveAt(i);
+        for (int i = 0; i < infos.Count; i++)
+        {
+            var info = infos[i];
+            if (existing.TryGetValue(info.Id, out var vm) && Channels.Contains(vm))
+            {
+                vm.Name = info.Name;
+                int at = Channels.IndexOf(vm);
+                if (at != i) Channels.Move(at, i);
+            }
+            else Channels.Insert(i, vm = new ChannelVm(info));
+            vm.Selected = vm.IsText && vm.Id == CurrentChannel;
+        }
+        if (!Channels.Any(c => c.IsText && c.Id == CurrentChannel)) SelectChannel(RoomChannels.DefaultText);
+        Raise(nameof(CurrentChannelName));
+    }
+
     public void Add(MessageVm message)
     {
         if (message.Id != null && !_ids.Add(message.Id)) return;
         if (message.Id != null && _delivery.TryGetValue(message.Id, out var status)) message.Delivery = status;
+        if (IsRoom && message.Channel is { } channel)
+        {
+            if (!_stored.TryGetValue(channel, out var list)) _stored[channel] = list = new List<MessageVm>();
+            int at = list.Count;
+            while (at > 0 && list[at - 1].Time > message.Time) at--;
+            list.Insert(at, message);
+            if (channel != CurrentChannel) return;
+        }
         int i = Messages.Count;
         while (i > 0 && Messages[i - 1].Time > message.Time) i--;
         Messages.Insert(i, message);
@@ -403,6 +491,15 @@ public sealed class VoiceMemberVm : Observable
         set { if (_deafened == value) return; _deafened = value; Raise(); Raise(nameof(Status)); }
     }
 
+    private string _where = "";
+
+    /// <summary>The voice channel they are in, shown when the room has more than one.</summary>
+    public string Where
+    {
+        get => _where;
+        set { if (_where == value) return; _where = value; Raise(); }
+    }
+
     public bool CanMuteSoundboard => !IsSelf;
 
     public bool SoundboardMuted
@@ -416,4 +513,61 @@ public sealed class VoiceMemberVm : Observable
 
     public string Status => _deafened ? "🎧✕" : _muted ? "🎤✕" : "";
     public IBrush Ring => _speaking ? new SolidColorBrush(Color.Parse("#46A758")) : Brushes.Transparent;
+}
+
+/// <summary>A text or voice channel of a room, shown as a button.</summary>
+public sealed class ChannelVm : Observable
+{
+    private string _name;
+    private int _unread, _people;
+    private bool _selected, _mine;
+
+    public ChannelVm(ChannelInfo info)
+    {
+        Id = info.Id; _name = info.Name; Kind = info.Kind; IsDefault = info.IsDefault;
+    }
+
+    public string Id { get; }
+    public ChannelKind Kind { get; }
+    public bool IsDefault { get; }
+    public bool IsText => Kind == ChannelKind.Text;
+    public bool IsVoice => Kind == ChannelKind.Voice;
+
+    public string Name
+    {
+        get => _name;
+        set { if (_name == value) return; _name = value; Raise(); Raise(nameof(Label)); }
+    }
+
+    /// <summary>Messages waiting in a text channel you are not looking at.</summary>
+    public int Unread
+    {
+        get => _unread;
+        set { if (_unread == value) return; _unread = value; Raise(); Raise(nameof(Label)); }
+    }
+
+    /// <summary>People in a voice channel.</summary>
+    public int People
+    {
+        get => _people;
+        set { if (_people == value) return; _people = value; Raise(); Raise(nameof(Label)); }
+    }
+
+    /// <summary>The text channel on show.</summary>
+    public bool Selected
+    {
+        get => _selected;
+        set { if (_selected == value) return; _selected = value; Raise(); Raise(nameof(Highlight)); }
+    }
+
+    /// <summary>The voice channel you are in.</summary>
+    public bool Mine
+    {
+        get => _mine;
+        set { if (_mine == value) return; _mine = value; Raise(); Raise(nameof(Highlight)); }
+    }
+
+    public bool Highlight => _selected || _mine;
+
+    public string Label => (IsText ? "# " : "\U0001F50A ") + _name + (IsText ? (_unread > 0 ? $"  ({_unread})" : "") : (_people > 0 ? $"  ({_people})" : ""));
 }
