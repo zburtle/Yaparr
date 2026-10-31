@@ -39,7 +39,10 @@ public partial class MainWindow : Window
         // The message box handles Ctrl+V itself (and marks it handled), so its own key handler never sees it: look on the way down.
         AddHandler(KeyDownEvent, OnPasteKey, RoutingStrategies.Tunnel);
         ConversationList.ItemsSource = _conversations;
-        VersionText.Text = "Yaparr v" + Updater.CurrentVersion;
+        ToolTip.SetTip(InfoIcon, "Yaparr v" + Updater.CurrentVersion);
+        ToolTip.SetTip(PeersIcon, "Starting…");
+        ToolTip.SetTip(NetworkIcon, "Checking the network…");
+        ToolTip.SetTip(VpnIcon, "VPN: off");
 
         // The bar under the window shows only the latest alert, and clears itself after a while.
         var alertTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
@@ -288,16 +291,34 @@ public partial class MainWindow : Window
         var vpn = _node.VpnState;
         var network = _node.NetworkStatus != NetworkStatus.Unknown ? _node.NetworkStatus.Describe() : null;
 
-        ConnSummary.Text = peers == 0
-            ? "Looking for peers…"
-            : $"{peers} peer{(peers == 1 ? "" : "s")} connected" + (vpn == Yaparr.Vpn.VpnState.Connecting ? " · VPN connecting…" : "");
+        // Green when it is working, orange when it is not yet or only partly, grey when there is nothing to say.
+        PeersIcon.Text = $"\U0001F465 {peers}";
+        PeersIcon.Foreground = StatusBrush(peers > 0 ? "Good" : "Warn");
+        ToolTip.SetTip(PeersIcon, peers == 0
+            ? "No peers connected. Looking for peers; the first search can take a while."
+            : $"{peers} peer{(peers == 1 ? "" : "s")} connected");
 
-        var lines = new List<string> { $"{peers} peer{(peers == 1 ? "" : "s")} connected", $"UDP port {_node.LocalPort}" };
-        if (network != null) lines.Add(network);
-        lines.Add($"VPN: {vpn}");
-        if (peers == 0) lines.Add("Looking for peers. The first search can take a while.");
-        ConnectionText.Text = string.Join("\n", lines);
+        NetworkIcon.Foreground = StatusBrush(network == null ? "Muted" : _node.NetworkStatus.Reachable ? "Good" : "Warn");
+        ToolTip.SetTip(NetworkIcon, $"UDP port {_node.LocalPort}\n" + (network ?? "Checking the network…")
+            + (network != null && !_node.NetworkStatus.Reachable ? "\nOther people may not be able to connect to you directly." : ""));
+
+        VpnIcon.Foreground = StatusBrush(vpn switch
+        {
+            Yaparr.Vpn.VpnState.Connected => "Good",
+            Yaparr.Vpn.VpnState.Connecting => "Warn",
+            _ => "Muted",
+        });
+        ToolTip.SetTip(VpnIcon, "VPN: " + vpn switch
+        {
+            Yaparr.Vpn.VpnState.Connected => "connected",
+            Yaparr.Vpn.VpnState.Connecting => "connecting…",
+            _ => "off",
+        });
     }
+
+    // A colour of the current theme, by the name it has in App.axaml.
+    private Avalonia.Media.IBrush StatusBrush(string key) =>
+        this.TryGetResource(key, ActualThemeVariant, out var found) && found is Avalonia.Media.IBrush brush ? brush : Avalonia.Media.Brushes.Gray;
 
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
     private void OnPowerModeChanged(object sender, Microsoft.Win32.PowerModeChangedEventArgs e)

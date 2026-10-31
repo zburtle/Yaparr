@@ -498,23 +498,12 @@
                         <TextBlock x:Name="PeopleHeader" Text="People" FontWeight="SemiBold" FontSize="15" />
                         <TextBlock x:Name="PeopleCount" Grid.Column="1" Classes="muted small" VerticalAlignment="Center" />
                     </Grid>
-                    <StackPanel DockPanel.Dock="Bottom" Margin="8,0,8,8">
-                        <Border x:Name="ConnectionPanel" Classes="details" Margin="4,0,4,4" IsVisible="{Binding #ConnectionToggle.IsChecked}">
-                            <StackPanel Spacing="6">
-                                <TextBlock Classes="label" Text="STATUS" />
-                                <TextBlock x:Name="ConnectionText" Classes="small" TextWrapping="Wrap" />
-                                <TextBlock x:Name="VersionText" Classes="muted small" Margin="0,4,0,0" />
-                            </StackPanel>
-                        </Border>
-                        <ToggleButton x:Name="ConnectionToggle" Classes="expander up">
-                            <Grid ColumnDefinitions="*,Auto">
-                                <StackPanel VerticalAlignment="Center">
-                                    <TextBlock Text="Connection" FontWeight="SemiBold" FontSize="13" />
-                                    <TextBlock x:Name="ConnSummary" Classes="muted small" TextTrimming="CharacterEllipsis" Text="Starting…" />
-                                </StackPanel>
-                                <TextBlock Grid.Column="1" Classes="chevron" Margin="8,0,0,0" />
-                            </Grid>
-                        </ToggleButton>
+                    <!-- Connection state as icons; colour says how it is going and the details are in each one's tooltip. -->
+                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="16" Margin="16,6,12,12">
+                        <TextBlock x:Name="PeersIcon" FontSize="15" Text="👥 0" Foreground="{DynamicResource Muted}" />
+                        <TextBlock x:Name="NetworkIcon" FontSize="15" Text="🌐" Foreground="{DynamicResource Muted}" />
+                        <TextBlock x:Name="VpnIcon" FontSize="15" Text="🔒" Foreground="{DynamicResource Muted}" />
+                        <TextBlock x:Name="InfoIcon" FontSize="15" Text="ⓘ" Foreground="{DynamicResource Muted}" />
                     </StackPanel>
                     <ListBox x:Name="PeopleList" Classes="flat people" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                         <ListBox.ContextMenu>
