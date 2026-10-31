@@ -303,8 +303,24 @@ public sealed class ConversationVm : Observable
             if (m.Id == status.MessageId) m.Delivery = status;
     }
 
-    public string? Invite { get; init; }
+    private string? _invite;
+
+    public string? Invite
+    {
+        get => _invite;
+        set { if (_invite == value) return; _invite = value; Raise(); Raise(nameof(HasInvite)); }
+    }
+
     public bool HasInvite => Invite != null;
+
+    private bool _isOwner;
+
+    /// <summary>You made this room, so you can replace its key.</summary>
+    public bool IsOwner
+    {
+        get => _isOwner;
+        set { if (_isOwner == value) return; _isOwner = value; Raise(); }
+    }
 
     public ObservableCollection<MessageVm> Messages { get; } = new();
 

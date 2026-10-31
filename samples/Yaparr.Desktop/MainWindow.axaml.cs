@@ -341,8 +341,15 @@ public partial class MainWindow : Window
             }
         }
 
-        if (_settings.PrivateRooms.Any(r => r.Key == key.ToString()))
+        if (_settings.PrivateRooms.FirstOrDefault(r => r.Key == key.ToString() || RoomIdOf(r.Key) == key.RoomId) is { } have)
         {
+            // The same room under a newer key (the owner replaced it): take the new key.
+            if (key.Epoch > EpochOf(have.Key) && _node != null)
+            {
+                await _node.JoinRoomAsync(key, have.Label);
+                StatusText.Text = "Your key for that room is now the new one.";
+                return;
+            }
             await Dialogs.MessageAsync(this, "Yaparr", "You are already in that room.");
             return;
         }
@@ -462,6 +469,7 @@ public partial class MainWindow : Window
         room.MemberLeft += p => UI(() => { Remember(p); RefreshPeers(p.Account); });
         room.RolesChanged += () => UI(() => { RefreshPeers(); RefreshMembers(); });
         room.ChannelsChanged += () => UI(() => RefreshChannels(conv, room));
+        room.SecretChanged += (before, after) => UI(() => OnSecretChanged(conv, before, after));
         room.ModerationChanged += () => UI(() => { conv.Reload(room.GetHistory().Select(ToVm).ToList()); RefreshPeers(); RefreshMembers(); });
 
         RefreshChannels(conv, room);

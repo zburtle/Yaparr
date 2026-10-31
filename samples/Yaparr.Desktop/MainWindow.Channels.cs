@@ -15,6 +15,7 @@ public partial class MainWindow
         conv.SetChannels(room.Channels);
         conv.ShowChannels = room.Owner != null;
         conv.CanManageChannels = room.MyRole >= RoomRole.Admin;
+        conv.IsOwner = room.MyRole == RoomRole.Owner;
         // A voice channel that is removed while you are in it sends you out of voice.
         if (_voiceConv == conv && _voice is { } session && room.Channels.All(c => c.Id != session.ChannelId))
         {

@@ -327,6 +327,7 @@
                                         <MenuFlyout Placement="BottomEdgeAlignedRight">
                                             <MenuItem Header="Voice settings…" Click="VoiceSettings_Click" />
                                             <MenuItem Header="Copy invite" Click="CopyInvite_Click" IsVisible="{Binding HasInvite}" />
+                                            <MenuItem Header="Replace the room key…" Click="RotateKey_Click" IsVisible="{Binding IsOwner}" />
                                             <Separator />
                                             <MenuItem Header="Rename…" Click="RenameRoom_Click" />
                                             <MenuItem Header="Leave room" Click="LeaveRoom_Click" />

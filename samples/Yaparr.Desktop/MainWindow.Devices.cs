@@ -172,6 +172,12 @@ public partial class MainWindow
                 if (joined)
                 {
                     if (_settings.PrivateRooms.Any(r => r.Key == room.Key)) return;
+                    // The room is one we are in, and another device has a newer key for it: take that.
+                    if (_node != null && RoomIdOf(room.Key) is { } roomId && _roomConversations.Keys.Any(r => r.RoomId == roomId))
+                    {
+                        await _node.JoinRoomAsync(RoomKey.Parse(room.Key), room.Name);
+                        return;
+                    }
                     await JoinKeyedRoomAsync(room.Name, RoomKey.Parse(room.Key), persist: true);
                     StatusText.Text = $"Joined \"{room.Name}\" because you joined it on another device.";
                 }
@@ -200,7 +206,14 @@ public partial class MainWindow
         if (_node == null) return;
         bool changed = false;
         foreach (var room in _node.SyncedRooms)
-            if (_settings.PrivateRooms.All(r => r.Key != room.Key)) { _settings.PrivateRooms.Add(new PrivateRoomSetting { Label = room.Name, Key = room.Key }); changed = true; }
+        {
+            if (_settings.PrivateRooms.Any(r => r.Key == room.Key)) continue;
+            // The same room under a newer key (its owner replaced the key on another device): keep the newer one.
+            var same = RoomIdOf(room.Key) is { } id ? _settings.PrivateRooms.FirstOrDefault(r => RoomIdOf(r.Key) == id) : null;
+            if (same != null) { if (EpochOf(room.Key) > EpochOf(same.Key)) same.Key = room.Key; }
+            else _settings.PrivateRooms.Add(new PrivateRoomSetting { Label = room.Name, Key = room.Key });
+            changed = true;
+        }
         foreach (var blocked in _node.BlockedPeers)
             if (_settings.BlockedPeers.All(b => b.Id != blocked.Value)) { _settings.BlockedPeers.Add(new KnownPeer { Id = blocked.Value, Name = "", LastSeen = DateTimeOffset.Now }); changed = true; }
         if (changed) _data.SaveSettings(_settings);
