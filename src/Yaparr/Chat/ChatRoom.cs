@@ -10,15 +10,15 @@ public sealed class ChatRoom
     private readonly ChatNode _node;
     internal readonly ConcurrentDictionary<PeerId, ChatNode.PeerState> MemberStates = new();
 
-    private readonly RoomKey _secret;
+    // Replaced when the owner replaces the room's secret; everything that has to stay the same across that goes by Key.
+    private volatile RoomKey _secret;
 
     internal ChatRoom(ChatNode node, string name, RoomKey secret)
     {
         _node = node;
         _secret = secret;
         Name = name;
-        Topic = secret.Topic;
-        Key = Convert.ToHexString(Topic).ToLowerInvariant();
+        Key = secret.RoomId;
     }
 
     public string Name { get; }
@@ -27,16 +27,64 @@ public sealed class ChatRoom
 
     public IReadOnlyList<ChatMessage> GetHistory() => _node.GetHistory(this);
 
-    internal byte[] Topic { get; }
+    /// <summary>Where the room is found now: derived from the current secret, so it changes when the secret is replaced.</summary>
+    internal byte[] Topic => _secret.Topic;
+
+    /// <summary>What the room is, for good: the topic of its first secret. History, admins, bans, channels and every signature are tied to it.</summary>
     internal string Key { get; }
+
+    /// <summary>The room's identity for good (see <see cref="RoomKey.RoomId"/>).</summary>
+    public string RoomId => Key;
 
     /// <summary>The room key as text.</summary>
     internal string SecretText => _secret.ToString();
 
-    internal string RefFor(byte[] sessionId, PeerId prover)
+    internal RoomKey CurrentKey => _secret;
+
+    /// <summary>How many times the owner has replaced the room's secret.</summary>
+    public int Epoch => _secret.Epoch;
+
+    /// <summary>The invite for the room as it is now. After the secret has been replaced, the old invite no longer works; give out this one.</summary>
+    public string Invite => _secret.ToString();
+
+    internal string? RekeyHash;
+    internal readonly object RekeyGate = new();
+
+    // The secrets this room had before, newest first, and the order that replaced the last one. They let us find, and hand the new
+    // secret to, listed people who were away when it was replaced and still come looking under an old one.
+    internal readonly List<PreviousKey> PreviousKeys = new();
+    internal StoredRekey? LastRekey;
+
+    // Everyone seen in this room, by account, so the owner can give the new secret to people who are not online when it is replaced.
+    internal readonly Dictionary<string, RosterEntry> Roster = new();
+    internal readonly object RosterGate = new();
+    internal bool RosterDirty;
+
+    internal void SwitchTo(RoomKey key) => _secret = key;
+
+    /// <summary>
+    /// People who would get the new secret from <see cref="RotateSecret"/>: everyone this device has seen in the room (most recent first, up to
+    /// 256), online or not, except yourself and anyone banned or blocked. Someone who is away gets it when they come back.
+    /// </summary>
+    public IReadOnlyList<RotationCandidate> RotationCandidates => _node.GetRotationCandidates(this);
+
+    /// <summary>
+    /// Replaces the room's secret (owner only) and gives the new one to <paramref name="recipients"/>, by account. Everyone else, banned people
+    /// included, is locked out: they can no longer find the room or talk in it, which a ban alone cannot do. Anyone who is not online now has to be
+    /// given <see cref="Invite"/> some other way. Returns the new invite.
+    /// </summary>
+    public string RotateSecret(IReadOnlyCollection<PeerId> recipients) => _node.RotateSecret(this, recipients);
+
+    /// <summary>The secret was replaced, here or by the owner; the arguments are the old and the new invite. Remember the new one.</summary>
+    public event Action<string, string>? SecretChanged;
+    internal void RaiseSecretChanged(string oldInvite, string newInvite) => SecretChanged?.Invoke(oldInvite, newInvite);
+
+    internal string RefFor(byte[] sessionId, PeerId prover) => RefForKey(_secret, sessionId, prover);
+
+    internal static string RefForKey(RoomKey key, byte[] sessionId, PeerId prover)
     {
         var data = sessionId.Concat(Encoding.UTF8.GetBytes(prover.Value)).ToArray();
-        return Convert.ToBase64String(HMACSHA256.HashData(_secret.AuthKey, data));
+        return Convert.ToBase64String(HMACSHA256.HashData(key.AuthKey, data));
     }
 
     internal readonly ConcurrentDictionary<PeerId, PeerInfo> Indirect = new();

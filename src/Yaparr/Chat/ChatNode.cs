@@ -554,6 +554,8 @@ public sealed partial class ChatNode : IDisposable
         _cts.Cancel();
         System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged -= OnAddressChanged;
         _peerCache.Save();
+        // Who has been in each room is written when it changes and every so often; this catches the last few.
+        foreach (var room in _rooms.Values.ToList()) MaintainRoster(room);
         foreach (var room in _rooms.Values.ToList()) LeaveRoomCore(room);
         Network.Dispose();
         _turn?.Dispose();
@@ -581,11 +583,18 @@ public sealed partial class ChatNode : IDisposable
         Start();
         room.History = _histories.GetOrAdd(room.Key, k =>
             new RoomHistory(k, _options.HistoryStore, _options.MaxHistoryMessages, _options.MaxHistoryAge));
-        if (!_rooms.TryAdd(room.Key, room)) return _rooms[room.Key];
+        if (!_rooms.TryAdd(room.Key, room))
+        {
+            var existing = _rooms[room.Key];
+            if (room.CurrentKey.Epoch > existing.Epoch) AdoptKey(existing, room.CurrentKey);
+            return existing;
+        }
         LoadSounds(room);
         LoadRoles(room);
         LoadMods(room);
         LoadChannels(room);
+        LoadRoster(room);
+        LoadRekeyState(room);
         NoteRoomChanged(room, joined: true);
 
         foreach (var peer in _peers.Values)
@@ -679,17 +688,21 @@ public sealed partial class ChatNode : IDisposable
         {
             try
             {
-                if (announce) await d.AnnounceAsync(room.Topic, ct).ConfigureAwait(false);
-                var found = await d.FindPeersAsync(room.Topic, ct).ConfigureAwait(false);
-                if (found.Any(IsSomeoneElse) && d is not LocalServiceDiscovery) _lastFoundAt = Environment.TickCount64;
-                _options.Log?.Invoke($"room '{room.Name}' via {d.GetType().Name}: {found.Count} endpoint(s){(found.Count > 0 ? ": " + string.Join(", ", found) : "")}");
-                if (_options.TargetConnections <= 0)
+                // After the secret was replaced the old places are kept up for a while, so that listed people who were away can still find us.
+                foreach (var topic in TopicsOf(room))
                 {
-                    foreach (var ep in found) Network.Connect(ep);
-                    return;
+                    if (announce) await d.AnnounceAsync(topic, ct).ConfigureAwait(false);
+                    var found = await d.FindPeersAsync(topic, ct).ConfigureAwait(false);
+                    if (found.Any(IsSomeoneElse) && d is not LocalServiceDiscovery) _lastFoundAt = Environment.TickCount64;
+                    _options.Log?.Invoke($"room '{room.Name}' via {d.GetType().Name}: {found.Count} endpoint(s){(found.Count > 0 ? ": " + string.Join(", ", found) : "")}");
+                    if (_options.TargetConnections <= 0)
+                    {
+                        foreach (var ep in found) Network.Connect(ep);
+                        continue;
+                    }
+                    foreach (var ep in found) AddCandidate(ep, null, null);
                 }
-                foreach (var ep in found) AddCandidate(ep, null, null);
-                TopUpConnections(room);
+                if (_options.TargetConnections > 0) TopUpConnections(room);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -1046,6 +1059,7 @@ public sealed partial class ChatNode : IDisposable
             if (IsBannedIn(room, new PeerId(m.From)) || IsMessageDeleted(room, m)) continue;
             if (live) _clocks.Observe(m.From, m.Ts, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
             bool fresh = live && m.Ts >= DateTimeOffset.UtcNow.Subtract(LiveWindow).ToUnixTimeMilliseconds();
+            NoteMember(room, new PeerId(m.From), m.Name);
             if (!room.History.TryAdd(m)) continue;
             // A blocked author's message is kept (so it is not asked for again) but never shown or downloaded.
             if (!IsBlocked(new PeerId(m.From)))
@@ -1123,6 +1137,7 @@ public sealed partial class ChatNode : IDisposable
                 if (room.Presence.Count >= 1000 && !room.Presence.ContainsKey(id)) continue;
                 room.Presence[id] = new PresenceEntry(b, Environment.TickCount64);
             }
+            NoteMember(room, id, b.Name);
             changed = true;
             Relay(peer, room, b.From, reference => new Wire { Type = Wire.Presence, Room = reference, Pres = new[] { b } });
         }
@@ -1186,6 +1201,7 @@ public sealed partial class ChatNode : IDisposable
         // Someone the admins banned is not a member as far as we are concerned: nothing is sent to them or taken from them.
         if (IsBannedIn(room, peer.Id) || IsBannedIn(room, peer.AccountId)) return;
         if (!room.MemberStates.TryAdd(peer.Id, peer)) return;
+        NoteMember(room, peer.Id, peer.Name);
         LogPeerEvent(peer.Id, $"{peer.Id.Short} entered room '{room.Name}'");
         if (!peer.Connection.IsRelayed) _peerCache.Remember(room.Key, peer.Id, peer.Connection.RemoteEndPoint);
 
@@ -1405,6 +1421,7 @@ public sealed partial class ChatNode : IDisposable
                 if (first && IsSibling(peer)) { SendAccountState(peer); SendDirectSync(peer); }
                 foreach (var room in _rooms.Values)
                     if (peer.Declares(RefFrom(room, peer))) OnPeerEntersRoom(peer, room);
+                OfferRekeyTo(peer);
                 break;
 
             case Wire.Account when wire.Entries != null:
@@ -1497,6 +1514,13 @@ public sealed partial class ChatNode : IDisposable
                                     && ResolveRoom(peer, wire.Room) is { } chanRoom && chanRoom.MemberStates.ContainsKey(peer.Id):
                 if (!rate.AdmitModList()) { Dropped(peer, rate, "sent too many channel changes"); break; }
                 OnChannels(peer, chanRoom, wire.Chn);
+                break;
+
+            // From anyone who proves they hold the secret we hold now, a member or not: a person back from being away is handed the
+            // new secret by someone who is not yet a member in our eyes. The owner's signature and the list are what are trusted.
+            case Wire.Rekey when wire.Room != null && wire.Rk != null && ResolveRoom(peer, wire.Room) is { } rekeyRoom:
+                if (!rate.AdmitModList()) { Dropped(peer, rate, "sent too many key changes"); break; }
+                OnRekey(peer, rekeyRoom, wire.Rk);
                 break;
 
             case Wire.Play when wire.Room != null && wire.Pl != null
@@ -1820,6 +1844,7 @@ public sealed partial class ChatNode : IDisposable
     {
         long now = Environment.TickCount64;
         TopUpConnections(room);
+        MaintainRoster(room);
         MaintainVoice(room, now);
         MaintainSounds(room, now);
         foreach (var member in room.MemberStates.Values) EnsureStandby(member);
