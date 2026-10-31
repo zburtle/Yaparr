@@ -220,6 +220,7 @@ public partial class MainWindow : Window
             AccountStatePath = _data.AccountStatePath,
             AccountEntries = _linkedEntries,
             HistoryStore = new FileHistoryStore(_data.HistoryDirectory),
+            DirectHistoryDirectory = Path.Combine(_data.Directory, "direct"),
             Traversal = traversal,
             AttachmentDirectory = Path.Combine(_data.Directory, "attachments"),
             SoundboardDirectory = Path.Combine(_data.Directory, "soundboards"),
@@ -253,6 +254,7 @@ public partial class MainWindow : Window
         _node.Start();
         UpdateStatus();
         RefreshPeers();
+        foreach (var stored in _node.StoredDirectChats) _ = AddDirect(stored);
 
         foreach (var priv in _settings.PrivateRooms.ToList())
         {
@@ -548,15 +550,19 @@ public partial class MainWindow : Window
                 UI(() => { ConversationList.SelectedItem = existing; tcs.SetResult(); });
                 return tcs.Task;
             }
-            var title = (chat.Peer?.DisplayName ?? chat.PeerId.Short) + " (direct)";
+            var title = chat.DisplayName + " (direct)";
             conv = new ConversationVm(title, isRoom: false, chat.SendAsync, chat.Retry) { PeerId = chat.PeerId.Value };
             chat.DeliveryChanged += s => UI(() => conv.ApplyDelivery(s));
+            // Another of your devices read it: nothing here is new any more.
+            chat.ReadChanged += () => UI(() => conv.Unread = 0);
             _directConversations[chat.PeerId] = conv;
         }
 
+        var kept = chat.History;
         chat.MessageReceived += m => UI(() => OnMessage(conv, ToVm(m), announce: !m.IsCatchUp));
         UI(() =>
         {
+            foreach (var m in kept) conv.Add(ToVm(m));
             if (chat.Peer != null) Remember(chat.Peer);
             _conversations.Add(conv);
             RefreshPeers();
@@ -669,9 +675,17 @@ public partial class MainWindow : Window
     private void OnMessage(ConversationVm conv, MessageVm message, bool announce)
     {
         conv.Add(message);
-        if (conv == _selected) ScrollToEnd();
-        else conv.Unread++;
-        if (announce) NotifyMessage(conv);
+        if (conv == _selected) { ScrollToEnd(); MarkRead(conv); }
+        else if (!message.IsMine) conv.Unread++;
+        // What you wrote on another device needs no announcing.
+        if (announce && !message.IsMine) NotifyMessage(conv);
+    }
+
+    // A direct conversation you are looking at is read on all of your devices.
+    private void MarkRead(ConversationVm conv)
+    {
+        if (_node != null && conv.IsDirect && conv.PeerId is { } peer)
+            _node.GetDirectChat(new PeerId(peer)).MarkRead();
     }
 
     private void ScrollToEnd()
@@ -786,6 +800,7 @@ public partial class MainWindow : Window
         if (_selected != null)
         {
             _selected.Unread = 0;
+            MarkRead(_selected);
             ScrollToEnd();
             InputBox.Focus();
         }

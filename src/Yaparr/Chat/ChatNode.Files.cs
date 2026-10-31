@@ -85,6 +85,12 @@ public sealed partial class ChatNode
     {
         var list = new List<PeerState>();
         if (_peers.TryGetValue(message.From.Id, out var sender)) list.Add(sender);
+        // A direct message can have come to one of our other devices, or be our own from another; they hold the file too.
+        if (message.Room == null)
+        {
+            list.AddRange(_peers.Values.Where(p => IsSibling(p) && p.Id != message.From.Id));
+            if (!IsMyDevice(message.From.Id)) list.AddRange(DevicesOf(message.From.Account).Where(p => p.Id != message.From.Id));
+        }
         if (message.Room != null && _rooms.Values.FirstOrDefault(r => r.Name == message.Room) is { } room)
             list.AddRange(room.MemberStates.Values.Where(m => m.Id != message.From.Id));
         return list.OrderBy(p => IsMetered(p.Connection)).ToList();

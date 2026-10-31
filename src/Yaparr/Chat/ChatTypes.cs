@@ -82,6 +82,14 @@ internal sealed class Wire
     /// <summary>A control message between neighbours in a stream's tree.</summary>
     public WireMedia? Mx { get; set; }
 
+    /// <summary>Direct messages passed between a person's own devices, and what they already have of them.</summary>
+    public DirectRecord[]? Dm { get; set; }
+
+    /// <summary>Set when <see cref="Dm"/> holds older messages being caught up on rather than a new one.</summary>
+    public bool? Cu { get; set; }
+
+    public const string Direct = "dm", DirectSync = "dmsync";
+
     public const string Caps = "caps", Rename = "name", Account = "acct", Media = "media", Sound = "snd", Play = "play";
 
     public const string Ack = "ack", Hello = "hi", Join = "join", Leave = "leave", Message = "msg", Introduce = "peers", Sync = "sync", History = "hist", Links = "links", Presence = "pres", Voice = "voice";

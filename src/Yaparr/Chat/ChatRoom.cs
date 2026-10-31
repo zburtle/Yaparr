@@ -144,6 +144,21 @@ public sealed class DirectChat
     public PeerInfo? Peer => _node.GetPeerInfo(PeerId);
     public bool IsConnected => Peer != null;
 
+    /// <summary>The name to show: the connected person's, or else the last one they used in this conversation.</summary>
+    public string DisplayName => Peer?.DisplayName ?? _node.DirectNameOf(PeerId) ?? PeerId.Short;
+
+    /// <summary>The messages of this conversation that are kept (those sent and received on any of your devices), oldest first.</summary>
+    public IReadOnlyList<ChatMessage> History => _node.GetDirectHistory(PeerId);
+
+    /// <summary>The time of the newest message from them that you have read, on any of your devices.</summary>
+    public DateTimeOffset? ReadUpTo => _node.DirectReadUpTo(PeerId);
+
+    /// <summary>Records that you have read the conversation up to now, so your other devices stop counting it as unread.</summary>
+    public void MarkRead() => _node.MarkDirectRead(PeerId);
+
+    /// <summary>Another of your devices read this conversation.</summary>
+    public event Action? ReadChanged;
+
     public event Action<ChatMessage>? MessageReceived;
     public event Action<DeliveryStatus>? DeliveryChanged;
 
@@ -153,4 +168,5 @@ public sealed class DirectChat
 
     internal void RaiseMessage(ChatMessage m) => MessageReceived?.Invoke(m);
     internal void RaiseDelivery(DeliveryStatus s) => DeliveryChanged?.Invoke(s);
+    internal void RaiseRead() => ReadChanged?.Invoke();
 }

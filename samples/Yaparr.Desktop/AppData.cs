@@ -95,7 +95,7 @@ public sealed class AppData
     // What a backup holds and a restore accepts. Anything else in the folder (the FFmpeg program, installers, the log) is not
     // part of a profile, and a restore must never be able to place a program where Yaparr will later run it.
     private static readonly string[] BackedUpFiles = { "identity.key", "settings.json", "account.json", "peers.json", "clocks.json", "network.json", "vpn.conf", "dht-nodes.txt" };
-    private static readonly string[] BackedUpFolders = { "history", "attachments", "soundboards" };
+    private static readonly string[] BackedUpFolders = { "history", "direct", "attachments", "soundboards" };
     private const long MaxRestoreBytes = 2L * 1024 * 1024 * 1024;
     private const int MaxRestoreEntries = 200_000;
 
@@ -205,6 +205,8 @@ public sealed class AppData
         if (File.Exists(SettingsPath)) File.Delete(SettingsPath);
         if (File.Exists(AccountStatePath)) File.Delete(AccountStatePath);
         if (System.IO.Directory.Exists(HistoryDirectory)) System.IO.Directory.Delete(HistoryDirectory, recursive: true);
+        var direct = Path.Combine(Directory, "direct");
+        if (System.IO.Directory.Exists(direct)) System.IO.Directory.Delete(direct, recursive: true);
 
         foreach (var file in System.IO.Directory.EnumerateFiles(staging, "*", SearchOption.AllDirectories))
         {

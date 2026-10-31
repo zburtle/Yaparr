@@ -140,6 +140,9 @@ public sealed class ChatNodeOptions
     /// <summary>How long an unconfirmed message is kept for re-sending when its recipient reconnects.</summary>
     public TimeSpan ResendWindow { get; init; } = TimeSpan.FromMinutes(10);
 
+    /// <summary>Where direct messages are kept, so your devices can give each other the ones they missed. Without a folder they are only kept while the app runs.</summary>
+    public string? DirectHistoryDirectory { get; init; }
+
     /// <summary>How much any one peer may send before the excess is dropped.</summary>
     public PeerLimits Limits { get; init; } = new();
 
@@ -310,6 +313,7 @@ public sealed partial class ChatNode : IDisposable
         _peerCache = new PeerCache(_options.PeerCachePath);
         _clocks = new ClockOffsets(_options.ClockOffsetsPath);
         _blobs = new BlobStore(_options.AttachmentDirectory);
+        _directHistory = new DirectHistory(_options.DirectHistoryDirectory, _options.MaxHistoryMessages, _options.MaxHistoryAge);
         _turnOptions = _options.Traversal.Turn;
         _useDefaultRelay = _options.Traversal.UseDefaultRelay;
         _displayName = _options.DisplayName;
@@ -1271,6 +1275,7 @@ public sealed partial class ChatNode : IDisposable
         _outbox[wire.Id!] = outgoing;
         foreach (var device in devices) Send(device.Connection, wire);
         PublishDelivery(outgoing);
+        RecordDirect(peer, GetPeerInfo(peer)?.DisplayName ?? DirectNameOf(peer) ?? peer.Short, mine: true, wire.Id!, wire.Ts, text, mirror: true);
         return wire.Id!;
     }
 
@@ -1369,13 +1374,21 @@ public sealed partial class ChatNode : IDisposable
                 LogPeerEvent(peer.Id, $"hello from {peer.Id.Short} ({peer.Name}): declares {wire.Rooms?.Length ?? 0} room(s); we are in {_rooms.Count}");
                 if (first && !EnforceCap(peer)) break;
                 if (first) PeerConnected?.Invoke(peer.Info);
-                if (first && IsSibling(peer)) SendAccountState(peer);
+                if (first && IsSibling(peer)) { SendAccountState(peer); SendDirectSync(peer); }
                 foreach (var room in _rooms.Values)
                     if (peer.Declares(RefFrom(room, peer))) OnPeerEntersRoom(peer, room);
                 break;
 
             case Wire.Account when wire.Entries != null:
                 OnAccountEntries(peer, wire.Entries);
+                break;
+
+            case Wire.Direct when wire.Dm != null:
+                OnDirectRecords(peer, wire.Dm, wire.Cu == true);
+                break;
+
+            case Wire.DirectSync when wire.Have != null:
+                OnDirectSync(peer, wire.Have);
                 break;
 
             case Wire.Media when wire.Room != null && ResolveRoom(peer, wire.Room) is { } mediaRoom && mediaRoom.MemberStates.ContainsKey(peer.Id):
@@ -1453,7 +1466,10 @@ public sealed partial class ChatNode : IDisposable
                 Send(conn, new Wire { Type = Wire.Ack, Have = new[] { wire.Id } });
                 if (_seenDirect.Count >= MaxSeenDirect || !_seenDirect.TryAdd(peer.Id.Value + wire.Id, Environment.TickCount64) || IsBlocked(peer.Id)) break;
                 _clocks.Observe(peer.Id.Value, wire.Ts, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-                var msg = BuildMessage(peer.Info, null, wire.Id, wire.Text, DateTimeOffset.FromUnixTimeMilliseconds(_clocks.Correct(peer.Id.Value, wire.Ts)));
+                long correctedTs = _clocks.Correct(peer.Id.Value, wire.Ts);
+                // Kept, and passed to our other devices. One that is already known (it reached another of our devices first) is not shown twice.
+                if (!RecordDirect(peer.AccountId, peer.Name, mine: false, wire.Id, correctedTs, wire.Text, mirror: !IsSibling(peer))) break;
+                var msg = BuildMessage(peer.Info, null, wire.Id, wire.Text, DateTimeOffset.FromUnixTimeMilliseconds(correctedTs));
                 bool existed = _directChats.ContainsKey(peer.AccountId);
                 var chat = GetDirectChat(peer.AccountId);
                 if (!existed) IncomingDirectChat?.Invoke(chat);

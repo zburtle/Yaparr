@@ -18,7 +18,7 @@ public sealed record SyncedRoom(string Name, string Key);
 // switched off picks up where it was.
 public sealed partial class ChatNode
 {
-    private const string NameKey = "name", BlockPrefix = "block:", RoomPrefix = "room:";
+    private const string NameKey = "name", BlockPrefix = "block:", RoomPrefix = "room:", ReadPrefix = "read:";
     private const int MaxEntryKey = 100, MaxEntryValue = 400, EntriesPerMessage = 20;
 
     private readonly object _acctGate = new();
@@ -83,7 +83,8 @@ public sealed partial class ChatNode
 
     private static bool IsValidEntry(AccountEntry e) =>
         e.Key is { Length: > 0 and <= MaxEntryKey } && (e.Value == null || e.Value.Length <= MaxEntryValue)
-        && (e.Key == NameKey || e.Key.StartsWith(BlockPrefix, StringComparison.Ordinal) || e.Key.StartsWith(RoomPrefix, StringComparison.Ordinal));
+        && (e.Key == NameKey || e.Key.StartsWith(BlockPrefix, StringComparison.Ordinal) || e.Key.StartsWith(RoomPrefix, StringComparison.Ordinal)
+            || e.Key.StartsWith(ReadPrefix, StringComparison.Ordinal));
 
     // A total order, so devices that see the same entries in a different order still end up with the same one.
     private static bool Newer(AccountEntry candidate, AccountEntry? current)
@@ -181,6 +182,11 @@ public sealed partial class ChatNode
             if (!IsValidPeerId(id)) return;
             try { if (e.Deleted) Unblock(new PeerId(id), announce: false); else Block(new PeerId(id), announce: false); }
             catch (ArgumentException) { }
+        }
+        else if (e.Key.StartsWith(ReadPrefix, StringComparison.Ordinal))
+        {
+            var id = e.Key[ReadPrefix.Length..];
+            if (IsValidPeerId(id) && _directChats.TryGetValue(new PeerId(id), out var chat)) chat.RaiseRead();
         }
         else if (e.Key.StartsWith(RoomPrefix, StringComparison.Ordinal))
         {
