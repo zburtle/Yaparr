@@ -57,6 +57,11 @@ public sealed class ChatRoom
     internal int ModVersion;
     internal ModView? ModCache;
     internal int ModCacheVersion = -1;
+    internal readonly Dictionary<string, StoredChannel> ChannelEntries = new();
+    internal readonly object ChannelGate = new();
+    internal int ChannelVersion;
+    internal IReadOnlyList<ChannelInfo>? ChannelCache;
+    internal int ChannelCacheVersion = -1;
     internal long LastSoundFetchAt;
     internal long LastPresenceAt, LastShuffleAt;
 
@@ -122,6 +127,25 @@ public sealed class ChatRoom
     public event Action? ModerationChanged;
     internal void RaiseModerationChanged() => ModerationChanged?.Invoke();
 
+    /// <summary>
+    /// The room's text and voice channels, in order. Every room has the first text channel (<see cref="RoomChannels.DefaultText"/>) and the
+    /// first voice channel (<see cref="RoomChannels.DefaultVoice"/>). Everyone can use every channel; only the owner and admins change the list.
+    /// </summary>
+    public IReadOnlyList<ChannelInfo> Channels => _node.GetChannels(this);
+
+    /// <summary>Adds a channel (owner or admin only).</summary>
+    public ChannelInfo CreateChannel(string name, ChannelKind kind) => _node.CreateChannel(this, name, kind);
+
+    /// <summary>Renames a channel, the first text and voice channels included (owner or admin only).</summary>
+    public void RenameChannel(string id, string name) => _node.RenameChannel(this, id, name);
+
+    /// <summary>Removes a channel (owner or admin only); the first text and voice channels cannot be removed. Its messages stay in the history but are no longer shown.</summary>
+    public void DeleteChannel(string id) => _node.DeleteChannel(this, id);
+
+    /// <summary>A channel was added, renamed or removed.</summary>
+    public event Action? ChannelsChanged;
+    internal void RaiseChannelsChanged() => ChannelsChanged?.Invoke();
+
     /// <summary>The owner appointed or removed an admin.</summary>
     public event Action? RolesChanged;
     internal void RaiseRolesChanged() => RolesChanged?.Invoke();
@@ -159,7 +183,10 @@ public sealed class ChatRoom
     public Yaparr.Voice.VoiceSession? CurrentVoice => ActiveVoice;
 
     /// <summary>Joins the voice channel. Dispose or Leave the returned session to leave.</summary>
-    public Yaparr.Voice.VoiceSession JoinVoice() => _node.JoinVoice(this);
+    public Yaparr.Voice.VoiceSession JoinVoice() => _node.JoinVoice(this, RoomChannels.DefaultVoice);
+
+    /// <summary>Joins a voice channel (see <see cref="Channels"/>), leaving the one you are in. Everyone in a room can use every channel.</summary>
+    public Yaparr.Voice.VoiceSession JoinVoice(string channelId) => _node.JoinVoice(this, channelId);
     public event Action<PeerInfo>? MemberJoined;
     public event Action<PeerInfo>? MemberLeft;
 
@@ -168,7 +195,10 @@ public sealed class ChatRoom
     public event Action<DeliveryStatus>? DeliveryChanged;
 
     /// <summary>Sends a message and returns its id, which <see cref="DeliveryChanged"/> reports on.</summary>
-    public Task<string> SendAsync(string text) => Task.FromResult(_node.SendRoomMessage(this, text));
+    public Task<string> SendAsync(string text) => Task.FromResult(_node.SendRoomMessage(this, text, null));
+
+    /// <summary>Sends a message to a text channel (see <see cref="Channels"/>) and returns its id.</summary>
+    public Task<string> SendAsync(string text, string channelId) => Task.FromResult(_node.SendRoomMessage(this, text, channelId));
 
     /// <summary>Sends an unconfirmed message again to the members who have not confirmed it.</summary>
     public void Retry(string messageId) => _node.RetryMessage(messageId);

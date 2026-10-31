@@ -585,6 +585,7 @@ public sealed partial class ChatNode : IDisposable
         LoadSounds(room);
         LoadRoles(room);
         LoadMods(room);
+        LoadChannels(room);
         NoteRoomChanged(room, joined: true);
 
         foreach (var peer in _peers.Values)
@@ -697,9 +698,12 @@ public sealed partial class ChatNode : IDisposable
         })).ConfigureAwait(false);
     }
 
-    internal string SendRoomMessage(ChatRoom room, string text)
+    internal string SendRoomMessage(ChatRoom room, string text, string? channel)
     {
-        var message = SignedMessage.Create(_identity, room.Key, DisplayName, text, NextTimestamp());
+        channel = RoomChannels.Normalize(channel);
+        if (channel != RoomChannels.DefaultText && FindChannel(room, channel) is not { Kind: ChannelKind.Text })
+            throw new InvalidOperationException("There is no such text channel in this room.");
+        var message = SignedMessage.Create(_identity, room.Key, DisplayName, text, NextTimestamp(), channel);
         room.History.TryAdd(message);
         _options.Log?.Invoke($"sending a message in '{room.Name}' to {room.MemberStates.Count} member(s)");
         var members = room.MemberStates.Values.ToList();
@@ -1002,7 +1006,7 @@ public sealed partial class ChatNode : IDisposable
             ? p.Info with { DisplayName = m.Name }
             : new PeerInfo(id, m.Name, null, AccountId: AccountOf(id));
         long ts = m.From == Id.Value ? m.Ts : _clocks.Correct(m.From, m.Ts);
-        return BuildMessage(info, room.Name, m.Id, m.Text, DateTimeOffset.FromUnixTimeMilliseconds(ts), catchUp);
+        return InChannel(BuildMessage(info, room.Name, m.Id, m.Text, DateTimeOffset.FromUnixTimeMilliseconds(ts), catchUp), m.Chan);
     }
 
     // A message whose text carries an attachment description is shown as the caption plus the attachment.
@@ -1010,6 +1014,8 @@ public sealed partial class ChatNode : IDisposable
         Attachment.TryParse(text, out var attachment, out var caption)
             ? new ChatMessage(from, room, id, caption, time, catchUp, attachment)
             : new ChatMessage(from, room, id, text, time, catchUp);
+
+    private static ChatMessage InChannel(ChatMessage m, string? channel) => m with { Channel = RoomChannels.Normalize(channel) };
 
     private static readonly TimeSpan LiveWindow = TimeSpan.FromMinutes(2);
 
@@ -1204,6 +1210,7 @@ public sealed partial class ChatNode : IDisposable
         SendSoundsTo(room, peer);
         SendRolesTo(room, peer);
         SendModsTo(room, peer);
+        SendChannelsTo(room, peer);
         SendMediaAnnouncesTo(room, peer);
         ResendTo(peer, o => o.Room == room, o => new Wire { Type = Wire.Message, Room = RefTo(room, peer), Msgs = new[] { o.Signed! } });
 
@@ -1484,6 +1491,12 @@ public sealed partial class ChatNode : IDisposable
                                     && ResolveRoom(peer, wire.Room) is { } modRoom && modRoom.MemberStates.ContainsKey(peer.Id):
                 if (!rate.AdmitModList()) { Dropped(peer, rate, "sent too many bans or deletions"); break; }
                 OnMods(peer, modRoom, wire.Mod);
+                break;
+
+            case Wire.Channels when wire.Room != null && wire.Chn != null
+                                    && ResolveRoom(peer, wire.Room) is { } chanRoom && chanRoom.MemberStates.ContainsKey(peer.Id):
+                if (!rate.AdmitModList()) { Dropped(peer, rate, "sent too many channel changes"); break; }
+                OnChannels(peer, chanRoom, wire.Chn);
                 break;
 
             case Wire.Play when wire.Room != null && wire.Pl != null

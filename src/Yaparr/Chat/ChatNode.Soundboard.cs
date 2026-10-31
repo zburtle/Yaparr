@@ -208,7 +208,7 @@ public sealed partial class ChatNode
         if (from == Id || IsBlocked(from) || IsBannedIn(room, from) || room.ActiveVoice is not { } session) return;
         // Only people in the voice channel can play sounds into it.
         lock (room.IndirectGate)
-            if (!room.Voice.TryGetValue(from, out var voice) || !voice.State.Active) return;
+            if (!room.Voice.TryGetValue(from, out var voice) || !voice.State.Active || (voice.State.Chan ?? RoomChannels.DefaultVoice) != session.ChannelId) return;
 
         long now = Environment.TickCount64;
         string key = room.Key + from.Value;

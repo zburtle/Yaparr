@@ -7,9 +7,14 @@ namespace Yaparr.Chat;
 // one in line starts a new tree. While there is no tree, voice goes straight to each person as before.
 public sealed partial class ChatNode
 {
+    // Each voice channel has a tree of its own; the first one's is called "voice" as it always was, the others by their channel id.
+    private static string VoiceTreeName(string channel) => channel == RoomChannels.DefaultVoice ? "voice" : channel;
+
+    private static string ActiveChannel(ChatRoom room) => room.ActiveVoice?.ChannelId ?? RoomChannels.DefaultVoice;
+
     private MediaGroup? LiveVoiceGroup(ChatRoom room, long now) =>
         room.Media.Values
-            .Where(g => g.Kind == "voice" && !g.Suspect && g.Ann.Active && (g.IsRoot || now - g.AnnSeenAt <= MediaLifetimeMs))
+            .Where(g => g.Kind == "voice" && g.Info.Name == VoiceTreeName(ActiveChannel(room)) && !g.Suspect && g.Ann.Active && (g.IsRoot || now - g.AnnSeenAt <= MediaLifetimeMs))
             .OrderBy(g => g.Info.Root.Value, StringComparer.Ordinal)
             .FirstOrDefault();
 
@@ -18,7 +23,7 @@ public sealed partial class ChatNode
 
     // The voice group we are attached to, if any.
     private MediaGroup? AttachedVoiceGroup(ChatRoom room) =>
-        room.Media.Values.FirstOrDefault(g => g.Kind == "voice" && g.Joined && g.Attached);
+        room.Media.Values.FirstOrDefault(g => g.Kind == "voice" && g.Info.Name == VoiceTreeName(ActiveChannel(room)) && g.Joined && g.Attached);
 
     private void MaintainVoiceTree(ChatRoom room, long now)
     {
@@ -59,7 +64,7 @@ public sealed partial class ChatNode
         if (now - room.VoiceTreeWantedSince < rank * _options.VoiceTreeRankDelay.TotalMilliseconds) return;
 
         _options.Log?.Invoke($"voice in '{room.Name}' has {count} people; starting a voice tree");
-        var group = CreateRootGroup(room, "voice", "voice", signed: false, upstream: true, _options.VoiceRootFanout, kbps: 64);
+        var group = CreateRootGroup(room, "voice", VoiceTreeName(ActiveChannel(room)), signed: false, upstream: true, _options.VoiceRootFanout, kbps: 64);
         BindVoice(room, group);
         room.VoiceTreeWantedSince = 0;
     }

@@ -83,7 +83,9 @@ public sealed partial class ChatNode
         foreach (var member in room.MemberStates.Values)
             Send(member.Connection, new Wire { Type = Wire.Roles, Room = RefTo(room, member), Rol = new[] { entry } });
         Interlocked.Increment(ref room.ModVersion);
+        Interlocked.Increment(ref room.ChannelVersion);
         room.RaiseRolesChanged();
+        room.RaiseChannelsChanged();
         // An order counts only while the one who gave it is an admin, so a change of admins can change who is banned.
         if (room.ModEntries.Count > 0) ApplyModeration(room);
     }
@@ -121,7 +123,9 @@ public sealed partial class ChatNode
         foreach (var r in accepted)
             Relay(peer, room, PeerId.FromPublicKey(Convert.FromBase64String(r.Pub)).Value, reference => new Wire { Type = Wire.Roles, Room = reference, Rol = new[] { r } });
         Interlocked.Increment(ref room.ModVersion);
+        Interlocked.Increment(ref room.ChannelVersion);
         room.RaiseRolesChanged();
+        room.RaiseChannelsChanged();
         if (room.ModEntries.Count > 0) ApplyModeration(room);
     }
 }

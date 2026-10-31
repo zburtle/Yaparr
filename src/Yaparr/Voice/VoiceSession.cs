@@ -51,11 +51,15 @@ public sealed class VoiceSession : IDisposable
     private readonly object _playLock = new();
     private volatile bool _disposed;
 
-    internal VoiceSession(ChatNode node, ChatRoom room)
+    internal VoiceSession(ChatNode node, ChatRoom room, string channel = RoomChannels.DefaultVoice)
     {
         _node = node;
         _room = room;
-        _tag = System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(Convert.FromHexString(room.Key));
+        ChannelId = channel;
+        // The first voice channel keeps the tag it always had; another one gets its own, so a packet for one never plays in the other.
+        _tag = System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(channel == RoomChannels.DefaultVoice
+            ? Convert.FromHexString(room.Key)
+            : System.Security.Cryptography.SHA256.HashData(Convert.FromHexString(room.Key + channel)));
         _encoder = OpusCodecFactory.CreateEncoder(SampleRate, 1, OpusApplication.OPUS_APPLICATION_VOIP);
         _encoder.Bitrate = 32000;
         _encoder.Complexity = 6;
@@ -66,6 +70,9 @@ public sealed class VoiceSession : IDisposable
     }
 
     public ChatRoom Room => _room;
+
+    /// <summary>The voice channel of the room this session is in.</summary>
+    public string ChannelId { get; }
 
     public VoiceActivation Activation { get; set; } = VoiceActivation.VoiceActivity;
 

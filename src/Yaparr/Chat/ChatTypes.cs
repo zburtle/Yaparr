@@ -40,7 +40,8 @@ public enum DeliveryState
 
 public sealed record DeliveryStatus(string MessageId, DeliveryState State, int Delivered, int Total);
 
-public sealed record ChatMessage(PeerInfo From, string? Room, string Id, string Text, DateTimeOffset Timestamp, bool IsCatchUp = false, Attachment? Attachment = null);
+/// <param name="Channel">The text channel of a room message (<see cref="RoomChannels.DefaultText"/> for the first one and for messages from earlier versions); null for direct messages.</param>
+public sealed record ChatMessage(PeerInfo From, string? Room, string Id, string Text, DateTimeOffset Timestamp, bool IsCatchUp = false, Attachment? Attachment = null, string? Channel = null);
 
 public static class Topics
 {
@@ -79,6 +80,9 @@ internal sealed class Wire
     /// <summary>The owner's statements appointing or removing admins of a room.</summary>
     public StoredRole[]? Rol { get; set; }
 
+    /// <summary>The owner's and admins' statements about the room's channels.</summary>
+    public StoredChannel[]? Chn { get; set; }
+
     /// <summary>Orders by the owner or an admin: bans, and deleted messages and sounds.</summary>
     public StoredMod[]? Mod { get; set; }
 
@@ -102,7 +106,7 @@ internal sealed class Wire
 
     public const string Direct = "dm", DirectSync = "dmsync";
 
-    public const string Caps = "caps", Rename = "name", Account = "acct", Media = "media", Sound = "snd", Play = "play", Roles = "roles", Moderate = "mod";
+    public const string Caps = "caps", Rename = "name", Account = "acct", Media = "media", Sound = "snd", Play = "play", Roles = "roles", Moderate = "mod", Channels = "chan";
 
     public const string Ack = "ack", Hello = "hi", Join = "join", Leave = "leave", Message = "msg", Introduce = "peers", Sync = "sync", History = "hist", Links = "links", Presence = "pres", Voice = "voice";
 }

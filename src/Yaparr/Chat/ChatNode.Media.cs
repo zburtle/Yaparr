@@ -273,11 +273,11 @@ public sealed partial class ChatNode
     /// <param name="signed">You sign every packet, so members passing it on cannot alter it. Only you send.</param>
     /// <param name="upstream">Everyone in the group can send, not only you.</param>
     /// <param name="kbps">The bitrate the stream needs, in kilobits per second. Streams above <see cref="ChatNodeOptions.MaxMeteredStreamKbps"/> are not carried over the shared relay server.</param>
-    public MediaSource StartMedia(ChatRoom room, string kind, string name, bool signed = true, bool upstream = false, int? fanout = null, int kbps = 1000)
+    public MediaSource StartMedia(ChatRoom room, string kind, string name, bool signed = true, bool upstream = false, int? fanout = null, int kbps = 1000, string? channel = null)
     {
         if (!_rooms.ContainsKey(room.Key)) throw new InvalidOperationException("You are not in that room.");
         if (string.IsNullOrWhiteSpace(kind) || kind.Length > 16 || kind == "voice") throw new ArgumentException("Choose another kind of stream.", nameof(kind));
-        return new MediaSource(this, CreateRootGroup(room, kind, name, signed, upstream, fanout ?? _options.MediaRootFanout, kbps));
+        return new MediaSource(this, CreateRootGroup(room, kind, name, signed, upstream, fanout ?? _options.MediaRootFanout, kbps, channel));
     }
 
     /// <summary>Starts receiving a stream someone shared (see <see cref="ChatRoom.MediaGroups"/>).</summary>
@@ -300,10 +300,10 @@ public sealed partial class ChatNode
 
     // ---- starting, announcing, ending -------------------------------------------------------
 
-    private MediaGroup CreateRootGroup(ChatRoom room, string kind, string name, bool signed, bool upstream, int fanout, int kbps)
+    private MediaGroup CreateRootGroup(ChatRoom room, string kind, string name, bool signed, bool upstream, int fanout, int kbps, string? channel = null)
     {
         var id = Convert.ToHexString(RandomNumberGenerator.GetBytes(8)).ToLowerInvariant();
-        var ann = SignedMedia.Create(_identity, room.Key, kind, id, name, NextTimestamp(), active: true, Math.Clamp(fanout, 1, 64), signed, upstream, Math.Clamp(kbps, 0, 100_000));
+        var ann = SignedMedia.Create(_identity, room.Key, kind, id, name, NextTimestamp(), active: true, Math.Clamp(fanout, 1, 64), signed, upstream, Math.Clamp(kbps, 0, 100_000), channel);
         var g = AddMediaGroup(room, ann) ?? throw new InvalidOperationException("Could not start the stream; try again.");
         lock (g.Gate) { g.IsRoot = true; g.Joined = upstream; }
         SendMediaAnnounce(room, g, active: true);
@@ -322,7 +322,7 @@ public sealed partial class ChatNode
             Ann = ann,
             RootPub = Convert.FromBase64String(ann.Pub),
             RootFanout = ann.Fanout,
-            Info = new MediaGroupInfo(ann.Group, ann.Kind, ann.Name, new PeerId(ann.From), ann.Signed, ann.Upstream, ann.Kbps),
+            Info = new MediaGroupInfo(ann.Group, ann.Kind, ann.Name, new PeerId(ann.From), ann.Signed, ann.Upstream, ann.Kbps, ann.Chan),
             AnnSeenAt = Environment.TickCount64,
         };
         if (!_mediaByTag.TryAdd(g.Tag, g)) return null;
@@ -332,7 +332,7 @@ public sealed partial class ChatNode
 
     private void SendMediaAnnounce(ChatRoom room, MediaGroup g, bool active)
     {
-        var ann = SignedMedia.Create(_identity, room.Key, g.Info.Kind, g.Id, g.Info.Name, NextTimestamp(), active, g.RootFanout, g.Info.Signed, g.Info.Upstream, g.Info.Kbps);
+        var ann = SignedMedia.Create(_identity, room.Key, g.Info.Kind, g.Id, g.Info.Name, NextTimestamp(), active, g.RootFanout, g.Info.Signed, g.Info.Upstream, g.Info.Kbps, g.Info.Channel);
         lock (g.Gate) { g.Ann = ann; g.LastAnnouncedAt = g.AnnSeenAt = Environment.TickCount64; }
         foreach (var member in room.MemberStates.Values)
             Send(member.Connection, new Wire { Type = Wire.Media, Room = RefTo(room, member), Ann = new[] { ann } });

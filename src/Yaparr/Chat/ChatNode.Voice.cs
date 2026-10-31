@@ -12,10 +12,13 @@ public sealed partial class ChatNode
 
     internal bool IsConnected(PeerId id) => _peers.TryGetValue(id, out var p) && p.Connection.State == ConnectionState.Established;
 
-    internal VoiceSession JoinVoice(ChatRoom room)
+    internal VoiceSession JoinVoice(ChatRoom room, string channel)
     {
+        channel = string.IsNullOrEmpty(channel) ? RoomChannels.DefaultVoice : channel;
+        if (FindChannel(room, channel) is not { Kind: ChannelKind.Voice }) throw new InvalidOperationException("There is no such voice channel in this room.");
+        // Moving to another voice channel leaves the one you are in.
         room.ActiveVoice?.Dispose();
-        var session = new VoiceSession(this, room);
+        var session = new VoiceSession(this, room, channel);
         room.ActiveVoice = session;
         room.SelfMuted = room.SelfDeafened = false;
         PublishVoiceState(room, active: true, muted: false, deafened: false);
@@ -29,14 +32,14 @@ public sealed partial class ChatNode
         if (!ReferenceEquals(room.ActiveVoice, session)) return;
         room.ActiveVoice = null;
         LeaveVoiceGroups(room);
-        PublishVoiceState(room, active: false, muted: false, deafened: false);
+        PublishVoiceState(room, active: false, muted: false, deafened: false, channel: session.ChannelId);
     }
 
-    internal void PublishVoiceState(ChatRoom room, bool active, bool muted, bool deafened, bool raise = true)
+    internal void PublishVoiceState(ChatRoom room, bool active, bool muted, bool deafened, bool raise = true, string? channel = null)
     {
         room.SelfMuted = muted;
         room.SelfDeafened = deafened;
-        var state = SignedVoice.Create(_identity, room.Key, DisplayName, NextTimestamp(), active, muted, deafened);
+        var state = SignedVoice.Create(_identity, room.Key, DisplayName, NextTimestamp(), active, muted, deafened, channel ?? room.ActiveVoice?.ChannelId);
         room.LastVoiceAt = Environment.TickCount64;
         foreach (var member in room.MemberStates.Values)
             Send(member.Connection, new Wire { Type = Wire.Voice, Room = RefTo(room, member), Vox = new[] { state } });
@@ -47,7 +50,7 @@ public sealed partial class ChatNode
     {
         var states = new List<StoredVoice>();
         if (room.ActiveVoice != null)
-            states.Add(SignedVoice.Create(_identity, room.Key, DisplayName, NextTimestamp(), true, room.SelfMuted, room.SelfDeafened));
+            states.Add(SignedVoice.Create(_identity, room.Key, DisplayName, NextTimestamp(), true, room.SelfMuted, room.SelfDeafened, room.ActiveVoice.ChannelId));
         long cutoff = Environment.TickCount64 - (long)VoiceLifetime.TotalMilliseconds;
         lock (room.IndirectGate)
             states.AddRange(room.Voice.Values.Where(e => e.State.Active && e.SeenAt >= cutoff && e.State.From != peer.Id.Value).Take(15).Select(e => e.State));
@@ -97,24 +100,27 @@ public sealed partial class ChatNode
         if (removed) VoiceRosterChanged(room);
     }
 
+    // The people in the voice channel we are in, which is the only one whose audio we send to or play.
     private List<PeerId> ActiveVoiceOthers(ChatRoom room)
     {
         long cutoff = Environment.TickCount64 - (long)VoiceLifetime.TotalMilliseconds;
+        string channel = room.ActiveVoice?.ChannelId ?? RoomChannels.DefaultVoice;
         lock (room.IndirectGate)
-            return room.Voice.Where(kv => kv.Value.State.Active && kv.Value.SeenAt >= cutoff && !IsBlocked(kv.Key)).Select(kv => kv.Key).ToList();
+            return room.Voice.Where(kv => kv.Value.State.Active && kv.Value.SeenAt >= cutoff && !IsBlocked(kv.Key)
+                                          && (kv.Value.State.Chan ?? RoomChannels.DefaultVoice) == channel).Select(kv => kv.Key).ToList();
     }
 
     internal IReadOnlyList<VoiceParticipant> GetVoiceParticipants(ChatRoom room)
     {
         var result = new List<VoiceParticipant>();
         if (room.ActiveVoice != null)
-            result.Add(new VoiceParticipant(new PeerInfo(Id, DisplayName, null, AccountId: AccountId), room.SelfMuted, room.SelfDeafened, IsSelf: true));
+            result.Add(new VoiceParticipant(new PeerInfo(Id, DisplayName, null, AccountId: AccountId), room.SelfMuted, room.SelfDeafened, IsSelf: true, room.ActiveVoice.ChannelId));
         long cutoff = Environment.TickCount64 - (long)VoiceLifetime.TotalMilliseconds;
         lock (room.IndirectGate)
             foreach (var (id, entry) in room.Voice.Where(kv => kv.Value.State.Active && kv.Value.SeenAt >= cutoff && !IsBlocked(kv.Key)).OrderBy(kv => kv.Value.State.Name))
             {
                 var info = _peers.TryGetValue(id, out var p) ? p.Info : new PeerInfo(id, entry.State.Name, null, IsRelayed: true, AccountId: AccountOf(id));
-                result.Add(new VoiceParticipant(info with { DisplayName = entry.State.Name }, entry.State.Muted, entry.State.Deafened, IsSelf: false));
+                result.Add(new VoiceParticipant(info with { DisplayName = entry.State.Name }, entry.State.Muted, entry.State.Deafened, IsSelf: false, entry.State.Chan ?? RoomChannels.DefaultVoice));
             }
         return result;
     }

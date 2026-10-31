@@ -5,7 +5,8 @@ using Yaparr.Identity;
 
 namespace Yaparr.Chat;
 
-public sealed record StoredMessage(string From, string Pub, string Name, string Id, long Ts, string Text, string Sig);
+/// <param name="Chan">The text channel, or null for the first one. Absent from messages by earlier versions, which belong to the first channel.</param>
+public sealed record StoredMessage(string From, string Pub, string Name, string Id, long Ts, string Text, string Sig, string? Chan = null);
 
 public interface IChatHistoryStore
 {
@@ -82,18 +83,19 @@ internal static class SignedMessage
     private const int MaxText = 8000, MaxName = 64, MaxId = 64;
     private static readonly TimeSpan MaxFutureSkew = TimeSpan.FromMinutes(5);
 
-    public static StoredMessage Create(PeerIdentity identity, string roomKey, string name, string text, long? timestamp = null)
+    public static StoredMessage Create(PeerIdentity identity, string roomKey, string name, string text, long? timestamp = null, string? channel = null)
     {
         var unsigned = new StoredMessage(
             identity.Id.Value, Convert.ToBase64String(identity.PublicKey), Truncate(name, MaxName),
             Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant(),
-            timestamp ?? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), text, "");
+            timestamp ?? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), text, "", string.IsNullOrEmpty(channel) || channel == RoomChannels.DefaultText ? null : channel);
         return unsigned with { Sig = Convert.ToBase64String(identity.Sign(Payload(roomKey, unsigned))) };
     }
 
     public static bool Verify(StoredMessage m, string roomKey)
     {
         if (m.Text.Length > MaxText || m.Name.Length > MaxName || m.Id.Length is 0 or > MaxId) return false;
+        if (m.Chan is { } chan && (chan.Length != 16 || !chan.All(c => c is (>= '0' and <= '9') or (>= 'a' and <= 'f')) || chan == RoomChannels.DefaultText)) return false;
         if (m.Ts > DateTimeOffset.UtcNow.Add(MaxFutureSkew).ToUnixTimeMilliseconds()) return false;
         try
         {
@@ -114,8 +116,10 @@ internal static class SignedMessage
         using var ms = new MemoryStream();
         using (var w = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true))
         {
-            w.Write("yaparr-msg-v1"); w.Write(roomKey); w.Write(m.From); w.Write(m.Name);
+            // A message in the first channel is signed exactly as it always was, so earlier versions still accept it.
+            w.Write(m.Chan == null ? "yaparr-msg-v1" : "yaparr-msg-v2"); w.Write(roomKey); w.Write(m.From); w.Write(m.Name);
             w.Write(m.Id); w.Write(m.Ts); w.Write(m.Text);
+            if (m.Chan != null) w.Write(m.Chan);
         }
         return ms.ToArray();
     }
@@ -206,7 +210,9 @@ internal sealed class RoomHistory
         long cutoff = OldestAllowed();
         foreach (var k in _messages.Where(kv => kv.Value.Ts < cutoff).Select(kv => kv.Key).ToList()) _messages.Remove(k);
         if (_messages.Count <= _max) return;
-        foreach (var k in _messages.OrderBy(kv => kv.Value.Ts).Take(_messages.Count - _max).Select(kv => kv.Key).ToList())
-            _messages.Remove(k);
+        // The limit is per channel, so a busy channel does not push a quiet one out of the history.
+        foreach (var channel in _messages.GroupBy(kv => kv.Value.Chan ?? "").Where(g => g.Count() > _max).ToList())
+            foreach (var k in channel.OrderBy(kv => kv.Value.Ts).Take(channel.Count() - _max).Select(kv => kv.Key).ToList())
+                _messages.Remove(k);
     }
 }

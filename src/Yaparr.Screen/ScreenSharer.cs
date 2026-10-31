@@ -36,7 +36,7 @@ public sealed class ScreenSharer : IDisposable
         ffmpegPath ??= FfmpegLocator.Find() ?? throw new FileNotFoundException("FFmpeg was not found. Put ffmpeg.exe in an 'ffmpeg' folder next to the app, or set YAPARR_FFMPEG.");
         FfmpegArgs.Capture(options); // checks the numbers before anything is announced
         if (options.WindowHandle is { } handle && !ShareWindows.Exists(handle)) throw new InvalidOperationException("That window is not open any more.");
-        var source = node.StartMedia(room, "screen", name, signed: true, upstream: false, kbps: options.Kbps);
+        var source = node.StartMedia(room, "screen", name, signed: true, upstream: false, kbps: options.Kbps, channel: room.CurrentVoice?.ChannelId);
         var sharer = new ScreenSharer(source, options, ffmpegPath);
         if (options.ShareSound) sharer.StartSound(node, room);
         sharer._run = Task.Run(() => sharer.PumpAsync(sharer._cts.Token));
@@ -68,7 +68,7 @@ public sealed class ScreenSharer : IDisposable
             int pid = _options.WindowHandle is { } handle ? ShareWindows.ProcessId(handle) : Environment.ProcessId;
             bool exclude = _options.WindowHandle == null;
             if (pid == 0) throw new InvalidOperationException("That window is not open any more.");
-            _soundSource = node.StartMedia(room, SoundKind, SoundNameFor(_source.Info.Id), signed: true, upstream: false, kbps: 96);
+            _soundSource = node.StartMedia(room, SoundKind, SoundNameFor(_source.Info.Id), signed: true, upstream: false, kbps: 96, channel: _source.Info.Channel);
             _soundSender = new StreamAudioSender(_soundSource);
             var sender = _soundSender;
             _soundCapture = ProcessLoopback.Start(pid, exclude, (samples, count) => sender.Push(samples.AsSpan(0, count)));

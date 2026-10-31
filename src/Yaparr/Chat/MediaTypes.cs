@@ -6,7 +6,8 @@ using Yaparr.Transport;
 namespace Yaparr.Chat;
 
 /// <summary>A signed statement by the root of a media group that it exists (or has ended).</summary>
-public sealed record StoredMedia(string From, string Pub, string Group, string Kind, string Name, long Ts, bool Active, int Fanout, bool Signed, bool Upstream, int Kbps, string Sig);
+/// <param name="Chan">The voice channel the sharer was in, or null (the first one, or a stream that belongs to no channel).</param>
+public sealed record StoredMedia(string From, string Pub, string Group, string Kind, string Name, long Ts, bool Active, int Fanout, bool Signed, bool Upstream, int Kbps, string Sig, string? Chan = null);
 
 /// <summary>
 /// A stream shared with a room, such as a screen or a large voice channel. It reaches the viewers through a tree
@@ -15,7 +16,8 @@ public sealed record StoredMedia(string From, string Pub, string Group, string K
 /// <param name="Signed">The root signs every packet, so a member passing it on cannot change it. Only the root sends.</param>
 /// <param name="Upstream">Anyone in the group can send, and packets travel both up and down the tree (voice).</param>
 /// <param name="Kbps">The bitrate the sharer says the stream needs, in kilobits per second. Zero if it did not say.</param>
-public sealed record MediaGroupInfo(string Id, string Kind, string Name, PeerId Root, bool Signed, bool Upstream, int Kbps = 0);
+/// <param name="Channel">The voice channel the sharer was in when they started (a screen is watched from there); null if it belongs to none.</param>
+public sealed record MediaGroupInfo(string Id, string Kind, string Name, PeerId Root, bool Signed, bool Upstream, int Kbps = 0, string? Channel = null);
 
 /// <summary>One packet of a stream. <paramref name="IsKey"/> marks a packet a viewer can start from.</summary>
 public sealed record MediaPacket(PeerId Origin, ReadOnlyMemory<byte> Payload, bool IsKey, uint Seq = 0);
@@ -44,15 +46,16 @@ internal static class SignedMedia
     private static readonly TimeSpan MaxFutureSkew = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan MaxAge = TimeSpan.FromMinutes(5);
 
-    public static StoredMedia Create(PeerIdentity identity, string roomKey, string kind, string group, string name, long timestamp, bool active, int fanout, bool signed, bool upstream, int kbps)
+    public static StoredMedia Create(PeerIdentity identity, string roomKey, string kind, string group, string name, long timestamp, bool active, int fanout, bool signed, bool upstream, int kbps, string? channel = null)
     {
         var unsigned = new StoredMedia(identity.Id.Value, Convert.ToBase64String(identity.PublicKey), group, kind,
-            name.Length <= MaxName ? name : name[..MaxName], timestamp, active, fanout, signed, upstream, kbps, "");
+            name.Length <= MaxName ? name : name[..MaxName], timestamp, active, fanout, signed, upstream, kbps, "", string.IsNullOrEmpty(channel) ? null : channel);
         return unsigned with { Sig = Convert.ToBase64String(identity.Sign(Payload(roomKey, unsigned))) };
     }
 
     public static bool Verify(StoredMedia m, string roomKey)
     {
+        if (m.Chan is { } chan && (chan.Length != 16 || !chan.All(c => c is (>= '0' and <= '9') or (>= 'a' and <= 'f')))) return false;
         if (m.Name.Length > MaxName || m.Kind.Length is 0 or > MaxKind || m.Fanout is < 0 or > 64 || m.Kbps is < 0 or > 100_000) return false;
         if (m.Group.Length != 16 || !m.Group.All(c => c is (>= '0' and <= '9') or (>= 'a' and <= 'f'))) return false;
         var now = DateTimeOffset.UtcNow;
@@ -71,8 +74,9 @@ internal static class SignedMedia
         using var ms = new MemoryStream();
         using (var w = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true))
         {
-            w.Write("yaparr-media-v1"); w.Write(roomKey); w.Write(m.From); w.Write(m.Group); w.Write(m.Kind); w.Write(m.Name);
+            w.Write(m.Chan == null ? "yaparr-media-v1" : "yaparr-media-v2"); w.Write(roomKey); w.Write(m.From); w.Write(m.Group); w.Write(m.Kind); w.Write(m.Name);
             w.Write(m.Ts); w.Write(m.Active); w.Write(m.Fanout); w.Write(m.Signed); w.Write(m.Upstream); w.Write(m.Kbps);
+            if (m.Chan != null) w.Write(m.Chan);
         }
         return ms.ToArray();
     }

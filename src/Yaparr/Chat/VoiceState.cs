@@ -4,12 +4,14 @@ using Yaparr.Identity;
 namespace Yaparr.Chat;
 
 /// <summary>A signed statement that someone is in (or has left) a room's voice channel.</summary>
-public sealed record StoredVoice(string From, string Pub, string Name, long Ts, bool Active, bool Muted, bool Deafened, string Sig);
+/// <param name="Chan">The voice channel, or null for the first one.</param>
+public sealed record StoredVoice(string From, string Pub, string Name, long Ts, bool Active, bool Muted, bool Deafened, string Sig, string? Chan = null);
 
 internal sealed record VoiceEntry(StoredVoice State, long SeenAt);
 
 /// <summary>Who is in a room's voice channel and whether they have muted themselves.</summary>
-public sealed record VoiceParticipant(PeerInfo Peer, bool Muted, bool Deafened, bool IsSelf);
+/// <param name="Channel">The voice channel they are in (<see cref="RoomChannels.DefaultVoice"/> for the first one).</param>
+public sealed record VoiceParticipant(PeerInfo Peer, bool Muted, bool Deafened, bool IsSelf, string Channel = RoomChannels.DefaultVoice);
 
 internal static class SignedVoice
 {
@@ -17,17 +19,18 @@ internal static class SignedVoice
     private static readonly TimeSpan MaxFutureSkew = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan MaxAge = TimeSpan.FromMinutes(5);
 
-    public static StoredVoice Create(PeerIdentity identity, string roomKey, string name, long timestamp, bool active, bool muted, bool deafened)
+    public static StoredVoice Create(PeerIdentity identity, string roomKey, string name, long timestamp, bool active, bool muted, bool deafened, string? channel = null)
     {
         var unsigned = new StoredVoice(
             identity.Id.Value, Convert.ToBase64String(identity.PublicKey),
-            name.Length <= MaxName ? name : name[..MaxName], timestamp, active, muted, deafened, "");
+            name.Length <= MaxName ? name : name[..MaxName], timestamp, active, muted, deafened, "", string.IsNullOrEmpty(channel) || channel == RoomChannels.DefaultVoice ? null : channel);
         return unsigned with { Sig = Convert.ToBase64String(identity.Sign(Payload(roomKey, unsigned))) };
     }
 
     public static bool Verify(StoredVoice v, string roomKey)
     {
         if (v.Name.Length > MaxName) return false;
+        if (v.Chan is { } chan && (chan.Length != 16 || !chan.All(c => c is (>= '0' and <= '9') or (>= 'a' and <= 'f')) || chan == RoomChannels.DefaultVoice)) return false;
         var now = DateTimeOffset.UtcNow;
         if (v.Ts > now.Add(MaxFutureSkew).ToUnixTimeMilliseconds() || v.Ts < now.Subtract(MaxAge).ToUnixTimeMilliseconds()) return false;
         try
@@ -44,8 +47,10 @@ internal static class SignedVoice
         using var ms = new MemoryStream();
         using (var w = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true))
         {
-            w.Write("yaparr-voice-v1"); w.Write(roomKey); w.Write(v.From); w.Write(v.Name); w.Write(v.Ts);
+            // The first voice channel is signed exactly as before.
+            w.Write(v.Chan == null ? "yaparr-voice-v1" : "yaparr-voice-v2"); w.Write(roomKey); w.Write(v.From); w.Write(v.Name); w.Write(v.Ts);
             w.Write(v.Active); w.Write(v.Muted); w.Write(v.Deafened);
+            if (v.Chan != null) w.Write(v.Chan);
         }
         return ms.ToArray();
     }
