@@ -428,6 +428,8 @@
                         <ListBox.ContextMenu>
                             <ContextMenu Opening="MessageMenu_Opening">
                                 <MenuItem x:Name="RetryItem" Header="_Retry sending" Click="RetryMessage_Click" />
+                                <MenuItem x:Name="DeleteMessageItem" Header="_Delete for everyone" Click="DeleteMessage_Click" />
+                                <MenuItem x:Name="BanSenderItem" Header="Ban sender from this _room…" Click="BanSender_Click" />
                                 <MenuItem x:Name="BlockSenderItem" Header="_Block sender" Click="BlockSender_Click" />
                             </ContextMenu>
                         </ListBox.ContextMenu>
@@ -485,6 +487,8 @@
                             <ContextMenu Opening="PeopleMenu_Opening">
                                 <MenuItem x:Name="MakeAdminItem" Header="Make _admin of this room" Click="MakeAdmin_Click" />
                                 <MenuItem x:Name="RemoveAdminItem" Header="Remove _admin from this room" Click="RemoveAdmin_Click" />
+                                <MenuItem x:Name="BanPersonItem" Header="Ban from this _room…" Click="BanPerson_Click" />
+                                <MenuItem x:Name="UnbanPersonItem" Header="Unban from this _room" Click="UnbanPerson_Click" />
                                 <MenuItem x:Name="BlockPersonItem" Header="_Block" Click="BlockPerson_Click" />
                                 <MenuItem x:Name="UnblockPersonItem" Header="_Unblock" Click="UnblockPerson_Click" />
                             </ContextMenu>

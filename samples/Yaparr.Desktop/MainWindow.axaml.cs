@@ -457,6 +457,7 @@ public partial class MainWindow : Window
         room.MemberJoined += p => UI(() => { Remember(p); RefreshPeers(); });
         room.MemberLeft += p => UI(() => { Remember(p); RefreshPeers(p.Account); });
         room.RolesChanged += () => UI(() => { RefreshPeers(); RefreshMembers(); });
+        room.ModerationChanged += () => UI(() => { conv.Reload(room.GetHistory().Select(ToVm).ToList()); RefreshPeers(); RefreshMembers(); });
 
         foreach (var m in room.GetHistory()) conv.Add(ToVm(m));
         _conversations.Add(conv);
@@ -515,13 +516,17 @@ public partial class MainWindow : Window
         var open = SelectedRoom;
         RoomRole RoleOf(string id) => open?.RoleOf(new PeerId(id)) ?? RoomRole.Member;
         var online = live.Values.Where(p => !blocked.Contains(p.Account.Value))
-            .Select(p => new PeerVm(p.Account.Value, p.DisplayName, true, now, p.IsRelayed, _node.GetLink(p.Account), Role: RoleOf(p.Account.Value)));
+            .Select(p => new PeerVm(p.Account.Value, p.DisplayName, true, now, p.IsRelayed, _node.GetLink(p.Account), Role: RoleOf(p.Account.Value), BannedHere: open?.IsBanned(p.Account) == true));
         var offline = _settings.KnownPeers
             .Where(k => !live.ContainsKey(k.Id) && !_node.IsMyDevice(new PeerId(k.Id)) && !blocked.Contains(k.Id))
-            .Select(k => new PeerVm(k.Id, string.IsNullOrWhiteSpace(k.Name) ? k.Id[..8] : k.Name, false, k.LastSeen, false, _node.GetLink(new PeerId(k.Id)), Role: RoleOf(k.Id)));
+            .Select(k => new PeerVm(k.Id, string.IsNullOrWhiteSpace(k.Name) ? k.Id[..8] : k.Name, false, k.LastSeen, false, _node.GetLink(new PeerId(k.Id)), Role: RoleOf(k.Id), BannedHere: open?.IsBanned(new PeerId(k.Id)) == true));
         var shut = _settings.BlockedPeers
             .Select(b => new PeerVm(b.Id, string.IsNullOrWhiteSpace(b.Name) ? b.Id[..8] : b.Name, false, b.LastSeen, Blocked: true));
-        var people = online.Concat(offline).Concat(shut)
+        // Someone banned here whom this device never met still needs a line, so that they can be unbanned.
+        var listed = online.Concat(offline).Select(p => p.Id).ToHashSet();
+        var banned = (open?.Banned ?? Array.Empty<BannedPerson>()).Where(b => !listed.Contains(b.Account.Value) && !blocked.Contains(b.Account.Value))
+            .Select(b => new PeerVm(b.Account.Value, b.Name, false, now, BannedHere: true));
+        var people = online.Concat(offline).Concat(banned).Concat(shut)
             .OrderByDescending(p => p.Online)
             .ThenBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase)
             .ToList();

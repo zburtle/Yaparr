@@ -154,14 +154,14 @@ public sealed class MessageVm : Observable
     public static MessageVm System(string text) => new(DateTimeOffset.Now, "", text, isSystem: true);
 }
 
-public sealed record PeerVm(string Id, string Name, bool Online, DateTimeOffset LastSeen, bool IsRelayed = false, PeerLink Link = PeerLink.Offline, bool Blocked = false, RoomRole Role = RoomRole.Member)
+public sealed record PeerVm(string Id, string Name, bool Online, DateTimeOffset LastSeen, bool IsRelayed = false, PeerLink Link = PeerLink.Offline, bool Blocked = false, RoomRole Role = RoomRole.Member, bool BannedHere = false)
 {
-    public string Display => Role switch { RoomRole.Owner => Name + "  (owner)", RoomRole.Admin => Name + "  (admin)", _ => Name };
+    public string Display => BannedHere ? Name + "  (banned)" : Role switch { RoomRole.Owner => Name + "  (owner)", RoomRole.Admin => Name + "  (admin)", _ => Name };
     public string Initial => Avatars.Initial(Name);
     public IBrush Avatar => Avatars.BrushFor(Name);
     public bool Warn => Link is PeerLink.NotResponding or PeerLink.Reconnecting;
 
-    public string StateText => Blocked ? "blocked" : Link switch
+    public string StateText => BannedHere ? "banned from this room" : Blocked ? "blocked" : Link switch
     {
         PeerLink.Direct => "direct",
         PeerLink.ViaServer => "via TURN",
@@ -318,6 +318,16 @@ public sealed class ConversationVm : Observable
     {
         for (int j = index; j <= index + 1 && j < Messages.Count; j++)
             Messages[j].ShowDay = j == 0 || Messages[j - 1].Time.LocalDateTime.Date != Messages[j].Time.LocalDateTime.Date;
+    }
+
+    /// <summary>Makes the messages match <paramref name="current"/>: those that are no longer there (deleted, or from someone banned) go, new ones come in. Lines without an id, such as notices, stay.</summary>
+    public void Reload(IReadOnlyList<MessageVm> current)
+    {
+        var keep = current.Where(m => m.Id != null).Select(m => m.Id!).ToHashSet();
+        for (int i = Messages.Count - 1; i >= 0; i--)
+            if (Messages[i].Id is { } id && !keep.Contains(id)) { _ids.Remove(id); Messages.RemoveAt(i); }
+        foreach (var m in current) Add(m);
+        for (int i = 0; i < Messages.Count; i++) MarkDays(i);
     }
 
     public void Add(MessageVm message)

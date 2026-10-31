@@ -29,6 +29,8 @@ public partial class MainWindow
         bool canChange = CanChangeAdmin(person, out _);
         MakeAdminItem.IsVisible = canChange && person.Role == RoomRole.Member;
         RemoveAdminItem.IsVisible = canChange && person.Role == RoomRole.Admin;
+        BanPersonItem.IsVisible = CanBan(person.Id, person.Role) && !person.BannedHere;
+        UnbanPersonItem.IsVisible = SelectedRoom is { MyRole: >= RoomRole.Admin } && person.BannedHere;
     }
 
     private void MessageMenu_Opening(object? sender, System.ComponentModel.CancelEventArgs e)
@@ -36,7 +38,11 @@ public partial class MainWindow
         var message = MessageList.SelectedItem as MessageVm;
         RetryItem.IsVisible = message is { CanRetry: true };
         BlockSenderItem.IsVisible = message != null && BlockedIdOf(message) is { } id && _node?.IsBlocked(new PeerId(id)) == false;
-        if (!RetryItem.IsVisible && !BlockSenderItem.IsVisible) e.Cancel = true;
+        var room = SelectedRoom;
+        var source = message?.Source;
+        DeleteMessageItem.IsVisible = room is { MyRole: >= RoomRole.Admin } && source != null;
+        BanSenderItem.IsVisible = source != null && !message!.IsMine && CanBan(source.From.Account.Value, room?.RoleOf(source.From.Account) ?? RoomRole.Member) && room?.IsBanned(source.From.Account) == false;
+        if (!RetryItem.IsVisible && !BlockSenderItem.IsVisible && !DeleteMessageItem.IsVisible && !BanSenderItem.IsVisible) e.Cancel = true;
     }
 
     private async void BlockPerson_Click(object? sender, RoutedEventArgs e) => await BlockAsync(PeopleList.SelectedItem);

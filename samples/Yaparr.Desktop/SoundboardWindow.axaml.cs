@@ -114,6 +114,12 @@ public partial class SoundboardWindow : Window
             mute.Click += (_, _) => _setPersonMuted(owner, !muted);
             items.Add(new Separator());
             items.Add(mute);
+            if (_room.MyRole >= RoomRole.Admin)
+            {
+                var delete = new MenuItem { Header = "Delete (admin)" };
+                delete.Click += async (_, _) => await AdminDeleteAsync(tile);
+                items.Add(delete);
+            }
         }
         new ContextMenu { ItemsSource = items }.Open(button);
         e.Handled = true;
@@ -132,6 +138,13 @@ public partial class SoundboardWindow : Window
         if (string.IsNullOrWhiteSpace(name) || name == tile.Name) return;
         try { _room.RenameSound(tile.Id, name); }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or KeyNotFoundException) { Footer.Text = ex.Message; }
+    }
+
+    private async Task AdminDeleteAsync(SoundVm tile)
+    {
+        if (!await Dialogs.ConfirmAsync(this, "Delete sound", $"Remove \"{tile.Name}\" from the soundboard for everyone? It was added by {tile.Info.OwnerName}.", "Delete", "Keep")) return;
+        try { _room.DeleteSound(tile.Id); }
+        catch (Exception ex) when (ex is InvalidOperationException or KeyNotFoundException) { Footer.Text = ex.Message; }
     }
 
     private async Task RemoveAsync(SoundVm tile)
