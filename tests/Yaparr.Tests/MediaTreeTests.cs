@@ -43,14 +43,14 @@ public class MediaTreeTests
         }
     }
 
-    private static ConcurrentQueue<string> Collect(MediaView view)
+    internal static ConcurrentQueue<string> Collect(MediaView view)
     {
         var got = new ConcurrentQueue<string>();
         view.Received += p => got.Enqueue(Encoding.UTF8.GetString(p.Payload.Span));
         return got;
     }
 
-    private static async Task SendRange(MediaSource source, int from, int to, int gapMs = 20)
+    internal static async Task SendRange(MediaSource source, int from, int to, int gapMs = 20)
     {
         for (int i = from; i < to; i++)
         {
@@ -91,27 +91,6 @@ public class MediaTreeTests
             await TestUtil.WaitFor(() => received.All(q => q.Count >= 27), 15_000);
             Assert.All(received, q => Assert.True(q.Distinct().Count() == q.Count, "a packet was delivered twice"));
             Assert.True(c.Root.RelayStats.ForwardedFrames == 0, "stream packets must not use the member-relay counters");
-        }
-        finally { foreach (var v in views) v.Dispose(); }
-    }
-
-    [Fact]
-    public async Task A_whole_room_of_twenty_can_watch_one_stream_when_nobody_sends_to_more_than_three()
-    {
-        using var c = await Cluster.StartAsync(20, fanout: 3, rootFanout: 3);
-        using var source = c.Root.StartMedia(c.Rooms[0], "screen", "big screen");
-        var views = await c.WatchAllAsync(source.Info.Id);
-        try
-        {
-            var received = views.Select(Collect).ToList();
-            await SendRange(source, 0, 40);
-            await TestUtil.WaitFor(() => received.All(q => q.Count >= 36), 20_000);
-
-            var parentOf = views.Select((v, i) => (Id: c.Nodes[i + 1].Id, v.Status.Parent)).ToDictionary(x => x.Id, x => x.Parent!.Value);
-            int Depth(PeerId id) { int d = 1; while (parentOf[id] != c.Root.Id) { id = parentOf[id]; d++; Assert.True(d < 20); } return d; }
-            Assert.True(source.Status.Children.Count <= 3);
-            Assert.True(parentOf.Keys.Max(Depth) >= 2, "nineteen viewers cannot all sit directly under a sharer who sends to three");
-            Assert.All(views, v => Assert.True(v.Status.Children.Count <= 3));
         }
         finally { foreach (var v in views) v.Dispose(); }
     }

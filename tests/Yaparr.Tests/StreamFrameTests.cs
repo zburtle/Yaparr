@@ -289,7 +289,14 @@ public class StreamFrameTests
             await source.SendFrameAsync(Frame(0, 10_000), isKey: true);
             // Enough frames that the copy anyone keeps (up to half a megabyte) is thrown away.
             for (int n = 1; n <= 90; n++) { await source.SendFrameAsync(Frame(n, 8000), false); await Task.Delay(8); }
-            await TestUtil.WaitFor(() => got.Count >= 91, 20_000);
+            try { await TestUtil.WaitFor(() => got.Count >= 91, 20_000); }
+            catch (TimeoutException)
+            {
+                var a = views[first - 1].Status; var b = views[second - 1].Status;
+                Assert.Fail($"delivered {got.Count} of 91, ids {string.Join(",", got.Select(f => f.Id).Distinct().OrderBy(x => x).Take(200))}; asked {asked}; " +
+                            $"viewer lost {views[second - 1].FramesLost} parent={b.Parent?.Short} recovered={b.Recovered} dropped={b.Dropped}; " +
+                            $"first parent={a.Parent?.Short} dropped={a.Dropped} forwarded={a.Forwarded} retransmitted={a.Retransmitted} dup={a.Duplicates}");
+            }
 
             bool blocked = true;
             c.Nodes[first].Mux.OutboundFilter = (_, to) => to.Port != c.Nodes[second].LocalPort || !Volatile.Read(ref blocked);
