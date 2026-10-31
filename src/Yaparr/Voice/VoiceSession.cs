@@ -116,6 +116,15 @@ public sealed class VoiceSession : IDisposable
 
     public IReadOnlyCollection<PeerId> Speaking => _remotes.Values.Where(r => r.Speaking).Select(r => r.Id).ToList();
 
+    private volatile float _outputGain = 1f;
+
+    /// <summary>How loud everything you hear is, 0 to 4 (1 is as received). Loud peaks are rounded off rather than cut.</summary>
+    public float OutputGain
+    {
+        get => _outputGain;
+        set => _outputGain = Math.Clamp(value, 0f, 4f);
+    }
+
     public void SetVolume(PeerId peer, float gain) => Remote(peer).Gain = Math.Clamp(gain, 0f, 2f);
 
     public void SetLocalMute(PeerId peer, bool muted) => Remote(peer).LocalMute = muted;
@@ -303,10 +312,18 @@ public sealed class VoiceSession : IDisposable
             for (int i = 0; i < FrameSamples; i++) _mix[i] += _tmp[i] * soundGain;
             if (sound.Finished) _sounds.RemoveAt(k);
         }
+        float master = OutputGain;
         for (int i = 0; i < FrameSamples; i++)
         {
-            float s = _mix[i];
-            _ring[(_ringStart + i) % _ring.Length] = s > 1f ? 1f : s < -1f ? -1f : s;
+            float s = _mix[i] * master;
+            // A boosted voice that goes past full scale is bent smoothly into the last 0.25, which sounds less harsh than a hard cut.
+            if (master > 1f)
+            {
+                if (s > 0.75f) s = 0.75f + 0.25f * MathF.Tanh((s - 0.75f) / 0.25f);
+                else if (s < -0.75f) s = -0.75f - 0.25f * MathF.Tanh((-s - 0.75f) / 0.25f);
+            }
+            else s = s > 1f ? 1f : s < -1f ? -1f : s;
+            _ring[(_ringStart + i) % _ring.Length] = s;
         }
         _ringCount = FrameSamples;
     }

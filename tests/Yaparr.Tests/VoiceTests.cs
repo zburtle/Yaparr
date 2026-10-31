@@ -174,6 +174,29 @@ public class VoiceTests
     }
 
     [Fact]
+    public async Task Output_gain_makes_voices_louder_without_going_past_full_scale()
+    {
+        var hub = new InMemoryDiscoveryHub();
+        var (a, b, ra, rb) = await Pair(hub);
+        using var _ = a; using var __ = b;
+        using var va = ra.JoinVoice();
+        va.Activation = VoiceActivation.Open;
+        using var vb = rb.JoinVoice();
+        vb.Activation = VoiceActivation.Open;
+        await TestUtil.WaitFor(() => ra.VoiceParticipants.Count == 2 && rb.VoiceParticipants.Count == 2);
+
+        Assert.Equal(1f, vb.OutputGain);
+        var normal = LongestAudibleRun(await Talk(va, vb, 440, 2));
+        vb.OutputGain = 3f;
+        var loud = LongestAudibleRun(await Talk(va, vb, 440, 2));
+
+        Assert.True(loud.Max(Math.Abs) > normal.Max(Math.Abs) * 1.5f, $"normal {normal.Max(Math.Abs):0.00}, loud {loud.Max(Math.Abs):0.00}");
+        Assert.True(loud.Max(Math.Abs) <= 1f);
+        vb.OutputGain = 99f;
+        Assert.Equal(4f, vb.OutputGain);
+    }
+
+    [Fact]
     public async Task A_muted_person_is_shown_as_muted_and_nothing_is_sent()
     {
         var hub = new InMemoryDiscoveryHub();

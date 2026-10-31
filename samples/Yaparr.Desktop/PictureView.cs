@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
@@ -180,18 +181,42 @@ public sealed class PictureView : Control
         }
     }
 
+    /// <summary>Fill the space given (keeping the shape, up to three times the real size) instead of the small size used in the chat.</summary>
+    public bool Fit { get; init; }
+
     protected override Size MeasureOverride(Size availableSize)
     {
         int w = PixelWidth, h = PixelHeight;
         if (w <= 0 || h <= 0) return default;
+        if (Fit && !double.IsInfinity(availableSize.Width) && !double.IsInfinity(availableSize.Height))
+        {
+            double fit = Math.Min(3.0, Math.Min(availableSize.Width / w, availableSize.Height / h));
+            return new Size(w * fit, h * fit);
+        }
         double scale = Math.Min(1.0, Math.Min(MaxShownWidth / w, MaxShownHeight / h));
         return new Size(Math.Max(24, w * scale), Math.Max(24, h * scale));
+    }
+
+    // A click on a picture in the chat opens it large in a window of its own.
+    protected override void OnPointerReleased(PointerReleasedEventArgs e)
+    {
+        base.OnPointerReleased(e);
+        if (Fit || e.InitialPressMouseButton != MouseButton.Left || Data is not { Length: > 0 } data || _full == null) return;
+        if (TopLevel.GetTopLevel(this) is not MainWindow window) return;
+        window.ShowPicture(data, PixelWidth, PixelHeight);
+        e.Handled = true;
+    }
+
+    protected override void OnPointerEntered(PointerEventArgs e)
+    {
+        base.OnPointerEntered(e);
+        if (!Fit && _full != null) Cursor = new Cursor(StandardCursorType.Hand);
     }
 
     public override void Render(DrawingContext context)
     {
         var bounds = new Rect(Bounds.Size);
-        var clip = new RoundedRect(bounds, 10);
+        var clip = new RoundedRect(bounds, Fit ? 0 : 10);
         var image = _full ?? _thumb;
         if (image == null)
         {

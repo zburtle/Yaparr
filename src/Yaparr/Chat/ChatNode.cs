@@ -143,6 +143,9 @@ public sealed class ChatNodeOptions
     /// <summary>Where direct messages are kept, so your devices can give each other the ones they missed. Without a folder they are only kept while the app runs.</summary>
     public string? DirectHistoryDirectory { get; init; }
 
+    /// <summary>Encrypts the direct message files and the pictures and sounds. Without one they are stored as they are.</summary>
+    public HistoryCipher? HistoryCipher { get; init; }
+
     /// <summary>How much any one peer may send before the excess is dropped.</summary>
     public PeerLimits Limits { get; init; } = new();
 
@@ -312,8 +315,8 @@ public sealed partial class ChatNode : IDisposable
         _options = options ?? new ChatNodeOptions();
         _peerCache = new PeerCache(_options.PeerCachePath);
         _clocks = new ClockOffsets(_options.ClockOffsetsPath);
-        _blobs = new BlobStore(_options.AttachmentDirectory);
-        _directHistory = new DirectHistory(_options.DirectHistoryDirectory, _options.MaxHistoryMessages, _options.MaxHistoryAge);
+        _blobs = new BlobStore(_options.AttachmentDirectory, _options.HistoryCipher);
+        _directHistory = new DirectHistory(_options.DirectHistoryDirectory, _options.MaxHistoryMessages, _options.MaxHistoryAge, _options.HistoryCipher);
         _turnOptions = _options.Traversal.Turn;
         _useDefaultRelay = _options.Traversal.UseDefaultRelay;
         _displayName = _options.DisplayName;
@@ -394,7 +397,7 @@ public sealed partial class ChatNode : IDisposable
         if (_started) return;
         _started = true;
         _mux.Start();
-        _ = Task.Run(() => _blobs.Sweep(_options.MaxHistoryAge));
+        _ = Task.Run(() => { _blobs.Sweep(_options.MaxHistoryAge); _blobs.SealExisting(); });
         // Anyone looking for this person by their account id has to find every one of their devices.
         var peerTopics = AccountId == Id ? new[] { Topics.ForPeer(Id) } : new[] { Topics.ForPeer(Id), Topics.ForPeer(AccountId) };
         foreach (var d in _discoveries)
@@ -1270,12 +1273,19 @@ public sealed partial class ChatNode : IDisposable
         var devices = DevicesOf(peer);
         if (devices.Count == 0) throw new InvalidOperationException($"Not connected to {peer.Short}.");
         var wire = NewMessage(text, room: null);
+        var recipient = AccountOf(peer);
+        var proof = DirectProof.Create(_identity, recipient, wire.Id!, wire.Ts, text);
+        wire.Pub = proof.Pub;
+        wire.Acct = proof.Acct.Length > 0 ? proof.Acct : null;
+        wire.Cert = proof.Cert.Length > 0 ? proof.Cert : null;
+        wire.Sig = proof.Sig;
         var outgoing = new Outgoing(wire.Id!) { DirectPeer = peer, DirectWire = wire, SentAt = Environment.TickCount64 };
         foreach (var device in devices) outgoing.Targets.Add(device.Id);
         _outbox[wire.Id!] = outgoing;
         foreach (var device in devices) Send(device.Connection, wire);
         PublishDelivery(outgoing);
-        RecordDirect(peer, GetPeerInfo(peer)?.DisplayName ?? DirectNameOf(peer) ?? peer.Short, mine: true, wire.Id!, wire.Ts, text, mirror: true);
+        RecordDirect(new DirectRecord(wire.Id!, recipient.Value, GetPeerInfo(peer)?.DisplayName ?? DirectNameOf(peer) ?? peer.Short, true, wire.Ts, text,
+            proof.Pub, proof.Acct, proof.Cert, proof.Sig, wire.Ts), mirror: true);
         return wire.Id!;
     }
 
@@ -1463,12 +1473,18 @@ public sealed partial class ChatNode : IDisposable
                 if (peer.Name == null) break; // the hello comes first
                 // Not acknowledged, so a sender that is simply too fast sends it again later, when there is room.
                 if (!rate.AdmitMessages(1)) { Dropped(peer, rate, "sent too many messages"); break; }
+                // A message that says who wrote it must be right. One from an older version does not, and stays on this device only.
+                if (wire.Sig != null && !VerifyIncomingDirect(peer, wire))
+                {
+                    _options.Log?.Invoke($"ignored a direct message from {peer.Id.Short}: its signature is not valid");
+                    break;
+                }
                 Send(conn, new Wire { Type = Wire.Ack, Have = new[] { wire.Id } });
                 if (_seenDirect.Count >= MaxSeenDirect || !_seenDirect.TryAdd(peer.Id.Value + wire.Id, Environment.TickCount64) || IsBlocked(peer.Id)) break;
                 _clocks.Observe(peer.Id.Value, wire.Ts, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                 long correctedTs = _clocks.Correct(peer.Id.Value, wire.Ts);
                 // Kept, and passed to our other devices. One that is already known (it reached another of our devices first) is not shown twice.
-                if (!RecordDirect(peer.AccountId, peer.Name, mine: false, wire.Id, correctedTs, wire.Text, mirror: !IsSibling(peer))) break;
+                if (!RecordDirect(IncomingRecord(peer, wire, correctedTs), mirror: !IsSibling(peer))) break;
                 var msg = BuildMessage(peer.Info, null, wire.Id, wire.Text, DateTimeOffset.FromUnixTimeMilliseconds(correctedTs));
                 bool existed = _directChats.ContainsKey(peer.AccountId);
                 var chat = GetDirectChat(peer.AccountId);

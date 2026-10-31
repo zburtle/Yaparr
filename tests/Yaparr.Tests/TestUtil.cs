@@ -23,8 +23,9 @@ internal static class TestUtil
     public static ChatNode NewNode(InMemoryDiscoveryHub hub, string name, bool relaying = true, bool relayCapable = true,
         TimeSpan? fallbackDelay = null, PeerNetworkOptions? network = null, IReadOnlyCollection<Yaparr.Identity.PeerId>? blocked = null,
         Yaparr.Identity.PeerIdentity? identity = null, string? accountStatePath = null, IReadOnlyList<AccountEntry>? accountEntries = null,
-        MediaOptions? media = null, string? soundboardDirectory = null, string? attachmentDirectory = null, TimeSpan? soundInterval = null, string? directHistoryDirectory = null) => new(new ChatNodeOptions
+        MediaOptions? media = null, string? soundboardDirectory = null, string? attachmentDirectory = null, TimeSpan? soundInterval = null, string? directHistoryDirectory = null, Yaparr.Identity.HistoryCipher? historyCipher = null) => new(new ChatNodeOptions
     {
+        HistoryCipher = historyCipher,
         DirectHistoryDirectory = directHistoryDirectory,
         SoundboardDirectory = soundboardDirectory,
         AttachmentDirectory = attachmentDirectory,

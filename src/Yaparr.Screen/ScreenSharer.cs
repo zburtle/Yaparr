@@ -46,6 +46,11 @@ public sealed class ScreenSharer : IDisposable
     public long Bytes => Interlocked.Read(ref _bytes);
     public long KeyFrames => Interlocked.Read(ref _keys);
 
+    private long _lastFrameTick, _maxGapMs;
+
+    /// <summary>The longest wait between two frames from FFmpeg since this was last called (milliseconds), for spotting an encoder that falls behind.</summary>
+    public long TakeMaxFrameGapMs() => Interlocked.Exchange(ref _maxGapMs, 0);
+
     /// <summary>The codec in use: what <see cref="ScreenOptions.Codec"/> asked for, or for Auto what turned out to work.</summary>
     public ScreenCodec Codec => _codec;
 
@@ -118,6 +123,13 @@ public sealed class ScreenSharer : IDisposable
                 // A viewer can only start at a key frame, so nothing is sent before the first one.
                 if (!started && !isKey) continue;
                 started = true;
+                // How long FFmpeg took to produce this frame: a long wait means capture or encoding cannot keep up.
+                long tick = Environment.TickCount64;
+                if (Interlocked.Exchange(ref _lastFrameTick, tick) is var before and > 0)
+                {
+                    long gap = tick - before, seen;
+                    while (gap > (seen = Interlocked.Read(ref _maxGapMs)) && Interlocked.CompareExchange(ref _maxGapMs, gap, seen) != seen) { }
+                }
                 await _source.SendFrameAsync(frame, isKey, ct).ConfigureAwait(false);
                 Interlocked.Increment(ref _frames);
                 Interlocked.Add(ref _bytes, frame.Length);

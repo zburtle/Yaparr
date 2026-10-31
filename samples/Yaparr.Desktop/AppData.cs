@@ -30,6 +30,8 @@ public sealed class AppSettings
     public string? VoiceOutput { get; set; }
     /// <summary>Loudness (0 to 100) the microphone has to reach before voice activation sends.</summary>
     public int VoiceSensitivity { get; set; } = 12;
+    /// <summary>How loud everyone sounds to you, in percent (100 is as received, up to 300).</summary>
+    public int VoiceOutputVolume { get; set; } = 100;
     /// <summary>Send all the time instead of only when talking.</summary>
     public bool VoiceAlwaysOn { get; set; }
     /// <summary>Stop other people hearing themselves through your speakers.</summary>
@@ -79,7 +81,7 @@ public sealed class AppData
 
     // Files with keys in them: sealed so only this Windows user can read them, and closed to other users elsewhere.
     // Files from earlier versions are plain until this runs.
-    private static readonly string[] SecretFiles = { "identity.key", "settings.json", "account.json", "vpn.conf" };
+    private static readonly string[] SecretFiles = { "identity.key", "settings.json", "account.json", "vpn.conf", "history.key" };
 
     private void ProtectSecrets()
     {
@@ -94,7 +96,7 @@ public sealed class AppData
 
     // What a backup holds and a restore accepts. Anything else in the folder (the FFmpeg program, installers, the log) is not
     // part of a profile, and a restore must never be able to place a program where Yaparr will later run it.
-    private static readonly string[] BackedUpFiles = { "identity.key", "settings.json", "account.json", "peers.json", "clocks.json", "network.json", "vpn.conf", "dht-nodes.txt" };
+    private static readonly string[] BackedUpFiles = { "identity.key", "settings.json", "account.json", "peers.json", "clocks.json", "network.json", "vpn.conf", "history.key", "dht-nodes.txt" };
     private static readonly string[] BackedUpFolders = { "history", "direct", "attachments", "soundboards" };
     private const long MaxRestoreBytes = 2L * 1024 * 1024 * 1024;
     private const int MaxRestoreEntries = 200_000;

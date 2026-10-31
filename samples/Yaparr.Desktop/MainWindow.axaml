@@ -193,6 +193,7 @@
         </Style>
     </Window.Styles>
 
+    <Grid>
     <DockPanel>
         <Menu DockPanel.Dock="Top" Margin="4,2,4,0">
             <MenuItem Header="_File">
@@ -510,4 +511,11 @@
             </Border>
         </Grid>
     </DockPanel>
+
+    <!-- A picture from the chat shown large over everything else. A click or Escape closes it. -->
+    <Border x:Name="PictureOverlay" IsVisible="False" Background="#D8000000" Padding="32" Focusable="True"
+            PointerReleased="PictureOverlay_PointerReleased" KeyDown="PictureOverlay_KeyDown">
+        <Border x:Name="PictureHost" HorizontalAlignment="Center" VerticalAlignment="Center" />
+    </Border>
+    </Grid>
 </Window>

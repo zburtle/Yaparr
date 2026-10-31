@@ -1,14 +1,19 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Yaparr.Identity;
 
 namespace Yaparr.Chat;
 
 /// <summary>
 /// One direct message, as kept on a device and passed to the person's other devices. <see cref="Peer"/> is the other
 /// person's account; <see cref="Mine"/> says whether it was sent by you (from any of your devices) or to you.
+/// <see cref="Pub"/>, <see cref="Acct"/>, <see cref="Cert"/> and <see cref="Sig"/> prove who wrote it (they are empty on
+/// a message from an older version, which stays on this device), and <see cref="St"/> is the time the author signed,
+/// which <see cref="Ts"/> can differ from once clocks are corrected.
 /// </summary>
-public sealed record DirectRecord(string Id, string Peer, string Name, bool Mine, long Ts, string Text);
+public sealed record DirectRecord(string Id, string Peer, string Name, bool Mine, long Ts, string Text,
+    string Pub = "", string Acct = "", string Cert = "", string Sig = "", long St = 0);
 
 /// <summary>
 /// The direct messages of each conversation, kept for the same time and number as a room's history, so that a device
@@ -20,12 +25,14 @@ internal sealed class DirectHistory
     private readonly object _gate = new();
     private readonly Dictionary<string, Dictionary<string, DirectRecord>> _chats = new();
     private readonly string? _directory;
+    private readonly HistoryCipher? _cipher;
     private readonly int _max;
     private readonly TimeSpan _maxAge;
 
-    public DirectHistory(string? directory, int max, TimeSpan maxAge)
+    public DirectHistory(string? directory, int max, TimeSpan maxAge, HistoryCipher? cipher = null)
     {
         _directory = directory;
+        _cipher = cipher;
         _max = max;
         _maxAge = maxAge;
         if (directory == null || !Directory.Exists(directory)) return;
@@ -33,12 +40,16 @@ internal sealed class DirectHistory
         foreach (var file in Directory.EnumerateFiles(directory, "dm-*.jsonl"))
         {
             int lines = 0;
+            bool plain = false;
             string? peer = null;
             try
             {
-                foreach (var line in File.ReadLines(file))
+                foreach (var stored in File.ReadLines(file))
                 {
                     lines++;
+                    var line = Unseal(stored, file, out bool wasPlain);
+                    plain |= wasPlain;
+                    if (line == null) continue;
                     try
                     {
                         if (JsonSerializer.Deserialize<DirectRecord>(line, Json) is { } r && IsValid(r) && r.Ts >= OldestAllowed())
@@ -52,15 +63,18 @@ internal sealed class DirectHistory
             }
             catch (IOException) { continue; }
 
-            if (peer == null) { TryDelete(file); continue; }
+            // A file whose lines cannot all be opened (another key) is left alone; it may be opened again with the right one.
+            if (peer == null) { if (lines == 0) TryDelete(file); continue; }
             Trim(peer);
-            if (_chats[peer].Count != lines) Rewrite(peer);
+            // Rewritten when lines were dropped, or when they were written before history was sealed.
+            if (_chats[peer].Count != lines || plain && _cipher != null) Rewrite(peer);
         }
     }
 
     public static bool IsValid(DirectRecord r) =>
         r.Id is { Length: > 0 and <= 64 } && r.Peer is { Length: 64 } && r.Peer.All(c => c is (>= '0' and <= '9') or (>= 'a' and <= 'f'))
-        && r.Name is { Length: <= 64 } && r.Text is { Length: <= 16_000 };
+        && r.Name is { Length: <= 64 } && r.Text is { Length: <= 16_000 }
+        && r.Pub is { Length: <= 200 } && r.Acct is { Length: <= 200 } && r.Cert is { Length: <= 200 } && r.Sig is { Length: <= 200 };
 
     /// <summary>Identifies a message the same way on every device.</summary>
     public static string Key(DirectRecord r) =>
@@ -133,13 +147,21 @@ internal sealed class DirectHistory
 
     private string? PathFor(string peer) => _directory == null ? null : Path.Combine(_directory, $"dm-{peer}.jsonl");
 
+    private string Seal(string line, string path) => _cipher == null ? line : _cipher.Seal(line, Path.GetFileName(path));
+
+    private string? Unseal(string line, string path, out bool wasPlain)
+    {
+        wasPlain = false;
+        return _cipher == null ? line : _cipher.Open(line, Path.GetFileName(path), out wasPlain);
+    }
+
     private void Append(DirectRecord r)
     {
         if (PathFor(r.Peer) is not { } path) return;
         try
         {
             Directory.CreateDirectory(_directory!);
-            File.AppendAllText(path, JsonSerializer.Serialize(r, Json) + "\n");
+            File.AppendAllText(path, Seal(JsonSerializer.Serialize(r, Json), path) + "\n");
         }
         catch (IOException) { }
     }
@@ -150,7 +172,7 @@ internal sealed class DirectHistory
         try
         {
             var temp = path + ".tmp";
-            File.WriteAllLines(temp, _chats[peer].Values.OrderBy(r => r.Ts).Select(r => JsonSerializer.Serialize(r, Json)));
+            File.WriteAllLines(temp, _chats[peer].Values.OrderBy(r => r.Ts).Select(r => Seal(JsonSerializer.Serialize(r, Json), path)));
             File.Move(temp, path, overwrite: true);
         }
         catch (IOException) { }

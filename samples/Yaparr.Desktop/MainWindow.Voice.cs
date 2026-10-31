@@ -62,6 +62,7 @@ public partial class MainWindow
     {
         session.Activation = _settings.VoiceAlwaysOn ? VoiceActivation.Open : VoiceActivation.VoiceActivity;
         session.Sensitivity = _settings.VoiceSensitivity / 1000f;
+        session.OutputGain = Math.Clamp(_settings.VoiceOutputVolume, 0, 300) / 100f;
     }
 
     private VoiceProcessing ProcessingSettings => new(

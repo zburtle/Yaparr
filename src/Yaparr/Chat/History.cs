@@ -19,12 +19,17 @@ public sealed class FileHistoryStore : IChatHistoryStore
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private readonly string _directory;
     private readonly object _gate = new();
+    private readonly HistoryCipher? _cipher;
 
-    public FileHistoryStore(string directory)
+    /// <summary>Without a <paramref name="cipher"/> the files are plain text.</summary>
+    public FileHistoryStore(string directory, HistoryCipher? cipher = null)
     {
         _directory = directory;
+        _cipher = cipher;
         Directory.CreateDirectory(directory);
     }
+
+    private string Seal(string line, string path) => _cipher == null ? line : _cipher.Seal(line, Path.GetFileName(path));
 
     private string PathFor(string roomKey) => Path.Combine(_directory, roomKey + ".jsonl");
 
@@ -35,28 +40,40 @@ public sealed class FileHistoryStore : IChatHistoryStore
             var path = PathFor(roomKey);
             if (!File.Exists(path)) return Array.Empty<StoredMessage>();
             var result = new List<StoredMessage>();
-            foreach (var line in File.ReadLines(path))
+            bool plain = false;
+            foreach (var stored in File.ReadLines(path))
             {
+                bool wasPlain = false;
+                var line = _cipher == null ? stored : _cipher.Open(stored, Path.GetFileName(path), out wasPlain);
+                plain |= wasPlain;
+                if (line == null) continue;
                 try { if (JsonSerializer.Deserialize<StoredMessage>(line, Json) is { } m) result.Add(m); }
                 catch (JsonException) {  }
             }
+            // Written before history was sealed: put it back sealed.
+            if (plain) WriteAll(path, result);
             return result;
         }
     }
 
     public void Append(string roomKey, StoredMessage message)
     {
-        lock (_gate) File.AppendAllText(PathFor(roomKey), JsonSerializer.Serialize(message, Json) + "\n");
+        lock (_gate) File.AppendAllText(PathFor(roomKey), Seal(JsonSerializer.Serialize(message, Json), PathFor(roomKey)) + "\n");
     }
 
     public void Compact(string roomKey, IReadOnlyCollection<StoredMessage> keep)
     {
         lock (_gate)
         {
-            var temp = PathFor(roomKey) + ".tmp";
-            File.WriteAllLines(temp, keep.Select(m => JsonSerializer.Serialize(m, Json)));
-            File.Move(temp, PathFor(roomKey), overwrite: true);
+            WriteAll(PathFor(roomKey), keep);
         }
+    }
+
+    private void WriteAll(string path, IEnumerable<StoredMessage> messages)
+    {
+        var temp = path + ".tmp";
+        File.WriteAllLines(temp, messages.Select(m => Seal(JsonSerializer.Serialize(m, Json), path)));
+        File.Move(temp, path, overwrite: true);
     }
 }
 

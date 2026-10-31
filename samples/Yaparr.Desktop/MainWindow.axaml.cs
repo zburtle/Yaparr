@@ -212,14 +212,17 @@ public partial class MainWindow : Window
 
         var identity = _identity = _data.LoadOrCreateIdentity();
         var traversal = TraversalOptions.Load(Path.Combine(_data.Directory, "network.json"));
+        // Message history is kept sealed; the key lives in a file of its own that is sealed to this Windows user.
+        var historyCipher = HistoryCipher.LoadOrCreate(Path.Combine(_data.Directory, "history.key"));
         _node = new ChatNode(new ChatNodeOptions
         {
             DisplayName = name,
+            HistoryCipher = historyCipher,
             BlockedPeers = _settings.BlockedPeers.Select(b => new PeerId(b.Id)).ToList(),
             Identity = identity,
             AccountStatePath = _data.AccountStatePath,
             AccountEntries = _linkedEntries,
-            HistoryStore = new FileHistoryStore(_data.HistoryDirectory),
+            HistoryStore = new FileHistoryStore(_data.HistoryDirectory, historyCipher),
             DirectHistoryDirectory = Path.Combine(_data.Directory, "direct"),
             Traversal = traversal,
             AttachmentDirectory = Path.Combine(_data.Directory, "attachments"),

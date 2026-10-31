@@ -13,19 +13,33 @@ public sealed partial class ChatNode
     private readonly DirectHistory _directHistory;
 
     // Keeps a direct message and passes it to the other devices of this account. False if it was already known.
-    private bool RecordDirect(PeerId peer, string name, bool mine, string id, long ts, string text, bool mirror)
+    // Only a message that proves who wrote it is passed on, because the other devices check that proof.
+    private bool RecordDirect(DirectRecord record, bool mirror)
     {
-        var record = new DirectRecord(id, peer.Value, CleanName(name), mine, ts, text);
+        record = record with { Name = CleanName(record.Name) };
         if (!DirectHistory.IsValid(record) || !_directHistory.TryAdd(record)) return false;
-        if (mirror) SendDirectRecords(_peers.Values.Where(IsSibling), new[] { record }, catchUp: false);
+        if (mirror && record.Sig.Length > 0) SendDirectRecords(_peers.Values.Where(IsSibling), new[] { record }, catchUp: false);
         return true;
+    }
+
+    private static DirectRecord IncomingRecord(PeerState peer, Wire wire, long ts) =>
+        new(wire.Id!, peer.AccountId.Value, peer.Name ?? "", false, ts, wire.Text!, wire.Pub ?? "", wire.Acct ?? "", wire.Cert ?? "", wire.Sig ?? "", wire.Ts);
+
+    // The signature has to be from the device on the other end of this connection, and for the account it belongs to.
+    private bool VerifyIncomingDirect(PeerState peer, Wire wire)
+    {
+        if (wire.Pub == null || peer.Connection.RemotePublicKey is not { } key) return false;
+        try { if (!Convert.FromBase64String(wire.Pub).AsSpan().SequenceEqual(key)) return false; }
+        catch (FormatException) { return false; }
+        return DirectProof.Verify(IncomingRecord(peer, wire, wire.Ts), AccountId);
     }
 
     private void SendDirectRecords(IEnumerable<PeerState> to, IReadOnlyList<DirectRecord> records, bool catchUp)
     {
+        var signed = records.Where(r => r.Sig.Length > 0).ToList();
         foreach (var sibling in to.ToList())
-            for (int i = 0; i < records.Count; i += DirectBatch)
-                Send(sibling.Connection, new Wire { Type = Wire.Direct, Dm = records.Skip(i).Take(DirectBatch).ToArray(), Cu = catchUp ? true : null });
+            for (int i = 0; i < signed.Count; i += DirectBatch)
+                Send(sibling.Connection, new Wire { Type = Wire.Direct, Dm = signed.Skip(i).Take(DirectBatch).ToArray(), Cu = catchUp ? true : null });
     }
 
     // A device that has just connected says which messages it has; the other side sends what is missing.
@@ -44,7 +58,7 @@ public sealed partial class ChatNode
         if (!IsSibling(peer)) return;
         foreach (var r in records.Take(DirectPerFrame))
         {
-            if (!DirectHistory.IsValid(r)) continue;
+            if (!DirectHistory.IsValid(r) || !DirectProof.Verify(r, AccountId)) continue;
             // Someone you have blocked on any device stays blocked on all of them.
             if (!r.Mine && IsBlocked(new PeerId(r.Peer))) continue;
             long ts = Math.Min(r.Ts, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());

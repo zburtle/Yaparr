@@ -4,7 +4,7 @@ using Yaparr.Chat;
 
 namespace Yaparr.Screen;
 
-/// <summary>One decoded picture: <paramref name="Bgra"/> holds width x height x 4 bytes, blue first.</summary>
+/// <summary>One decoded picture: <paramref name="Bgra"/> holds width x height x 4 bytes, blue first. Give it back with <see cref="ScreenViewer.Return"/> when done.</summary>
 public sealed record Picture(int Width, int Height, byte[] Bgra);
 
 /// <summary>
@@ -43,9 +43,38 @@ public sealed class ScreenViewer : IDisposable
 
     public string LastErrors { get { lock (_gate) return string.Join(" | ", _errors); } }
 
+    private long _framesIn, _bytesIn;
+
+    /// <summary>Encoded frames and bytes that reached this viewer (before decoding).</summary>
+    public long FramesIn => Interlocked.Read(ref _framesIn);
+    public long BytesIn => Interlocked.Read(ref _bytesIn);
+
+    /// <summary>Frames waiting for the decoder. Staying above a few means the decoder is behind.</summary>
+    public int DecodeQueue { get { lock (_gate) return _decoder?.Queued ?? 0; } }
+
+    // A 1080p picture is 8 MB. A new array for each one lands on the large object heap and makes the garbage collector pause
+    // every few seconds, which shows as stutter; so arrays of the same size are handed back and used again.
+    private readonly System.Collections.Concurrent.ConcurrentBag<byte[]> _spare = new();
+    private const int MaxSpare = 8;
+
+    private byte[] Rent(int size)
+    {
+        while (_spare.TryTake(out var array))
+            if (array.Length == size) return array;
+        return new byte[size];
+    }
+
+    /// <summary>Gives back the memory of a picture that has been shown, so the next one can use it. The picture must not be used afterwards.</summary>
+    public void Return(Picture picture)
+    {
+        if (_spare.Count < MaxSpare) _spare.Add(picture.Bgra);
+    }
+
     private void OnFrame(MediaFrame frame)
     {
         var data = frame.Data.ToArray();
+        Interlocked.Increment(ref _framesIn);
+        Interlocked.Add(ref _bytesIn, data.Length);
         Decoder? decoder;
         lock (_gate)
         {
@@ -85,6 +114,8 @@ public sealed class ScreenViewer : IDisposable
         private readonly CancellationTokenSource _stop = new();
         private int _queued;
         private bool _waitForKey;
+
+        public int Queued => Volatile.Read(ref _queued);
 
         public ScreenCodec Codec { get; }
         public int Width { get; }
@@ -151,7 +182,7 @@ public sealed class ScreenViewer : IDisposable
                 int size = Width * Height * 4;
                 while (!ct.IsCancellationRequested)
                 {
-                    var picture = new byte[size];
+                    var picture = _owner.Rent(size);
                     await stdout.ReadExactlyAsync(picture, ct).ConfigureAwait(false);
                     Interlocked.Increment(ref _owner._pictures);
                     _owner.PictureReceived?.Invoke(new Picture(Width, Height, picture));

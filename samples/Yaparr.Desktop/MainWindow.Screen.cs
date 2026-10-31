@@ -11,6 +11,7 @@ public partial class MainWindow
 {
     private ScreenSharer? _sharer;
     private ConversationVm? _sharerConv;
+    private SharerStatsWindow? _sharerStats;
     private readonly Dictionary<string, ScreenViewWindow> _screenViews = new();
 
     private void RefreshShares(ConversationVm conv, ChatRoom room)
@@ -75,6 +76,8 @@ public partial class MainWindow
             });
             _sharer = sharer;
             _sharerConv = conv;
+            _sharerStats = new SharerStatsWindow(sharer, dialog.Result.Fps);
+            _sharerStats.Show(this);
             conv.IsSharing = true;
             conv.Add(MessageVm.System($"You are sharing your {what}. Everyone in the room can watch it."));
         }
@@ -93,6 +96,8 @@ public partial class MainWindow
         var conv = _sharerConv;
         _sharer = null;
         _sharerConv = null;
+        _sharerStats?.Close();
+        _sharerStats = null;
         if (conv != null)
         {
             conv.IsSharing = false;

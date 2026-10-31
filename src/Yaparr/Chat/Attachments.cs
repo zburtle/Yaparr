@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Yaparr.Identity;
 
 namespace Yaparr.Chat;
 
@@ -210,19 +211,21 @@ public enum AttachmentState
 
 public sealed record AttachmentUpdate(string Hash, AttachmentState State, long Received, long Total);
 
-/// <summary>Files that belong to messages, stored under their content hash.</summary>
+/// <summary>Files that belong to messages, stored under their content hash and, when there is a cipher, encrypted.</summary>
 internal sealed class BlobStore
 {
     private const long MemoryLimit = 64L * 1024 * 1024;
     private readonly string? _directory;
+    private readonly HistoryCipher? _cipher;
     private readonly object _gate = new();
     private readonly Dictionary<string, byte[]> _memory = new();
     private readonly Queue<string> _memoryOrder = new();
     private long _memoryBytes;
 
-    public BlobStore(string? directory)
+    public BlobStore(string? directory, HistoryCipher? cipher = null)
     {
         _directory = directory;
+        _cipher = cipher;
         if (directory != null) Directory.CreateDirectory(directory);
     }
 
@@ -251,6 +254,10 @@ internal sealed class BlobStore
         try
         {
             using var fs = new FileStream(Path.Combine(_directory, hash), FileMode.Open, FileAccess.Read, FileShare.Read);
+            var start = new byte[HistoryCipher.SealedFileMagicLength];
+            int got = fs.Read(start, 0, start.Length);
+            if (HistoryCipher.IsSealedFile(start.AsSpan(0, got)))
+                return _cipher?.OpenFileRange(hash, fs, offset, length);
             if (offset > fs.Length) return null;
             fs.Position = offset;
             var buffer = new byte[(int)Math.Min(length, fs.Length - offset)];
@@ -268,7 +275,7 @@ internal sealed class BlobStore
             var path = Path.Combine(_directory, hash);
             if (File.Exists(path)) return;
             var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
-            File.WriteAllBytes(temp, data);
+            File.WriteAllBytes(temp, _cipher == null ? data : _cipher.SealFile(hash, data));
             File.Move(temp, path, overwrite: true);
             return;
         }
@@ -280,6 +287,30 @@ internal sealed class BlobStore
             while (_memoryBytes > MemoryLimit && _memoryOrder.TryDequeue(out var old))
                 if (_memory.Remove(old, out var gone)) _memoryBytes -= gone.Length;
         }
+    }
+
+    /// <summary>Encrypts files that an earlier version stored as they were, keeping their age so they are still swept when due.</summary>
+    public void SealExisting()
+    {
+        if (_directory == null || _cipher == null) return;
+        try
+        {
+            foreach (var file in new DirectoryInfo(_directory).EnumerateFiles().Where(f => Valid(f.Name)).ToList())
+            {
+                try
+                {
+                    var data = File.ReadAllBytes(file.FullName);
+                    if (HistoryCipher.IsSealedFile(data.AsSpan(0, Math.Min(data.Length, HistoryCipher.SealedFileMagicLength)))) continue;
+                    var age = file.LastWriteTimeUtc;
+                    var temp = file.FullName + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                    File.WriteAllBytes(temp, _cipher.SealFile(file.Name, data));
+                    File.SetLastWriteTimeUtc(temp, age);
+                    File.Move(temp, file.FullName, overwrite: true);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }   // in use: next start
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
 
     /// <summary>Deletes files older than <paramref name="maxAge"/>; they belong to messages that have aged out of the history.</summary>

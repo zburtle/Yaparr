@@ -19,6 +19,7 @@ public partial class VoiceSettingsDialog : Window
         _settings = settings;
         Fill(InputBox, VoiceAudio.InputNames(), settings.VoiceInput);
         Fill(OutputBox, VoiceAudio.OutputNames(), settings.VoiceOutput);
+        OutputVolumeBox.Value = settings.VoiceOutputVolume;
         AlwaysBox.IsChecked = settings.VoiceAlwaysOn;
         NoiseBox.ItemsSource = Enum.GetNames<NoiseSuppression>();
         NoiseBox.SelectedItem = Enum.TryParse<NoiseSuppression>(settings.VoiceNoiseSuppression, out var noise) ? noise.ToString() : nameof(NoiseSuppression.Moderate);
@@ -54,6 +55,7 @@ public partial class VoiceSettingsDialog : Window
     {
         _settings.VoiceInput = Chosen(InputBox);
         _settings.VoiceOutput = Chosen(OutputBox);
+        _settings.VoiceOutputVolume = (int)OutputVolumeBox.Value;
         _settings.VoiceAlwaysOn = AlwaysBox.IsChecked == true;
         _settings.VoiceEchoCancellation = EchoBox.IsChecked == true;
         _settings.VoiceNoiseSuppression = NoiseBox.SelectedItem as string ?? nameof(NoiseSuppression.Moderate);

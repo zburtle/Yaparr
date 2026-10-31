@@ -82,6 +82,12 @@ internal sealed class Wire
     /// <summary>A control message between neighbours in a stream's tree.</summary>
     public WireMedia? Mx { get; set; }
 
+    /// <summary>Who wrote a direct message: the device's key, the account's key and its certificate for the device (if linked), and the signature. Absent from older versions.</summary>
+    public string? Pub { get; set; }
+    public string? Acct { get; set; }
+    public string? Cert { get; set; }
+    public string? Sig { get; set; }
+
     /// <summary>Direct messages passed between a person's own devices, and what they already have of them.</summary>
     public DirectRecord[]? Dm { get; set; }
 
