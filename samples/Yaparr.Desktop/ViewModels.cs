@@ -229,7 +229,8 @@ public sealed class ConversationVm : Observable
 
     public ObservableCollection<VoiceMemberVm> VoiceMembers { get; } = new();
     public bool HasVoiceMembers => VoiceMembers.Count > 0;
-    public bool CanJoinVoice => IsRoom && !_inVoice;
+    // Rooms with channels join voice by clicking a voice channel; the button is only for older rooms that have just the one.
+    public bool CanJoinVoice => IsRoom && !_inVoice && !_showChannels;
     public bool CanUseVoiceControls => _inVoice;
 
     private bool _inVoice, _muted, _deafened;
@@ -358,11 +359,27 @@ public sealed class ConversationVm : Observable
     /// <summary>The room's text channels and voice channels, as buttons.</summary>
     public ObservableCollection<ChannelVm> Channels { get; } = new();
 
+    /// <summary>The same channels split by kind, for the groups under the room in the list.</summary>
+    public ObservableCollection<ChannelVm> TextChannels { get; } = new();
+    public ObservableCollection<ChannelVm> VoiceChannels { get; } = new();
+
+    private bool _channelsOpen = true;
+
+    /// <summary>Whether the room's channels are unfolded under it.</summary>
+    public bool ChannelsOpen
+    {
+        get => _channelsOpen;
+        set { if (_channelsOpen == value) return; _channelsOpen = value; Raise(); Raise(nameof(ShowChannelList)); Raise(nameof(OpenGlyph)); }
+    }
+
+    public bool ShowChannelList => _showChannels && _channelsOpen;
+    public string OpenGlyph => _channelsOpen ? "▾" : "▸";
+
     /// <summary>Rooms made with an owner have channels beyond the first; older rooms show none.</summary>
     public bool ShowChannels
     {
         get => _showChannels;
-        set { if (_showChannels == value) return; _showChannels = value; Raise(); }
+        set { if (_showChannels == value) return; _showChannels = value; Raise(); Raise(nameof(CanJoinVoice)); Raise(nameof(ShowChannelList)); }
     }
 
     public bool CanManageChannels
@@ -423,7 +440,17 @@ public sealed class ConversationVm : Observable
             vm.Selected = vm.IsText && vm.Id == CurrentChannel;
         }
         if (!Channels.Any(c => c.IsText && c.Id == CurrentChannel)) SelectChannel(RoomChannels.DefaultText);
+        Regroup(TextChannels, Channels.Where(c => c.IsText));
+        Regroup(VoiceChannels, Channels.Where(c => c.IsVoice));
         Raise(nameof(CurrentChannelName));
+    }
+
+    private static void Regroup(ObservableCollection<ChannelVm> group, IEnumerable<ChannelVm> channels)
+    {
+        var wanted = channels.ToList();
+        if (group.SequenceEqual(wanted)) return;
+        group.Clear();
+        foreach (var c in wanted) group.Add(c);
     }
 
     public void Add(MessageVm message)

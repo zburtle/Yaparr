@@ -826,7 +826,6 @@ public partial class MainWindow : Window
         DetailsPanel.DataContext = _selected;
         VoicePanel.DataContext = _selected;
         VoiceBar.DataContext = _selected;
-        ChannelStrip.DataContext = _selected;
         RoomToggle.IsEnabled = has;
         if (!has) RoomToggle.IsChecked = false;
         RefreshMembers();

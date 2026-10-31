@@ -5,8 +5,8 @@ using Yaparr.Chat;
 
 namespace Yaparr.Desktop;
 
-// A room's text and voice channels, shown as buttons under its name. A text channel button shows that channel's messages; a voice
-// channel button joins it. The owner and the admins add, rename and remove channels.
+// A room's text and voice channels, listed under it in the room list (grouped text and voice, folded with the arrow on the room). A
+// text channel shows its messages; a voice channel joins it. The owner and the admins add, rename and remove channels.
 public partial class MainWindow
 {
     // Makes the buttons match the room: its channels, whether you may change them, and who is in each voice channel.
@@ -51,9 +51,18 @@ public partial class MainWindow
         return room == null ? null : (conv, room);
     }
 
+    // The room a channel button under it in the list belongs to, which need not be the one that is open.
+    private (ConversationVm Conv, ChatRoom Room)? RoomOf(ChannelVm channel)
+    {
+        foreach (var (room, conv) in _roomConversations)
+            if (conv.Channels.Contains(channel)) return (conv, room);
+        return null;
+    }
+
     private void Channel_Click(object? sender, RoutedEventArgs e)
     {
-        if (sender is not Button { DataContext: ChannelVm channel } || OpenRoom() is not var (conv, room)) return;
+        if (sender is not Button { DataContext: ChannelVm channel } || RoomOf(channel) is not var (conv, room)) return;
+        if (_selected != conv) ConversationList.SelectedItem = conv;
         if (channel.IsVoice)
         {
             JoinVoiceIn(conv, room, channel.Id);
@@ -65,9 +74,14 @@ public partial class MainWindow
         InputBox.Focus();
     }
 
+    private void ToggleChannels_Click(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Button { DataContext: ConversationVm conv }) conv.ChannelsOpen = !conv.ChannelsOpen;
+    }
+
     private void Channel_ContextRequested(object? sender, ContextRequestedEventArgs e)
     {
-        if (sender is not Button { DataContext: ChannelVm channel } button || OpenRoom() is not var (_, room) || room.MyRole < RoomRole.Admin) return;
+        if (sender is not Button { DataContext: ChannelVm channel } button || RoomOf(channel) is not var (_, room) || room.MyRole < RoomRole.Admin) return;
         var rename = new MenuItem { Header = "Rename…" };
         rename.Click += async (_, _) => await RenameChannelAsync(room, channel);
         var items = new List<Control> { rename };
@@ -99,13 +113,15 @@ public partial class MainWindow
         catch (Exception ex) when (ex is InvalidOperationException or KeyNotFoundException) { StatusText.Text = ex.Message; }
     }
 
-    private void NewTextChannel_Click(object? sender, RoutedEventArgs e) => _ = NewChannelAsync(ChannelKind.Text);
+    private void NewTextChannel_Click(object? sender, RoutedEventArgs e) => _ = NewChannelAsync(sender, ChannelKind.Text);
 
-    private void NewVoiceChannel_Click(object? sender, RoutedEventArgs e) => _ = NewChannelAsync(ChannelKind.Voice);
+    private void NewVoiceChannel_Click(object? sender, RoutedEventArgs e) => _ = NewChannelAsync(sender, ChannelKind.Voice);
 
-    private async Task NewChannelAsync(ChannelKind kind)
+    private async Task NewChannelAsync(object? sender, ChannelKind kind)
     {
-        if (OpenRoom() is not var (_, room)) return;
+        if (sender is not Control { DataContext: ConversationVm conv }) return;
+        var room = _roomConversations.FirstOrDefault(kv => kv.Value == conv).Key;
+        if (room == null) return;
         var name = await PromptDialog.AskAsync(this, kind == ChannelKind.Text ? "A name for the new text channel:" : "A name for the new voice channel:", "");
         if (string.IsNullOrWhiteSpace(name)) return;
         try { room.CreateChannel(name, kind); }
