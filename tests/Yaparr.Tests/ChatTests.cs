@@ -509,6 +509,30 @@ public class DiscoveryTests
     }
 
     [Fact]
+    public async Task Local_service_discovery_does_not_grow_without_limit_when_other_programs_announce_many_topics()
+    {
+        using var listener = new LocalServiceDiscovery(41011);
+        using var socket = new System.Net.Sockets.Socket(System.Net.Sockets.AddressFamily.InterNetwork, System.Net.Sockets.SocketType.Dgram, System.Net.Sockets.ProtocolType.Udp);
+        var group = new IPEndPoint(IPAddress.Parse("239.192.152.143"), 6771);
+        foreach (var ip in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces()
+                     .Where(n => n.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up && n.SupportsMulticast && n.NetworkInterfaceType != System.Net.NetworkInformation.NetworkInterfaceType.Loopback)
+                     .SelectMany(n => n.GetIPProperties().UnicastAddresses).Select(a => a.Address)
+                     .Where(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork && !a.ToString().StartsWith("169.254.")).Take(1))
+        {
+            socket.SetSocketOption(System.Net.Sockets.SocketOptionLevel.IP, System.Net.Sockets.SocketOptionName.MulticastInterface, ip.GetAddressBytes());
+            for (int i = 0; i < 2000; i++)
+            {
+                var hash = Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(BitConverter.GetBytes(i))).ToLowerInvariant();
+                socket.SendTo(System.Text.Encoding.ASCII.GetBytes($"BT-SEARCH * HTTP/1.1\r\nHost: 239.192.152.143:6771\r\nPort: 6881\r\nInfohash: {hash}\r\ncookie: torrent-{i}\r\n\r\n\r\n"), group);
+            }
+            await Task.Delay(1500);
+            var field = typeof(LocalServiceDiscovery).GetField("_seen", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+            var seen = (System.Collections.IDictionary)field.GetValue(listener)!;
+            Assert.InRange(seen.Count, 1, 512);
+        }
+    }
+
+    [Fact]
     public async Task A_peer_reachable_at_two_addresses_does_not_cause_connection_flapping()
     {
         var ports = new System.Collections.Concurrent.ConcurrentDictionary<int, byte>();

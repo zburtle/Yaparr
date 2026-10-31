@@ -11,8 +11,8 @@ public sealed class TraversalOptions
 
     public bool PortMapping { get; init; } = true;
 
-    /// <summary>Whether apps should look for peers on the local network. Off by default for now.</summary>
-    public bool LocalDiscovery { get; init; }
+    /// <summary>Whether apps should look for peers on the local network too (multicast, see LocalServiceDiscovery). On by default; "localDiscovery": false in network.json turns it off.</summary>
+    public bool LocalDiscovery { get; init; } = true;
 
     public IReadOnlyList<string> StunServers { get; init; } = NatProbe.DefaultServers;
 
@@ -32,7 +32,7 @@ public sealed class TraversalOptions
             {
                 Enabled = dto.Enabled ?? true,
                 PortMapping = dto.PortMapping ?? true,
-                LocalDiscovery = dto.LocalDiscovery ?? false,
+                LocalDiscovery = dto.LocalDiscovery ?? true,
                 UseDefaultRelay = dto.DefaultRelay ?? true,
                 StunServers = dto.Stun is { Length: > 0 } stun ? stun : NatProbe.DefaultServers,
                 Turn = dto.Turn is { Server: { Length: > 0 } server }

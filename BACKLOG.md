@@ -148,5 +148,5 @@ No technical blocker, but a lot of work. The core library is portable .NET and t
 - Wire `network.json`, the VPN and the new connection/delivery status into `Yaparr.Host` and the Flutter UI (on the shelved `flutter-ui` branch).
 - NAT-PMP / port mapping through the VPN tunnel.
 - Faster first DHT lookup.
-- Local network discovery is off by default in the Desktop app for now; add a switch in the UI (it is the `localDiscovery` key in `network.json`).
+- Local network discovery is on by default again in the Desktop app (it was off for a while to keep tests of the VPN and relay paths simple); add a switch for it in the UI (it is the `localDiscovery` key in `network.json`).
 - Show delivery status for each recipient in a room (today it is a count).

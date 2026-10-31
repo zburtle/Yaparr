@@ -14,6 +14,10 @@ public sealed class LocalServiceDiscovery : IPeerDiscovery
     private static readonly TimeSpan Fresh = TimeSpan.FromSeconds(90);
     private static readonly TimeSpan ReplyEvery = TimeSpan.FromSeconds(2);
 
+    // Other programs speak this protocol on the same port (BitTorrent clients announce every torrent they have), and anyone on the
+    // network can send it, so only so many topics are remembered at a time and old ones are dropped.
+    private const int MaxTopics = 512;
+
     private readonly Socket _socket;
     private readonly int _announcePort;
     private readonly string _cookie = "yaparr-" + Convert.ToHexString(RandomNumberGenerator.GetBytes(6)).ToLowerInvariant();
@@ -138,6 +142,7 @@ public sealed class LocalServiceDiscovery : IPeerDiscovery
         var endpoint = new IPEndPoint(from.Address, port);
         foreach (var topic in topics.Take(8))
         {
+            if (!_seen.ContainsKey(topic) && _seen.Count >= MaxTopics && !MakeRoom()) continue;
             _seen.GetOrAdd(topic, _ => new())[endpoint] = Environment.TickCount64;
 
             if (!isReply && _announced.TryGetValue(topic, out var lastReply) && Environment.TickCount64 - lastReply > ReplyEvery.TotalMilliseconds)
@@ -146,6 +151,18 @@ public sealed class LocalServiceDiscovery : IPeerDiscovery
                 Send(topic, reply: true);
             }
         }
+    }
+
+    // Drops topics nobody has announced lately; false if every topic is still fresh and a new one has to wait.
+    private bool MakeRoom()
+    {
+        long cutoff = Environment.TickCount64 - (long)Fresh.TotalMilliseconds;
+        foreach (var (topic, table) in _seen)
+        {
+            foreach (var (ep, at) in table) if (at < cutoff) table.TryRemove(ep, out _);
+            if (table.IsEmpty && !_announced.ContainsKey(topic)) _seen.TryRemove(topic, out _);
+        }
+        return _seen.Count < MaxTopics;
     }
 
     private static IPAddress[] LocalIPv4Addresses() =>

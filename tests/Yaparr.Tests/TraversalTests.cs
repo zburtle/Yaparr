@@ -500,6 +500,8 @@ public class TraversalSettingsTests
         {
             var path = Path.Combine(dir, "network.json");
             Assert.True(TraversalOptions.Load(path).Enabled);
+            Assert.True(TraversalOptions.Load(path).LocalDiscovery);
+            File.WriteAllText(path, """{"localDiscovery":false}""");
             Assert.False(TraversalOptions.Load(path).LocalDiscovery);
             File.WriteAllText(path, """{"localDiscovery":true}""");
             Assert.True(TraversalOptions.Load(path).LocalDiscovery);
