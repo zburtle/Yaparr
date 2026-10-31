@@ -106,7 +106,14 @@ public class RekeyTests
         await TestUtil.WaitFor(() => g.Ro.Members.Any(m => m.Account == g.Bob.AccountId) && g.Rb.Members.Any(m => m.Account == g.Owner.AccountId), 30_000);
         await g.Ro.SendAsync("after the new key");
         await g.Rb.SendAsync("bob after the new key");
-        await TestUtil.WaitFor(() => Has(atBob, "after the new key") && Has(atOwner, "bob after the new key"), 30_000);
+        try { await TestUtil.WaitFor(() => Has(atBob, "after the new key") && Has(atOwner, "bob after the new key"), 30_000); }
+        catch (TimeoutException)
+        {
+            string Texts(List<string> l) { lock (l) return string.Join("|", l); }
+            string Hist(ChatRoom r) => string.Join("|", r.GetHistory().Select(m => m.Text));
+            throw new TimeoutException($"bob heard [{Texts(atBob)}] owner heard [{Texts(atOwner)}]; owner history [{Hist(g.Ro)}] bob history [{Hist(g.Rb)}]; "
+                + $"owner sees {g.Ro.Members.Count} member(s) at epoch {g.Ro.Epoch}, bob sees {g.Rb.Members.Count} at epoch {g.Rb.Epoch}");
+        }
         Assert.True(g.Rb.IsBanned(g.Carol.AccountId));
 
         // Carol still has the old key: she hears nothing and nobody hears her.
