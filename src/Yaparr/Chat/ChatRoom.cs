@@ -50,6 +50,8 @@ public sealed class ChatRoom
     internal readonly object IndirectGate = new();
     internal readonly Dictionary<string, StoredSound> SoundEntries = new();
     internal readonly object SoundGate = new();
+    internal readonly Dictionary<string, StoredRole> RoleEntries = new();
+    internal readonly object RoleGate = new();
     internal long LastSoundFetchAt;
     internal long LastPresenceAt, LastShuffleAt;
 
@@ -73,6 +75,25 @@ public sealed class ChatRoom
     /// <summary>A stream was shared or ended.</summary>
     public event Action? MediaGroupsChanged;
     internal void RaiseMediaChanged() => MediaGroupsChanged?.Invoke();
+
+    /// <summary>The account that owns the room, named in its invite; null for a room made by an earlier version, which has no admins.</summary>
+    public PeerId? Owner => _secret.Owner;
+
+    /// <summary>What you are in this room.</summary>
+    public RoomRole MyRole => _node.RoleIn(this, _node.AccountId);
+
+    /// <summary>What a person (by account, see <see cref="PeerInfo.Account"/>) is in this room.</summary>
+    public RoomRole RoleOf(PeerId account) => _node.RoleIn(this, account);
+
+    /// <summary>The admins the owner has appointed, not counting the owner.</summary>
+    public IReadOnlyList<PeerId> Admins => _node.GetAdmins(this);
+
+    /// <summary>Appoints or removes an admin. Only the owner can; everyone in the room sees it.</summary>
+    public void SetAdmin(PeerId account, bool admin) => _node.SetAdmin(this, account, admin);
+
+    /// <summary>The owner appointed or removed an admin.</summary>
+    public event Action? RolesChanged;
+    internal void RaiseRolesChanged() => RolesChanged?.Invoke();
 
     /// <summary>The room's soundboard, by name. Anyone in the room can add sounds; only the person who added one can change or remove it.</summary>
     public IReadOnlyList<SoundInfo> Sounds => _node.GetSounds(this);

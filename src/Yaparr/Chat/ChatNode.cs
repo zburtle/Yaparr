@@ -117,6 +117,9 @@ public sealed class ChatNodeOptions
     /// <summary>Where each room's soundboard list is kept. Without a folder it is only kept in memory (the sounds themselves go with the pictures).</summary>
     public string? SoundboardDirectory { get; init; }
 
+    /// <summary>Where each room's list of admins is kept. Without a folder it is only kept in memory and comes back from other members.</summary>
+    public string? RolesDirectory { get; init; }
+
     /// <summary>The shortest time between two sounds from the same person that are played; sounds sooner than that are dropped.</summary>
     public TimeSpan SoundboardMinInterval { get; init; } = TimeSpan.FromSeconds(3);
 
@@ -580,6 +583,7 @@ public sealed partial class ChatNode : IDisposable
             new RoomHistory(k, _options.HistoryStore, _options.MaxHistoryMessages, _options.MaxHistoryAge));
         if (!_rooms.TryAdd(room.Key, room)) return _rooms[room.Key];
         LoadSounds(room);
+        LoadRoles(room);
         NoteRoomChanged(room, joined: true);
 
         foreach (var peer in _peers.Values)
@@ -1193,6 +1197,7 @@ public sealed partial class ChatNode : IDisposable
         SendPresenceTo(room, peer, includeCache: true);
         SendVoiceStateTo(room, peer);
         SendSoundsTo(room, peer);
+        SendRolesTo(room, peer);
         SendMediaAnnouncesTo(room, peer);
         ResendTo(peer, o => o.Room == room, o => new Wire { Type = Wire.Message, Room = RefTo(room, peer), Msgs = new[] { o.Signed! } });
 
@@ -1461,6 +1466,12 @@ public sealed partial class ChatNode : IDisposable
                                  && ResolveRoom(peer, wire.Room) is { } soundRoom && soundRoom.MemberStates.ContainsKey(peer.Id):
                 if (!rate.AdmitSoundList()) { Dropped(peer, rate, "sent too many sound lists"); break; }
                 OnSounds(peer, soundRoom, wire.Snd);
+                break;
+
+            case Wire.Roles when wire.Room != null && wire.Rol != null
+                                 && ResolveRoom(peer, wire.Room) is { } roleRoom && roleRoom.MemberStates.ContainsKey(peer.Id):
+                if (!rate.AdmitRoleList()) { Dropped(peer, rate, "sent too many admin lists"); break; }
+                OnRoles(peer, roleRoom, wire.Rol);
                 break;
 
             case Wire.Play when wire.Room != null && wire.Pl != null

@@ -76,6 +76,9 @@ internal sealed class Wire
     /// <summary>Entries of a room's soundboard.</summary>
     public StoredSound[]? Snd { get; set; }
 
+    /// <summary>The owner's statements appointing or removing admins of a room.</summary>
+    public StoredRole[]? Rol { get; set; }
+
     /// <summary>Someone played a sound.</summary>
     public StoredPlay? Pl { get; set; }
 
@@ -96,7 +99,7 @@ internal sealed class Wire
 
     public const string Direct = "dm", DirectSync = "dmsync";
 
-    public const string Caps = "caps", Rename = "name", Account = "acct", Media = "media", Sound = "snd", Play = "play";
+    public const string Caps = "caps", Rename = "name", Account = "acct", Media = "media", Sound = "snd", Play = "play", Roles = "roles";
 
     public const string Ack = "ack", Hello = "hi", Join = "join", Leave = "leave", Message = "msg", Introduce = "peers", Sync = "sync", History = "hist", Links = "links", Presence = "pres", Voice = "voice";
 }

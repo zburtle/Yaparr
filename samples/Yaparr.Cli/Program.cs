@@ -34,7 +34,7 @@ switch (args[1])
 {
     case "room":
         // With an invite this joins that room; without one it makes a new room and prints its invite.
-        var key = args.Length > 2 ? RoomKey.Parse(args[2]) : RoomKey.Generate();
+        var key = args.Length > 2 ? RoomKey.Parse(args[2]) : RoomKey.Generate(node.AccountId);
         Console.WriteLine($"Room invite (share it only with people you want in): {key}");
         var room = await node.JoinRoomAsync(key, ct: cts.Token);
         room.MessageReceived += Print;

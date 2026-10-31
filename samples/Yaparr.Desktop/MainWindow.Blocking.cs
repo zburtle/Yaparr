@@ -1,4 +1,5 @@
 using Avalonia.Interactivity;
+using Yaparr.Chat;
 using Yaparr.Identity;
 
 namespace Yaparr.Desktop;
@@ -25,6 +26,9 @@ public partial class MainWindow
         if (PeopleList.SelectedItem is not PeerVm person || BlockedIdOf(person) == null) { e.Cancel = true; return; }
         BlockPersonItem.IsVisible = !person.Blocked;
         UnblockPersonItem.IsVisible = person.Blocked;
+        bool canChange = CanChangeAdmin(person, out _);
+        MakeAdminItem.IsVisible = canChange && person.Role == RoomRole.Member;
+        RemoveAdminItem.IsVisible = canChange && person.Role == RoomRole.Admin;
     }
 
     private void MessageMenu_Opening(object? sender, System.ComponentModel.CancelEventArgs e)

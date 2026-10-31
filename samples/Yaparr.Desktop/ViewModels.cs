@@ -154,9 +154,9 @@ public sealed class MessageVm : Observable
     public static MessageVm System(string text) => new(DateTimeOffset.Now, "", text, isSystem: true);
 }
 
-public sealed record PeerVm(string Id, string Name, bool Online, DateTimeOffset LastSeen, bool IsRelayed = false, PeerLink Link = PeerLink.Offline, bool Blocked = false)
+public sealed record PeerVm(string Id, string Name, bool Online, DateTimeOffset LastSeen, bool IsRelayed = false, PeerLink Link = PeerLink.Offline, bool Blocked = false, RoomRole Role = RoomRole.Member)
 {
-    public string Display => Name;
+    public string Display => Role switch { RoomRole.Owner => Name + "  (owner)", RoomRole.Admin => Name + "  (admin)", _ => Name };
     public string Initial => Avatars.Initial(Name);
     public IBrush Avatar => Avatars.BrushFor(Name);
     public bool Warn => Link is PeerLink.NotResponding or PeerLink.Reconnecting;

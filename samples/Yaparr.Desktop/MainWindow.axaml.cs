@@ -227,6 +227,7 @@ public partial class MainWindow : Window
             Traversal = traversal,
             AttachmentDirectory = Path.Combine(_data.Directory, "attachments"),
             SoundboardDirectory = Path.Combine(_data.Directory, "soundboards"),
+            RolesDirectory = Path.Combine(_data.Directory, "roles"),
             DefaultTurn = BuiltInRelay.Load(),
             EnableLocalDiscovery = traversal.LocalDiscovery,
             PeerCachePath = Path.Combine(_data.Directory, "peers.json"),
@@ -319,7 +320,9 @@ public partial class MainWindow : Window
     {
         var label = await PromptDialog.AskAsync(this, "A name for the new room (only you see it):", "Room");
         if (string.IsNullOrWhiteSpace(label)) return;
-        await JoinKeyedRoomAsync(label, RoomKey.Generate(), persist: true);
+        // The invite names you as the owner, which is how everyone in the room knows who may appoint admins.
+        if (_node == null) return;
+        await JoinKeyedRoomAsync(label, RoomKey.Generate(_node.AccountId), persist: true);
     }
 
     private async void JoinRoom_Click(object? sender, RoutedEventArgs e)
@@ -435,6 +438,8 @@ public partial class MainWindow : Window
         }
         var conv = AddRoom(room, PrivatePrefix + label, invite: key.ToString());
         if (persist) conv.Add(MessageVm.System("Share the invite (button above) with people you want in this room. Anyone who has it can join."));
+        if (persist && key.Owner != null && key.Owner == _node.AccountId)
+            conv.Add(MessageVm.System("You own this room, and that cannot be handed over or taken back. If a computer or phone you use Yaparr on is lost or stolen, whoever has it can act as you here, including appointing admins. If that happens, make a new room."));
     }
 
     private ConversationVm AddRoom(ChatRoom room, string title, string? invite)
@@ -451,6 +456,7 @@ public partial class MainWindow : Window
         room.MemberRenamed += p => UI(() => { Remember(p); RefreshPeers(); });
         room.MemberJoined += p => UI(() => { Remember(p); RefreshPeers(); });
         room.MemberLeft += p => UI(() => { Remember(p); RefreshPeers(p.Account); });
+        room.RolesChanged += () => UI(() => { RefreshPeers(); RefreshMembers(); });
 
         foreach (var m in room.GetHistory()) conv.Add(ToVm(m));
         _conversations.Add(conv);
@@ -505,11 +511,14 @@ public partial class MainWindow : Window
         if (changed) _data.SaveSettings(_settings);
 
         var blocked = _settings.BlockedPeers.Select(b => b.Id).ToHashSet();
+        // Roles belong to a room, so the list shows them for the room that is open.
+        var open = SelectedRoom;
+        RoomRole RoleOf(string id) => open?.RoleOf(new PeerId(id)) ?? RoomRole.Member;
         var online = live.Values.Where(p => !blocked.Contains(p.Account.Value))
-            .Select(p => new PeerVm(p.Account.Value, p.DisplayName, true, now, p.IsRelayed, _node.GetLink(p.Account)));
+            .Select(p => new PeerVm(p.Account.Value, p.DisplayName, true, now, p.IsRelayed, _node.GetLink(p.Account), Role: RoleOf(p.Account.Value)));
         var offline = _settings.KnownPeers
             .Where(k => !live.ContainsKey(k.Id) && !_node.IsMyDevice(new PeerId(k.Id)) && !blocked.Contains(k.Id))
-            .Select(k => new PeerVm(k.Id, string.IsNullOrWhiteSpace(k.Name) ? k.Id[..8] : k.Name, false, k.LastSeen, false, _node.GetLink(new PeerId(k.Id))));
+            .Select(k => new PeerVm(k.Id, string.IsNullOrWhiteSpace(k.Name) ? k.Id[..8] : k.Name, false, k.LastSeen, false, _node.GetLink(new PeerId(k.Id)), Role: RoleOf(k.Id)));
         var shut = _settings.BlockedPeers
             .Select(b => new PeerVm(b.Id, string.IsNullOrWhiteSpace(b.Name) ? b.Id[..8] : b.Name, false, b.LastSeen, Blocked: true));
         var people = online.Concat(offline).Concat(shut)
@@ -799,6 +808,7 @@ public partial class MainWindow : Window
         RoomToggle.IsEnabled = has;
         if (!has) RoomToggle.IsChecked = false;
         RefreshMembers();
+        RefreshPeers();
         UpdateHeaderSubtitle();
         if (_selected != null)
         {
@@ -823,7 +833,8 @@ public partial class MainWindow : Window
         var room = _roomConversations.FirstOrDefault(kv => kv.Value == conv).Key;
         if (room == null) return;
         int others = room.Members.Where(m => _node?.IsMyDevice(m.Id) != true).Select(m => m.Account).Distinct().Count();
-        conv.MembersText = others == 0 ? "Only you so far" : $"You and {others} other{(others == 1 ? "" : "s")} online";
+        conv.MembersText = (others == 0 ? "Only you so far" : $"You and {others} other{(others == 1 ? "" : "s")} online")
+            + (room.MyRole switch { RoomRole.Owner => "  ·  you own this room", RoomRole.Admin => "  ·  you are an admin", _ => "" });
         UpdateHeaderSubtitle();
     }
 

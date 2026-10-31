@@ -27,6 +27,10 @@ public sealed class PeerLimits
     public int SoundListsBurst { get; init; } = 20;
     public double SoundListsPerSecond { get; init; } = 2;
 
+    /// <summary>Lists of room admins, each statement in them costing a signature check.</summary>
+    public int RoleListsBurst { get; init; } = 10;
+    public double RoleListsPerSecond { get; init; } = 1;
+
     /// <summary>A peer that has this many frames dropped within <see cref="DropWindow"/> is disconnected.</summary>
     public int DropsBeforeClose { get; init; } = 500;
     public TimeSpan DropWindow { get; init; } = TimeSpan.FromSeconds(10);
@@ -68,7 +72,7 @@ internal sealed class TokenBucket
 internal sealed class PeerRate
 {
     private readonly PeerLimits _limits;
-    private readonly TokenBucket _frames, _bytes, _messages, _plays, _soundLists;
+    private readonly TokenBucket _frames, _bytes, _messages, _plays, _soundLists, _roleLists;
     private readonly object _gate = new();
     private long _windowStart;
     private int _dropped;
@@ -81,12 +85,14 @@ internal sealed class PeerRate
         _messages = new(limits.MessagesBurst, limits.MessagesPerSecond);
         _plays = new(limits.PlaysBurst, limits.PlaysPerSecond);
         _soundLists = new(limits.SoundListsBurst, limits.SoundListsPerSecond);
+        _roleLists = new(limits.RoleListsBurst, limits.RoleListsPerSecond);
     }
 
     public bool AdmitFrame(int bytes) => _frames.TryTake() && _bytes.TryTake(bytes);
     public bool AdmitMessages(int count) => _messages.TryTake(count);
     public bool AdmitPlay() => _plays.TryTake();
     public bool AdmitSoundList() => _soundLists.TryTake();
+    public bool AdmitRoleList() => _roleLists.TryTake();
 
     /// <summary>Notes a dropped frame. Returns true once the peer has dropped so many in a short time that it should be disconnected.</summary>
     public bool RecordDrop(out int total)
