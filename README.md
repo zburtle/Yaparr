@@ -8,7 +8,7 @@ Serverless chat, voice calls and screen sharing for .NET, with a desktop app for
 - **Pictures and GIFs**, checked and fetched from any member that has them.
 - **Moderation.** Owners, admins, bans, text and voice channels, and replacing the room secret so a ban holds.
 - **Several devices** for one person, linked with an encrypted code, with messages and settings kept in step.
-- **Hard networks.** Port mapping, STUN, members relaying for each other, an optional TURN server and a built-in WireGuard client.
+- **Hard networks.** Port mapping, STUN, members relaying for each other, an optional TURN server of your own (shareable with friends as a code) and a built-in WireGuard client.
 
 ## Try it
 

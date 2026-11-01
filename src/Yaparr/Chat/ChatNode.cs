@@ -16,9 +16,6 @@ public sealed class ChatNodeOptions
 
     public PeerIdentity? Identity { get; init; }
 
-    /// <summary>A relay the app ships with. Used when the user has not set up a TURN server of their own, unless they switched it off.</summary>
-    public TurnOptions? DefaultTurn { get; init; }
-
     public int ListenPort { get; init; }
 
     public Func<UdpMux, IPeerDiscovery>? DiscoveryFactory { get; init; }
@@ -298,7 +295,6 @@ public sealed partial class ChatNode : IDisposable
     private PortMapper? _mapper;
     private TurnClient? _turn;
     private TurnOptions? _turnOptions;
-    private bool _useDefaultRelay;
     private WireGuardTunnel? _tunnel;
     private readonly SemaphoreSlim _networkGate = new(1, 1);
 
@@ -349,7 +345,6 @@ public sealed partial class ChatNode : IDisposable
         _directHistory = new DirectHistory(_options.DirectHistoryDirectory, _options.MaxHistoryMessages, _options.MaxHistoryAge, _options.HistoryCipher);
         LoadPendingDirect();
         _turnOptions = _options.Traversal.Turn;
-        _useDefaultRelay = _options.Traversal.UseDefaultRelay;
         _displayName = _options.DisplayName;
         _ownsIdentity = _options.Identity == null;
         _identity = _options.Identity ?? PeerIdentity.Generate();
@@ -505,19 +500,12 @@ public sealed partial class ChatNode : IDisposable
 
     public TurnOptions? Turn => _turnOptions;
 
-    /// <summary>The user's own TURN server if they set one up, otherwise the app's built-in relay (unless switched off).</summary>
-    internal TurnOptions? EffectiveTurn()
-    {
-        if (_turnOptions is { Enabled: true, Server.Length: > 0 }) return _turnOptions;
-        if (_useDefaultRelay && _options.DefaultTurn is { Server.Length: > 0 } builtIn)
-            return new TurnOptions { Server = builtIn.Server, Username = builtIn.Username, Credential = builtIn.Credential, Enabled = true };
-        return null;
-    }
+    /// <summary>The TURN server the user set up, when it is switched on.</summary>
+    internal TurnOptions? EffectiveTurn() => _turnOptions is { Enabled: true, Server.Length: > 0 } ? _turnOptions : null;
 
-    public async Task ConfigureTurnAsync(TurnOptions? turn, bool? useDefaultRelay = null, CancellationToken ct = default)
+    public async Task ConfigureTurnAsync(TurnOptions? turn, CancellationToken ct = default)
     {
         _turnOptions = turn;
-        if (useDefaultRelay != null) _useDefaultRelay = useDefaultRelay.Value;
         Start();
         await RefreshNetworkAsync(ct).ConfigureAwait(false);
     }

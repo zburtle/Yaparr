@@ -9,7 +9,7 @@ Peers behind home routers have to punch through their NATs. Yaparr does this in 
 2. **STUN.** The node asks public STUN servers what address and port they see, from the same socket the DHT uses. If
    two servers see different ports the NAT is symmetric, and direct connections to strangers are unlikely. The result
    is shown in the status bar.
-3. **TURN (off by default).** The code is in place but disabled; turn it on from **Network > TURN relay…** in the Desktop app (or set `"enabled": true` in the `turn` block of `network.json`). When enabled, if the NAT is symmetric (or `always` is set), the node allocates a relay
+3. **TURN (your own relay, off until you set one up).** Yaparr ships with no relay and no relay password. Set up a TURN server (`deploy/coturn` has a Docker Compose file for coturn), or import one that someone shared with you, under **Network > TURN relay…** in the Desktop app (or fill in the `turn` block of `network.json` and set `"enabled": true`). When enabled, if the NAT is symmetric (or `always` is set), the node allocates a relay
    address, announces that address to the DHT through the relay, and mirrors handshake packets through it. Data
    switches to the relay only for peers that cannot be reached directly. A TURN server is the one piece of
    infrastructure involved; it forwards encrypted packets and cannot read them.
@@ -40,3 +40,9 @@ Settings live in `network.json` in the profile folder (all keys optional). The D
 ```
 
 Group members still relay for each other once connected, so a TURN server mainly helps the very first connection.
+
+### Sharing your relay
+
+If you run a TURN server, you can hand it to friends so their Yaparr uses it too. In **Network > TURN relay…**, **Share this relay…** turns the server, user name and password into a code starting with `yaparr-relay:`, which you copy or save as a `.yrelay` file. The other person chooses **Import a relay…** and pastes the code or opens the file; the relay is filled in for them to look at, and nothing changes until they press **Save**. In the library the same thing is `RelayShare.Create` and `RelayShare.TryParse`.
+
+The code holds the relay's password, so anyone who has it can use your relay and spend its bandwidth, and can pass it on. Send it only to people you trust, by a private route. The only way to withdraw it is to change the password on the server, which cuts off everyone who has it.

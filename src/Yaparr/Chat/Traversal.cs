@@ -18,9 +18,6 @@ public sealed class TraversalOptions
 
     public TurnOptions? Turn { get; init; }
 
-    /// <summary>Whether to fall back on the relay the app ships with when no server of the user's own is set up.</summary>
-    public bool UseDefaultRelay { get; init; } = true;
-
     public static TraversalOptions Load(string path)
     {
         if (!File.Exists(path)) return new TraversalOptions();
@@ -33,7 +30,6 @@ public sealed class TraversalOptions
                 Enabled = dto.Enabled ?? true,
                 PortMapping = dto.PortMapping ?? true,
                 LocalDiscovery = dto.LocalDiscovery ?? true,
-                UseDefaultRelay = dto.DefaultRelay ?? true,
                 StunServers = dto.Stun is { Length: > 0 } stun ? stun : NatProbe.DefaultServers,
                 Turn = dto.Turn is { Server: { Length: > 0 } server }
                     ? new TurnOptions { Server = server, Username = dto.Turn.Username ?? "", Credential = SecretStore.OpenText(dto.Turn.Credential ?? ""), Enabled = dto.Turn.Enabled ?? false, Always = dto.Turn.Always ?? false }
@@ -44,13 +40,6 @@ public sealed class TraversalOptions
         {
             return new TraversalOptions();
         }
-    }
-
-    public static void SaveDefaultRelay(string path, bool use)
-    {
-        var root = LoadRoot(path);
-        root["defaultRelay"] = use;
-        File.WriteAllText(path, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
     }
 
     private static System.Text.Json.Nodes.JsonObject LoadRoot(string path)
@@ -85,7 +74,6 @@ public sealed class TraversalOptions
         public bool? Enabled { get; set; }
         public bool? PortMapping { get; set; }
         public bool? LocalDiscovery { get; set; }
-        public bool? DefaultRelay { get; set; }
         public string[]? Stun { get; set; }
         public TurnSettings? Turn { get; set; }
     }

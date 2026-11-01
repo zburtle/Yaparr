@@ -46,7 +46,7 @@ var options = new ChatNodeOptions
     EnableLocalDiscovery = false,
     DiscoveryFactory = local ? mux => new LocalFileDiscovery(mux.LocalPort) : null,
     DiscoveryInterval = local ? TimeSpan.FromSeconds(2) : TimeSpan.FromSeconds(10),
-    Traversal = new TraversalOptions { Enabled = true, PortMapping = false, Turn = turn, UseDefaultRelay = false },
+    Traversal = new TraversalOptions { Enabled = true, PortMapping = false, Turn = turn },
     // Only the lines that explain how the others were found (or not), unless everything is asked for.
     Log = a.Flag("quiet") ? null : s => { if (a.Flag("verbose") || Interesting(s)) Out.Write("log", ("msg", s)); },
 };

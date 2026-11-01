@@ -481,8 +481,6 @@ $RECYCLE.BIN/
 # Vim temporary swap files
 *.swp
 
-# Built-in TURN relay credentials for local builds
-samples/Yaparr.Desktop/turn.local.props
 
 # Network test tool: its settings (key paths) and the results of runs
 nettest.json
