@@ -30,6 +30,29 @@ public class DeliveryTests
     }
 
     [Fact]
+    public async Task The_details_of_a_delivery_name_who_has_the_message()
+    {
+        var hub = new InMemoryDiscoveryHub();
+        using var a = TestUtil.NewNode(hub, "alice");
+        using var b = TestUtil.NewNode(hub, "bob");
+        using var c = TestUtil.NewNode(hub, "carol");
+        var ra = await a.JoinRoomAsync("Lobby");
+        await b.JoinRoomAsync("Lobby");
+        await c.JoinRoomAsync("Lobby");
+        await TestUtil.WaitFor(() => ra.MemberStates.Count == 2);
+
+        var seen = new ConcurrentQueue<DeliveryStatus>();
+        ra.DeliveryChanged += seen.Enqueue;
+        string id = await ra.SendAsync("hello all");
+        await TestUtil.WaitFor(() => seen.Any(s => s.MessageId == id && s.State == DeliveryState.Delivered));
+
+        var details = ra.GetDeliveryDetails(id);
+        Assert.Equal(new[] { "bob", "carol" }, details.Select(d => d.Name).OrderBy(n => n));
+        Assert.All(details, d => Assert.True(d.Delivered));
+        Assert.Empty(ra.GetDeliveryDetails("a message that was never sent"));
+    }
+
+    [Fact]
     public async Task Message_sent_to_an_empty_room_is_queued_and_delivered_when_someone_arrives()
     {
         var hub = new InMemoryDiscoveryHub();

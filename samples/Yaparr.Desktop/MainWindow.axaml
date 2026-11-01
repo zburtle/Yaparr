@@ -474,7 +474,7 @@
                                             <TextBlock Classes="time" Text="{Binding TimeText}" ToolTip.Tip="{Binding FullTime}" />
                                         </StackPanel>
                                     </Border>
-                                    <TextBlock Classes="status" Classes.failed="{Binding CanRetry}" IsVisible="{Binding HasStatus}" Text="{Binding Status}" />
+                                    <TextBlock Classes="status" Classes.failed="{Binding CanRetry}" IsVisible="{Binding HasStatus}" Text="{Binding Status}" ToolTip.Tip="{Binding DeliveryDetail}" />
                                 </StackPanel>
                             </DataTemplate>
                         </ListBox.ItemTemplate>

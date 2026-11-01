@@ -93,6 +93,15 @@ public sealed class MessageVm : Observable
     public bool IsMine { get; }
     public string? Id { get; }
 
+    private string _deliveryDetail = "";
+
+    /// <summary>Who has the message and who is still to get it, for the tooltip on the status line.</summary>
+    public string DeliveryDetail
+    {
+        get => _deliveryDetail;
+        set { if (_deliveryDetail == value) return; _deliveryDetail = value; Raise(); }
+    }
+
     public DeliveryStatus? Delivery
     {
         get => _delivery;
@@ -192,6 +201,7 @@ public sealed class ConversationVm : Observable
     private readonly HashSet<string> _ids = new();
 
     private readonly Dictionary<string, DeliveryStatus> _delivery = new();
+    private readonly Dictionary<string, string> _deliveryDetail = new();
 
     public ConversationVm(string title, bool isRoom, Func<string, Task<string>> send, Action<string>? retry = null)
     {
@@ -308,11 +318,25 @@ public sealed class ConversationVm : Observable
     public Func<string, Task<string>> Send { get; }
     public Action<string>? Retry { get; }
 
-    public void ApplyDelivery(DeliveryStatus status)
+    public void ApplyDelivery(DeliveryStatus status, IReadOnlyList<DeliveryRecipient>? recipients = null)
     {
         _delivery[status.MessageId] = status;
+        var detail = DescribeRecipients(recipients);
+        if (detail.Length > 0) _deliveryDetail[status.MessageId] = detail;
+        else _deliveryDetail.TryGetValue(status.MessageId, out detail!);
         foreach (var m in Messages.Concat(_stored.Values.SelectMany(l => l)))
-            if (m.Id == status.MessageId) m.Delivery = status;
+            if (m.Id == status.MessageId) { m.DeliveryDetail = detail ?? ""; m.Delivery = status; }
+    }
+
+    private static string DescribeRecipients(IReadOnlyList<DeliveryRecipient>? recipients)
+    {
+        if (recipients == null || recipients.Count == 0) return "";
+        var got = recipients.Where(r => r.Delivered).Select(r => r.Name).ToList();
+        var waiting = recipients.Where(r => !r.Delivered).Select(r => r.Name).ToList();
+        var lines = new List<string>();
+        if (got.Count > 0) lines.Add("Received by: " + string.Join(", ", got));
+        if (waiting.Count > 0) lines.Add("Not confirmed yet: " + string.Join(", ", waiting));
+        return string.Join("\n", lines);
     }
 
     private string? _invite;
@@ -467,7 +491,11 @@ public sealed class ConversationVm : Observable
     public void Add(MessageVm message)
     {
         if (message.Id != null && !_ids.Add(message.Id)) return;
-        if (message.Id != null && _delivery.TryGetValue(message.Id, out var status)) message.Delivery = status;
+        if (message.Id != null && _delivery.TryGetValue(message.Id, out var status))
+        {
+            if (_deliveryDetail.TryGetValue(message.Id, out var detail)) message.DeliveryDetail = detail;
+            message.Delivery = status;
+        }
         if (IsRoom && message.Channel is { } channel)
         {
             if (!_stored.TryGetValue(channel, out var list)) _stored[channel] = list = new List<MessageVm>();

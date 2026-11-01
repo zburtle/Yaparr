@@ -40,6 +40,9 @@ public enum DeliveryState
 
 public sealed record DeliveryStatus(string MessageId, DeliveryState State, int Delivered, int Total);
 
+/// <summary>One person a message was sent to, and whether their app has confirmed it. A person with several devices is one entry.</summary>
+public sealed record DeliveryRecipient(PeerId Id, string Name, bool Delivered);
+
 /// <param name="Channel">The text channel of a room message (<see cref="RoomChannels.DefaultText"/> for the first one and for messages from earlier versions); null for direct messages.</param>
 public sealed record ChatMessage(PeerInfo From, string? Room, string Id, string Text, DateTimeOffset Timestamp, bool IsCatchUp = false, Attachment? Attachment = null, string? Channel = null);
 

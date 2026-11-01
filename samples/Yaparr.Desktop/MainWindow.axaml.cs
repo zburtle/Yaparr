@@ -521,7 +521,7 @@ public partial class MainWindow : Window
             text => conv.CurrentChannel == RoomChannels.DefaultText ? room.SendAsync(text) : room.SendAsync(text, conv.CurrentChannel),
             room.Retry) { Invite = invite };
         _roomConversations[room] = conv;
-        room.DeliveryChanged += s => UI(() => conv.ApplyDelivery(s));
+        room.DeliveryChanged += s => UI(() => conv.ApplyDelivery(s, room.GetDeliveryDetails(s.MessageId)));
 
         room.MessageReceived += m => UI(() => OnMessage(conv, ToVm(m), announce: !m.IsCatchUp));
         room.VoiceChanged += () => UI(() => RefreshVoice(conv, room));
@@ -645,7 +645,7 @@ public partial class MainWindow : Window
             }
             var title = chat.DisplayName + " (direct)";
             conv = new ConversationVm(title, isRoom: false, chat.SendAsync, chat.Retry) { PeerId = chat.PeerId.Value };
-            chat.DeliveryChanged += s => UI(() => conv.ApplyDelivery(s));
+            chat.DeliveryChanged += s => UI(() => conv.ApplyDelivery(s, chat.GetDeliveryDetails(s.MessageId)));
             // Another of your devices read it: nothing here is new any more.
             chat.ReadChanged += () => UI(() => conv.Unread = 0);
             _directConversations[chat.PeerId] = conv;

@@ -245,6 +245,9 @@ public sealed class ChatRoom
     /// <summary>Sends a message and returns its id, which <see cref="DeliveryChanged"/> reports on.</summary>
     public Task<string> SendAsync(string text) => Task.FromResult(_node.SendRoomMessage(this, text, null));
 
+    /// <summary>Who a message you sent has reached, while it is still being tracked.</summary>
+    public IReadOnlyList<DeliveryRecipient> GetDeliveryDetails(string messageId) => _node.GetDeliveryDetails(messageId);
+
     /// <summary>Sends a message to a text channel (see <see cref="Channels"/>) and returns its id.</summary>
     public Task<string> SendAsync(string text, string channelId) => Task.FromResult(_node.SendRoomMessage(this, text, channelId));
 
@@ -293,6 +296,9 @@ public sealed class DirectChat
     public event Action<DeliveryStatus>? DeliveryChanged;
 
     public Task<string> SendAsync(string text) => Task.FromResult(_node.SendDirectMessage(PeerId, text));
+
+    /// <summary>Who a message you sent has reached, while it is still being tracked.</summary>
+    public IReadOnlyList<DeliveryRecipient> GetDeliveryDetails(string messageId) => _node.GetDeliveryDetails(messageId);
 
     public void Retry(string messageId) => _node.RetryMessage(messageId);
 

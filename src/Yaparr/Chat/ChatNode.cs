@@ -746,6 +746,17 @@ public sealed partial class ChatNode : IDisposable
         public DeliveryStatus? Last;
     }
 
+    /// <summary>Who a message was sent to and who has confirmed it, while it is still being tracked (about ten minutes after sending).</summary>
+    internal IReadOnlyList<DeliveryRecipient> GetDeliveryDetails(string messageId)
+    {
+        if (!_outbox.TryGetValue(messageId, out var o)) return Array.Empty<DeliveryRecipient>();
+        PeerId[] targets, acked;
+        lock (o) { targets = o.Targets.ToArray(); acked = o.Acked.ToArray(); }
+        return targets.GroupBy(AccountOf)
+            .Select(g => new DeliveryRecipient(g.Key, GetPeerInfo(g.First())?.DisplayName ?? DirectNameOf(g.Key) ?? g.Key.Short, g.Any(acked.Contains)))
+            .OrderBy(r => r.Delivered).ThenBy(r => r.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+    }
+
     private void PublishDelivery(Outgoing o)
     {
         DeliveryStatus status;
