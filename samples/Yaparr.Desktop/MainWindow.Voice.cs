@@ -1,4 +1,5 @@
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using Yaparr.Chat;
 using Yaparr.Voice;
 using Yaparr.Voice.WebRtc;
@@ -24,8 +25,17 @@ public partial class MainWindow
         foreach (var p in room.VoiceParticipants)
         {
             if (!existing.TryGetValue(p.Peer.Id.Value, out var old) && !p.IsSelf) someoneJoined = true;
-            var vm = old ?? new VoiceMemberVm(p.Peer.Id.Value, p.Peer.DisplayName, p.IsSelf);
+            var vm = old;
+            if (vm == null)
+            {
+                vm = new VoiceMemberVm(p.Peer.Id.Value, p.Peer.DisplayName, p.IsSelf);
+                vm.VolumeEdited += OnPersonVolumeEdited;
+            }
             vm.Name = p.Peer.DisplayName;
+            vm.Account = p.Peer.Account.Value;
+            double saved = _settings.PersonVolumes.TryGetValue(vm.Account, out var percent) ? percent : 100;
+            vm.ShowVolume(saved);
+            if (!p.IsSelf && saved != 100 && _voice is { } heard && _voiceConv == conv) heard.SetVolume(p.Peer.Id, (float)(saved / 100));
             vm.Muted = p.Muted;
             vm.SoundboardMuted = IsPersonSoundboardMuted(p.Peer.Id.Value);
             vm.Deafened = p.Deafened;
@@ -41,6 +51,41 @@ public partial class MainWindow
         bool someoneLeft = existing.Values.Any(m => !m.IsSelf && !now.Contains(m.Id));
         if (someoneJoined) _sounds.SomeoneJoined();
         else if (someoneLeft) _sounds.SomeoneLeft();
+    }
+
+    private DispatcherTimer? _volumeSaveTimer;
+
+    // The slider next to a person in the voice list: they are heard at that level now, and the level is kept for next time.
+    private void OnPersonVolumeEdited(VoiceMemberVm edited)
+    {
+        if (edited.Account.Length == 0) return;
+        if (edited.Volume == 100) _settings.PersonVolumes.Remove(edited.Account);
+        else _settings.PersonVolumes[edited.Account] = (int)edited.Volume;
+
+        // The same person on another device of theirs, or in another room, sounds the same.
+        foreach (var conv in _roomConversations.Values)
+            foreach (var other in conv.VoiceMembers.Where(m => m != edited && m.Account == edited.Account)) other.ShowVolume(edited.Volume);
+        if (_voice is { } session && _voiceConv != null)
+            foreach (var member in _voiceConv.VoiceMembers.Where(m => !m.IsSelf && m.Account == edited.Account))
+                session.SetVolume(new Yaparr.Identity.PeerId(member.Id), (float)(edited.Volume / 100));
+
+        // A slider makes many changes a second; the settings are written once it stops.
+        _volumeSaveTimer ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
+        _volumeSaveTimer.Tick -= SaveVolumes;
+        _volumeSaveTimer.Tick += SaveVolumes;
+        _volumeSaveTimer.Stop();
+        _volumeSaveTimer.Start();
+    }
+
+    private void SaveVolumes(object? sender, EventArgs e)
+    {
+        _volumeSaveTimer?.Stop();
+        _data.SaveSettings(_settings);
+    }
+
+    private void ResetVolume_Click(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Avalonia.Controls.Control { DataContext: VoiceMemberVm member }) member.Volume = 100;
     }
 
     // Under the room's name: who is around, and who is in voice.

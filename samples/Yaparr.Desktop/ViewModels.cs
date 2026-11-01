@@ -545,6 +545,40 @@ public sealed class VoiceMemberVm : Observable
 
     public bool CanMuteSoundboard => !IsSelf;
 
+    /// <summary>The account behind this device; the volume chosen for a person is kept by account.</summary>
+    public string Account { get; set; } = "";
+
+    public bool CanSetVolume => !IsSelf;
+
+    private double _volume = 100;
+
+    /// <summary>How loud this person sounds to you, in percent. Changing it (the slider) raises <see cref="VolumeEdited"/>.</summary>
+    public double Volume
+    {
+        get => _volume;
+        set
+        {
+            value = Math.Round(Math.Clamp(value, 0, 200));
+            if (_volume == value) return;
+            _volume = value;
+            Raise(); Raise(nameof(VolumeText));
+            VolumeEdited?.Invoke(this);
+        }
+    }
+
+    public string VolumeText => $"{_volume:0}%";
+
+    public event Action<VoiceMemberVm>? VolumeEdited;
+
+    /// <summary>Sets the volume shown without telling anyone, for values read from the settings.</summary>
+    public void ShowVolume(double percent)
+    {
+        percent = Math.Round(Math.Clamp(percent, 0, 200));
+        if (_volume == percent) return;
+        _volume = percent;
+        Raise(nameof(Volume)); Raise(nameof(VolumeText));
+    }
+
     public bool SoundboardMuted
     {
         get => _soundboardMuted;

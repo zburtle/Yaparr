@@ -406,6 +406,22 @@
                                                 <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
                                                 <TextBlock Text="{Binding Status}" Classes="muted small" VerticalAlignment="Center" />
                                                 <TextBlock Text="{Binding Where}" Classes="muted small" VerticalAlignment="Center" />
+                                                <Button Content="🔊" Classes="ghost" IsVisible="{Binding CanSetVolume}" Padding="4,0" FontSize="11"
+                                                        VerticalAlignment="Center" ToolTip.Tip="{Binding VolumeText, StringFormat='Volume {0}'}">
+                                                    <Button.Flyout>
+                                                        <Flyout Placement="BottomEdgeAlignedLeft">
+                                                            <StackPanel Width="220" Spacing="6">
+                                                                <TextBlock Classes="label" Text="VOLUME" />
+                                                                <Slider Minimum="0" Maximum="200" SmallChange="5" LargeChange="20" TickFrequency="50" TickPlacement="BottomRight"
+                                                                        Value="{Binding Volume, Mode=TwoWay}" />
+                                                                <Grid ColumnDefinitions="*,Auto">
+                                                                    <TextBlock Text="{Binding VolumeText}" VerticalAlignment="Center" />
+                                                                    <Button Grid.Column="1" Content="Reset" Click="ResetVolume_Click" />
+                                                                </Grid>
+                                                            </StackPanel>
+                                                        </Flyout>
+                                                    </Button.Flyout>
+                                                </Button>
                                                 <Button Content="{Binding SoundboardGlyph}" IsVisible="{Binding CanMuteSoundboard}" Click="SoundboardMute_Click"
                                                         ToolTip.Tip="{Binding SoundboardTip}" Classes="ghost" Padding="4,0" FontSize="11" VerticalAlignment="Center" />
                                             </StackPanel>

@@ -51,6 +51,9 @@ public sealed class AppSettings
     /// <summary>Flash the taskbar button when a message arrives while the window is in the background.</summary>
     public bool FlashTaskbar { get; set; } = true;
 
+    /// <summary>How loud each person sounds to you, in percent (0 to 200), by account id. People not listed are at 100.</summary>
+    public Dictionary<string, int> PersonVolumes { get; set; } = new();
+
     /// <summary>People you have blocked, with the name they had when you blocked them.</summary>
     public List<KnownPeer> BlockedPeers { get; set; } = new();
 }
