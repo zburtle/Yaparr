@@ -2,57 +2,46 @@ name: Release installer
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [master]
   workflow_dispatch:
-    inputs:
-      bump:
-        description: Which part of the latest version to increase
-        type: choice
-        options: [patch, minor, major]
-        default: patch
 
 permissions:
   contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   version:
     runs-on: ubuntu-latest
     outputs:
-      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      # A dry run: semantic-release reads the commits since the last tag and, when they call for a release,
+      # writes the next version to the step output (see .releaserc.json). Nothing is tagged yet.
       - name: Work out the version
         id: version
-        shell: pwsh
-        run: |
-          if ('${{ github.event_name }}' -eq 'push') {
-            $tag = '${{ github.ref_name }}'
-          } else {
-            git fetch --tags --force
-            $latest = git tag --list 'v[0-9]*' --sort=-v:refname | Where-Object { $_ -match '^v\d+\.\d+\.\d+$' } | Select-Object -First 1
-            if (-not $latest) { $latest = 'v0.0.0' }
-            $major, $minor, $patch = $latest.TrimStart('v').Split('.') | ForEach-Object { [int]$_ }
-            switch ('${{ inputs.bump }}') {
-              'major' { $major++; $minor = 0; $patch = 0 }
-              'minor' { $minor++; $patch = 0 }
-              default { $patch++ }
-            }
-            $tag = "v$major.$minor.$patch"
-            Write-Host "Latest tag $latest, releasing $tag"
-          }
-          "tag=$tag" >> $env:GITHUB_OUTPUT
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: npx --yes -p semantic-release@25 -p @semantic-release/exec@7 semantic-release --dry-run
 
   windows:
     needs: version
+    if: needs.version.outputs.version != ''
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
 
@@ -67,10 +56,10 @@ jobs:
           TurnUser: ${{ secrets.TURN_USER }}
           TurnCredential: ${{ secrets.TURN_CREDENTIAL }}
         run: |
-          $version = '${{ needs.version.outputs.tag }}'.TrimStart('v')
+          $version = '${{ needs.version.outputs.version }}'
           ./installer/build.ps1 -Version $version
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: installer-windows
           path: artifacts/*.msi
@@ -78,14 +67,15 @@ jobs:
 
   deb:
     needs: version
+    if: needs.version.outputs.version != ''
     runs-on: ubuntu-latest
     strategy:
       matrix:
         arch: [amd64, arm64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
 
@@ -96,10 +86,9 @@ jobs:
           TurnUser: ${{ secrets.TURN_USER }}
           TurnCredential: ${{ secrets.TURN_CREDENTIAL }}
         run: |
-          version='${{ needs.version.outputs.tag }}'
-          bash installer/build-deb.sh "${version#v}" ${{ matrix.arch }}
+          bash installer/build-deb.sh '${{ needs.version.outputs.version }}' ${{ matrix.arch }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: installer-deb-${{ matrix.arch }}
           path: artifacts/*.deb
@@ -107,19 +96,26 @@ jobs:
 
   publish:
     needs: [version, windows, deb]
+    if: needs.version.outputs.version != ''
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - uses: actions/download-artifact@v8
         with:
           pattern: installer-*
           path: installers
           merge-multiple: true
 
+      # Tags the built commit, writes the release notes and uploads installers/* (see .releaserc.json). If
+      # master has moved on since the build, semantic-release refuses and the next run releases everything.
       - name: Publish release
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # For a manual run the tag does not exist yet; --target makes gh create it on the built commit.
-          gh release create '${{ needs.version.outputs.tag }}' installers/* --title '${{ needs.version.outputs.tag }}' --target '${{ github.sha }}' --generate-notes
+          GITHUB_TOKEN: ${{ github.token }}
+        run: npx --yes -p semantic-release@25 -p @semantic-release/exec@7 semantic-release

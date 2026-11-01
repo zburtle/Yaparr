@@ -37,6 +37,8 @@ with a "Launch Yaparr" checkbox), and `msiexec /i Yaparr-1.0.0-x64.msi /qn` inst
 installer is unsigned, so Windows SmartScreen will warn on first run, and Windows Firewall will ask to allow the app
 (allow private networks for LAN discovery; allow public for internet peers).
 
+**Releases.** Every push to `master` runs `.github/workflows/release.yml`, where [semantic-release](https://semantic-release.org) reads the commit messages since the last tag. `fix:` makes a patch release, `feat:` a minor one, and a `!` after the type (`feat!:`) or a `BREAKING CHANGE:` footer a major one; `docs:`, `chore:`, `test:`, `ci:` and `refactor:` release nothing. When a release is due, the MSI and both .deb packages are built with that version, then the tag, the release notes and the downloads are published. A commit with no such prefix is ignored, so use them from now on.
+
 **Network tests.** `tools/` has a headless agent and a tool that runs it on DigitalOcean machines (with simulated NATs, packet loss and failures) and checks the result; see [tools/README.md](tools/README.md).
 
 **Debugging the CLI.** `samples/Yaparr.Cli/Properties/launchSettings.json` has profiles for Visual Studio / Rider
