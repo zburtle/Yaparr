@@ -37,6 +37,11 @@ public partial class ScreenViewWindow : Window
         Closed += (_, _) => Stop();
     }
 
+    /// <summary>The picture stopped coming because the connection to the sharer (or whoever passes it on) was lost, and again when it is back.</summary>
+    public event Action? ConnectionLost, ConnectionRestored;
+
+    private bool _wasAttached, _connectionLost;
+
     /// <summary>Raised when the window is closed, so the owner can mark the share as not watched any more.</summary>
     public event Action? Stopped;
 
@@ -147,6 +152,19 @@ public partial class ScreenViewWindow : Window
         (_statsAt, _statsShown, _statsFrames, _statsBytes) = (now, shown, frames, bytes);
         // Delay added by the playout queue: what waits to be drawn, at the pace they arrive.
         int delayMs = (int)(_queue.Count * _intervalMs);
+        // The stream's own check: a parent that has not been heard from for a few seconds is let go, and it is looked for again.
+        if (st.Attached)
+        {
+            _wasAttached = true;
+            if (_connectionLost) { _connectionLost = false; Waiting.IsVisible = _shown == 0; ConnectionRestored?.Invoke(); }
+        }
+        else if (_wasAttached && !_connectionLost)
+        {
+            _connectionLost = true;
+            Waiting.Text = "Lost the connection to the screen. Reconnecting…";
+            Waiting.IsVisible = true;
+            ConnectionLost?.Invoke();
+        }
         Info.Text = $"{_name}  -  {_shown} pictures, {_view.FramesLost} lost, {st.Recovered} packets recovered, {Interlocked.Read(ref _late)} late"
             + $"\nArriving {arriveFps:0.0}/s at {kbps:0} kbit/s, drawn {shownFps:0.0}/s, decoder queue {_viewer?.DecodeQueue ?? 0}, playout delay {delayMs} ms"
             + (st.Attached ? "" : "  -  connecting to the sharer...");

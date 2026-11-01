@@ -122,6 +122,9 @@ public sealed class ChatRoom
     public event Action? VoiceChanged;
     internal void RaiseVoiceChanged() => VoiceChanged?.Invoke();
 
+    /// <summary>Who is in the voice channel you are in and whom you cannot reach right now (nobody, when you are not in voice).</summary>
+    public VoiceReach VoiceReach => _node.GetVoiceReach(this);
+
     /// <summary>You joined voice in this room on another of your devices, so this device left it.</summary>
     public event Action<PeerId>? VoiceTakenOver;
     internal void RaiseVoiceTakenOver(PeerId device) => VoiceTakenOver?.Invoke(device);

@@ -116,4 +116,59 @@ public class VoiceChannelTests
         Assert.False(SignedVoice.Verify(other with { Chan = "fedcba0987654321" }, "room"));
         Assert.False(SignedVoice.Verify(other with { Chan = null }, "room"));
     }
+
+    [Fact]
+    public async Task Someone_in_the_call_who_goes_silent_is_reported_out_of_reach_but_one_who_leaves_is_not()
+    {
+        var hub = new InMemoryDiscoveryHub();
+        using var a = TestUtil.NewNode(hub, "alice");
+        using var b = TestUtil.NewNode(hub, "bob");
+        using var c = TestUtil.NewNode(hub, "carol");
+        var ra = await a.JoinRoomAsync("reach");
+        var rb = await b.JoinRoomAsync("reach");
+        var rc = await c.JoinRoomAsync("reach");
+        await TestUtil.WaitFor(() => ra.MemberStates.Count == 2 && rb.MemberStates.Count == 2 && rc.MemberStates.Count == 2, 30_000);
+        using var va = ra.JoinVoice();
+        using var vb = rb.JoinVoice();
+        using var vc = rc.JoinVoice();
+        await TestUtil.WaitFor(() => ra.VoiceParticipants.Count == 3, 30_000);
+
+        var reach = ra.VoiceReach;
+        Assert.Equal(2, reach.Expected);
+        Assert.Empty(reach.Unreachable);
+
+        // Carol leaves properly: she is simply not in the call any more.
+        vc.Leave();
+        await TestUtil.WaitFor(() => ra.VoiceReach.Expected == 1, 30_000);
+        Assert.Empty(ra.VoiceReach.Unreachable);
+
+        // Bob's machine stops sending without a word (the connection still looks established for another half minute).
+        b.Mux.OutboundFilter = (_, _) => false;
+        await TestUtil.WaitFor(() => ra.VoiceReach.Unreachable.Contains(b.Id), 40_000);
+        Assert.Equal(1, ra.VoiceReach.Expected);
+        Assert.Equal(0, ra.VoiceReach.Reachable);
+    }
+
+    [Fact]
+    public async Task Someone_who_is_muted_and_says_nothing_for_a_long_time_is_still_reachable()
+    {
+        var hub = new InMemoryDiscoveryHub();
+        using var a = TestUtil.NewNode(hub, "alice");
+        using var b = TestUtil.NewNode(hub, "bob");
+        var ra = await a.JoinRoomAsync("quiet");
+        var rb = await b.JoinRoomAsync("quiet");
+        await TestUtil.WaitFor(() => ra.MemberStates.Count == 1 && rb.MemberStates.Count == 1, 30_000);
+        using var va = ra.JoinVoice();
+        using var vb = rb.JoinVoice();
+        await TestUtil.WaitFor(() => ra.VoiceParticipants.Count == 2, 30_000);
+        vb.Muted = true;   // no audio from Bob at all, nor from Alice
+
+        // Well past the fourteen seconds after which a connection we hear nothing from is given up on; only pings and beacons are going.
+        for (int second = 0; second < 25; second++)
+        {
+            await Task.Delay(1000);
+            Assert.Empty(ra.VoiceReach.Unreachable);
+        }
+        Assert.Equal(1, ra.VoiceReach.Reachable);
+    }
 }

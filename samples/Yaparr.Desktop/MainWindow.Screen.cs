@@ -133,6 +133,8 @@ public partial class MainWindow
                 try { window.AttachSound(_node.WatchMedia(room, sound.Id), _settings.VoiceOutput); }
                 catch (Exception ex) { _log.Write("could not watch the sound of the screen: " + ex.Message); }
             }
+            window.ConnectionLost += () => { _log.Write($"lost the connection to the screen {share.Name}"); _sounds.ConnectionLost(); };
+            window.ConnectionRestored += () => { _log.Write($"connection to the screen {share.Name} restored"); _sounds.ConnectionBack(); };
             _screenViews[share.Id] = window;
             share.Watching = true;
             window.Stopped += () => UI(() =>

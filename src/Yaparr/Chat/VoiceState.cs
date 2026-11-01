@@ -11,6 +11,13 @@ internal sealed record VoiceEntry(StoredVoice State, long SeenAt);
 
 /// <summary>Who is in a room's voice channel and whether they have muted themselves.</summary>
 /// <param name="Channel">The voice channel they are in (<see cref="RoomChannels.DefaultVoice"/> for the first one).</param>
+/// <summary>How many people are in the voice channel you are in, and which of them you cannot reach right now.</summary>
+public sealed record VoiceReach(int Expected, IReadOnlyList<PeerId> Unreachable)
+{
+    /// <summary>How many of the people in the call you are reachable by.</summary>
+    public int Reachable => Expected - Unreachable.Count;
+}
+
 public sealed record VoiceParticipant(PeerInfo Peer, bool Muted, bool Deafened, bool IsSelf, string Channel = RoomChannels.DefaultVoice);
 
 internal static class SignedVoice

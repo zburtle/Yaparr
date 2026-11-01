@@ -283,7 +283,9 @@ public partial class MainWindow : Window
         _node.NetworkStatusChanged += _ => UI(UpdateStatus);
         _node.AttachmentChanged += update => UI(() => OnAttachmentChanged(update));
         if (OperatingSystem.IsWindows()) Microsoft.Win32.SystemEvents.PowerModeChanged += OnPowerModeChanged;
-        _linkTimer.Tick += (_, _) => RefreshPeers();
+        _linkTimer.Tick += (_, _) => { RefreshPeers(); WatchConnection(); };
+        SetUpConnectionWatch();
+        _node.NetworkChanged += () => _call.NetworkChanged(Environment.TickCount64);
         _linkTimer.Start();
         _node.VpnStateChanged += _ => UI(UpdateStatus);
         _node.BlockChanged += (id, blocked) => UI(() => OnBlockChanged(id, blocked));
@@ -328,6 +330,7 @@ public partial class MainWindow : Window
     private void UpdateStatus()
     {
         if (_node == null) return;
+        WatchConnection();
         int peers = _node.ConnectedPeers.Count;
         var vpn = _node.VpnState;
         var network = _node.NetworkStatus != NetworkStatus.Unknown ? _node.NetworkStatus.Describe() : null;

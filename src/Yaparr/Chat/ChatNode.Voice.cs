@@ -10,6 +10,16 @@ public sealed partial class ChatNode
 {
     private TimeSpan VoiceLifetime => _options.VoiceInterval * 3;
 
+    // A connection that has gone silent still counts as established until the idle timeout (35 seconds), long after the audio stopped. People send
+    // at least a ping every ten seconds, so one we have heard nothing from for fourteen is not there.
+    private const long LiveWithinMs = 14_000;
+
+    internal bool IsLive(PeerId id) =>
+        _peers.TryGetValue(id, out var p) && p.Connection.State == ConnectionState.Established && Environment.TickCount64 - p.Connection.LastReceivedAt <= LiveWithinMs;
+
+    /// <summary>Whether the machine has a network connection at all, as the system reports it; false when Wi-Fi drops or the cable is pulled.</summary>
+    public static bool NetworkAvailable => System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable();
+
     internal bool IsConnected(PeerId id) => _peers.TryGetValue(id, out var p) && p.Connection.State == ConnectionState.Established;
 
     internal VoiceSession JoinVoice(ChatRoom room, string channel)
@@ -129,6 +139,18 @@ public sealed partial class ChatNode
             return room.Voice.Where(kv => kv.Value.State.Active && kv.Value.SeenAt >= cutoff && !IsBlocked(kv.Key)
                                           && (includeDeafened || !kv.Value.State.Deafened)
                                           && (kv.Value.State.Chan ?? RoomChannels.DefaultVoice) == channel).Select(kv => kv.Key).ToList();
+    }
+
+    /// <summary>
+    /// Who is in the voice channel you are in and whom you cannot reach right now. In a big call the audio goes through a tree, so being
+    /// attached to it reaches everyone; otherwise it is a connection to each person.
+    /// </summary>
+    internal VoiceReach GetVoiceReach(ChatRoom room)
+    {
+        if (room.ActiveVoice == null) return new VoiceReach(0, Array.Empty<PeerId>());
+        var others = ActiveVoiceOthers(room);
+        if (AttachedVoiceGroup(room) != null) return new VoiceReach(others.Count, Array.Empty<PeerId>());
+        return new VoiceReach(others.Count, others.Where(id => !IsLive(id)).ToList());
     }
 
     internal IReadOnlyList<VoiceParticipant> GetVoiceParticipants(ChatRoom room)

@@ -630,7 +630,16 @@ public sealed class VoiceMemberVm : Observable
     public string SoundboardGlyph => _soundboardMuted ? "🔕" : "🔔";
     public string SoundboardTip => _soundboardMuted ? "Their soundboard sounds are muted. Click to unmute." : "Mute only their soundboard sounds";
 
-    public string Status => _deafened ? "🎧✕" : _muted ? "🎤✕" : "";
+    private bool _reconnecting;
+
+    /// <summary>The connection to this person is lost and Yaparr is trying again.</summary>
+    public bool Reconnecting
+    {
+        get => _reconnecting;
+        set { if (_reconnecting == value) return; _reconnecting = value; Raise(); Raise(nameof(Status)); }
+    }
+
+    public string Status => (_deafened ? "🎧✕" : _muted ? "🎤✕" : "") + (_reconnecting ? (_deafened || _muted ? "  " : "") + "reconnecting…" : "");
     public IBrush Ring => _speaking ? new SolidColorBrush(Color.Parse("#46A758")) : Brushes.Transparent;
 }
 

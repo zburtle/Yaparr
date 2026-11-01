@@ -44,6 +44,7 @@ public partial class MainWindow
         }
         UpdateVoiceChannels(conv, room);
         conv.VoiceMembersChanged();
+        WatchConnection();
         if (conv == _selected) UpdateHeaderSubtitle();
 
         if (!announce || !conv.InVoice || _voiceConv != conv) return;
@@ -248,6 +249,7 @@ public partial class MainWindow
         _pushToTalkHook?.Dispose();
         _pushToTalkHook = null;
         if (conv != null) conv.PushToTalkHint = "";
+        StopWatchingCall();
         // Sharing a screen and watching one go with being in voice.
         if (_sharer != null && _sharerConv == conv) StopSharingCore();
         foreach (var window in _screenViews.Values.ToList()) window.Close();

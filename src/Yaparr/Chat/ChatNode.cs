@@ -809,6 +809,9 @@ public sealed partial class ChatNode : IDisposable
 
     private void OnAddressChanged(object? sender, EventArgs e) => NotifyNetworkChanged();
 
+    /// <summary>The machine's network changed (reported by the system or by <see cref="NotifyNetworkChanged"/>); connections on the old network are likely to drop.</summary>
+    public event Action? NetworkChanged;
+
     /// <summary>
     /// Call when the machine's network changed (Wi-Fi to cable, resume from sleep, VPN toggled outside the app).
     /// The NAT type and port mapping are checked again and dropped peers are redialed soon after.
@@ -816,6 +819,7 @@ public sealed partial class ChatNode : IDisposable
     /// </summary>
     public void NotifyNetworkChanged()
     {
+        NetworkChanged?.Invoke();
         if (_cts.IsCancellationRequested || Interlocked.Exchange(ref _networkKickPending, 1) == 1) return;
         _ = Task.Run(async () =>
         {

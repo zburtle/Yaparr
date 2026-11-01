@@ -28,6 +28,9 @@ internal sealed class UiSounds
     private static readonly float[] JoinedClip = Notes((523, 90), (784, 130));
     private static readonly float[] LeftClip = Notes((784, 90), (523, 130));
     private static readonly float[] YouJoinedClip = Notes((523, 80), (659, 80), (784, 130));
+    // The connection was lost (low and falling, a little longer than the others) and is back (rising in three steps).
+    private static readonly float[] ConnectionLostClip = Notes((392, 110), (294, 110), (220, 220));
+    private static readonly float[] ConnectionBackClip = Notes((587, 70), (784, 70), (1047, 150));
     private static readonly float[] YouLeftClip = Notes((784, 80), (659, 80), (523, 130));
 
     private readonly Func<string?> _output;
@@ -53,6 +56,8 @@ internal sealed class UiSounds
     public void SomeoneLeft() => Play(LeftClip, throttled: false);
     public void YouJoined() => Play(YouJoinedClip, throttled: false);
     public void YouLeft() => Play(YouLeftClip, throttled: false);
+    public void ConnectionLost() => Play(ConnectionLostClip, throttled: false);
+    public void ConnectionBack() => Play(ConnectionBackClip, throttled: false);
 
     private void Play(float[] clip, bool throttled, bool force = false)
     {

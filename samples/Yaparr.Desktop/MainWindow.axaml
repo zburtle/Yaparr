@@ -231,6 +231,11 @@
             </MenuItem>
         </Menu>
 
+        <!-- Shown while the connection is lost and Yaparr is trying again. -->
+        <Border x:Name="ReconnectBar" DockPanel.Dock="Top" Margin="12,6,12,0" Padding="12,8" CornerRadius="8" Background="{DynamicResource Warn}" IsVisible="False">
+            <TextBlock x:Name="ReconnectText" Foreground="White" FontWeight="SemiBold" TextWrapping="Wrap" />
+        </Border>
+
         <!-- Latest alert only (copied, exported, update problems…); hidden when there is none. -->
         <Border x:Name="AlertBar" DockPanel.Dock="Bottom" Margin="16,2,16,6" IsVisible="False">
             <TextBlock x:Name="StatusText" Classes="muted small" TextTrimming="CharacterEllipsis" />
