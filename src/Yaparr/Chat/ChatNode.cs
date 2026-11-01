@@ -1150,6 +1150,7 @@ public sealed partial class ChatNode : IDisposable
         foreach (var b in beacons.Take(64))
         {
             if (!IsValidPeerId(b.From) || b.From == Id.Value || !SignedPresence.Verify(b, room.Key)) continue;
+            if (LearnAccount(b)) changed = true;
             var id = new PeerId(b.From);
             lock (room.IndirectGate)
             {

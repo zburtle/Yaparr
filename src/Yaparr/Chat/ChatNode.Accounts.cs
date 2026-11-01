@@ -29,6 +29,16 @@ public sealed partial class ChatNode
             .Concat(_peers.Values.Where(IsSibling).OrderBy(p => p.Id.Value, StringComparer.Ordinal).Select(p => new DeviceInfo(p.Id, false, GetLink(p.Id))))
             .ToList();
 
+    /// <summary>
+    /// Learns from a presence beacon which person a device belongs to, so that someone you blocked is recognised on every device of theirs,
+    /// including ones you have never been connected to. Returns true if that was new.
+    /// </summary>
+    internal bool LearnAccount(StoredPresence beacon)
+    {
+        if (!SignedPresence.TryGetAccount(beacon, out var device, out var account)) return false;
+        return !_accounts.TryGetValue(device, out var known) || known != account ? (_accounts[device] = account) == account : false;
+    }
+
     private void LearnAccount(PeerConnection conn)
     {
         if (conn.RemoteId is { } device && conn.RemoteAccount is { } account && account != device) _accounts[device] = account;

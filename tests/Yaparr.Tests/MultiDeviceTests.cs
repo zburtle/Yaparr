@@ -256,6 +256,44 @@ public class MultiDeviceTests
     }
 
     [Fact]
+    public void A_presence_beacon_of_a_linked_device_shows_whose_it_is_and_cannot_be_made_up()
+    {
+        using var account = PeerIdentity.Generate();
+        using var device = account.CreateDevice();
+        using var stranger = PeerIdentity.Generate();
+
+        var beacon = SignedPresence.Create(device, "room", "alice", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), gone: false);
+        Assert.True(SignedPresence.Verify(beacon, "room"));
+        Assert.True(SignedPresence.TryGetAccount(beacon, out var found, out var owner));
+        Assert.Equal(device.Id, found);
+        Assert.Equal(account.AccountId, owner);
+
+        // A device that is its own account says nothing, and a certificate for another device is no proof.
+        Assert.False(SignedPresence.TryGetAccount(SignedPresence.Create(account, "room", "alice", 1, false), out _, out _));
+        var other = SignedPresence.Create(stranger, "room", "mallory", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), false) with { Acct = beacon.Acct, Cert = beacon.Cert };
+        Assert.False(SignedPresence.TryGetAccount(other, out _, out _));
+        Assert.False(SignedPresence.TryGetAccount(beacon with { Cert = Convert.ToBase64String(new byte[64]) }, out _, out _));
+    }
+
+    [Fact]
+    public async Task A_block_reaches_a_device_we_have_only_heard_of_through_its_beacon()
+    {
+        using var account = PeerIdentity.Generate();
+        using var device = account.CreateDevice();
+        using var bob = TestUtil.NewNode(new InMemoryDiscoveryHub(), "bob");
+        var beacon = SignedPresence.Create(device, "room", "alice", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), gone: false);
+
+        bob.Block(account.AccountId);
+        // Blocked as a person, but a device of theirs that bob has never seen looks like a stranger...
+        Assert.False(bob.IsBlocked(device.Id));
+        // ...until a beacon of the device says whose it is.
+        Assert.True(bob.LearnAccount(beacon));
+        Assert.True(bob.IsBlocked(device.Id));
+        Assert.False(bob.LearnAccount(beacon)); // nothing new the second time
+        await Task.CompletedTask;
+    }
+
+    [Fact]
     public async Task Joining_and_leaving_a_room_on_one_device_is_passed_to_the_other()
     {
         using var d = await Devices.StartAsync();
