@@ -52,9 +52,6 @@ jobs:
         shell: pwsh
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
-          TurnServer: ${{ secrets.TURN_SERVER }}
-          TurnUser: ${{ secrets.TURN_USER }}
-          TurnCredential: ${{ secrets.TURN_CREDENTIAL }}
         run: |
           $version = '${{ needs.version.outputs.version }}'
           ./installer/build.ps1 -Version $version
@@ -82,9 +79,6 @@ jobs:
       - name: Build package
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
-          TurnServer: ${{ secrets.TURN_SERVER }}
-          TurnUser: ${{ secrets.TURN_USER }}
-          TurnCredential: ${{ secrets.TURN_CREDENTIAL }}
         run: |
           bash installer/build-deb.sh '${{ needs.version.outputs.version }}' ${{ matrix.arch }}
 

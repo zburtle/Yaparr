@@ -281,7 +281,6 @@ public partial class MainWindow : Window
             AttachmentDirectory = Path.Combine(_data.Directory, "attachments"),
             SoundboardDirectory = Path.Combine(_data.Directory, "soundboards"),
             RolesDirectory = Path.Combine(_data.Directory, "roles"),
-            DefaultTurn = BuiltInRelay.Load(),
             EnableLocalDiscovery = traversal.LocalDiscovery,
             PeerCachePath = Path.Combine(_data.Directory, "peers.json"),
             ClockOffsetsPath = Path.Combine(_data.Directory, "clocks.json"),

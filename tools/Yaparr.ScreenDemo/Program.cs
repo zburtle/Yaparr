@@ -66,7 +66,7 @@ ChatNode Make(string name) => new(new ChatNodeOptions
     EnableLocalDiscovery = false,
     DiscoveryFactory = mux => new LocalFileDiscovery(mux.LocalPort),
     DiscoveryInterval = TimeSpan.FromSeconds(2),
-    Traversal = new TraversalOptions { Enabled = false, PortMapping = false, UseDefaultRelay = false },
+    Traversal = new TraversalOptions { Enabled = false, PortMapping = false },
 });
 
 using var sharerNode = Make("sharer");

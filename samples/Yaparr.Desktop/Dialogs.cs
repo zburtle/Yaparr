@@ -70,6 +70,7 @@ public static class Dialogs
     public static readonly FilePickerFileType Zip = new("Zip archive") { Patterns = new[] { "*.zip" } };
     public static readonly FilePickerFileType WireGuard = new("WireGuard configuration") { Patterns = new[] { "*.conf" } };
     public static readonly FilePickerFileType LinkFile = new("Yaparr link file") { Patterns = new[] { "*.ylnk", "*.txt" } };
+    public static readonly FilePickerFileType RelayFile = new("Yaparr relay file") { Patterns = new[] { "*.yrelay", "*.txt" } };
     public static readonly FilePickerFileType AllFiles = new("All files") { Patterns = new[] { "*" } };
 
     public static async Task<bool> CopyAsync(Window owner, string text)

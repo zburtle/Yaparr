@@ -21,7 +21,7 @@ Yaparr is a serverless chat, voice and screen sharing library for .NET with a de
 ## How it works
 
 - [How it works](architecture.md): the layers, hole punching, address records and channels.
-- [Connecting across networks](connecting-across-networks.md): port mapping, STUN, TURN and the built-in VPN.
+- [Connecting across networks](connecting-across-networks.md): port mapping, STUN, TURN (including sharing a relay) and the built-in VPN.
 - [Relaying](relaying.md): how members carry connections for each other.
 - [Streams and large rooms](streams-and-large-rooms.md): trees for video and big voice channels.
 - [Security](security.md): identities, encryption, invite-only rooms and secrets on disk.

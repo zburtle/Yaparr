@@ -44,7 +44,7 @@ public static class DiagnosticsReport
         Line($"  {Scrub(status.Describe())}");
         Line($"  VPN: {node.VpnState}");
         Line($"  Settings: network checks {OnOff(traversal.Enabled)}, port mapping {OnOff(traversal.PortMapping)}, local discovery {OnOff(traversal.LocalDiscovery)}, "
-             + $"built-in relay {OnOff(traversal.UseDefaultRelay)}, own TURN relay {(traversal.Turn is { Server.Length: > 0 } turn ? (turn.Enabled ? "on" : "set up but off") : "not set up")}");
+             + $"TURN relay {(traversal.Turn is { Server.Length: > 0 } turn ? (turn.Enabled ? "on" : "set up but off") : "not set up")}");
         var relay = node.RelayStats;
         Line($"  Upload speed: {(node.MeasuredUploadBytesPerSecond is { } up ? $"about {up * 8 / 1_000_000.0:0.0} Mbit/s (passing on {node.RelayForwardKilobytes} KB/s of streams)" : "not measured yet")}");
         Line($"  Helps others connect: {(node.IsRelayCapable ? "yes" : "no")}; forwarded {relay.ForwardedFrames} frames ({relay.ForwardedBytes / 1024} KB), dropped {relay.DroppedFrames}, {relay.ActivePairs} active");
