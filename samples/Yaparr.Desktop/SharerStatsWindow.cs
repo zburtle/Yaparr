@@ -50,8 +50,8 @@ public sealed class SharerStatsWindow : Window
 
         // A gap far over the frame time means FFmpeg itself stalled (capture or encoding), whatever the network does.
         bool behind = fps < _targetFps * 0.9 || gap > 3000.0 / Math.Max(1, _targetFps);
-        string encoder = _sharer.Codec == ScreenCodec.H264 ? "graphics card (H.264)" : "processor (VP8)";
-        _text.Text = $"Encoder: {encoder}" + (_sharer.FallbackReason != null ? " - the graphics card could not be used" : "") + "\n"
+        string encoder = _sharer.Codec == ScreenCodec.H264 && _sharer.Encoder is { } card ? $"{HardwareEncoders.Maker(card)} graphics card (H.264)" : "processor (VP8)";
+        _text.Text = $"Encoder: {encoder}" + (_sharer is { FallbackReason: not null, Encoder: null } ? " - no graphics card encoder could be used" : "") + "\n"
             + $"Sending: {fps:0.0} of {_targetFps} frames/s, {kbps:0} kbit/s, {_sharer.KeyFrames} key frames\n"
             + $"Longest wait for a frame from FFmpeg: {gap} ms" + (behind ? "  <- capture or encoding is behind" : "") + "\n"
             + $"Watchers directly connected: {status.Children.Count}   packets sent again this second: {resent}   dropped: {status.Dropped}";

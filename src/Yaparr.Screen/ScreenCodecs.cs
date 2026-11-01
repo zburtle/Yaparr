@@ -19,6 +19,10 @@ public static class ScreenCodecs
     public static bool IsKeyFrame(ScreenCodec codec, ReadOnlySpan<byte> frame) =>
         codec == ScreenCodec.H264 ? H264.IsKeyFrame(frame) : Vp8.IsKeyFrame(frame);
 
+    /// <summary>For messages: the codec and, for H.264, whose graphics card makes it.</summary>
+    public static string Describe(ScreenCodec codec, HardwareEncoder? encoder) =>
+        codec == ScreenCodec.H264 && encoder is { } card ? $"H.264 on the {HardwareEncoders.Maker(card)} graphics card" : Describe(codec);
+
     public static string Describe(ScreenCodec codec) => codec switch
     {
         ScreenCodec.H264 => "H.264 on the graphics card",

@@ -127,6 +127,113 @@ public class H264Tests
     }
 
     [Fact]
+    public void Amds_and_Intels_encoders_get_the_same_low_latency_stream_with_their_own_options()
+    {
+        var display = new Display(0, "x", 0, 0, 1920, 1080, true, Handle: 0x1A2B);
+        var options = new ScreenOptions { Fps = 20, Kbps = 1000, KeyFrameSeconds = 2, Display = display };
+
+        string amd = string.Join(' ', FfmpegArgs.Capture(options, ScreenCodec.H264, HardwareEncoder.Amf));
+        Assert.Contains("-c:v h264_amf", amd);
+        Assert.Contains("-usage ultralowlatency", amd);
+        Assert.Contains("-rc vbr_latency", amd);
+        Assert.Contains("-bf 0", amd);
+        Assert.Contains("-aud 1", amd);
+        Assert.Contains("-forced_idr 1", amd);
+        Assert.Contains("format=yuv420p", amd);
+        Assert.EndsWith("-f h264 pipe:1", amd);
+
+        // Intel's encoder takes NV12, not planar YUV, so the picture is converted to that.
+        string intel = string.Join(' ', FfmpegArgs.Capture(options, ScreenCodec.H264, HardwareEncoder.Qsv));
+        Assert.Contains("-c:v h264_qsv", intel);
+        Assert.Contains("-bf 0", intel);
+        Assert.Contains("-aud 1", intel);
+        Assert.Contains("-forced_idr 1", intel);
+        Assert.Contains("format=nv12", intel);
+        Assert.DoesNotContain("yuv420p", intel);
+        Assert.EndsWith("-f h264 pipe:1", intel);
+
+        // NVIDIA's is the default and stays as it was.
+        Assert.Equal(FfmpegArgs.Capture(options, ScreenCodec.H264), FfmpegArgs.Capture(options, ScreenCodec.H264, HardwareEncoder.Nvenc));
+        Assert.Contains("-c:v h264_nvenc", string.Join(' ', FfmpegArgs.Capture(options, ScreenCodec.H264)));
+        // The encoder chosen in the options is what the plain command uses.
+        Assert.Contains("-c:v h264_qsv", string.Join(' ', FfmpegArgs.Capture(new ScreenOptions { Display = display, Codec = ScreenCodec.H264, Encoder = HardwareEncoder.Qsv })));
+        // VP8 never changes with the card.
+        Assert.Equal(FfmpegArgs.Capture(options, ScreenCodec.Vp8), FfmpegArgs.Capture(options, ScreenCodec.Vp8, HardwareEncoder.Qsv));
+    }
+
+    [Fact]
+    public void Auto_tries_the_graphics_cards_in_turn_and_software_last()
+    {
+        var display = new Display(0, "x", 0, 0, 1920, 1080, true, Handle: 0x1A2B);
+        var auto = ScreenSharer.Plan(new ScreenOptions { Display = display });
+        Assert.Equal(new (ScreenCodec, HardwareEncoder?)[]
+        {
+            (ScreenCodec.H264, HardwareEncoder.Nvenc), (ScreenCodec.H264, HardwareEncoder.Amf), (ScreenCodec.H264, HardwareEncoder.Qsv), (ScreenCodec.Vp8, null),
+        }, auto);
+
+        // Asking for H.264 never falls back to VP8; asking for VP8 never tries a card; naming a card tries only that one.
+        Assert.DoesNotContain(ScreenSharer.Plan(new ScreenOptions { Display = display, Codec = ScreenCodec.H264 }), p => p.Codec == ScreenCodec.Vp8);
+        Assert.Equal(new (ScreenCodec, HardwareEncoder?)[] { (ScreenCodec.Vp8, null) }, ScreenSharer.Plan(new ScreenOptions { Display = display, Codec = ScreenCodec.Vp8 }));
+        Assert.Equal(new (ScreenCodec, HardwareEncoder?)[] { (ScreenCodec.H264, HardwareEncoder.Amf), (ScreenCodec.Vp8, null) },
+            ScreenSharer.Plan(new ScreenOptions { Display = display, Encoder = HardwareEncoder.Amf }));
+
+        Assert.True(HardwareEncoders.TryParse("QSV", out var card) && card == HardwareEncoder.Qsv);
+        Assert.True(HardwareEncoders.TryParse("amd", out card) && card == HardwareEncoder.Amf);
+        Assert.False(HardwareEncoders.TryParse("x264", out _));
+        Assert.Equal("Intel", HardwareEncoders.Maker(HardwareEncoder.Qsv));
+        Assert.Equal("H.264 on the AMD graphics card", ScreenCodecs.Describe(ScreenCodec.H264, HardwareEncoder.Amf));
+        Assert.Equal("VP8 in software", ScreenCodecs.Describe(ScreenCodec.Vp8, null));
+    }
+
+    // An access unit with an IDR picture and no parameter sets, as an encoder that writes them only once would produce.
+    private static byte[] BareIdr(int totalBytes = 80)
+    {
+        var frame = new List<byte> { 0, 0, 0, 1, 9, 0xF0, 0, 0, 0, 1, 0x65 };
+        while (frame.Count < totalBytes) frame.Add(0x55);
+        return frame.ToArray();
+    }
+
+    [Fact]
+    public async Task An_idr_picture_without_parameter_sets_gets_the_last_ones_so_a_late_viewer_can_start_on_it()
+    {
+        var key = H264.FakeKeyFrame(1280, 720, 300);
+        var units = new[] { key, H264.FakeDeltaFrame(60), BareIdr(), H264.FakeDeltaFrame(60) };
+        var stream = units.SelectMany(u => u).ToArray();
+
+        // Left alone, the second IDR is not a key frame.
+        var plain = await ReadAll(new MemoryStream(stream));
+        Assert.False(H264.IsKeyFrame(plain[2]));
+
+        foreach (int chunk in new[] { 3, 1 << 20 })
+        {
+            var reader = new H264Reader(new TrickleStream(stream, chunk)) { RepeatParameterSets = true };
+            var read = new List<byte[]>();
+            while (await reader.ReadAsync() is { } unit) read.Add(unit);
+
+            Assert.Equal(4, read.Count);
+            Assert.Equal(key, read[0]);                       // a picture that has its parameter sets is untouched
+            Assert.Equal(units[1], read[1]);
+            Assert.True(H264.IsKeyFrame(read[2]));
+            Assert.True(H264.TryGetSize(read[2], out int w, out int h));
+            Assert.Equal((1280, 720), (w, h));
+            Assert.Equal(units[3], read[3]);
+            // The delimiter stays first and the IDR slice itself is unchanged at the end.
+            Assert.True(read[2].AsSpan(0, 6).SequenceEqual(new byte[] { 0, 0, 0, 1, 9, 0xF0 }));
+            Assert.True(read[2].AsSpan(read[2].Length - 80 + 11).SequenceEqual(units[2].AsSpan(11)));
+        }
+    }
+
+    [Fact]
+    public async Task Nothing_is_added_before_any_parameter_sets_have_been_seen()
+    {
+        var units = new[] { BareIdr(), H264.FakeDeltaFrame(60), BareIdr() };
+        var reader = new H264Reader(new MemoryStream(units.SelectMany(u => u).ToArray())) { RepeatParameterSets = true };
+        var read = new List<byte[]>();
+        while (await reader.ReadAsync() is { } unit) read.Add(unit);
+        Assert.Equal(units, read);
+    }
+
+    [Fact]
     public void Unless_the_graphics_card_is_asked_for_the_picture_is_encoded_in_software()
     {
         var display = new Display(0, "x", 0, 0, 1920, 1080, true, Handle: 0x1A2B);

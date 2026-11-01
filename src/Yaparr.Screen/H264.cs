@@ -26,7 +26,7 @@ public static class H264
     }
 
     /// <summary>The NAL unit types in the access unit, in order.</summary>
-    private static List<(int Type, int Start, int End)> Units(ReadOnlySpan<byte> data)
+    internal static List<(int Type, int Start, int End)> Units(ReadOnlySpan<byte> data)
     {
         var list = new List<(int, int, int)>();
         int p = FindStartCode(data, 0);
@@ -282,6 +282,15 @@ public sealed class H264Reader
 
     public H264Reader(Stream stream) => _stream = stream;
 
+    /// <summary>
+    /// Put the parameter sets in front of an IDR picture that comes without them, using the last ones seen. A viewer who joins
+    /// needs them in the key frame; NVIDIA's and Intel's encoders write them with every IDR picture, and this covers an encoder
+    /// that only writes them once.
+    /// </summary>
+    public bool RepeatParameterSets { get; init; }
+
+    private byte[]? _sps, _pps;
+
     /// <summary>The next access unit, or null at the end of the stream.</summary>
     public async Task<byte[]?> ReadAsync(CancellationToken ct = default)
     {
@@ -293,7 +302,7 @@ public sealed class H264Reader
                 var unit = _buffer.AsSpan(first, second - first).ToArray();
                 Array.Copy(_buffer, second, _buffer, 0, _length - second);
                 _length -= second;
-                return unit;
+                return RepeatParameterSets ? WithParameterSets(unit) : unit;
             }
             if (_length >= Ivf.MaxFrameBytes) throw new InvalidDataException("A frame that big is not plausible.");
             if (_length == _buffer.Length) Array.Resize(ref _buffer, _buffer.Length * 2);
@@ -304,11 +313,37 @@ public sealed class H264Reader
                 if (first < 0 || _length - first <= 6) return null;
                 var last = _buffer.AsSpan(first, _length - first).ToArray();
                 _length = 0;
-                return last;
+                return RepeatParameterSets ? WithParameterSets(last) : last;
             }
             _length += n;
         }
     }
+
+    private byte[] WithParameterSets(byte[] unit)
+    {
+        bool idr = false, hasSps = false, hasPps = false;
+        int afterDelimiter = 0;
+        foreach (var (type, start, end) in H264.Units(unit))
+        {
+            if (type == 9 && start <= 4) afterDelimiter = end;
+            else if (type == 5) idr = true;
+            else if (type == 7) { hasSps = true; _sps = Bytes(unit, start, end); }
+            else if (type == 8) { hasPps = true; _pps = Bytes(unit, start, end); }
+        }
+        if (!idr || (hasSps && hasPps) || _sps == null || _pps == null) return unit;
+
+        // After the delimiter if there is one, otherwise at the very start. A parameter set the picture does have stays where it is.
+        int at = afterDelimiter > 0 ? H264.FindStartCode(unit, afterDelimiter) : 0;
+        if (at < 0) return unit;
+        var result = new List<byte>(unit.Length + 64);
+        result.AddRange(unit.AsSpan(0, at).ToArray());
+        if (!hasSps) { result.AddRange(new byte[] { 0, 0, 0, 1 }); result.AddRange(_sps); }
+        if (!hasPps) { result.AddRange(new byte[] { 0, 0, 0, 1 }); result.AddRange(_pps); }
+        result.AddRange(unit.AsSpan(at).ToArray());
+        return result.ToArray();
+    }
+
+    private static byte[] Bytes(byte[] data, int start, int end) => data.AsSpan(start, end - start).ToArray();
 
     // Where the access unit delimiter at or after 'from' begins (including a zero in front of the start code), or -1.
     private int FindDelimiter(int from)
