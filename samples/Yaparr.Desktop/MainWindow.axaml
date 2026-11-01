@@ -348,6 +348,7 @@
                             <StackPanel x:Name="VoiceBar" Grid.Column="1" x:DataType="local:ConversationVm" Orientation="Horizontal" Spacing="6"
                                         Margin="8,0,0,0" VerticalAlignment="Center" IsVisible="{Binding IsRoom}">
                                 <Button Content="🔊 Join voice" Classes="primary" IsVisible="{Binding CanJoinVoice}" Click="JoinVoice_Click" />
+                                <TextBlock Classes="muted small" VerticalAlignment="Center" Text="{Binding PushToTalkHint}" IsVisible="{Binding HasPushToTalkHint}" />
                                 <Button Classes="icon" Classes.on="{Binding Muted}" Content="{Binding MuteGlyph}" ToolTip.Tip="{Binding MuteTip}"
                                         IsVisible="{Binding CanUseVoiceControls}" Click="MuteVoice_Click" />
                                 <Button Classes="icon" Classes.on="{Binding Deafened}" Content="🎧" ToolTip.Tip="{Binding DeafenTip}"

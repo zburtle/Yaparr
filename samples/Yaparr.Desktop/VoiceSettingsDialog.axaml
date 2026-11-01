@@ -17,6 +17,12 @@
         <TextBlock x:Name="ProcessingNote" Classes="muted small" TextWrapping="Wrap"
                    Text="Takes steady noise such as fans and hiss out of your microphone. A headset works best and needs no echo cancellation." />
         <CheckBox x:Name="AlwaysBox" Margin="0,10,0,0" Content="Always send my microphone (no voice activation)" />
+        <CheckBox x:Name="PushToTalkBox" Margin="0,4,0,0" Content="Push to talk: send only while I hold a key" />
+        <StackPanel Orientation="Horizontal" Spacing="8" Margin="24,0,0,0">
+            <Button x:Name="PushToTalkKeyButton" Content="Choose a key…" Click="PushToTalkKey_Click" />
+            <TextBlock x:Name="PushToTalkNote" Classes="muted small" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="260"
+                       Text="Pick a key you do not type with, such as F13 or Pause." />
+        </StackPanel>
         <TextBlock Text="Voice activation sensitivity" FontWeight="SemiBold" Margin="0,8,0,0" />
         <TextBlock Classes="muted small" TextWrapping="Wrap"
                    Text="Your microphone is sent when its level (the bar) goes above the slider. Move the slider just above the level you see while you are quiet." />

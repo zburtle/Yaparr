@@ -108,9 +108,50 @@ public partial class MainWindow
 
     private void ApplyVoiceSettings(VoiceSession session)
     {
-        session.Activation = _settings.VoiceAlwaysOn ? VoiceActivation.Open : VoiceActivation.VoiceActivity;
+        session.Activation = PushToTalkKey != null ? VoiceActivation.PushToTalk : _settings.VoiceAlwaysOn ? VoiceActivation.Open : VoiceActivation.VoiceActivity;
         session.Sensitivity = _settings.VoiceSensitivity / 1000f;
         session.OutputGain = Math.Clamp(_settings.VoiceOutputVolume, 0, 300) / 100f;
+    }
+
+    // ---- push to talk ---------------------------------------------------------------------------
+
+    private GlobalKeyHook? _pushToTalkHook;
+
+    private Avalonia.Input.Key? PushToTalkKey =>
+        _settings.VoicePushToTalk && Enum.TryParse<Avalonia.Input.Key>(_settings.VoicePushToTalkKey, out var key) && key != Avalonia.Input.Key.None ? key : null;
+
+    // Listens for the chosen key while you are in voice: anywhere in Windows when that is allowed, otherwise while this window is in front.
+    private void ApplyPushToTalk()
+    {
+        _pushToTalkHook?.Dispose();
+        _pushToTalkHook = null;
+        if (_voice is not { } session || _voiceConv is not { } conv) return;
+        session.PushToTalkHeld = false;
+        if (PushToTalkKey is not { } key) { conv.PushToTalkHint = ""; return; }
+
+        string hint = $"Hold {key} to talk";
+        if (OperatingSystem.IsWindows())
+        {
+            try
+            {
+                var code = (uint)Avalonia.Win32.Input.KeyInterop.VirtualKeyFromKey(key);
+                _pushToTalkHook = new GlobalKeyHook(code, down => UI(() => { if (_voice != null) _voice.PushToTalkHeld = down; }));
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+            {
+                _log.Write("push to talk works only while Yaparr is in front: " + ex.Message);
+                hint += " (while Yaparr is in front)";
+            }
+        }
+        else hint += " (while Yaparr is in front)";
+        conv.PushToTalkHint = hint;
+    }
+
+    // The same key seen by this window, which is all that works where the system gives no global key events.
+    private void OnPushToTalkKey(object? sender, Avalonia.Input.KeyEventArgs e)
+    {
+        if (_voice is not { } session || _pushToTalkHook != null || PushToTalkKey != e.Key) return;
+        session.PushToTalkHeld = e.RoutedEvent == Avalonia.Input.InputElement.KeyDownEvent;
     }
 
     private VoiceProcessing ProcessingSettings => new(
@@ -188,6 +229,7 @@ public partial class MainWindow
         session.SpeakingChanged += (id, speaking) => UI(() => OnSpeaking(conv, id, speaking));
         _voice = session;
         _voiceConv = conv;
+        ApplyPushToTalk();
         conv.InVoice = true;
         conv.Muted = conv.Deafened = false;
         RefreshVoice(conv, room, announce: false);
@@ -203,6 +245,9 @@ public partial class MainWindow
         var conv = _voiceConv;
         _voice = null;
         _voiceConv = null;
+        _pushToTalkHook?.Dispose();
+        _pushToTalkHook = null;
+        if (conv != null) conv.PushToTalkHint = "";
         // Sharing a screen and watching one go with being in voice.
         if (_sharer != null && _sharerConv == conv) StopSharingCore();
         foreach (var window in _screenViews.Values.ToList()) window.Close();
@@ -245,6 +290,7 @@ public partial class MainWindow
         if (_voice == null) return;
 
         ApplyVoiceSettings(_voice);
+        ApplyPushToTalk();
         ApplyProcessing(_voice);
         _voiceAudio?.Dispose();
         _voiceAudio = null;

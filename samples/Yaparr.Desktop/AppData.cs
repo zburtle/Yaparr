@@ -34,6 +34,10 @@ public sealed class AppSettings
     public int VoiceOutputVolume { get; set; } = 100;
     /// <summary>Send all the time instead of only when talking.</summary>
     public bool VoiceAlwaysOn { get; set; }
+    /// <summary>Send only while a key is held (instead of voice activation).</summary>
+    public bool VoicePushToTalk { get; set; }
+    /// <summary>The key to hold, as an Avalonia key name such as F13; none until one is chosen.</summary>
+    public string? VoicePushToTalkKey { get; set; }
     /// <summary>Stop other people hearing themselves through your speakers.</summary>
     public bool VoiceEchoCancellation { get; set; } = true;
     /// <summary>Off, Low, Moderate or High: how much steady background noise is taken out of your microphone.</summary>

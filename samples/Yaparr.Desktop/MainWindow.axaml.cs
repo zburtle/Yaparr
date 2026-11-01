@@ -39,6 +39,10 @@ public partial class MainWindow : Window
         AddHandler(DragDrop.DropEvent, OnDrop);
         // The message box handles Ctrl+V itself (and marks it handled), so its own key handler never sees it: look on the way down.
         AddHandler(KeyDownEvent, OnPasteKey, RoutingStrategies.Tunnel);
+        AddHandler(KeyDownEvent, OnPushToTalkKey, RoutingStrategies.Tunnel);
+        AddHandler(KeyUpEvent, OnPushToTalkKey, RoutingStrategies.Tunnel);
+        // A key held while this window loses the focus would never be seen coming up.
+        Deactivated += (_, _) => { if (_voice != null && _pushToTalkHook == null) _voice.PushToTalkHeld = false; };
         ConversationList.ItemsSource = _conversations;
         ToolTip.SetTip(InfoIcon, "Yaparr v" + Updater.CurrentVersion);
         ToolTip.SetTip(PeersIcon, "Starting…");

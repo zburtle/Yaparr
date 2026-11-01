@@ -230,6 +230,17 @@ public sealed class ConversationVm : Observable
     public ObservableCollection<VoiceMemberVm> VoiceMembers { get; } = new();
     public bool HasVoiceMembers => VoiceMembers.Count > 0;
     // Rooms with channels join voice by clicking a voice channel; the button is only for older rooms that have just the one.
+    private string _pushToTalkHint = "";
+
+    /// <summary>Tells the person in voice which key to hold, or nothing when push-to-talk is off.</summary>
+    public string PushToTalkHint
+    {
+        get => _pushToTalkHint;
+        set { if (_pushToTalkHint == value) return; _pushToTalkHint = value; Raise(); Raise(nameof(HasPushToTalkHint)); }
+    }
+
+    public bool HasPushToTalkHint => _pushToTalkHint.Length > 0;
+
     public bool CanJoinVoice => IsRoom && !_inVoice && !_showChannels;
     public bool CanUseVoiceControls => _inVoice;
 
