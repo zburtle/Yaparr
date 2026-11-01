@@ -9,7 +9,7 @@ using Yaparr.Updates;
 
 namespace Yaparr.Desktop;
 
-public sealed record UpdateInfo(Version Version, string Tag, string Notes, string Name, string DownloadUrl, string? Sha256);
+public sealed record UpdateInfo(Version Version, string Tag, string Notes, string Name, string DownloadUrl, string? Sha256, long Size = 0);
 
 public static class Updater
 {
@@ -83,12 +83,14 @@ public static class Updater
             }
             var notes = root.TryGetProperty("body", out var body) ? body.GetString() ?? "" : "";
             Log?.Invoke($"update: {tag} is available ({name}, {(sha == null ? "no checksum published" : "checksum " + sha[..12] + "...")})");
-            return new UpdateInfo(version, tag!, notes, name, url, sha);
+            long size = asset.TryGetProperty("size", out var sizeElement) && sizeElement.TryGetInt64(out var bytes) ? bytes : 0;
+            return new UpdateInfo(version, tag!, notes, name, url, sha, size);
         }
         return null;
     }
 
-    public static async Task<string> DownloadAsync(UpdateInfo update, CancellationToken ct = default)
+    /// <param name="progress">Told how far the download is, from 0 to 1.</param>
+    public static async Task<string> DownloadAsync(UpdateInfo update, CancellationToken ct = default, IProgress<double>? progress = null)
     {
         // Nothing is installed that cannot be checked against what was published, and only from this project's own releases.
         if (update.Sha256 is not { } expected)
@@ -112,7 +114,17 @@ public static class Updater
                 response.EnsureSuccessStatusCode();
                 await using var source = await response.Content.ReadAsStreamAsync(ct);
                 await using var target = File.Create(partial);
-                await source.CopyToAsync(target, ct);
+                long total = response.Content.Headers.ContentLength ?? update.Size, done = 0, reported = 0;
+                var buffer = new byte[81920];
+                int read;
+                while ((read = await source.ReadAsync(buffer, ct)) > 0)
+                {
+                    await target.WriteAsync(buffer.AsMemory(0, read), ct);
+                    done += read;
+                    // About two hundred reports for the whole file are plenty for a bar.
+                    if (progress != null && total > 0 && done - reported >= total / 200) { reported = done; progress.Report(Math.Min(1.0, done / (double)total)); }
+                }
+                progress?.Report(1.0);
             }
             await UpdateVerifier.VerifyAsync(partial, expected, ct);
             File.Move(partial, path, overwrite: true);
@@ -120,7 +132,7 @@ public static class Updater
         catch (Exception ex)
         {
             try { File.Delete(partial); } catch (IOException) { }
-            Log?.Invoke($"update: could not download {update.Name}: {ex.Message}");
+            if (ex is not OperationCanceledException) Log?.Invoke($"update: could not download {update.Name}: {ex.Message}");
             throw;
         }
         Log?.Invoke($"update: downloaded {update.Name} ({new FileInfo(path).Length / 1024} KB) and its checksum matched");

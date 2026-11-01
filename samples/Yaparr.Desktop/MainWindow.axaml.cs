@@ -210,8 +210,17 @@ public partial class MainWindow : Window
                 $"Yaparr {update.Version} is available (you have {Updater.CurrentVersion}). Update now?{notes}");
             if (!answer) return;
 
-            StatusText.Text = $"Downloading Yaparr {update.Version}…";
-            var path = await Updater.DownloadAsync(update, _cts.Token);
+            // A hundred megabytes is a while: show how far it is, and let it be cancelled.
+            var size = update.Size > 0 ? $" ({update.Size / 1_048_576} MB)" : "";
+            var (path, error) = await DownloadDialog.RunAsync(this, $"Getting Yaparr {update.Version}",
+                $"Downloading Yaparr {update.Version}{size}. It is installed when the download is done.",
+                async (progress, ct) => await Updater.DownloadAsync(update, ct, progress));
+            if (path == null)
+            {
+                if (error != null) throw new InvalidOperationException(error);
+                StatusText.Text = "The update was cancelled.";
+                return;
+            }
             if (!await Updater.InstallAsync(path, update.Sha256!, _cts.Token))
             {
                 StatusText.Text = "The update was not installed.";
