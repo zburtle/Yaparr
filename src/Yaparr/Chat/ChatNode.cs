@@ -75,6 +75,26 @@ public sealed class ChatNodeOptions
     /// </summary>
     public TimeSpan VoiceAnnounceInterval { get; init; } = TimeSpan.FromSeconds(1);
 
+    /// <summary>
+    /// Whether to measure how much this device can send, by sending a short burst of packets to a peer now and then, and size what it passes on
+    /// for other members from the result. Until it has been measured the fixed numbers (<see cref="MediaFanout"/>, <see cref="MediaBytesPerSecond"/>) are used.
+    /// </summary>
+    public bool MeasureUpload { get; init; } = true;
+
+    /// <summary>How long after starting the first measurement is made, so it does not compete with finding people.</summary>
+    public TimeSpan SpeedProbeDelay { get; init; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>How often the measurement is made again once there is one.</summary>
+    public TimeSpan SpeedProbeInterval { get; init; } = TimeSpan.FromMinutes(30);
+
+    /// <summary>How soon to try again when there is no measurement yet (no peer to test against, say).</summary>
+    public TimeSpan SpeedProbeRetry { get; init; } = TimeSpan.FromMinutes(1);
+
+    /// <summary>The least time between two tests that one peer may ask of this device.</summary>
+    public TimeSpan SpeedTestMinGap { get; init; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>Test against peers on the same network as well; a peer next door is far quicker than the internet, so this is for tests only.</summary>
+    public bool SpeedProbeLocalPeers { get; init; }
 
     /// <summary>How long a neighbour in a stream's tree can be silent before it is given up on and another is found.</summary>
     /// <summary>How long a parent or child of a stream may stay silent before it is given up. Pings go out four times in this time.</summary>
@@ -352,6 +372,7 @@ public sealed partial class ChatNode : IDisposable
         Network.RegisterChannel(ChannelIds.File, OnFileData);
         Network.RegisterChannel(ChannelIds.Voice, OnVoiceData);
         Network.RegisterChannel(ChannelIds.Media, OnMediaData);
+        Network.RegisterChannel(ChannelIds.Speed, OnSpeedData);
 
         if (_options.EnableRelaying)
         {
@@ -409,6 +430,7 @@ public sealed partial class ChatNode : IDisposable
         _started = true;
         _mux.Start();
         _ = Task.Run(() => { _blobs.Sweep(_options.MaxHistoryAge, LiveSoundHashes()); _blobs.SealExisting(); });
+        StartSpeedProbes();
         // Anyone looking for this person by their account id has to find every one of their devices.
         var peerTopics = AccountId == Id ? new[] { Topics.ForPeer(Id) } : new[] { Topics.ForPeer(Id), Topics.ForPeer(AccountId) };
         foreach (var d in _discoveries)
@@ -1552,6 +1574,10 @@ public sealed partial class ChatNode : IDisposable
             case Wire.Rekey when wire.Room != null && wire.Rk != null && ResolveRoom(peer, wire.Room) is { } rekeyRoom:
                 if (!rate.AdmitModList()) { Dropped(peer, rate, "sent too many key changes"); break; }
                 OnRekey(peer, rekeyRoom, wire.Rk);
+                break;
+
+            case Wire.Speed when wire.Spd != null:
+                OnSpeed(peer, wire.Spd);
                 break;
 
             // One of your other devices joined voice in this room, so you are in voice there and not here.

@@ -12,6 +12,7 @@ public static class ChannelIds
     public const byte File = 3;
     public const byte Voice = 16;
     public const byte Media = 17;
+    public const byte Speed = 18;
 }
 
 /// <summary>
@@ -101,6 +102,9 @@ internal sealed class Wire
     /// <summary>A control message between neighbours in a stream's tree.</summary>
     public WireMedia? Mx { get; set; }
 
+    /// <summary>A message of the upload test between two members.</summary>
+    public WireSpeed? Spd { get; set; }
+
     /// <summary>Who wrote a direct message: the device's key, the account's key and its certificate for the device (if linked), and the signature. Absent from older versions.</summary>
     public string? Pub { get; set; }
     public string? Acct { get; set; }
@@ -115,7 +119,7 @@ internal sealed class Wire
 
     public const string Direct = "dm", DirectSync = "dmsync";
 
-    public const string Caps = "caps", Rename = "name", Account = "acct", Media = "media", Sound = "snd", Play = "play", Roles = "roles", Moderate = "mod", Channels = "chan", Rekey = "rekey", Takeover = "takeover";
+    public const string Caps = "caps", Rename = "name", Account = "acct", Media = "media", Sound = "snd", Play = "play", Roles = "roles", Moderate = "mod", Channels = "chan", Rekey = "rekey", Takeover = "takeover", Speed = "speed";
 
     public const string Ack = "ack", Hello = "hi", Join = "join", Leave = "leave", Message = "msg", Introduce = "peers", Sync = "sync", History = "hist", Links = "links", Presence = "pres", Voice = "voice";
 }

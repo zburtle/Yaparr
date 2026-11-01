@@ -42,6 +42,7 @@ internal static class TestUtil
         MediaRootFanout = media?.RootFanout ?? 3,
         MediaEdgeTimeout = media?.EdgeTimeout ?? TimeSpan.FromSeconds(6),
         MediaAnnounceInterval = media?.Announce ?? TimeSpan.FromSeconds(10),
+        MeasureUpload = false,
         VoiceAnnounceInterval = media?.Announce is { } announce && announce < TimeSpan.FromSeconds(1) ? announce : TimeSpan.FromSeconds(1),
         MediaBytesPerSecond = media?.BytesPerSecond ?? 384 * 1024,
         VoiceTreeThreshold = media?.VoiceThreshold ?? 9,

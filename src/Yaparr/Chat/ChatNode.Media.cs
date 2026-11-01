@@ -256,8 +256,24 @@ public sealed partial class ChatNode
     private readonly ConcurrentDictionary<PeerId, long> _mediaDials = new();
     private TokenBucket? _mediaBudget;
 
-    private TokenBucket MediaBudget =>
-        LazyInitializer.EnsureInitialized(ref _mediaBudget, () => new TokenBucket(_options.MediaBytesPerSecond, Environment.TickCount64))!;
+    private int _mediaBudgetRate;
+
+    // What this device passes on for others: the configured amount, or what its measured upload allows.
+    private TokenBucket MediaBudget
+    {
+        get
+        {
+            int rate = ForwardBytesPerSecond;
+            var budget = _mediaBudget;
+            if (budget == null || _mediaBudgetRate != rate)
+            {
+                budget = new TokenBucket(rate, Environment.TickCount64);
+                _mediaBudget = budget;
+                _mediaBudgetRate = rate;
+            }
+            return budget;
+        }
+    }
 
     // How long the root can stay out of reach, for a member that wants in, before the group is treated as gone.
     private long UnreachableMs => (long)(_options.MediaEdgeTimeout.TotalMilliseconds * 1.5);
@@ -460,7 +476,7 @@ public sealed partial class ChatNode
     private bool TooBigForServer(MediaGroup g, PeerConnection conn) =>
         g.Info.Kbps > _options.MaxMeteredStreamKbps && IsOnSharedServer(conn);
 
-    private int FanoutOf(MediaGroup g) => g.IsRoot ? g.RootFanout : IsRelayCapable ? _options.MediaFanout : 0;
+    private int FanoutOf(MediaGroup g) => g.IsRoot ? g.RootFanout : IsRelayCapable ? UploadPlan.Fanout(MeasuredUploadBytesPerSecond, g.Info.Kbps, _options.MediaFanout) : 0;
 
     // Gets us attached if we want to be: asks the root where to go, or goes where it said.
     private void AdvanceMedia(MediaGroup g)
