@@ -34,6 +34,7 @@ cd src
   --arch=x86_64 --target-os=mingw32 \
   --pkg-config-flags=--static \
   --extra-ldflags="-static -static-libgcc -static-libstdc++" \
+  --extra-libs="-lstdc++" \
   --disable-everything --disable-autodetect \
   --disable-shared --enable-static \
   --disable-doc --disable-debug --disable-network \
