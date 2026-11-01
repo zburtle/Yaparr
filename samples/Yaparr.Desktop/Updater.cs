@@ -1,10 +1,11 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
+using Yaparr.Updates;
 
 namespace Yaparr.Desktop;
 
@@ -13,6 +14,9 @@ public sealed record UpdateInfo(Version Version, string Tag, string Notes, strin
 public static class Updater
 {
     private static readonly HttpClient Http = CreateClient();
+
+    /// <summary>Where the steps of an update are written (the log), so a failed update can be understood afterwards.</summary>
+    public static Action<string>? Log { get; set; }
 
     /// <summary>Windows ships an MSI and Debian/Ubuntu a .deb; on other systems there is no installer to update from.</summary>
     public static string? Repository
@@ -67,42 +71,59 @@ public static class Updater
             if (!IsInstaller(name)) continue;
 
             string? sha = null;
-            if (asset.TryGetProperty("digest", out var digest) && digest.GetString() is { } d && d.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase))
+            if (asset.TryGetProperty("digest", out var digest) && digest.GetString() is { } d && d.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase)
+                && UpdateVerifier.IsSha256(d["sha256:".Length..]))
                 sha = d["sha256:".Length..];
 
+            var url = asset.GetProperty("browser_download_url").GetString()!;
+            if (!UpdateVerifier.IsTrustedDownload(url, repo))
+            {
+                Log?.Invoke($"update: ignored {name}, its address is not one of {repo}'s release downloads");
+                continue;
+            }
             var notes = root.TryGetProperty("body", out var body) ? body.GetString() ?? "" : "";
-            return new UpdateInfo(version, tag!, notes, name, asset.GetProperty("browser_download_url").GetString()!, sha);
+            Log?.Invoke($"update: {tag} is available ({name}, {(sha == null ? "no checksum published" : "checksum " + sha[..12] + "...")})");
+            return new UpdateInfo(version, tag!, notes, name, url, sha);
         }
         return null;
     }
 
     public static async Task<string> DownloadAsync(UpdateInfo update, CancellationToken ct = default)
     {
+        // Nothing is installed that cannot be checked against what was published, and only from this project's own releases.
+        if (update.Sha256 is not { } expected)
+            throw new InvalidDataException("This release has no checksum, so the download cannot be checked. Get it from the releases page instead.");
+        if (Repository is not { } repo || !UpdateVerifier.IsTrustedDownload(update.DownloadUrl, repo))
+            throw new InvalidDataException("The download address is not one of this project's releases.");
+
         // In the user's own folder, closed to other users: the package is installed as root on Linux, and a shared
         // folder such as /tmp would let another user swap it after it was checked.
         var dir = Path.Combine(AppData.DefaultDirectory, "update");
         AppData.CreatePrivateDirectory(dir);
         foreach (var old in Directory.EnumerateFiles(dir)) { try { File.Delete(old); } catch (IOException) { } }
         var path = Path.Combine(dir, Path.GetFileName(update.Name));
+        // It only gets its real name once it has been checked, so what is called an installer here has always passed.
+        var partial = path + ".part";
 
-        using (var response = await Http.GetAsync(update.DownloadUrl, HttpCompletionOption.ResponseHeadersRead, ct))
+        try
         {
-            response.EnsureSuccessStatusCode();
-            await using var source = await response.Content.ReadAsStreamAsync(ct);
-            await using var target = File.Create(path);
-            await source.CopyToAsync(target, ct);
-        }
-
-        if (update.Sha256 is not null)
-        {
-            await using var file = File.OpenRead(path);
-            var actual = Convert.ToHexString(await SHA256.HashDataAsync(file, ct));
-            if (!actual.Equals(update.Sha256, StringComparison.OrdinalIgnoreCase))
+            using (var response = await Http.GetAsync(update.DownloadUrl, HttpCompletionOption.ResponseHeadersRead, ct))
             {
-                File.Delete(path);
-                throw new InvalidDataException("The downloaded installer failed its checksum.");
+                response.EnsureSuccessStatusCode();
+                await using var source = await response.Content.ReadAsStreamAsync(ct);
+                await using var target = File.Create(partial);
+                await source.CopyToAsync(target, ct);
             }
+            await UpdateVerifier.VerifyAsync(partial, expected, ct);
+            File.Move(partial, path, overwrite: true);
         }
+        catch (Exception ex)
+        {
+            try { File.Delete(partial); } catch (IOException) { }
+            Log?.Invoke($"update: could not download {update.Name}: {ex.Message}");
+            throw;
+        }
+        Log?.Invoke($"update: downloaded {update.Name} ({new FileInfo(path).Length / 1024} KB) and its checksum matched");
         return path;
     }
 
@@ -115,6 +136,7 @@ public static class Updater
     {
         if (OperatingSystem.IsWindows())
         {
+            Log?.Invoke("update: starting the installer " + path);
             Process.Start(new ProcessStartInfo("msiexec.exe", $"/i \"{path}\"") { UseShellExecute = false });
             return true;
         }
@@ -125,6 +147,7 @@ public static class Updater
         foreach (var arg in new[] { "install", "-y", "--allow-downgrades", path }) psi.ArgumentList.Add(arg);
         using var process = Process.Start(psi) ?? throw new InvalidOperationException("Could not start the installer.");
         await process.WaitForExitAsync(ct);
+        Log?.Invoke("update: the package installer finished with code " + process.ExitCode);
         return process.ExitCode == 0;
     }
 

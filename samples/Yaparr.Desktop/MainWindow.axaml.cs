@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using Avalonia;
@@ -11,6 +11,7 @@ using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Yaparr.Chat;
+using Yaparr.Diagnostics;
 using Yaparr.Identity;
 
 namespace Yaparr.Desktop;
@@ -147,6 +148,39 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void OpenLogFolder_Click(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (!await Launcher.LaunchDirectoryInfoAsync(new DirectoryInfo(_log.Folder)))
+                await Dialogs.MessageAsync(this, "Yaparr", "The logs are in " + _log.Folder);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException)
+        {
+            await Dialogs.MessageAsync(this, "Yaparr", "The logs are in " + _log.Folder);
+        }
+    }
+
+    // Everything a bug report needs, on the clipboard in one go.
+    private async void CopyDiagnostics_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_node == null) { StatusText.Text = "Yaparr is still starting."; return; }
+        StatusText.Text = "Collecting diagnostics…";
+        try
+        {
+            var text = await DiagnosticsReport.BuildAsync(_node, _settings, _log, _data.Directory, _cts.Token);
+            StatusText.Text = await Dialogs.CopyAsync(this, text)
+                ? "Diagnostics copied. Paste them into your bug report: addresses and ids are shortened and keys are left out."
+                : "Couldn't copy: another program is using the clipboard. Try again.";
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            _log.Write("could not collect diagnostics: " + ex);
+            StatusText.Text = "Couldn't collect the diagnostics: " + ex.Message;
+        }
+    }
+
     private async void About_Click(object? sender, RoutedEventArgs e) =>
         await Dialogs.MessageAsync(this, "About Yaparr", $"Yaparr {Updater.CurrentVersion}\nServerless peer-to-peer chat over the BitTorrent DHT.");
 
@@ -186,7 +220,9 @@ public partial class MainWindow : Window
         catch (OperationCanceledException) { }
         catch (Exception ex)
         {
+            _log.Write("update failed: " + ex);
             StatusText.Text = "Update failed: " + ex.Message;
+            if (manual) await Dialogs.MessageAsync(this, "Update failed", ex.Message);
         }
     }
 
@@ -200,8 +236,9 @@ public partial class MainWindow : Window
         _data = new AppData(dataArg ?? AppData.DefaultDirectory);
         _settings = _data.LoadSettings();
         _vpn = new VpnController(_data, _settings, () => _node);
-        _log = new FileLog(Path.Combine(_data.Directory, "yaparr.log"));
+        _log = new FileLog(Path.Combine(_data.Directory, "logs"), legacyFile: Path.Combine(_data.Directory, "yaparr.log"));
         _log.Write($"Yaparr {Updater.CurrentVersion} starting");
+        Updater.Log = _log.Write;
         SetUpNotifications();
 
         if (Arg("--name") == null && _settings.DisplayName == null && !_data.HasIdentity) await OfferLinkAsync();

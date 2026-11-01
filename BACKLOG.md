@@ -4,15 +4,16 @@ Improvements we have agreed to do later, roughly in priority order. Done items a
 
 ## Diagnostics and support
 
-- **Copy diagnostics button.** Bundle the log, app version, NAT type, VPN/TURN state and the connection list into one block the user can paste into a bug report, with keys and passwords removed.
-- **Log rotation.** Keep a few days of logs (one file per day) instead of deleting the file at 2 MB, which can cut a log off in the middle of a problem.
+- **Diagnostics (done).** Help > "Copy diagnostics" puts the version, system, network state and check, how each person is reached, the voice settings and the last 300 log lines on the clipboard. Names of people and rooms are left out, ids and addresses are shortened (`LogScrubber`) and keys and passwords removed. Not done: a button that opens a pre-filled GitHub issue with it.
+- **Logs (done).** One file per day (`logs/yaparr-2026-10-31.log`), seven days kept, a day stops at 20 MB. Not done: a setting for how many days.
 
 ## Security and safety
 
 - **Secrets on disk (mostly done).** On Windows the identity, settings (private room keys), account settings, the WireGuard config, the TURN password and the history key are sealed with DPAPI, so only that Windows user on that PC can read them. Room and direct message history, and the pictures, GIFs and sounds, are encrypted with AES-GCM under that key (each line or 64 KB piece is tied to its file and place, so pieces cannot be moved, swapped, cut off or changed; files from earlier versions are sealed at the next start). Profile export writes the sealed files unsealed (with the history key) so a backup opens elsewhere, and importing seals them again, so keep the export zip safe. Still open: on Linux and macOS the key and files are only private to their owner (no password-free equivalent; a keyring would need libsecret), the soundboard lists (sound names) and thumbnails in memory are not encrypted, and a Windows password reset by an administrator makes sealed files unreadable (restore from an export).
 - **The built-in relay's password ships inside the app.** Anyone can read the TURN user and credential out of the binary and use the relay. Fix it on the server: short-lived credentials (the TURN REST scheme), a quota per credential, and a ban on private address ranges.
 - **Rate limits per peer (done for chat).** Each connection has allowances for frames, bytes, messages, sound plays and sound lists, and a peer that keeps going past them is disconnected (`PeerLimits`). A reliable message is capped at 4 MB, a connection at 16 channels, 256 connections are kept, and silent connections are closed. Still open: limits on voice and media packets, on DHT requests, and a temporary ban for a peer that was disconnected for flooding (it can reconnect at once now).
-- **Updater and installer signing.** Check that the auto-updater verifies what it downloads, and code-sign the MSI so Windows does not show an "unknown publisher" warning.
+- **Updater (checked against the real release).** An update is only taken from this repository's release downloads over https, must have a published SHA-256 (an asset without one is refused), is downloaded under a `.part` name and only gets its real name after the checksum matches, and a mismatch deletes it. Tested against v1.7.1: good download, wrong checksum, no checksum, foreign address and a missing file. Not covered: the checksum comes from the same GitHub account as the file, so it protects against a damaged or swapped download but not against someone who controls the release; on Linux a program running as the same user could swap the .deb between the check and the install.
+- **Code-sign the MSI (low priority, costs money).** Windows shows an "unknown publisher" warning. A signature the app checks itself (a key built into the app, the signature published next to the file) would close the gap above for free, but the key would live in the same CI as the release.
 
 ## Moderation
 

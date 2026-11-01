@@ -1,4 +1,4 @@
-﻿<Window xmlns="https://github.com/avaloniaui"
+<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="using:Yaparr.Desktop"
         x:Class="Yaparr.Desktop.MainWindow"
@@ -219,7 +219,9 @@
             </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem Header="Check for _updates…" Click="CheckUpdates_Click" />
+                <MenuItem Header="Copy _diagnostics" Click="CopyDiagnostics_Click" />
                 <MenuItem Header="Open _log file" Click="OpenLog_Click" />
+                <MenuItem Header="Open log _folder" Click="OpenLogFolder_Click" />
                 <MenuItem Header="Open source _licences" Click="OpenLicences_Click" />
                 <Separator />
                 <MenuItem Header="_About Yaparr" Click="About_Click" />
