@@ -69,6 +69,13 @@ public sealed class ChatNodeOptions
     /// <summary>How often the root of a stream says it is still there. A stream not heard from for three intervals is gone.</summary>
     public TimeSpan MediaAnnounceInterval { get; init; } = TimeSpan.FromSeconds(10);
 
+    /// <summary>
+    /// The same for the tree of a voice channel, which is announced much more often: when its root disappears without a goodbye (a crash, a
+    /// lost connection), everyone else only finds out when its announcements stop, and a call cannot wait half a minute for a new root.
+    /// </summary>
+    public TimeSpan VoiceAnnounceInterval { get; init; } = TimeSpan.FromSeconds(1);
+
+
     /// <summary>How long a neighbour in a stream's tree can be silent before it is given up on and another is found.</summary>
     /// <summary>How long a parent or child of a stream may stay silent before it is given up. Pings go out four times in this time.</summary>
     public TimeSpan MediaEdgeTimeout { get; init; } = TimeSpan.FromSeconds(3);

@@ -14,7 +14,7 @@ public sealed partial class ChatNode
 
     private MediaGroup? LiveVoiceGroup(ChatRoom room, long now) =>
         room.Media.Values
-            .Where(g => g.Kind == "voice" && g.Info.Name == VoiceTreeName(ActiveChannel(room)) && !g.Suspect && g.Ann.Active && (g.IsRoot || now - g.AnnSeenAt <= MediaLifetimeMs))
+            .Where(g => g.Kind == "voice" && g.Info.Name == VoiceTreeName(ActiveChannel(room)) && !g.Suspect && g.Ann.Active && (g.IsRoot || now - g.AnnSeenAt <= LifetimeMs(g)))
             .OrderBy(g => g.Info.Root.Value, StringComparer.Ordinal)
             .FirstOrDefault();
 
@@ -50,7 +50,7 @@ public sealed partial class ChatNode
                 // Everyone left but a few: the tree is not needed, and the root ends it.
                 if (count > _options.VoiceTreeThreshold / 2) room.VoiceTreeLowSince = 0;
                 else if (room.VoiceTreeLowSince == 0) room.VoiceTreeLowSince = now;
-                else if (now - room.VoiceTreeLowSince > MediaLifetimeMs) { room.VoiceTreeLowSince = 0; LeaveVoiceGroup(live); }
+                else if (now - room.VoiceTreeLowSince > LifetimeMs(live)) { room.VoiceTreeLowSince = 0; LeaveVoiceGroup(live); }
                 return;
             }
             JoinVoiceGroup(room, live);

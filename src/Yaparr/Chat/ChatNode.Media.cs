@@ -262,7 +262,10 @@ public sealed partial class ChatNode
     // How long the root can stay out of reach, for a member that wants in, before the group is treated as gone.
     private long UnreachableMs => (long)(_options.MediaEdgeTimeout.TotalMilliseconds * 1.5);
 
-    private long MediaLifetimeMs => (long)(_options.MediaAnnounceInterval.TotalMilliseconds * 3);
+    private TimeSpan AnnounceIntervalOf(MediaGroup g) => g.Kind == "voice" ? _options.VoiceAnnounceInterval : _options.MediaAnnounceInterval;
+
+    // A stream not heard from for three announcements is gone.
+    private long LifetimeMs(MediaGroup g) => (long)(AnnounceIntervalOf(g).TotalMilliseconds * 3);
 
     // ---- public API -------------------------------------------------------------------------
 
@@ -340,7 +343,7 @@ public sealed partial class ChatNode
 
     private void SendMediaAnnouncesTo(ChatRoom room, PeerState peer)
     {
-        var anns = room.Media.Values.Where(g => g.Ann.Active && (g.IsRoot || Environment.TickCount64 - g.AnnSeenAt <= MediaLifetimeMs)).Select(g => g.Ann).Take(8).ToArray();
+        var anns = room.Media.Values.Where(g => g.Ann.Active && (g.IsRoot || Environment.TickCount64 - g.AnnSeenAt <= LifetimeMs(g))).Select(g => g.Ann).Take(8).ToArray();
         if (anns.Length > 0) Send(peer.Connection, new Wire { Type = Wire.Media, Room = RefTo(room, peer), Ann = anns });
     }
 
@@ -922,13 +925,13 @@ public sealed partial class ChatNode
         bool removedAny = false;
         foreach (var g in room.Media.Values.ToList())
         {
-            if (!g.IsRoot && now - g.AnnSeenAt > MediaLifetimeMs)
+            if (!g.IsRoot && now - g.AnnSeenAt > LifetimeMs(g))
             {
                 RemoveMediaGroup(g);
                 removedAny = true;
                 continue;
             }
-            if (g.IsRoot && now - g.LastAnnouncedAt >= _options.MediaAnnounceInterval.TotalMilliseconds) SendMediaAnnounce(room, g, active: true);
+            if (g.IsRoot && now - g.LastAnnouncedAt >= AnnounceIntervalOf(g).TotalMilliseconds) SendMediaAnnounce(room, g, active: true);
 
             List<PeerId> deadChildren = new(), neighbours;
             PeerId? deadParent = null;
