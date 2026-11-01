@@ -1,0 +1,96 @@
+name: FFmpeg build
+
+# Builds the FFmpeg that Yaparr runs for screen sharing (see ffmpeg/README.md). A pull request that touches it builds and checks it;
+# running the workflow by hand with a release tag also publishes the build, its source and its licences as a pre-release.
+
+on:
+  pull_request:
+    paths:
+      - 'ffmpeg/**'
+      - '.github/workflows/ffmpeg.yml'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Publish the build as a pre-release with this tag (for example ffmpeg-2); leave empty to only build and check
+        type: string
+        default: ''
+      ffmpeg_commit:
+        description: The FFmpeg commit to build; leave empty for the one Yaparr is tested with
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git make diffutils zip xz
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-nasm
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-libvpx
+            mingw-w64-ucrt-x86_64-libvpl
+            mingw-w64-ucrt-x86_64-amf-headers
+            mingw-w64-ucrt-x86_64-ffnvcodec-headers
+
+      - name: Build
+        env:
+          FFMPEG_COMMIT: ${{ inputs.ffmpeg_commit }}
+        run: |
+          [ -n "$FFMPEG_COMMIT" ] || unset FFMPEG_COMMIT
+          bash ffmpeg/build.sh
+
+      - name: Check
+        run: bash ffmpeg/verify.sh "out/$(sed 's/^NAME=//' out/name.txt)/bin/ffmpeg.exe"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ffmpeg-yaparr
+          path: out/*
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.release_tag != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: ffmpeg-yaparr
+          path: out
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release_tag }}
+        run: |
+          set -e
+          name="$(sed 's/^NAME=//' out/name.txt)"
+          sha256sum "out/$name.zip" out/ffmpeg-*-source.tar.xz | sed 's# out/# #' > out/SHA256SUMS.txt
+          cat > notes.md <<EOF
+          FFmpeg built for Yaparr with only the parts Yaparr uses (LGPL, static, Windows x64). Yaparr downloads this when it needs to share or show a screen; it is a pre-release so that it is never taken for a Yaparr update.
+
+          - \`$name.zip\`: \`bin/ffmpeg.exe\`, the licence, \`SOURCE.txt\`, \`BUILD-INFO.txt\` (how it was configured) and the licences of what is built in.
+          - \`ffmpeg-*-source.tar.xz\`: the exact FFmpeg source this was built from.
+          - Built by https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID} from the \`ffmpeg\` folder at commit ${GITHUB_SHA}.
+
+          \`\`\`
+          $(cat out/SHA256SUMS.txt)
+          \`\`\`
+          EOF
+          gh release create "$TAG" "out/$name.zip" out/ffmpeg-*-source.tar.xz out/SHA256SUMS.txt \
+            --prerelease --target "$GITHUB_SHA" --title "FFmpeg build for Yaparr ($TAG)" --notes-file notes.md
