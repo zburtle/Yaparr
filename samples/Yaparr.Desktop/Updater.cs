@@ -132,7 +132,7 @@ public static class Updater
     /// down. On Linux the package is installed first (asking for the password through the desktop), and the result says
     /// whether it worked; the caller then restarts the app.
     /// </summary>
-    public static async Task<bool> InstallAsync(string path, CancellationToken ct = default)
+    public static async Task<bool> InstallAsync(string path, string sha256, CancellationToken ct = default)
     {
         if (OperatingSystem.IsWindows())
         {
@@ -141,10 +141,11 @@ public static class Updater
             return true;
         }
 
-        // apt resolves dependencies and treats this as an upgrade; pkexec shows the usual graphical password prompt.
-        var psi = new ProcessStartInfo(File.Exists("/usr/bin/pkexec") ? "pkexec" : "apt-get") { UseShellExecute = false };
-        if (psi.FileName == "pkexec") psi.ArgumentList.Add("apt-get");
-        foreach (var arg in new[] { "install", "-y", "--allow-downgrades", path }) psi.ArgumentList.Add(arg);
+        // apt resolves dependencies and treats this as an upgrade; pkexec shows the usual graphical password prompt. What runs as root copies
+        // the package where only root can change it, checks it again there and installs that copy (see UpdateVerifier.LinuxInstallScript).
+        var psi = new ProcessStartInfo(File.Exists("/usr/bin/pkexec") ? "pkexec" : "/bin/sh") { UseShellExecute = false };
+        if (psi.FileName == "pkexec") psi.ArgumentList.Add("/bin/sh");
+        foreach (var arg in new[] { "-c", UpdateVerifier.LinuxInstallScript, "yaparr-update", path, sha256, "/var/tmp" }) psi.ArgumentList.Add(arg);
         using var process = Process.Start(psi) ?? throw new InvalidOperationException("Could not start the installer.");
         await process.WaitForExitAsync(ct);
         Log?.Invoke("update: the package installer finished with code " + process.ExitCode);

@@ -15,6 +15,25 @@ public static class UpdateVerifier
                && uri.AbsolutePath.StartsWith($"/{repository}/releases/download/", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// The script run as root to install a downloaded .deb. The package sits in the user's own folder, where any program running as that
+    /// user could swap it between the check and the install. So root copies it into a folder only root can write to, checks the checksum
+    /// of that copy, and installs the copy. Arguments: the package, its SHA-256, and the folder for the copy (/var/tmp).
+    /// </summary>
+    private const string InstallScript = """
+        set -e
+        dir=$(mktemp -d "$3/yaparr-update.XXXXXX")
+        trap 'rm -rf "$dir"' EXIT
+        cp -- "$1" "$dir/package.deb"
+        chmod 755 "$dir"
+        chmod 644 "$dir/package.deb"
+        echo "$2  $dir/package.deb" | sha256sum -c --quiet - >/dev/null 2>&1 || { echo "The package does not match its checksum." >&2; exit 3; }
+        apt-get install -y --allow-downgrades "$dir/package.deb"
+        """;
+
+    /// <summary>The script as <c>sh</c> needs it: a source file checked out with Windows line endings must not put carriage returns into it.</summary>
+    public static string LinuxInstallScript { get; } = InstallScript.Replace("\r", "");
+
     /// <summary>True for 64 hexadecimal digits, the form of a SHA-256 checksum.</summary>
     public static bool IsSha256(string? text) => text is { Length: 64 } && text.All(Uri.IsHexDigit);
 

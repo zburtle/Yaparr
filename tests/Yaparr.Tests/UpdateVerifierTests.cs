@@ -71,4 +71,73 @@ public class UpdateVerifierTests : IDisposable
 
         await Assert.ThrowsAsync<InvalidDataException>(() => UpdateVerifier.VerifyAsync(path, sha));
     }
+
+    // ---- the script that installs a .deb as root ------------------------------------------------
+
+    private static string? FindShell()
+    {
+        foreach (var candidate in new[] { "/bin/sh", "/usr/bin/sh", @"C:\Program Files\Git\bin\sh.exe", @"C:\Program Files\Git\usr\bin\sh.exe" })
+            if (File.Exists(candidate)) return candidate;
+        return null;
+    }
+
+    private static string Slashes(string path) => path.Replace('\\', '/');
+
+    private (int Exit, string Output, string? Installed) RunInstallScript(string shell, string package, string sha256)
+    {
+        // A fake apt-get that records which file it was asked to install.
+        var bin = Path.Combine(_dir, "bin");
+        Directory.CreateDirectory(bin);
+        var record = Slashes(Path.Combine(_dir, "installed.txt"));
+        File.WriteAllText(Path.Combine(bin, "apt-get"), "#!/bin/sh\nfor last; do :; done\necho \"$last\" > '" + record + "'\n");
+        var work = Path.Combine(_dir, "work");
+        Directory.CreateDirectory(work);
+
+        var info = new System.Diagnostics.ProcessStartInfo(shell) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+        foreach (var arg in new[] { "-c", UpdateVerifier.LinuxInstallScript, "test", Slashes(package), sha256, Slashes(work) }) info.ArgumentList.Add(arg);
+        info.Environment["PATH"] = bin + Path.PathSeparator + Environment.GetEnvironmentVariable("PATH");
+        using var process = System.Diagnostics.Process.Start(info)!;
+        var output = process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd();
+        process.WaitForExit();
+        // The copy is removed whatever happened.
+        Assert.Empty(Directory.GetFileSystemEntries(work));
+        var recorded = Path.Combine(_dir, "installed.txt");
+        return (process.ExitCode, output, File.Exists(recorded) ? File.ReadAllText(recorded).Trim() : null);
+    }
+
+    [Fact]
+    public void The_linux_install_script_installs_a_copy_of_a_package_that_matches()
+    {
+        if (FindShell() is not { } shell) return; // no POSIX shell on this machine
+        var package = Path.Combine(_dir, "yaparr.deb");
+        var bytes = RandomNumberGenerator.GetBytes(10_000);
+        File.WriteAllBytes(package, bytes);
+
+        var (exit, output, installed) = RunInstallScript(shell, package, Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant());
+
+        Assert.True(exit == 0, output);
+        Assert.NotNull(installed);
+        Assert.EndsWith("package.deb", installed);
+        Assert.DoesNotContain("yaparr.deb", installed); // a copy, not the file in the user's folder
+    }
+
+    [Fact]
+    public void The_linux_install_script_refuses_a_package_that_does_not_match()
+    {
+        if (FindShell() is not { } shell) return;
+        var package = Path.Combine(_dir, "yaparr.deb");
+        File.WriteAllBytes(package, RandomNumberGenerator.GetBytes(10_000));
+
+        var (exit, output, installed) = RunInstallScript(shell, package, new string('0', 64));
+
+        Assert.Equal(3, exit);
+        Assert.Contains("does not match", output);
+        Assert.Null(installed);
+    }
+
+    [Fact]
+    public void The_linux_install_script_has_no_carriage_returns()
+    {
+        Assert.DoesNotContain('\r', UpdateVerifier.LinuxInstallScript);
+    }
 }

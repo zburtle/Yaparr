@@ -212,7 +212,7 @@ public partial class MainWindow : Window
 
             StatusText.Text = $"Downloading Yaparr {update.Version}…";
             var path = await Updater.DownloadAsync(update, _cts.Token);
-            if (!await Updater.InstallAsync(path, _cts.Token))
+            if (!await Updater.InstallAsync(path, update.Sha256!, _cts.Token))
             {
                 StatusText.Text = "The update was not installed.";
                 return;
