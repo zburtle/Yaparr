@@ -34,13 +34,19 @@ public sealed class DhtOptions
 
     public bool ReadOnly { get; init; } = true;
 
-    /// <summary>How long a node gets to answer. About half the nodes on the real network never do, and each costs this much of a slot.</summary>
+    /// <summary>
+    /// The longest a node gets to answer. About half the nodes on the real network never do, and each costs this much of a slot, so the
+    /// time actually used is shorter when the nodes that do answer are quick (see <see cref="MinQueryTimeout"/>).
+    /// </summary>
     public TimeSpan QueryTimeout { get; init; } = TimeSpan.FromSeconds(1.5);
+
+    /// <summary>The shortest a node is given to answer, however quick the others were; the wait follows the measured round trip between the two.</summary>
+    public TimeSpan MinQueryTimeout { get; init; } = TimeSpan.FromMilliseconds(600);
 
     public int K { get; init; } = 8;
 
     /// <summary>How many queries a lookup keeps in flight at once.</summary>
-    public int Alpha { get; init; } = 6;
+    public int Alpha { get; init; } = 10;
 }
 
 public sealed class DhtNode : IDisposable
@@ -86,6 +92,9 @@ public sealed class DhtNode : IDisposable
     private int _nextTid;
     private bool _bootstrapped;
 
+    // Known nodes enough to start searching from; the node does not wait for more.
+    private const int ReadyNodes = 16;
+
     private readonly object _storeGate = new();
     private readonly Dictionary<string, Dictionary<IPEndPoint, long>> _store = new();
     private static readonly long PeerTtlMs = (long)TimeSpan.FromMinutes(30).TotalMilliseconds;
@@ -121,44 +130,65 @@ public sealed class DhtNode : IDisposable
             if (_bootstrapped && _table.Count > 0) return;
 
             var started = System.Diagnostics.Stopwatch.StartNew();
-            var seeds = new List<IPEndPoint>();
+            var args = new Func<BDict>(() => new BDict { ["target"] = Id.Bytes });
+
+            // Every seed is asked at once and the search can start as soon as enough nodes are known: the ones that never answer (and
+            // the host names that are slow to resolve) cost a full timeout each, and nothing needs to wait for them.
+            var queries = new List<Task<bool>>();
+            async Task<bool> AskSeed(IPEndPoint seed)
+            {
+                var r = await QueryAsync(seed, "find_node", args(), ct).ConfigureAwait(false);
+                if (r == null) return false;
+                AddCompactNodes(r.Bytes("nodes"));
+                return true;
+            }
+
+            // Nodes that answered last time are usually still there, and need no name lookup at all.
+            var cached = LoadCachedNodes().Distinct().ToList();
+            foreach (var node in cached) queries.Add(AskSeed(node));
+
             var unresolved = new List<string>();
-            var lookups = await Task.WhenAll(_options.BootstrapHosts.Select(async host =>
+            int resolvedHosts = 0;
+            queries.AddRange(_options.BootstrapHosts.Select(async host =>
             {
                 var (name, port) = SplitHostPort(host);
-                try
-                {
-                    var addrs = await ResolveAsync(name, ct).ConfigureAwait(false);
-                    return (Name: name, Seeds: addrs.Select(a => new IPEndPoint(a, port)).ToList(), Error: addrs.Count == 0 ? name : null);
-                }
-                catch (SocketException ex) { return (Name: name, Seeds: new List<IPEndPoint>(), Error: $"{name} ({ex.SocketErrorCode})"); }
-            })).ConfigureAwait(false);
-            foreach (var l in lookups)
-            {
-                seeds.AddRange(l.Seeds);
-                if (l.Error != null) unresolved.Add(l.Error);
-            }
-            if (unresolved.Count > 0) _mux.Log?.Invoke($"DHT: could not look up {string.Join(", ", unresolved)}");
+                List<IPAddress> addresses;
+                try { addresses = await ResolveAsync(name, ct).ConfigureAwait(false); }
+                catch (SocketException ex) { lock (unresolved) unresolved.Add($"{name} ({ex.SocketErrorCode})"); return false; }
+                if (addresses.Count == 0) { lock (unresolved) unresolved.Add(name); return false; }
+                Interlocked.Increment(ref resolvedHosts);
+                var answers = await Task.WhenAll(addresses.Select(a => AskSeed(new IPEndPoint(a, port)))).ConfigureAwait(false);
+                return answers.Any(ok => ok);
+            }));
 
-            // Nodes that answered last time, and as a last resort the built-in addresses.
-            foreach (var cached in LoadCachedNodes()) seeds.Add(cached);
-            if (seeds.Count == 0 && _options.BootstrapHosts.Count > 0 && unresolved.Count == _options.BootstrapHosts.Count)
+            var waiting = new List<Task<bool>>(queries);
+            while (waiting.Count > 0 && _table.Count < ReadyNodes)
+            {
+                var done = await Task.WhenAny(waiting).ConfigureAwait(false);
+                waiting.Remove(done);
+                await done.ConfigureAwait(false);
+            }
+            // The rest keep going in the background (their answers fill the table) and are not waited for.
+            foreach (var left in waiting) _ = left.ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
+
+            string[] failedNames;
+            lock (unresolved) failedNames = unresolved.ToArray();
+            if (failedNames.Length > 0) _mux.Log?.Invoke($"DHT: could not look up {string.Join(", ", failedNames)}");
+
+            // No name could be resolved and nothing was cached: as a last resort, the built-in addresses.
+            if (_table.Count == 0 && cached.Count == 0 && _options.BootstrapHosts.Count > 0 && failedNames.Length == _options.BootstrapHosts.Count)
             {
                 _mux.Log?.Invoke("DHT: using built-in addresses for the bootstrap nodes");
-                foreach (var fallback in _options.FallbackSeeds)
-                    if (IPEndPoint.TryParse(fallback, out var ep)) seeds.Add(ep);
+                var fallback = _options.FallbackSeeds.Select(f => IPEndPoint.TryParse(f, out var ep) ? ep : null).OfType<IPEndPoint>().Distinct().ToList();
+                await Task.WhenAll(fallback.Select(AskSeed)).ConfigureAwait(false);
             }
-            seeds = seeds.Distinct().ToList();
-
-            var args = new Func<BDict>(() => new BDict { ["target"] = Id.Bytes });
-            var responses = await Task.WhenAll(seeds.Select(s => QueryAsync(s, "find_node", args(), ct))).ConfigureAwait(false);
-            foreach (var r in responses.Where(r => r != null)) AddCompactNodes(r!.Bytes("nodes"));
 
             if (_table.Count > 0)
             {
-                // A couple of rounds are enough to start on; searching the whole neighbourhood takes a long time on the real
-                // network (half the nodes never answer) and the room lookup that follows fills the table as it goes.
-                await LookupAsync(Id, LookupKind.FindNode, ct, maxRounds: 2).ConfigureAwait(false);
+                // With plenty of nodes known there is nothing to wait for; with few, a couple of rounds of searching the neighbourhood
+                // find more. Searching all of it takes a long time on the real network (half the nodes never answer) and the room
+                // lookup that follows fills the table as it goes.
+                if (_table.Count < ReadyNodes) await LookupAsync(Id, LookupKind.FindNode, ct, maxRounds: 2).ConfigureAwait(false);
                 _bootstrapped = true;
                 _mux.Log?.Invoke($"DHT: ready after {started.ElapsedMilliseconds} ms ({_table.Count} nodes known)");
                 _ = Task.Run(async () =>
@@ -167,7 +197,7 @@ public sealed class DhtNode : IDisposable
                     catch (Exception) { }
                 });
             }
-            else _mux.Log?.Invoke($"DHT: none of {seeds.Count} bootstrap node(s) answered; UDP may be blocked");
+            else _mux.Log?.Invoke($"DHT: none of {queries.Count} bootstrap node(s) answered; UDP may be blocked");
         }
         finally { _bootstrapLock.Release(); }
     }
@@ -426,6 +456,26 @@ public sealed class DhtNode : IDisposable
         return (peers.ToList(), responded);
     }
 
+    // The smoothed round trip of the queries that were answered, in milliseconds; negative until there is one.
+    private double _roundTripMs = -1;
+
+    // Long enough for a node on this connection to answer (four round trips and a little), not longer: on a good connection the nodes that will
+    // answer do so within a few hundred milliseconds, and each one that never will holds a place for this long.
+    private TimeSpan CurrentTimeout()
+    {
+        double max = _options.QueryTimeout.TotalMilliseconds, min = Math.Min(_options.MinQueryTimeout.TotalMilliseconds, max);
+        double rtt = Volatile.Read(ref _roundTripMs);
+        // Before the first answer, a middle value.
+        double wanted = rtt < 0 ? Math.Min(max, 800) : rtt * 4 + 100;
+        return TimeSpan.FromMilliseconds(Math.Clamp(wanted, min, max));
+    }
+
+    private void NoteRoundTrip(double ms)
+    {
+        double known = Volatile.Read(ref _roundTripMs);
+        Volatile.Write(ref _roundTripMs, known < 0 ? ms : known * 0.8 + ms * 0.2);
+    }
+
     private async Task<BDict?> QueryAsync(IPEndPoint to, string method, BDict args, CancellationToken ct, bool viaRelay = false)
     {
         var tid = BitConverter.GetBytes((ushort)Interlocked.Increment(ref _nextTid));
@@ -440,10 +490,13 @@ public sealed class DhtNode : IDisposable
             if (viaRelay) _mux.SendRelayed(Bencode.Encode(msg), to);
             else _mux.Send(Bencode.Encode(msg), to);
 
+            var sent = System.Diagnostics.Stopwatch.StartNew();
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            cts.CancelAfter(_options.QueryTimeout);
+            cts.CancelAfter(CurrentTimeout());
             using var reg = cts.Token.Register(() => tcs.TrySetCanceled());
-            return await tcs.Task.ConfigureAwait(false);
+            var reply = await tcs.Task.ConfigureAwait(false);
+            NoteRoundTrip(sent.Elapsed.TotalMilliseconds);
+            return reply;
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested) { return null; }
         catch (InvalidOperationException) { return null; }

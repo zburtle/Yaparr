@@ -68,6 +68,37 @@ public class DhtSpeedTests
     private static byte[] NearTo(byte[] topic) { var id = (byte[])topic.Clone(); id[^1] ^= 1; return id; }
 
     [Fact]
+    public async Task The_node_is_ready_as_soon_as_enough_nodes_are_known_without_waiting_for_silent_seeds()
+    {
+        using var liveMux = new UdpMux();
+        using var live = new DhtNode(liveMux, new DhtOptions { ReadOnly = false, BootstrapHosts = Array.Empty<string>() });
+        liveMux.Start();
+        // One seed answers with twenty nodes; five more seeds never answer at all.
+        using var directory = new Directory(20, System.Security.Cryptography.RandomNumberGenerator.GetBytes(20), liveMux.LocalPort);
+        var silentSeeds = Enumerable.Range(0, 5).Select(_ => new UdpClient(new IPEndPoint(IPAddress.Loopback, 0))).ToList();
+        try
+        {
+            using var mux = new UdpMux();
+            using var node = new DhtNode(mux, new DhtOptions
+            {
+                BootstrapHosts = new[] { $"127.0.0.1:{directory.Port}" }.Concat(silentSeeds.Select(u => $"127.0.0.1:{((IPEndPoint)u.Client.LocalEndPoint!).Port}")).ToArray(),
+                FallbackSeeds = Array.Empty<string>(),
+                QueryTimeout = TimeSpan.FromSeconds(3),
+            });
+            mux.Start();
+
+            var watch = Stopwatch.StartNew();
+            await node.BootstrapAsync();
+            watch.Stop();
+
+            Assert.True(node.KnownNodes >= 16, $"only {node.KnownNodes} nodes known");
+            // The silent seeds each take the whole timeout (3 s here) to give up; being ready must not wait for them.
+            Assert.True(watch.Elapsed < TimeSpan.FromSeconds(1.5), $"took {watch.Elapsed.TotalSeconds:0.0} s");
+        }
+        finally { foreach (var u in silentSeeds) u.Dispose(); }
+    }
+
+    [Fact]
     public async Task Lookup_is_not_held_up_by_nodes_that_never_answer()
     {
         using var liveMux = new UdpMux();
