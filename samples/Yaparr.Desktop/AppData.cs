@@ -50,6 +50,9 @@ public sealed class AppSettings
     /// <summary>How loud soundboard sounds are against voices, in percent (100 is as loud as a voice).</summary>
     public int SoundboardVolume { get; set; } = 80;
 
+    /// <summary>Where a shared screen opens: in a window of its own (true) or inside the main window over the chat (false). Follows the last choice made with the Pop out / Show in the app button.</summary>
+    public bool WatchScreensInWindow { get; set; } = true;
+
     /// <summary>Play a sound for new messages and for people joining or leaving your voice channel.</summary>
     public bool SoundsEnabled { get; set; } = true;
     /// <summary>Flash the taskbar button when a message arrives while the window is in the background.</summary>

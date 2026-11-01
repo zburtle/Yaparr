@@ -1,18 +1,20 @@
-<Window xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        x:Class="Yaparr.Desktop.ScreenViewWindow"
-        Title="Shared screen" Width="960" Height="560" MinWidth="320" MinHeight="200"
-        WindowStartupLocation="CenterOwner">
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Yaparr.Desktop.ScreenViewControl">
     <Grid RowDefinitions="*,Auto" Background="Black">
         <Image x:Name="Picture" Stretch="Uniform" />
         <TextBlock x:Name="Waiting" Text="Waiting for the first picture..." Foreground="#bbbbbb"
                    HorizontalAlignment="Center" VerticalAlignment="Center" />
-        <Grid Grid.Row="1" ColumnDefinitions="*,Auto">
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto">
             <TextBlock x:Name="Info" Foreground="#999999" FontSize="11" Margin="8,4" VerticalAlignment="Center" />
             <StackPanel x:Name="SoundPanel" Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="8,4" IsVisible="False">
                 <TextBlock Text="Sound" Foreground="#999999" FontSize="11" VerticalAlignment="Center" />
                 <Slider x:Name="SoundBox" Minimum="0" Maximum="200" Value="100" Width="120" VerticalAlignment="Center" />
             </StackPanel>
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" Margin="8,4" VerticalAlignment="Center">
+                <Button x:Name="DockButton" Content="Pop out" Padding="10,4" />
+                <Button x:Name="StopButton" Content="Stop watching" Padding="10,4" />
+            </StackPanel>
         </Grid>
     </Grid>
-</Window>
+</UserControl>

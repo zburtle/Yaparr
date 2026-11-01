@@ -987,6 +987,7 @@ public partial class MainWindow : Window
     private void ConversationList_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
         _selected = ConversationList.SelectedItem as ConversationVm;
+        UpdateInlineScreen();
         bool has = _selected != null;
         InputBox.IsEnabled = SendButton.IsEnabled = AttachButton.IsEnabled = has;
         MessageList.ItemsSource = _selected?.Messages;
