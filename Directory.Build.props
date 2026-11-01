@@ -1,0 +1,9 @@
+<Project>
+
+  <!-- Everything in this repository is under the GPL (see LICENSE.txt). -->
+  <PropertyGroup>
+    <PackageLicenseExpression>GPL-3.0-or-later</PackageLicenseExpression>
+    <Copyright>Copyright (C) 2026 Zach Burtle</Copyright>
+  </PropertyGroup>
+
+</Project>
