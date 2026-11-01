@@ -25,8 +25,8 @@ Improvements we have agreed to do later, roughly in priority order. Done items a
 
 ## Voice
 
-- Push-to-talk in the Desktop app needs a global hotkey (Avalonia has none); the library already supports it.
-- Per-person volume sliders in the UI.
+- **Push-to-talk (done).** Voice settings has "Push to talk" and a key to hold. On Windows a low-level keyboard hook (`GlobalKeyHook`) sees the key while another program is in front (not for programs running as administrator); elsewhere it works while the Yaparr window is in front. Not done: a mouse button as the key, and a sound when the key goes down.
+- **Per-person volume (done).** The speaker button next to a person in the voice list opens a 0 to 200% slider; it is kept by account in the settings.
 - Voice processing: the notification sounds play on their own device and are not part of the echo reference, so they are not cancelled. Echo cancellation is weaker when the microphone and speakers are different devices on different clocks (a USB headset microphone with laptop speakers). Try RNNoise in front of the WebRTC processor if keyboards and fans still come through. The Linux library needs glibc 2.38 or newer; for older systems build our own, and only if people ask. Needs a real test with a speaker and microphone in one room.
 - Large voice channels are built (see the README, "Streams and large rooms"): a tree from 9 people up, tested in one process with up to 10 people and a root that disappears. Not tried on real networks or with real people. Still to do:
   - Measure a real 10 to 20 person call: delay through two or three hops, the root's upload with many open microphones (19 open microphones is about 5 Mbit/s for a root with 6 children, over the default 3 Mbit/s forwarding limit), and CPU for decoding many talkers.
@@ -42,7 +42,7 @@ Improvements we have agreed to do later, roughly in priority order. Done items a
 The library part is built (see the README, "Soundboard"). Not done:
 
 - **The Desktop page is built but has only been compiled and started, never clicked through.** Check the window, the add dialog (including a file over 20 seconds), the right-click menu, the bell buttons and that the mutes come back after a restart. A soundboard mute is kept per device id, so a person on two devices has to be muted on each. There are no keyboard shortcuts for tiles. MP3 and OGG reading has not been tried on real files.
-- **No limits on the list.** There is no cap on how many sounds a member or a room can have, only the 20 second limit. A member can fill every other member's disk (about 60 KB per 15 seconds) and the list message traffic; add per-member and per-room caps if that is ever abused. There are no room admins, so nobody but the uploader can remove a sound; this goes with the moderation work above.
+- **Limits on the list (done).** A room holds at most 100 sounds (`SoundLimits.PerRoom`), also enforced on what other members send, so nobody can fill every member's disk; each sound is already limited to 20 seconds. There is no limit per person (in practice one or two people add clips). The oldest removed entries of a person beyond 50 are forgotten. The file of a removed sound (by its owner, by an admin, or replaced) is deleted at once unless another sound is the same file, and the week-old file clean-up at startup no longer deletes the files of sounds that are still on a soundboard (it used to, because sounds are stored with pictures). Sounds already over the limit stay, only new ones are refused.
 - **Loudness.** Sounds are matched to one level when added. If that is not enough, add a per-sound volume.
 - **Trigger delay.** A sound starts when the play message arrives, so listeners on slow paths hear it a little later than others. Fine for effects; not for anything that must line up.
 
@@ -144,7 +144,7 @@ No technical blocker, but a lot of work. The core library is portable .NET and t
 - Direct connections through symmetric NATs: try the ports just above and below the one a peer advertises ("birthday" or port-prediction punching), so fewer pairs need the relay. Needs a symmetric-NAT test setup to verify.
 - Pictures: a "Save picture as" and a larger view, animated WebP, and checking more than the sender (for example members that already have the file) before showing a download button.
 - Desktop notifications: system pop-ups, an unread count on the taskbar icon (Windows overlay icon), and the flashing taskbar button on Linux (needs the window manager's urgency hint, which Avalonia does not expose). Sounds are fixed tones; let people choose, set the volume, and turn off per room.
-- Queue messages typed while the app is offline and send them when it reconnects.
+- **Messages typed while offline (done).** A room message is kept and handed over by history sync; a direct message to someone whose conversation exists now waits (also across a restart, `pending.json` holds the ids) and is sent when one of their devices connects, for as long as messages are kept. A first message to someone you have never been connected to still needs a connection.
 - First-run guide that explains the VPN and TURN options in plain words.
 - Wire `network.json`, the VPN and the new connection/delivery status into `Yaparr.Host` and the Flutter UI (on the shelved `flutter-ui` branch).
 - NAT-PMP / port mapping through the VPN tunnel.
