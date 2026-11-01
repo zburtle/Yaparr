@@ -10,8 +10,8 @@ using Yaparr.Voice;
 
 namespace Yaparr.Desktop;
 
-/// <summary>A window that shows one shared screen. Closing it stops watching.</summary>
-public partial class ScreenViewWindow : Window
+/// <summary>One shared screen, with its sound and a line of figures. It sits inside the main window or in a <see cref="ScreenViewWindow"/>, and moves between them without the stream restarting. Stopping it ends the watching.</summary>
+public partial class ScreenViewControl : UserControl
 {
     private readonly MediaView? _view;
     private readonly ScreenViewer? _viewer;
@@ -21,28 +21,44 @@ public partial class ScreenViewWindow : Window
     private int _pending;
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
 
-    public ScreenViewWindow() => InitializeComponent();
+    public ScreenViewControl() => InitializeComponent();
 
-    public ScreenViewWindow(string name, MediaView view, string ffmpeg) : this()
+    public ScreenViewControl(string name, MediaView view, string ffmpeg) : this()
     {
         _name = name;
         _view = view;
-        Title = name;
         _viewer = new ScreenViewer(view, ffmpeg);
         _viewer.PictureReceived += OnPicture;
         _viewer.Failed += ex => Dispatcher.UIThread.Post(() => { Waiting.IsVisible = true; Waiting.Text = "The picture stopped: " + ex.Message; });
         _draw.Tick += (_, _) => DrawTick();
         _timer.Tick += (_, _) => UpdateInfo();
         _timer.Start();
-        Closed += (_, _) => Stop();
+        DockButton.Click += (_, _) => DockToggleRequested?.Invoke();
+        StopButton.Click += (_, _) => StopRequested?.Invoke();
+        Docked = true;
     }
+
+    /// <summary>The name of the share, for a window title.</summary>
+    public string ShareName => _name;
+
+    /// <summary>The button asks for the picture to be moved between the main window and a window of its own.</summary>
+    public event Action? DockToggleRequested, StopRequested;
+
+    /// <summary>Whether the picture is inside the main window (otherwise it is in a window of its own); sets what the button says.</summary>
+    public bool Docked
+    {
+        get => _docked;
+        set { _docked = value; DockButton.Content = value ? "Pop out" : "Show in the app"; }
+    }
+
+    private bool _docked;
 
     /// <summary>The picture stopped coming because the connection to the sharer (or whoever passes it on) was lost, and again when it is back.</summary>
     public event Action? ConnectionLost, ConnectionRestored;
 
     private bool _wasAttached, _connectionLost;
 
-    /// <summary>Raised when the window is closed, so the owner can mark the share as not watched any more.</summary>
+    /// <summary>Raised when watching ends, so the owner can mark the share as not watched any more.</summary>
     public event Action? Stopped;
 
     private MediaView? _soundView;
@@ -170,8 +186,13 @@ public partial class ScreenViewWindow : Window
             + (st.Attached ? "" : "  -  connecting to the sharer...");
     }
 
-    private void Stop()
+    private bool _stopped;
+
+    /// <summary>Ends the watching: the stream, the decoder and the sound are released. Safe to call more than once.</summary>
+    public void StopWatching()
     {
+        if (_stopped) return;
+        _stopped = true;
         _timer.Stop();
         _draw.Stop();
         _viewer?.Dispose();

@@ -519,6 +519,11 @@
                 </Grid>
             </Border>
 
+            <!-- A shared screen watched inside the app, over the chat -->
+            <Border x:Name="ScreenOverlay" Grid.Column="1" Classes="card" Margin="0,0,8,8" IsVisible="False" ClipToBounds="True">
+                <Border x:Name="ScreenHost" />
+            </Border>
+
             <!-- People -->
             <Border Grid.Column="2" Classes="card" Margin="0,0,0,8">
                 <DockPanel>

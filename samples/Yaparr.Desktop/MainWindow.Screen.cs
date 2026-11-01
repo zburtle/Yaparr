@@ -12,7 +12,20 @@ public partial class MainWindow
     private ScreenSharer? _sharer;
     private ConversationVm? _sharerConv;
     private SharerStatsWindow? _sharerStats;
-    private readonly Dictionary<string, ScreenViewWindow> _screenViews = new();
+
+    // A screen being watched. Its picture is either in the main window over the chat (only one at a time) or in a window of its
+    // own; moving it does not restart the stream.
+    private sealed class ScreenWatch
+    {
+        public required string Id { get; init; }
+        public required ShareVm Share { get; init; }
+        public required ConversationVm Conv { get; init; }
+        public required ScreenViewControl Control { get; init; }
+        public ScreenViewWindow? Window { get; set; }
+    }
+
+    private readonly Dictionary<string, ScreenWatch> _screenViews = new();
+    private ScreenWatch? _inlineWatch;
 
     private void RefreshShares(ConversationVm conv, ChatRoom room)
     {
@@ -25,9 +38,9 @@ public partial class MainWindow
             conv.Shares.Add(new ShareVm(g.Id, g.Name, isMine: _node != null && g.Root == _node.Id) { Watching = watching.Contains(g.Id) });
         conv.SharesChanged();
 
-        // A share that ended closes its window.
+        // A share that ended stops being watched.
         foreach (var id in watching.Where(id => shares.All(g => g.Id != id)).ToList())
-            if (_screenViews.TryGetValue(id, out var window)) window.Close();
+            if (_screenViews.TryGetValue(id, out var watch)) EndWatch(watch);
     }
 
     // The FFmpeg program, found here or downloaded after asking. Null if there is none.
@@ -118,7 +131,7 @@ public partial class MainWindow
         var room = _roomConversations.FirstOrDefault(kv => kv.Value == conv).Key;
         if (room == null) return;
 
-        if (_screenViews.TryGetValue(share.Id, out var open)) { open.Close(); return; }
+        if (_screenViews.TryGetValue(share.Id, out var open)) { EndWatch(open); return; }
 
         var ffmpeg = await GetFfmpegAsync();
         if (ffmpeg == null) return;
@@ -126,23 +139,30 @@ public partial class MainWindow
         try
         {
             var view = _node.WatchMedia(room, share.Id);
-            var window = new ScreenViewWindow(share.Name, view, ffmpeg);
+            var control = new ScreenViewControl(share.Name, view, ffmpeg);
             // The sound, if the sharer shares it, is a stream of its own that names this share.
             if (room.MediaGroups.FirstOrDefault(g => g.Kind == ScreenSharer.SoundKind && g.Name == ScreenSharer.SoundNameFor(share.Id)) is { } sound)
             {
-                try { window.AttachSound(_node.WatchMedia(room, sound.Id), _settings.VoiceOutput); }
+                try { control.AttachSound(_node.WatchMedia(room, sound.Id), _settings.VoiceOutput); }
                 catch (Exception ex) { _log.Write("could not watch the sound of the screen: " + ex.Message); }
             }
-            window.ConnectionLost += () => { _log.Write($"lost the connection to the screen {share.Name}"); _sounds.ConnectionLost(); };
-            window.ConnectionRestored += () => { _log.Write($"connection to the screen {share.Name} restored"); _sounds.ConnectionBack(); };
-            _screenViews[share.Id] = window;
+            control.ConnectionLost += () => { _log.Write($"lost the connection to the screen {share.Name}"); _sounds.ConnectionLost(); };
+            control.ConnectionRestored += () => { _log.Write($"connection to the screen {share.Name} restored"); _sounds.ConnectionBack(); };
+            var watch = new ScreenWatch { Id = share.Id, Share = share, Conv = conv, Control = control };
+            _screenViews[share.Id] = watch;
             share.Watching = true;
-            window.Stopped += () => UI(() =>
+            control.Stopped += () => UI(() => WatchEnded(watch));
+            control.StopRequested += () => EndWatch(watch);
+            control.DockToggleRequested += () =>
             {
-                _screenViews.Remove(share.Id);
-                share.Watching = false;
-            });
-            window.Show(this);
+                if (watch.Window == null) PopOut(watch); else DockIn(watch);
+                // The next screen opens where this one was left.
+                _settings.WatchScreensInWindow = watch.Window != null;
+                try { _data.SaveSettings(_settings); }
+                catch (Exception ex) { _log.Write("could not save the screen view choice: " + ex.Message); }
+            };
+            // It opens where it was last put: in a window of its own, or in the app over the chat.
+            if (_settings.WatchScreensInWindow) PopOut(watch); else DockIn(watch);
         }
         catch (Exception ex)
         {
@@ -151,9 +171,69 @@ public partial class MainWindow
         }
     }
 
+    // Ends the watching, wherever the picture is.
+    private void EndWatch(ScreenWatch watch)
+    {
+        if (watch.Window is { } window) window.Close();   // its Closed handler stops the control
+        else watch.Control.StopWatching();
+    }
+
+    private void StopAllWatches()
+    {
+        foreach (var watch in _screenViews.Values.ToList()) EndWatch(watch);
+    }
+
+    private void WatchEnded(ScreenWatch watch)
+    {
+        _screenViews.Remove(watch.Id);
+        watch.Share.Watching = false;
+        if (_inlineWatch == watch)
+        {
+            _inlineWatch = null;
+            ScreenHost.Child = null;
+        }
+        watch.Window = null;   // a window it was in is closed already, or is closing
+        UpdateInlineScreen();
+    }
+
+    private void PopOut(ScreenWatch watch)
+    {
+        if (watch.Window != null) return;
+        if (_inlineWatch == watch)
+        {
+            _inlineWatch = null;
+            ScreenHost.Child = null;
+        }
+        var window = new ScreenViewWindow(watch.Control);
+        watch.Window = window;
+        watch.Control.Docked = false;
+        window.Show(this);
+        UpdateInlineScreen();
+    }
+
+    private void DockIn(ScreenWatch watch)
+    {
+        // The place over the chat holds one picture; a screen that was there moves out to a window of its own.
+        if (_inlineWatch is { } other && other != watch) PopOut(other);
+        if (watch.Window is { } window)
+        {
+            watch.Window = null;
+            window.HandedBack = true;
+            window.Content = null;
+            window.Close();
+        }
+        _inlineWatch = watch;
+        watch.Control.Docked = true;
+        ScreenHost.Child = watch.Control;
+        UpdateInlineScreen();
+    }
+
+    // The picture over the chat shows while you are looking at the room it belongs to; it keeps playing when you look elsewhere.
+    private void UpdateInlineScreen() => ScreenOverlay.IsVisible = _inlineWatch is { } watch && _selected == watch.Conv;
+
     private void CloseScreens()
     {
         StopSharingCore();
-        foreach (var window in _screenViews.Values.ToList()) window.Close();
+        StopAllWatches();
     }
 }

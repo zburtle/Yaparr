@@ -77,13 +77,13 @@ Built (see [Devices and accounts](docs/devices-and-accounts.md)). Not done:
 The first layer is built (see [Sharing a screen](docs/screen-sharing.md)): sharing a monitor or a window on Windows, watching on any system. Still to do:
 
 - A trimmed FFmpeg build (the full one is 136 MB unpacked, 175 MB zipped; only libvpx, the H.264 decoder, h264_nvenc, gfxcapture, the ivf and h264 formats and rawvideo are needed)
-- The rest of the Desktop UI (the viewer inside the main window, showing who is watching)
+- The rest of the Desktop UI (showing who is watching)
 - A key frame on request (the sharer only sends one every 2 s, so a joiner waits up to that long)
 - Hardware encoders other than NVIDIA's (AMD AMF, Intel Quick Sync)
 - Keeping the picture on the graphics card from capture to encoder (gfxcapture can scale itself, and NVENC takes Direct3D frames) to save the download of every picture
 - The .deb recommending the system `ffmpeg` and the licence notice for FFmpeg in `THIRD-PARTY-NOTICES.txt` and the installer
 - Publish the pinned FFmpeg build as a release tagged `ffmpeg-1`; it does not exist yet.
-- Use the sharing window with a second person and look at it closely; it has been built and started but not tried with viewers.
+- Use the sharing window and the viewer (inside the app and in a window of its own, popping out and back) with a second person and look at them closely; they have been built and started but not tried with viewers.
 - Try a minimised or resized shared window with viewers (a minimised window stops updating, and a resized window keeps its shape inside its first size).
 - Licence: ship an LGPL build only (no x264, which makes a build GPL), with its notices next to the existing ones. H.264 is now used on NVIDIA cards (the card does the encoding, FFmpeg's built-in H.264 decoder does the viewing on every machine), so the H.264 patent position needs checking before a release; VP8 alone avoids the question. Which prebuilt LGPL builds exist is unchecked; if there is none, build a trimmed one in CI, which also keeps the installer small.
 - Bandwidth is the real limit. Default to 720p at 5 to 15 frames per second and 0.5 to 1 Mbit/s, and a viewer passes it on to at most 3 others (more for the sharer if its upload allows). Peer relays (256 KB/s in total) cannot carry video, and the TURN server has its own limits, so a viewer reached through it gets lower quality or is refused. Adaptive bitrate comes after.
