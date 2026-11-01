@@ -58,6 +58,47 @@ public class DirectSyncTests : IDisposable
     }
 
     [Fact]
+    public async Task Joining_voice_on_one_device_moves_you_off_the_others()
+    {
+        var (first, second, bob) = await StartAsync();
+        await TestUtil.WaitFor(() => first.MyDevices.Count == 2 && second.MyDevices.Count == 2, 30_000);
+        var r1 = await first.JoinRoomAsync("lobby");
+        var r2 = await second.JoinRoomAsync("lobby");
+        var moved = new TaskCompletionSource<PeerId>();
+        r1.VoiceTakenOver += d => moved.TrySetResult(d);
+
+        using var v1 = r1.JoinVoice();
+        await Task.Delay(2000); // clearly the earlier one
+        using var v2 = r2.JoinVoice();
+
+        Assert.Equal(second.Id, await moved.Task.WaitAsync(TimeSpan.FromSeconds(20)));
+        Assert.Null(r1.ActiveVoice);
+        Assert.NotNull(r2.ActiveVoice);
+        // Bob sees one of you in voice, not two.
+        var rb = bob.Rooms.Single();
+        await TestUtil.WaitFor(() => rb.VoiceParticipants.Count(p => !p.IsSelf) == 1, 30_000);
+    }
+
+    [Fact]
+    public async Task Two_devices_that_join_voice_at_the_same_moment_leave_exactly_one_in()
+    {
+        var (first, second, bob) = await StartAsync();
+        await TestUtil.WaitFor(() => first.MyDevices.Count == 2 && second.MyDevices.Count == 2, 30_000);
+        var r1 = await first.JoinRoomAsync("lobby");
+        var r2 = await second.JoinRoomAsync("lobby");
+
+        using var v1 = r1.JoinVoice();
+        using var v2 = r2.JoinVoice();
+
+        await TestUtil.WaitFor(() => (r1.ActiveVoice == null) != (r2.ActiveVoice == null), 20_000);
+        await Task.Delay(1500);
+        Assert.True((r1.ActiveVoice == null) != (r2.ActiveVoice == null), "exactly one of the two devices is still in voice");
+        // The one with the lower id is the one that stays.
+        var stays = string.CompareOrdinal(first.Id.Value, second.Id.Value) < 0 ? r1 : r2;
+        Assert.NotNull(stays.ActiveVoice);
+    }
+
+    [Fact]
     public async Task A_message_sent_from_one_device_appears_as_your_own_on_the_other()
     {
         var (first, second, bob) = await StartAsync();

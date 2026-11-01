@@ -31,6 +31,9 @@ public sealed class VoiceSession : IDisposable
     private readonly ChatNode _node;
     private readonly ChatRoom _room;
     private readonly uint _tag;
+
+    /// <summary>When this session started, on the tick clock; two of your devices that join at the same moment use it to settle which one stays.</summary>
+    internal long JoinedAt { get; } = Environment.TickCount64;
     private readonly CancellationTokenSource _cts = new();
     private readonly Channel<float[]> _capture = Channel.CreateBounded<float[]>(new BoundedChannelOptions(10) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
     private readonly IOpusEncoder _encoder;

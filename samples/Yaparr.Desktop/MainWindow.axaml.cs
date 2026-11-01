@@ -525,6 +525,11 @@ public partial class MainWindow : Window
 
         room.MessageReceived += m => UI(() => OnMessage(conv, ToVm(m), announce: !m.IsCatchUp));
         room.VoiceChanged += () => UI(() => RefreshVoice(conv, room));
+        room.VoiceTakenOver += _ => UI(() =>
+        {
+            if (_voiceConv == conv) LeaveVoiceCore();
+            StatusText.Text = "You joined voice on another of your devices, so you left it here.";
+        });
         room.MediaGroupsChanged += () => UI(() => RefreshShares(conv, room));
         room.MemberRenamed += p => UI(() => { Remember(p); RefreshPeers(); });
         room.MemberJoined += p => UI(() => { Remember(p); RefreshPeers(); });

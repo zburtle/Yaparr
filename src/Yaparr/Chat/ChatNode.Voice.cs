@@ -22,9 +22,28 @@ public sealed partial class ChatNode
         room.ActiveVoice = session;
         room.SelfMuted = room.SelfDeafened = false;
         PublishVoiceState(room, active: true, muted: false, deafened: false);
+        TellDevicesYouJoinedVoice(room);
         session.RosterChanged(ActiveVoiceOthers(room));
         FetchMissingSounds(room);
         return session;
+    }
+
+    // You are one person in a voice channel, however many devices you have: the others hear of it and leave (see OnVoiceTakeover).
+    private void TellDevicesYouJoinedVoice(ChatRoom room)
+    {
+        foreach (var sibling in _peers.Values.Where(IsSibling))
+            if (sibling.Connection.SessionId != null) Send(sibling.Connection, new Wire { Type = Wire.Takeover, Room = RefTo(room, sibling) });
+    }
+
+    private void OnVoiceTakeover(PeerState sibling, ChatRoom room)
+    {
+        var session = room.ActiveVoice;
+        if (session == null) return;
+        // Both joined at the very same moment and each told the other: the one with the lower id stays.
+        if (Environment.TickCount64 - session.JoinedAt < 1500 && string.CompareOrdinal(Id.Value, sibling.Id.Value) < 0) return;
+        _options.Log?.Invoke($"you joined voice in '{room.Name}' on another of your devices ({sibling.Id.Short}); leaving it here");
+        session.Leave();
+        room.RaiseVoiceTakenOver(sibling.Id);
     }
 
     internal void EndVoice(ChatRoom room, VoiceSession session)

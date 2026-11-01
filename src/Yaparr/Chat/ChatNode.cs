@@ -1546,6 +1546,11 @@ public sealed partial class ChatNode : IDisposable
                 OnRekey(peer, rekeyRoom, wire.Rk);
                 break;
 
+            // One of your other devices joined voice in this room, so you are in voice there and not here.
+            case Wire.Takeover when wire.Room != null && IsSibling(peer) && ResolveRoom(peer, wire.Room) is { } takeoverRoom:
+                OnVoiceTakeover(peer, takeoverRoom);
+                break;
+
             case Wire.Play when wire.Room != null && wire.Pl != null
                                 && ResolveRoom(peer, wire.Room) is { } playRoom && playRoom.MemberStates.ContainsKey(peer.Id):
                 if (!rate.AdmitPlay()) { Dropped(peer, rate, "played too many sounds"); break; }

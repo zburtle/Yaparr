@@ -122,6 +122,10 @@ public sealed class ChatRoom
     public event Action? VoiceChanged;
     internal void RaiseVoiceChanged() => VoiceChanged?.Invoke();
 
+    /// <summary>You joined voice in this room on another of your devices, so this device left it.</summary>
+    public event Action<PeerId>? VoiceTakenOver;
+    internal void RaiseVoiceTakenOver(PeerId device) => VoiceTakenOver?.Invoke(device);
+
     /// <summary>The streams shared with this room right now (a screen, for example), as last announced.</summary>
     public IReadOnlyList<MediaGroupInfo> MediaGroups =>
         Media.Values.Where(g => g.Kind != "voice").Select(g => g.Info).OrderBy(g => g.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
