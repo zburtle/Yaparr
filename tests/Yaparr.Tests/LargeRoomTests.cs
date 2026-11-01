@@ -5,6 +5,11 @@ namespace Yaparr.Tests;
 [CollectionDefinition("large room", DisableParallelization = true)]
 public sealed class LargeRoomCollection { }
 
+// Audio is played and judged at the pace of a clock, and some tests time how long a search takes. A busy machine delays the packets
+// and the answers, so these run by themselves, after the parallel tests have finished, one after another.
+[CollectionDefinition("real-time audio", DisableParallelization = true)]
+public sealed class RealTimeCollection { }
+
 // Twenty nodes in one process need most of the machine. Run alongside other tests it misses its deadlines, so it runs
 // by itself, after the parallel tests have finished.
 [Collection("large room")]

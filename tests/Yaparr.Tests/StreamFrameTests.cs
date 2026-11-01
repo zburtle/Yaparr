@@ -90,6 +90,7 @@ public class FrameAssemblerTests
     }
 }
 
+[Collection("real-time audio")]
 public class StreamFrameTests
 {
     private static byte[] Frame(int n, int size) => Enumerable.Range(0, size).Select(i => (byte)(n * 31 + i)).ToArray();

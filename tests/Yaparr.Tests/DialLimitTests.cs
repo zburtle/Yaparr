@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using Yaparr.Chat;
@@ -7,6 +7,7 @@ using Yaparr.Discovery;
 namespace Yaparr.Tests;
 
 /// <summary>Discovery results come from anyone, so a flood of addresses must not turn into a flood of packets.</summary>
+[Collection("real-time audio")]
 public class DialLimitTests
 {
     private sealed class FixedDiscovery : IPeerDiscovery

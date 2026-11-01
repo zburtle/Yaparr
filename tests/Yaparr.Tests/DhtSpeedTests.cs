@@ -7,6 +7,7 @@ using Yaparr.Transport;
 
 namespace Yaparr.Tests;
 
+[Collection("real-time audio")]
 public class DhtSpeedTests
 {
     /// <summary>A node that answers every query with a list of other nodes: silent ones that never answer, and one real one.</summary>

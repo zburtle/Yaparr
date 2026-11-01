@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using Yaparr.Chat;
 using Yaparr.Discovery;
 using Yaparr.Transport;
@@ -7,9 +7,12 @@ namespace Yaparr.Tests;
 
 internal static class TestUtil
 {
+    // Build agents are slower and busier than a desk: waits are given twice as long there. Waiting longer costs nothing when it works.
+    public static readonly int Patience = Environment.GetEnvironmentVariable("CI") != null ? 2 : 1;
+
     public static async Task WaitFor(Func<bool> condition, int timeoutMs = 10_000)
     {
-        var deadline = Environment.TickCount64 + timeoutMs;
+        var deadline = Environment.TickCount64 + (long)timeoutMs * Patience;
         while (!condition())
         {
             if (Environment.TickCount64 > deadline) throw new TimeoutException("Condition not met in time.");
