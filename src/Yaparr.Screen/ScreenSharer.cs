@@ -20,6 +20,7 @@ public sealed class ScreenSharer : IDisposable
     private Task? _run;
     private long _frames, _bytes, _keys;
     private volatile ScreenCodec _codec;
+    private HardwareEncoder? _hardware;
     private volatile string? _fallback;
 
     public ScreenSharer(MediaSource source, ScreenOptions options, string ffmpegPath)
@@ -103,7 +104,10 @@ public sealed class ScreenSharer : IDisposable
     /// <summary>The codec in use: what <see cref="ScreenOptions.Codec"/> asked for, or for Auto what turned out to work.</summary>
     public ScreenCodec Codec => _codec;
 
-    /// <summary>When the graphics card could not be used and VP8 took over: why. Otherwise null.</summary>
+    /// <summary>The graphics card encoder in use; null for VP8 in software.</summary>
+    public HardwareEncoder? Encoder => _hardware;
+
+    /// <summary>When the graphics card could not be used and VP8 took over: why, for each encoder that was tried. Otherwise null.</summary>
     public string? FallbackReason => _fallback;
 
     /// <summary>The sharing ended; the exception is null when it was stopped on purpose.</summary>
@@ -117,15 +121,18 @@ public sealed class ScreenSharer : IDisposable
         Exception? failure = null;
         try
         {
-            // Auto tries the graphics card first. If FFmpeg cannot start that encoder (no NVIDIA card, an old driver, all the
-            // encoder sessions in use) it stops before the first picture, and VP8 in software takes over.
-            var codecs = _options.Codec == ScreenCodec.Auto ? new[] { ScreenCodec.H264, ScreenCodec.Vp8 } : new[] { _options.Codec };
-            for (int i = 0; i < codecs.Length; i++)
+            // Auto tries the graphics cards first, one after the other. If FFmpeg cannot start an encoder (no such card, an old
+            // driver, all the encoder sessions in use) it stops before the first picture, and the next one is tried, VP8 in
+            // software last.
+            var plan = Plan(_options);
+            var reasons = new List<string>();
+            for (int i = 0; i < plan.Count; i++)
             {
-                try { await RunAsync(codecs[i], ct).ConfigureAwait(false); break; }
-                catch (Exception ex) when (!ct.IsCancellationRequested && i < codecs.Length - 1 && Interlocked.Read(ref _frames) == 0 && !WindowGone)
+                try { await RunAsync(plan[i].Codec, plan[i].Encoder, ct).ConfigureAwait(false); break; }
+                catch (Exception ex) when (!ct.IsCancellationRequested && i < plan.Count - 1 && Interlocked.Read(ref _frames) == 0 && !WindowGone)
                 {
-                    _fallback = ex.Message;
+                    reasons.Add(plan[i].Encoder is { } card ? $"{HardwareEncoders.Maker(card)}: {ex.Message}" : ex.Message);
+                    _fallback = string.Join("; ", reasons);
                 }
             }
         }
@@ -135,15 +142,26 @@ public sealed class ScreenSharer : IDisposable
         Ended?.Invoke(failure);
     }
 
+    /// <summary>What is tried, in order, for these options.</summary>
+    public static List<(ScreenCodec Codec, HardwareEncoder? Encoder)> Plan(ScreenOptions options)
+    {
+        var plan = new List<(ScreenCodec, HardwareEncoder?)>();
+        if (options.Codec != ScreenCodec.Vp8)
+            foreach (var card in options.Encoder is { } only ? new[] { only } : HardwareEncoders.InOrder) plan.Add((ScreenCodec.H264, card));
+        if (options.Codec != ScreenCodec.H264) plan.Add((ScreenCodec.Vp8, null));
+        return plan;
+    }
+
     private bool WindowGone => _options.WindowHandle is { } handle && !ShareWindows.Exists(handle);
 
     // One run of FFmpeg with one codec: returns when stopped on purpose, throws when FFmpeg stops by itself.
-    private async Task RunAsync(ScreenCodec codec, CancellationToken ct)
+    private async Task RunAsync(ScreenCodec codec, HardwareEncoder? encoder, CancellationToken ct)
     {
         _codec = codec;
+        _hardware = encoder;
         lock (_gate) _errors.Clear();
         var psi = new ProcessStartInfo(_ffmpeg) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
-        foreach (var a in FfmpegArgs.Capture(_options, codec)) psi.ArgumentList.Add(a);
+        foreach (var a in FfmpegArgs.Capture(_options, codec, encoder ?? HardwareEncoder.Nvenc)) psi.ArgumentList.Add(a);
         var process = Process.Start(psi) ?? throw new InvalidOperationException("FFmpeg did not start.");
         lock (_gate) _process = process;
         process.ErrorDataReceived += (_, e) =>
@@ -155,7 +173,7 @@ public sealed class ScreenSharer : IDisposable
 
         var stdout = process.StandardOutput.BaseStream;
         Func<CancellationToken, Task<byte[]?>> next;
-        if (codec == ScreenCodec.H264) next = new H264Reader(stdout).ReadAsync;
+        if (codec == ScreenCodec.H264) next = new H264Reader(stdout) { RepeatParameterSets = true }.ReadAsync;
         else
         {
             try { await Ivf.ReadHeaderAsync(stdout, ct).ConfigureAwait(false); }

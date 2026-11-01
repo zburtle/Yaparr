@@ -1,7 +1,7 @@
 ﻿// Shares this computer's screen to a second Yaparr node in the same process and reports what it cost: how many pictures
 // arrived, the bitrate, and the processor time used by FFmpeg and by this program. Windows only (screen capture).
 //
-//   Yaparr.ScreenDemo [--seconds 20] [--fps 10] [--kbps 800] [--width 1280] [--height 720] [--monitor N | --window N] [--codec auto|vp8|h264] [--save picture.bmp]
+//   Yaparr.ScreenDemo [--seconds 20] [--fps 10] [--kbps 800] [--width 1280] [--height 720] [--monitor N | --window N] [--codec auto|vp8|h264] [--encoder nvenc|amf|qsv] [--save picture.bmp]
 //   Yaparr.ScreenDemo --list     shows the monitors and windows and their numbers
 //   Yaparr.ScreenDemo --install-ffmpeg <folder>     downloads the pinned FFmpeg into the folder (the installer build bundles it)
 //   Without --monitor or --window the primary monitor is shared.
@@ -57,7 +57,7 @@ else
     Console.WriteLine($"Sharing monitor {display.Index}: {display.Width}x{display.Height}");
 }
 var codec = (Opt("--codec") ?? "auto").ToLowerInvariant() switch { "vp8" => ScreenCodec.Vp8, "h264" => ScreenCodec.H264, _ => ScreenCodec.Auto };
-var screen = new ScreenOptions { Fps = Int("--fps", 10), Kbps = Int("--kbps", 800), MaxWidth = Int("--width", 1280), MaxHeight = Int("--height", 720), Display = display, WindowHandle = windowHandle, Codec = codec };
+var screen = new ScreenOptions { Fps = Int("--fps", 10), Kbps = Int("--kbps", 800), MaxWidth = Int("--width", 1280), MaxHeight = Int("--height", 720), Display = display, WindowHandle = windowHandle, Codec = codec, Encoder = HardwareEncoders.TryParse(Opt("--encoder"), out var card) ? card : null };
 string? savePath = Opt("--save");
 
 ChatNode Make(string name) => new(new ChatNodeOptions
@@ -114,7 +114,7 @@ for (int s = 1; s <= seconds; s++)
 var cpu = Cpu() - cpu0;
 
 Console.WriteLine();
-Console.WriteLine($"Codec: {ScreenCodecs.Describe(sharer.Codec)}{(sharer.FallbackReason is { } why ? $" (the graphics card was not used: {why})" : "")}");
+Console.WriteLine($"Codec: {ScreenCodecs.Describe(sharer.Codec, sharer.Encoder)}{(sharer.FallbackReason is { } why ? $" (not used: {why})" : "")}");
 Console.WriteLine($"First picture after {firstPictureMs} ms");
 Console.WriteLine($"Sent {sharer.Frames} frames, {sharer.Bytes * 8 / 1000 / seconds} kbit/s on average ({sharer.KeyFrames} key frames)");
 Console.WriteLine($"Viewer got {viewer.Pictures} pictures ({viewer.Pictures / (double)seconds:0.0} per second), dropped {viewer.Dropped}, lost {view.FramesLost}");

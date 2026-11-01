@@ -73,10 +73,12 @@ public class FfmpegIntegrationTests
         finally { if (!decode.HasExited) decode.Kill(entireProcessTree: true); decode.Dispose(); }
     }
 
-    // Whether this computer has a graphics card that FFmpeg can encode H.264 on: asking for one tiny picture is the only reliable way.
-    private static async Task<bool> NvencWorksAsync(string ffmpeg)
+    // Whether this computer has a graphics card that FFmpeg can encode H.264 on with this encoder: asking for one tiny picture is the only reliable way.
+    private static async Task<bool> EncoderWorksAsync(string ffmpeg, HardwareEncoder encoder)
     {
-        var p = Start(ffmpeg, new[] { "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=black:s=320x240:r=5:d=1", "-frames:v", "2", "-c:v", "h264_nvenc", "-f", "null", "-" }, input: false);
+        var pixels = encoder == HardwareEncoder.Qsv ? "nv12" : "yuv420p";
+        var p = Start(ffmpeg, new[] { "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=black:s=320x240:r=5:d=1", "-frames:v", "2", "-vf", "format=" + pixels,
+            "-c:v", HardwareEncoders.Name(encoder), "-f", "null", "-" }, input: false);
         try
         {
             using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(20));
@@ -88,14 +90,45 @@ public class FfmpegIntegrationTests
     }
 
     [Fact]
-    public async Task The_real_ffmpeg_captures_a_monitor_on_the_graphics_card_and_its_pictures_can_be_decoded_again()
+    public async Task The_real_ffmpeg_captures_a_monitor_on_every_graphics_card_encoder_this_computer_has_and_the_pictures_can_be_decoded_again()
     {
         if (!OperatingSystem.IsWindows()) return;
         if (FfmpegLocator.Find() is not { } ffmpeg) return;
         if (Displays.List().FirstOrDefault() is not { } display) return;
-        if (!await NvencWorksAsync(ffmpeg)) return;
+        foreach (var encoder in HardwareEncoders.InOrder)
+            if (await EncoderWorksAsync(ffmpeg, encoder))
+                await CaptureAndDecodeH264Async(ffmpeg, display, encoder);
+    }
 
-        var options = new ScreenOptions { Display = display, Fps = 10, Kbps = 500, MaxWidth = 640, MaxHeight = 360, Codec = ScreenCodec.H264 };
+    // The options the app gives each encoder have to exist in it, or FFmpeg would refuse to start it on the computers that have the card.
+    // (On a computer without the card FFmpeg stops for lack of the card before it looks at the options, so only the help tells.)
+    [Fact]
+    public async Task The_options_given_to_each_graphics_card_encoder_exist_in_the_real_ffmpeg()
+    {
+        if (FfmpegLocator.Find() is not { } ffmpeg) return;
+        var display = new Display(0, "x", 0, 0, 1920, 1080, true, Handle: 0x1A2B);
+        var generic = new HashSet<string> { "bf" };   // FFmpeg's own options for every encoder, not listed in the encoder's help
+        foreach (var encoder in HardwareEncoders.InOrder)
+        {
+            var args = FfmpegArgs.Capture(new ScreenOptions { Display = display }, ScreenCodec.H264, encoder);
+            int from = args.IndexOf("-c:v") + 2, to = args.IndexOf("-b:v");
+            var help = await FfmpegLocator.RunAsync(ffmpeg, new[] { "-hide_banner", "-h", "encoder=" + HardwareEncoders.Name(encoder) });
+            Assert.Contains("Supported pixel formats", help);
+            foreach (var arg in args.Skip(from).Take(to - from).Where(a => a.StartsWith('-') && a.Length > 1 && char.IsLetter(a[1])))
+            {
+                var name = arg[1..].Split(':')[0];
+                if (!generic.Contains(name)) Assert.True(help.Contains("  -" + name + " "), $"{HardwareEncoders.Name(encoder)} has no option {name}");
+            }
+            // And the picture format it is given is one it takes.
+            var pixels = encoder == HardwareEncoder.Qsv ? "nv12" : "yuv420p";
+            var formats = help.Split('\n').FirstOrDefault(l => l.Contains("Supported pixel formats")) ?? "";
+            Assert.True(formats.Split(' ', StringSplitOptions.RemoveEmptyEntries).Contains(pixels), $"{HardwareEncoders.Name(encoder)} does not take {pixels}: {formats.Trim()}");
+        }
+    }
+
+    private static async Task CaptureAndDecodeH264Async(string ffmpeg, Display display, HardwareEncoder encoder)
+    {
+        var options = new ScreenOptions { Display = display, Fps = 10, Kbps = 500, MaxWidth = 640, MaxHeight = 360, Codec = ScreenCodec.H264, Encoder = encoder };
         using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(40));
 
         // Capture and encode: whole pictures, the first a key frame with the parameter sets and the size we asked for at most.
@@ -103,7 +136,7 @@ public class FfmpegIntegrationTests
         var capture = Start(ffmpeg, FfmpegArgs.Capture(options), input: false);
         try
         {
-            var reader = new H264Reader(capture.StandardOutput.BaseStream);
+            var reader = new H264Reader(capture.StandardOutput.BaseStream) { RepeatParameterSets = true };
             while (units.Count < 12 && await reader.ReadAsync(limit.Token) is { } unit) units.Add(unit);
         }
         finally { if (!capture.HasExited) capture.Kill(entireProcessTree: true); capture.Dispose(); }
