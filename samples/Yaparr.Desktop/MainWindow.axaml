@@ -483,6 +483,7 @@
                         </ListBox.ItemTemplate>
                         <ListBox.ContextMenu>
                             <ContextMenu Opening="MessageMenu_Opening">
+                                <MenuItem x:Name="SavePictureItem" Header="_Save picture as…" Click="SavePicture_Click" />
                                 <MenuItem x:Name="RetryItem" Header="_Retry sending" Click="RetryMessage_Click" />
                                 <MenuItem x:Name="DeleteMessageItem" Header="_Delete for everyone" Click="DeleteMessage_Click" />
                                 <MenuItem x:Name="BanSenderItem" Header="Ban sender from this _room…" Click="BanSender_Click" />

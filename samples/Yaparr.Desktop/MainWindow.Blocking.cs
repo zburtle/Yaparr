@@ -36,13 +36,14 @@ public partial class MainWindow
     private void MessageMenu_Opening(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         var message = MessageList.SelectedItem as MessageVm;
+        SavePictureItem.IsVisible = message is { Image: not null };
         RetryItem.IsVisible = message is { CanRetry: true };
         BlockSenderItem.IsVisible = message != null && BlockedIdOf(message) is { } id && _node?.IsBlocked(new PeerId(id)) == false;
         var room = SelectedRoom;
         var source = message?.Source;
         DeleteMessageItem.IsVisible = room is { MyRole: >= RoomRole.Admin } && source != null;
         BanSenderItem.IsVisible = source != null && !message!.IsMine && CanBan(source.From.Account.Value, room?.RoleOf(source.From.Account) ?? RoomRole.Member) && room?.IsBanned(source.From.Account) == false;
-        if (!RetryItem.IsVisible && !BlockSenderItem.IsVisible && !DeleteMessageItem.IsVisible && !BanSenderItem.IsVisible) e.Cancel = true;
+        if (!SavePictureItem.IsVisible && !RetryItem.IsVisible && !BlockSenderItem.IsVisible && !DeleteMessageItem.IsVisible && !BanSenderItem.IsVisible) e.Cancel = true;
     }
 
     private async void BlockPerson_Click(object? sender, RoutedEventArgs e) => await BlockAsync(PeopleList.SelectedItem);
