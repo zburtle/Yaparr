@@ -115,9 +115,30 @@ public static class ImageSniffer
             return new ImageInfo("image/webp", BinaryPrimitives.ReadUInt16LittleEndian(d[26..]) & 0x3FFF, BinaryPrimitives.ReadUInt16LittleEndian(d[28..]) & 0x3FFF, 1);
         if (d[12] == 'V' && d[13] == 'P' && d[14] == '8' && d[15] == 'L' && d[20] == 0x2F)
             return new ImageInfo("image/webp", 1 + (d[21] | ((d[22] & 0x3F) << 8)), 1 + ((d[22] >> 6) | (d[23] << 2) | ((d[24] & 0x0F) << 10)), 1);
-        if (d[12] == 'V' && d[13] == 'P' && d[14] == '8' && d[15] == 'X' && (d[20] & 0x02) == 0) // animated WebP is not supported
-            return new ImageInfo("image/webp", 1 + (d[24] | (d[25] << 8) | (d[26] << 16)), 1 + (d[27] | (d[28] << 8) | (d[29] << 16)), 1);
+        if (d[12] == 'V' && d[13] == 'P' && d[14] == '8' && d[15] == 'X')
+        {
+            int w = 1 + (d[24] | (d[25] << 8) | (d[26] << 16)), h = 1 + (d[27] | (d[28] << 8) | (d[29] << 16));
+            if ((d[20] & 0x02) == 0) return new ImageInfo("image/webp", w, h, 1);
+            // Animated: the same limits as a GIF, and the frames are counted from the chunks.
+            if (w > MaxGifDimension || h > MaxGifDimension) return null;
+            int frames = CountWebpFrames(d);
+            return frames is > 0 and <= MaxGifFrames ? new ImageInfo("image/webp", w, h, frames) : null;
+        }
         return null;
+    }
+
+    // A WebP file is a list of chunks (four letters, a little-endian size, the data padded to an even length); each frame of an animation is an ANMF chunk.
+    private static int CountWebpFrames(ReadOnlySpan<byte> d)
+    {
+        int pos = 12, frames = 0;
+        while (pos + 8 <= d.Length)
+        {
+            long size = BinaryPrimitives.ReadUInt32LittleEndian(d[(pos + 4)..]);
+            if (size > d.Length - pos - 8) return 0;   // a chunk that runs past the end of the file
+            if (d[pos] == 'A' && d[pos + 1] == 'N' && d[pos + 2] == 'M' && d[pos + 3] == 'F' && ++frames > MaxGifFrames) return 0;
+            pos += 8 + (int)size + (int)(size & 1);
+        }
+        return frames;
     }
 }
 

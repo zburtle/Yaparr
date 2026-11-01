@@ -51,6 +51,27 @@ public class AttachmentTests
         return b.ToArray();
     }
 
+    // Four frames of 48 by 32 pixels, made by a real encoder.
+    private static readonly byte[] AnimatedWebp = Convert.FromBase64String("UklGRuoAAABXRUJQVlA4WAoAAAACAAAALwAAHwAAQU5JTQYAAAAAAAAAAABBTk1GKAAAAAAAAAAAAC8AAB8AAGQAAAJWUDhMEAAAAC8vwAcABxD9L17/AxHR/wBBTk1GKgAAAAAAAAAAAC8AAB8AAGQAAABWUDhMEQAAAC8vwAcAB1CUDhev/4GI6H8AAEFOTUYqAAAAAAAAAAAALwAAHwAAZAAAAFZQOEwRAAAALy/ABwAHUKgeFq//gYjofwAAQU5NRioAAAAAAAAAAAAvAAAfAABkAAAAVlA4TBEAAAAvL8AHAAdQvC4Vr/+BiOh/AAA=");
+
+    [Fact]
+    public void An_animated_webp_is_read_as_a_picture_with_its_frames_and_a_damaged_one_is_refused()
+    {
+        Assert.True(ImageSniffer.TryRead(AnimatedWebp, out var info));
+        Assert.Equal(("image/webp", 48, 32, 4), (info.Mime, info.Width, info.Height, info.Frames));
+
+        // A chunk whose size runs past the end of the file, and a file cut short, are not pictures.
+        var lying = (byte[])AnimatedWebp.Clone();
+        BitConverter.GetBytes(0x7FFFFFF0).CopyTo(lying, 34); // the size of the first chunk after the header
+        Assert.False(ImageSniffer.TryRead(lying, out _));
+        Assert.False(ImageSniffer.TryRead(AnimatedWebp.AsSpan(0, 60), out _));
+
+        // The canvas of an animation is limited like a GIF's.
+        var big = (byte[])AnimatedWebp.Clone();
+        big[24] = 0xFF; big[25] = 0x1F; // 8192 pixels wide
+        Assert.False(ImageSniffer.TryRead(big, out _));
+    }
+
     [Fact]
     public void Picture_headers_are_read_without_decoding_and_bad_ones_are_refused()
     {

@@ -21,11 +21,11 @@ internal static class ImageTools
         using var source = SKBitmap.Decode(input) ?? throw new ArgumentException("That picture could not be read.");
         var thumbnail = Thumbnail(source);
 
-        // GIFs are sent as they are (re-encoding would lose the animation), so they have to fit already.
-        if (!bmp && info.Mime == "image/gif")
+        // Animated pictures (a GIF, or an animated WebP) are sent as they are, since re-encoding would lose the animation, so they have to fit already.
+        if (!bmp && info.Frames > 1)
         {
             if (input.Length > Attachment.MaxBytes)
-                throw new ArgumentException($"That GIF is {input.Length / (1024 * 1024)} MB; the limit is {Attachment.MaxBytes / (1024 * 1024)} MB.");
+                throw new ArgumentException($"That {(info.Mime == "image/gif" ? "GIF" : "animated picture")} is {input.Length / (1024 * 1024)} MB; the limit is {Attachment.MaxBytes / (1024 * 1024)} MB.");
             return new Prepared(input, fileName, thumbnail);
         }
 
