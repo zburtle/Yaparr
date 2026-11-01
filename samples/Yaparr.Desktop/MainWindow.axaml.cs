@@ -719,7 +719,9 @@ public partial class MainWindow : Window
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
+            // A picture that could not be sent is worth a message that cannot be missed, not just a line in the status bar.
             StatusText.Text = ex.Message;
+            await Dialogs.MessageAsync(this, "Yaparr", ex.Message);
         }
     }
 
@@ -750,7 +752,7 @@ public partial class MainWindow : Window
 
     private async void Send_Click(object? sender, RoutedEventArgs e) => await SendAsync();
 
-    private static readonly string[] PictureExtensions = { ".png", ".jpg", ".jpeg", ".gif", ".webp" };
+    private static readonly string[] PictureExtensions = { ".png", ".jpg", ".jpeg", ".jfif", ".gif", ".webp", ".bmp" };
 
     private static bool IsPictureName(string? name) =>
         name != null && PictureExtensions.Contains(Path.GetExtension(name), StringComparer.OrdinalIgnoreCase);
@@ -768,23 +770,104 @@ public partial class MainWindow : Window
         catch (UnauthorizedAccessException ex) { StatusText.Text = ex.Message; }
     }
 
-    // Ctrl+V with a picture (or a copied picture file) on the clipboard sends it; ordinary text still pastes as text.
-    private async Task PasteImageAsync()
+    private bool _pasting;
+
+    // Ctrl+V sends a picture when that is what was copied (a picture file, a screenshot, a GIF, an image from a web page) and pastes text
+    // otherwise. Some programs put a link or a caption next to the picture; that still counts as a picture, but a copied cell or a
+    // paragraph of text is text.
+    private async Task PasteAsync(bool inMessageBox)
     {
-        if (Clipboard is not { } clipboard || _selected == null) return;
-        if (!string.IsNullOrEmpty(await clipboard.TryGetTextAsync())) return;
-        var items = await clipboard.TryGetFilesAsync();
-        if (items?.OfType<IStorageFile>().FirstOrDefault(f => IsPictureName(f.Name)) is { } file)
+        if (_pasting || Clipboard is not { } clipboard || _selected == null) return;
+        _pasting = true;
+        try
         {
-            await SendFileAsync(file);
-            return;
+            var text = await clipboard.TryGetTextAsync();
+            bool plainText = !string.IsNullOrWhiteSpace(text) && !LooksLikeLink(text);
+            if (!plainText && await PastePictureAsync(clipboard)) return;
+            if (inMessageBox && !string.IsNullOrEmpty(text)) InputBox.Paste();
         }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Most often another program is holding the clipboard for a moment.
+            StatusText.Text = "Couldn't paste: " + ex.Message;
+            if (inMessageBox) { try { InputBox.Paste(); } catch (Exception) { } }
+        }
+        finally { _pasting = false; }
+    }
+
+    private static bool LooksLikeLink(string? text)
+    {
+        var line = text?.Trim();
+        if (string.IsNullOrEmpty(line) || line.Contains('\n') || line.Contains('\t') || line.Length > 2000) return false;
+        return line.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || line.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+               || line.StartsWith("file://", StringComparison.OrdinalIgnoreCase) || IsPictureName(line);
+    }
+
+    // True if there was a picture to send, or a reason to tell the user why not.
+    private async Task<bool> PastePictureAsync(IClipboard clipboard)
+    {
+        var files = (await clipboard.TryGetFilesAsync())?.OfType<IStorageFile>().ToList();
+        if (files is { Count: > 0 })
+        {
+            if (files.FirstOrDefault(f => IsPictureName(f.Name)) is { } file) { await SendFileAsync(file); return true; }
+            await Dialogs.MessageAsync(this, "Yaparr", "Only pictures can be sent in a message: PNG, JPEG, GIF, WebP or BMP.");
+            return true;
+        }
+
+        using var data = await clipboard.TryGetDataAsync();
+        if (data != null)
+        {
+            // Some programs put the GIF itself on the clipboard next to a still picture of it.
+            if (await ReadRawAsync(data, "GIF", "image/gif") is { } gif) { await SendPictureAsync(gif, "pasted.gif"); return true; }
+
+            // A browser's Copy image of a GIF leaves only the first frame as a bitmap, plus the page's HTML, which names the GIF.
+            if (await ReadRawAsync(data, "HTML Format", "text/html") is { } html
+                && ClipboardPictures.FirstImageSource(System.Text.Encoding.UTF8.GetString(html)) is { } src)
+            {
+                if (ClipboardPictures.IsGifDataUrl(src) && ClipboardPictures.FromDataUrl(src, Attachment.MaxBytes) is { } inline)
+                {
+                    await SendPictureAsync(inline, "pasted.gif");
+                    return true;
+                }
+                if (ClipboardPictures.IsGifAddress(src, out var address))
+                {
+                    StatusText.Text = "Getting the GIF from " + address.Host + "…";
+                    var fetched = await ClipboardPictures.DownloadAsync(address, Attachment.MaxBytes, _cts.Token);
+                    if (fetched != null) { StatusText.Text = ""; await SendPictureAsync(fetched, Path.GetFileName(address.AbsolutePath) is { Length: > 0 } name ? name : "pasted.gif"); return true; }
+                    StatusText.Text = "Couldn't get the GIF from " + address.Host + ", so the still picture is sent instead.";
+                }
+            }
+        }
+
         if (await clipboard.TryGetBitmapAsync() is { } bitmap)
         {
-            using var ms = new MemoryStream();
-            bitmap.Save(ms);
-            await SendPictureAsync(ms.ToArray(), "pasted.png");
+            using (bitmap)
+            {
+                using var ms = new MemoryStream();
+                bitmap.Save(ms);
+                await SendPictureAsync(ms.ToArray(), "pasted.png");
+            }
+            return true;
         }
+        return false;
+    }
+
+    private static async Task<byte[]?> ReadRawAsync(Avalonia.Input.IAsyncDataTransfer data, params string[] formats)
+    {
+        foreach (var item in data.Items)
+            foreach (var format in formats)
+            {
+                object? raw;
+                try { raw = await item.TryGetRawAsync(Avalonia.Input.DataFormat.CreateBytesPlatformFormat(format)); }
+                catch (Exception ex) when (ex is not OperationCanceledException) { continue; }
+                switch (raw)
+                {
+                    case byte[] bytes: return bytes;
+                    case ReadOnlyMemory<byte> memory: return memory.ToArray();
+                    case Stream stream: await using (stream) return await ReadLimitedAsync(stream, 40 * 1024 * 1024);
+                }
+            }
+        return null;
     }
 
     private void OnDragOver(object? sender, DragEventArgs e)
@@ -808,7 +891,10 @@ public partial class MainWindow : Window
         bool paste = (e.Key == Key.V && e.KeyModifiers is KeyModifiers.Control or KeyModifiers.Meta) || (e.Key == Key.Insert && e.KeyModifiers == KeyModifiers.Shift);
         if (!paste || !InputBox.IsEnabled) return;
         if (FocusManager?.GetFocusedElement() is TextBox focused && focused != InputBox) return;
-        _ = PasteImageAsync();
+        // Handled here, since the text box would otherwise paste its own copy of the text next to the picture.
+        bool inMessageBox = FocusManager?.GetFocusedElement() == InputBox;
+        e.Handled = true;
+        _ = PasteAsync(inMessageBox);
     }
 
     private async void InputBox_KeyDown(object? sender, KeyEventArgs e)

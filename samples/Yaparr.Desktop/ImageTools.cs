@@ -13,14 +13,16 @@ internal static class ImageTools
     public static Prepared Prepare(byte[] input, string fileName)
     {
         if (input.Length > 40 * 1024 * 1024) throw new ArgumentException("That file is too big to send as a picture.");
-        if (!ImageSniffer.TryRead(input, out var info))
-            throw new ArgumentException("That file is not a PNG, JPEG, GIF or WebP picture, or it is too large.");
+        // A BMP is read and sent as a PNG or JPEG like any other still picture.
+        bool bmp = input.Length > 2 && input[0] == (byte)'B' && input[1] == (byte)'M';
+        if (!ImageSniffer.TryRead(input, out var info) && !bmp)
+            throw new ArgumentException("That file is not a PNG, JPEG, GIF, WebP or BMP picture, or it is too large.");
 
         using var source = SKBitmap.Decode(input) ?? throw new ArgumentException("That picture could not be read.");
         var thumbnail = Thumbnail(source);
 
         // GIFs are sent as they are (re-encoding would lose the animation), so they have to fit already.
-        if (info.Mime == "image/gif")
+        if (!bmp && info.Mime == "image/gif")
         {
             if (input.Length > Attachment.MaxBytes)
                 throw new ArgumentException($"That GIF is {input.Length / (1024 * 1024)} MB; the limit is {Attachment.MaxBytes / (1024 * 1024)} MB.");
