@@ -400,7 +400,7 @@ public sealed partial class ChatNode : IDisposable
         if (_started) return;
         _started = true;
         _mux.Start();
-        _ = Task.Run(() => { _blobs.Sweep(_options.MaxHistoryAge); _blobs.SealExisting(); });
+        _ = Task.Run(() => { _blobs.Sweep(_options.MaxHistoryAge, LiveSoundHashes()); _blobs.SealExisting(); });
         // Anyone looking for this person by their account id has to find every one of their devices.
         var peerTopics = AccountId == Id ? new[] { Topics.ForPeer(Id) } : new[] { Topics.ForPeer(Id), Topics.ForPeer(AccountId) };
         foreach (var d in _discoveries)

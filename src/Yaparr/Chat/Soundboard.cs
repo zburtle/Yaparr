@@ -210,6 +210,16 @@ public sealed class SoundClip
 
 /// <summary>A sound on a room's soundboard.</summary>
 /// <param name="Available">The sound itself is on this computer, so it can be played.</param>
+/// <summary>How many sounds a room's soundboard may hold. Each sound is a file every member downloads (and is at most 20 seconds long), so the room as a whole is capped.</summary>
+public static class SoundLimits
+{
+    /// <summary>Sounds a room can have at a time.</summary>
+    public const int PerRoom = 100;
+
+    /// <summary>Removed sounds remembered per person, so that the removal reaches people who were away; older ones are forgotten.</summary>
+    public const int RemovedPerMember = 50;
+}
+
 public sealed record SoundInfo(string Id, string Name, PeerId Owner, string OwnerName, string Hash, int Size, TimeSpan Duration, bool Available);
 
 /// <summary>A signed statement by a room member that a sound is on the room's soundboard (or has been removed from it).</summary>

@@ -78,6 +78,8 @@ public sealed partial class ChatNode
     {
         name = name.Trim();
         if (name.Length == 0) throw new ArgumentException("A sound needs a name.");
+        if (CountLive(room) >= SoundLimits.PerRoom)
+            throw new InvalidOperationException($"This room's soundboard is full ({SoundLimits.PerRoom} sounds). Someone has to remove a sound first.");
         var hash = SoundClip.HashOf(clip.Data);
         _blobs.Save(hash, clip.Data);
         var entry = SignedSound.Create(_identity, room.Key, SignedSound.NewId(), name, DisplayName, hash, clip.Data.Length, (int)clip.Duration.TotalMilliseconds, NextTimestamp(), deleted: false);
@@ -109,10 +111,68 @@ public sealed partial class ChatNode
         return s;
     }
 
-    private void PublishSound(ChatRoom room, StoredSound entry)
+    // How many sounds count against the limits: not removed by their owner and not removed by an admin. Read from a copy, since asking
+    // whether an admin removed one takes another lock.
+    private int CountLive(ChatRoom room)
     {
-        lock (room.SoundGate) room.SoundEntries[entry.Id] = entry;
+        StoredSound[] all;
+        lock (room.SoundGate) all = room.SoundEntries.Values.ToArray();
+        return all.Count(s => !s.Deleted && !IsSoundDeleted(room, s.Id));
+    }
+
+    // Only so many removed sounds per person are kept; the oldest are forgotten. Call with SoundGate held.
+    private static List<string> ForgetOldRemovals(ChatRoom room, string from)
+    {
+        var removed = room.SoundEntries.Values.Where(s => s.Deleted && s.From == from).OrderByDescending(s => s.Ts).Skip(SoundLimits.RemovedPerMember).ToList();
+        foreach (var s in removed) room.SoundEntries.Remove(s.Id);
+        return removed.Select(s => s.Hash).ToList();
+    }
+
+    // The files of the sounds that are on a soundboard: from the rooms we are in (not counting what an admin took down), and from the
+    // lists of rooms we are not in at the moment, which are read from disk.
+    private HashSet<string> LiveSoundHashes()
+    {
+        var hashes = new HashSet<string>();
+        var joined = new HashSet<string>();
+        foreach (var room in _rooms.Values)
+        {
+            joined.Add(room.Key);
+            StoredSound[] all;
+            lock (room.SoundGate) all = room.SoundEntries.Values.ToArray();
+            foreach (var s in all.Where(s => !s.Deleted && !IsSoundDeleted(room, s.Id))) hashes.Add(s.Hash);
+        }
+        if (_options.SoundboardDirectory is { } directory && Directory.Exists(directory))
+        {
+            foreach (var file in Directory.EnumerateFiles(directory, "*.sounds.json"))
+            {
+                var name = Path.GetFileName(file);
+                if (joined.Contains(name[..^".sounds.json".Length])) continue;
+                try
+                {
+                    foreach (var s in JsonSerializer.Deserialize<StoredSound[]>(File.ReadAllBytes(file), Json) ?? Array.Empty<StoredSound>())
+                        if (!s.Deleted) hashes.Add(s.Hash);
+                }
+                catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException) { }
+            }
+        }
+        return hashes;
+    }
+
+    // A sound that was removed, or changed to another file, no longer needs its file unless another sound (here or in another room) is the same file.
+    private void ReleaseSoundFiles(IEnumerable<string> hashes)
+    {
+        var candidates = hashes.Distinct().ToList();
+        if (candidates.Count == 0) return;
+        var live = LiveSoundHashes();
+        foreach (var hash in candidates.Where(h => !live.Contains(h))) _blobs.Delete(hash);
+    }
+
+    internal void PublishSound(ChatRoom room, StoredSound entry)
+    {
+        List<string> forgotten;
+        lock (room.SoundGate) { room.SoundEntries[entry.Id] = entry; forgotten = ForgetOldRemovals(room, entry.From); }
         SaveSounds(room);
+        ReleaseSoundFiles(entry.Deleted ? forgotten.Append(entry.Hash) : forgotten);
         foreach (var member in room.MemberStates.Values)
             Send(member.Connection, new Wire { Type = Wire.Sound, Room = RefTo(room, member), Snd = new[] { entry } });
         room.RaiseSoundsChanged();
@@ -129,18 +189,28 @@ public sealed partial class ChatNode
     private void OnSounds(PeerState peer, ChatRoom room, StoredSound[] sounds)
     {
         var accepted = new List<StoredSound>();
+        var unused = new List<string>();
         foreach (var s in sounds.Take(SoundBatch * 2))
         {
             if (!IsValidPeerId(s.From) || IsBannedIn(room, new PeerId(s.From)) || !SignedSound.Verify(s, room.Key)) continue;
+            bool known;
+            lock (room.SoundGate) known = room.SoundEntries.ContainsKey(s.Id);
+            // A new sound over the limits is not taken (and so not passed on); changes to sounds we already have always are.
+            if (!known && !s.Deleted && CountLive(room) >= SoundLimits.PerRoom) continue;
             lock (room.SoundGate)
             {
                 if (room.SoundEntries.TryGetValue(s.Id, out var old) && (old.From != s.From || old.Ts >= s.Ts)) continue;
+                // The file of a sound that was removed or replaced is let go once the list is saved.
+                if (old != null && old.Hash != s.Hash) unused.Add(old.Hash);
+                if (s.Deleted) unused.Add(s.Hash);
                 room.SoundEntries[s.Id] = s;
+                unused.AddRange(ForgetOldRemovals(room, s.From));
             }
             accepted.Add(s);
         }
         if (accepted.Count == 0) return;
         SaveSounds(room);
+        ReleaseSoundFiles(unused);
         foreach (var s in accepted)
             Relay(peer, room, s.From, reference => new Wire { Type = Wire.Sound, Room = reference, Snd = new[] { s } });
         room.RaiseSoundsChanged();

@@ -151,6 +151,123 @@ public class SoundboardTests
         await TestUtil.WaitFor(() => rc.Sounds.Any(s => s.Name == "airhorn" && s.Available), 30_000);
     }
 
+    private static StoredSound Entry(PeerIdentity who, string roomKey, string name, bool deleted = false, long? ts = null) =>
+        SignedSound.Create(who, roomKey, SignedSound.NewId(), name, "mallory", new string('a', 64), 1000, 1500, ts ?? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), deleted);
+
+    [Fact]
+    public async Task A_room_has_a_limited_number_of_sounds_until_one_is_removed()
+    {
+        var hub = new InMemoryDiscoveryHub();
+        var (a, b, ra, rb) = await Pair(hub);
+        using var _ = a; using var __ = b;
+
+        var clip = SoundClip.FromPcm(Tone(440, 0.2));
+        for (int i = 0; i < SoundLimits.PerRoom; i++) ra.AddSound("sound " + i, clip);
+        var ex = Assert.Throws<InvalidOperationException>(() => ra.AddSound("one too many", clip));
+        Assert.Contains(SoundLimits.PerRoom.ToString(), ex.Message);
+
+        // Removing one makes room.
+        ra.RemoveSound(ra.Sounds.First().Id);
+        ra.AddSound("now it fits", clip);
+        Assert.Equal(SoundLimits.PerRoom, ra.Sounds.Count);
+    }
+
+    [Fact]
+    public async Task Sounds_over_the_room_limit_from_another_member_are_not_taken()
+    {
+        var hub = new InMemoryDiscoveryHub();
+        var (a, b, ra, rb) = await Pair(hub);
+        using var _ = a; using var __ = b;
+
+        // Alice holds a list that goes past the limits (entries signed by people who are not here, as a member who ignores them would
+        // have), and a newcomer is sent it the way every newcomer is.
+        var flooder = PeerIdentity.Generate();
+        lock (ra.SoundGate)
+        {
+            for (int i = 0; i < 60; i++) { var e = Entry(flooder, ra.Key, "flood " + i); ra.SoundEntries[e.Id] = e; }
+            for (int person = 0; person < 6; person++)
+            {
+                var who = PeerIdentity.Generate();
+                for (int i = 0; i < 20; i++) { var e = Entry(who, ra.Key, $"p{person} s{i}"); ra.SoundEntries[e.Id] = e; }
+            }
+        }
+
+        using var c = TestUtil.NewNode(hub, "carol");
+        var rc = await c.JoinRoomAsync("lobby");
+        await TestUtil.WaitFor(() => rc.Sounds.Count >= SoundLimits.PerRoom, 30_000);
+        await Task.Delay(1500);
+        Assert.Equal(SoundLimits.PerRoom, rc.Sounds.Count);
+    }
+
+    [Fact]
+    public async Task Only_so_many_removed_sounds_are_remembered_per_person()
+    {
+        var hub = new InMemoryDiscoveryHub();
+        var (a, b, ra, rb) = await Pair(hub);
+        using var _ = a; using var __ = b;
+
+        var who = PeerIdentity.Generate();
+        long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        for (int i = 0; i < SoundLimits.RemovedPerMember + 20; i++) a.PublishSound(ra, Entry(who, ra.Key, "gone " + i, deleted: true, ts: now - 100_000 + i));
+        await Task.Delay(2500);
+        int Removed(ChatRoom r) { lock (r.SoundGate) return r.SoundEntries.Values.Count(s => s.Deleted && s.From == who.Id.Value); }
+        Assert.Equal(SoundLimits.RemovedPerMember, Removed(ra));
+        Assert.True(Removed(rb) <= SoundLimits.RemovedPerMember);
+    }
+
+    // The files of sounds are stored with the pictures, which are deleted a week after they were saved.
+    [Fact]
+    public async Task A_sound_still_on_the_soundboard_is_kept_when_old_files_are_cleaned_up_and_a_stray_old_file_is_not()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "yaparr-sbsweep-" + Guid.NewGuid().ToString("N"));
+        string files = Path.Combine(root, "files"), lists = Path.Combine(root, "lists");
+        try
+        {
+            string hash;
+            using (var first = TestUtil.NewNode(new InMemoryDiscoveryHub(), "alice", attachmentDirectory: files, soundboardDirectory: lists))
+            {
+                var room = await first.JoinRoomAsync("lobby");
+                var clip = SoundClip.FromPcm(Tone(440, 1));
+                room.AddSound("airhorn", clip);
+                hash = SoundClip.HashOf(clip.Data);
+                Assert.True(first.HasAttachment(hash));
+            }
+
+            // A month later, with an old file nobody refers to as well.
+            var stray = new string('c', 64);
+            File.WriteAllBytes(Path.Combine(files, stray), new byte[100]);
+            foreach (var file in Directory.GetFiles(files)) File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddDays(-30));
+
+            using var second = TestUtil.NewNode(new InMemoryDiscoveryHub(), "alice", attachmentDirectory: files, soundboardDirectory: lists);
+            second.Start();
+            await TestUtil.WaitFor(() => !File.Exists(Path.Combine(files, stray)), 20_000);
+            Assert.True(second.HasAttachment(hash), "the sound is still on the soundboard, so its file stays");
+        }
+        finally { try { Directory.Delete(root, true); } catch (IOException) { } }
+    }
+
+    [Fact]
+    public async Task The_file_of_a_removed_sound_is_deleted_unless_another_sound_uses_it()
+    {
+        var hub = new InMemoryDiscoveryHub();
+        var (a, b, ra, rb) = await Pair(hub);
+        using var _ = a; using var __ = b;
+
+        var clip = SoundClip.FromPcm(Tone(440, 1));
+        var hash = SoundClip.HashOf(clip.Data);
+        var one = ra.AddSound("one", clip);
+        var two = ra.AddSound("two", clip);   // the same file under another name
+        await TestUtil.WaitFor(() => rb.Sounds.Count == 2 && b.HasAttachment(hash), 30_000);
+
+        ra.RemoveSound(one.Id);
+        await TestUtil.WaitFor(() => rb.Sounds.Count == 1, 20_000);
+        Assert.True(a.HasAttachment(hash));
+        Assert.True(b.HasAttachment(hash));
+
+        ra.RemoveSound(two.Id);
+        await TestUtil.WaitFor(() => !a.HasAttachment(hash) && !b.HasAttachment(hash), 20_000);
+    }
+
     [Fact]
     public async Task Only_the_person_who_added_a_sound_can_rename_or_remove_it()
     {

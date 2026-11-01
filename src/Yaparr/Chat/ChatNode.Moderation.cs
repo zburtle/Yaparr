@@ -256,6 +256,14 @@ public sealed partial class ChatNode
 
         if (view.Messages.Count > 0) room.History.Remove(view.Messages);
 
+        // Sounds an admin took down no longer need their files.
+        if (view.Sounds.Count > 0)
+        {
+            StoredSound[] sounds;
+            lock (room.SoundGate) sounds = room.SoundEntries.Values.ToArray();
+            ReleaseSoundFiles(sounds.Where(s => view.Sounds.Contains(s.Id)).Select(s => s.Hash));
+        }
+
         // Someone whose ban was lifted is still connected and still in the room: let them back in.
         foreach (var p in _peers.Values.ToList())
             if (!room.MemberStates.ContainsKey(p.Id) && p.Connection.SessionId != null && p.Declares(RefFrom(room, p))) OnPeerEntersRoom(p, room);

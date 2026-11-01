@@ -158,6 +158,9 @@ public class ModerationTests
         t.Ro.DeleteSound(added.Id);
         await TestUtil.WaitFor(() => t.Rb.Sounds.All(s => s.Name != "airhorn") && t.Rc.Sounds.All(s => s.Name != "airhorn"), 20_000);
         Assert.Null(t.Rb.GetSound(added.Id));
+        // The file goes with it, on every computer that had it.
+        var hash = SoundClip.HashOf(clip.Data);
+        await TestUtil.WaitFor(() => !t.Owner.HasAttachment(hash) && !t.B.HasAttachment(hash) && !t.C.HasAttachment(hash), 20_000);
     }
 
     [Fact]

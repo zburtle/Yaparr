@@ -163,7 +163,7 @@ public partial class SoundboardWindow : Window
             _room.AddSound(dialog.SoundName, dialog.Clip);
             Footer.Text = $"Added {dialog.SoundName}.";
         }
-        catch (ArgumentException ex) { Footer.Text = ex.Message; }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { Footer.Text = ex.Message; }
     }
 
     private void MuteAll_Changed(object? sender, RoutedEventArgs e)
