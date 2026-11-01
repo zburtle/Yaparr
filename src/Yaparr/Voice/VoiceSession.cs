@@ -165,6 +165,12 @@ public sealed class VoiceSession : IDisposable
         lock (_playLock) _sounds.Add(new SoundPlayback(by, clip));
     }
 
+    /// <summary>How many frames of a person were decoded; one that was not among the loudest, or was muted, costs nothing.</summary>
+    internal int DecodedFrames(PeerId peer) => _remotes.TryGetValue(peer, out var r) ? r.Decoded : 0;
+
+    /// <summary>The tag at the start of this channel's packets (for tests that make packets of their own).</summary>
+    internal uint Tag => _tag;
+
     /// <summary>How many packets we got from a person, how many had to be concealed and how often we ran dry.</summary>
     public (int Received, int Lost, int Underruns) Stats(PeerId peer) =>
         _remotes.TryGetValue(peer, out var r) ? (r.Received, r.Lost, r.Underruns) : (0, 0, 0);
@@ -300,14 +306,22 @@ public sealed class VoiceSession : IDisposable
         }
     }
 
+    /// <summary>In a big call only this many people are decoded and mixed at a time; more than that talking at once is noise anyway.</summary>
+    internal const int MaxDecoded = 8;
+
     private void MixFrame()
     {
         Array.Clear(_mix);
         long now = Environment.TickCount64;
+        // With many people in the channel, the ones who are saying the most are the ones worth decoding.
+        HashSet<RemoteVoice>? loudest = null;
+        if (_remotes.Count > MaxDecoded)
+            loudest = _remotes.Values.OrderByDescending(r => r.LoudnessAt(now)).Take(MaxDecoded).ToHashSet();
         foreach (var remote in _remotes.Values)
         {
+            // Not heard, so not worth decoding.
+            if (_deafened || remote.LocalMute || (loudest != null && !loudest.Contains(remote))) { remote.Skip(now); continue; }
             if (!remote.ReadFrame(_tmp, now)) continue;
-            if (remote.LocalMute || _deafened) continue;
             float gain = remote.Gain;
             for (int i = 0; i < FrameSamples; i++) _mix[i] += _tmp[i] * gain;
         }

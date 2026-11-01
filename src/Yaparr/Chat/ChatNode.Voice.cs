@@ -100,13 +100,15 @@ public sealed partial class ChatNode
         if (removed) VoiceRosterChanged(room);
     }
 
-    // The people in the voice channel we are in, which is the only one whose audio we send to or play.
-    private List<PeerId> ActiveVoiceOthers(ChatRoom room)
+    // The people in the voice channel we are in, which is the only one whose audio we send to or play. Someone who is deafened hears nothing,
+    // so sending to them is a waste; they are still part of the channel (we stay connected to them for when they listen again).
+    private List<PeerId> ActiveVoiceOthers(ChatRoom room, bool includeDeafened = true)
     {
         long cutoff = Environment.TickCount64 - (long)VoiceLifetime.TotalMilliseconds;
         string channel = room.ActiveVoice?.ChannelId ?? RoomChannels.DefaultVoice;
         lock (room.IndirectGate)
             return room.Voice.Where(kv => kv.Value.State.Active && kv.Value.SeenAt >= cutoff && !IsBlocked(kv.Key)
+                                          && (includeDeafened || !kv.Value.State.Deafened)
                                           && (kv.Value.State.Chan ?? RoomChannels.DefaultVoice) == channel).Select(kv => kv.Key).ToList();
     }
 
@@ -133,7 +135,7 @@ public sealed partial class ChatNode
             try { PublishMedia(tree, packet, isKey: false); return; }
             catch (ArgumentException) { return; }
         }
-        foreach (var id in ActiveVoiceOthers(room))
+        foreach (var id in ActiveVoiceOthers(room, includeDeafened: false))
         {
             if (!_peers.TryGetValue(id, out var peer) || peer.Connection.State != ConnectionState.Established) continue;
             try { peer.Connection.SendUnreliable(ChannelIds.Voice, packet); }

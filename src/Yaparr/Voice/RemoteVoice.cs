@@ -50,6 +50,9 @@ internal sealed class RemoteVoice : IDisposable
     private int _silent;
     private long _lastUnderrunAt;
     private long _lastRaisedAt;
+    private double _loudness;
+    private long _lastPacketAt;
+    private bool _decoderStale;
 
     /// <param name="channels">1 for a voice; 2 for the sound of a shared screen, whose frames then hold <see cref="FrameSamples"/> x 2 interleaved samples.</param>
     /// <param name="minTarget">How many 20 ms packets to hold back before playing, which is also the least delay.</param>
@@ -70,6 +73,9 @@ internal sealed class RemoteVoice : IDisposable
     public int Underruns { get; private set; }
     public int Received { get; private set; }
 
+    /// <summary>How many 20 ms frames were decoded (and so cost something); frames that were skipped are not counted.</summary>
+    public int Decoded { get; private set; }
+
     public event Action<bool>? SpeakingChanged;
 
     // Signed distance from b to a in sequence space, so 0 follows 65535.
@@ -80,6 +86,9 @@ internal sealed class RemoteVoice : IDisposable
         lock (_gate)
         {
             Received++;
+            // Opus spends few bytes on silence and background noise and many on speech, so the size of a packet says how much is being said.
+            _loudness = _loudness * 0.9 + opus.Length * 0.1;
+            _lastPacketAt = Environment.TickCount64;
             if (_playing && Diff(seq, _expected) < 0) return; // too late to use
             if (!_playing)
             {
@@ -88,6 +97,38 @@ internal sealed class RemoteVoice : IDisposable
             _packets[seq] = opus.ToArray();
             if (_packets.Count > MaxBuffered) DropOldestLocked(MaxBuffered / 2);
         }
+    }
+
+    /// <summary>How much this person has been saying lately (the smoothed size of their packets), or 0 once they have gone quiet.</summary>
+    public double LoudnessAt(long nowMs)
+    {
+        lock (_gate) return nowMs - _lastPacketAt > 200 ? 0 : _loudness;
+    }
+
+    /// <summary>
+    /// Moves on by one frame without decoding it: for someone who is not heard (muted, or not among the loudest, or we are deafened).
+    /// They still count as speaking while their packets keep coming, so the indicator works; if they are decoded again later the decoder starts afresh.
+    /// </summary>
+    public void Skip(long nowMs)
+    {
+        bool? change = null;
+        lock (_gate)
+        {
+            if (!_playing)
+            {
+                if (_packets.Count >= _target) { _playing = true; _expected = _first; _silent = 0; }
+            }
+            else
+            {
+                if (_packets.Count > _target + 6) DropOldestLocked(_target + 2);
+                if (_packets.Remove(_expected)) { _expected++; _silent = 0; }
+                else if (_packets.Keys.Any(s => Diff(s, _expected) > 0)) _expected++;
+                else if (++_silent > SilentFramesBeforeStop) { _playing = false; _packets.Clear(); }
+            }
+            _decoderStale = true;
+            if (_playing != Speaking) { Speaking = _playing; change = _playing; }
+        }
+        if (change != null) SpeakingChanged?.Invoke(change.Value);
     }
 
     // Fills one frame; returns false (and zeroes it) when this person is not being heard right now.
@@ -115,12 +156,16 @@ internal sealed class RemoteVoice : IDisposable
             _silent = 0;
         }
 
+        // Frames were skipped since the last one decoded, so what the decoder remembers no longer follows from what it is given now.
+        if (_decoderStale) { _decoder.ResetState(); _decoderStale = false; }
+
         // Latency crept up (a burst after a stall): skip ahead rather than stay behind forever.
         if (_packets.Count > _target + 6) DropOldestLocked(_target + 2);
 
         if (_packets.Remove(_expected, out var data))
         {
             _decoder.Decode(data, frame, FrameSamples, false);
+            Decoded++;
             _expected++;
             _silent = 0;
             RelaxTarget(nowMs);

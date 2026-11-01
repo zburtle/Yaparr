@@ -327,4 +327,105 @@ public class VoiceTests
         await Talk(va, vb, 440, 2);
         Assert.True(vb.Stats(a.Id).Received > 20);
     }
+
+    // ---- big calls: only what is heard costs anything ---------------------------------------------
+
+    [Fact]
+    public async Task Nothing_is_sent_to_someone_who_is_deafened()
+    {
+        var hub = new InMemoryDiscoveryHub();
+        var (a, b, ra, rb) = await Pair(hub);
+        using var c = TestUtil.NewNode(hub, "carol");
+        using var _ = a; using var __ = b;
+        var rc = await c.JoinRoomAsync("Lobby");
+        await TestUtil.WaitFor(() => ra.MemberStates.Count == 2 && rc.MemberStates.Count == 2, 30_000);
+        using var va = ra.JoinVoice(); va.Activation = VoiceActivation.Open;
+        using var vb = rb.JoinVoice(); vb.Activation = VoiceActivation.Open;
+        using var vc = rc.JoinVoice(); vc.Activation = VoiceActivation.Open;
+        vc.Deafened = true;
+        // Alice knows that Carol is deafened before she talks.
+        await TestUtil.WaitFor(() => ra.VoiceParticipants.Any(p => p.Peer.Id == c.Id && p.Deafened) && ra.VoiceParticipants.Count == 3, 30_000);
+
+        var bobHears = new float[480];
+        long next = Environment.TickCount64;
+        for (int i = 0; i < 200; i++)
+        {
+            va.PushCapture(Tone(440, 480, i * 480));
+            vb.PullPlayback(bobHears);
+            vc.PullPlayback(bobHears);
+            next += 10;
+            long wait = next - Environment.TickCount64;
+            if (wait > 0) await Task.Delay((int)wait);
+        }
+
+        Assert.True(vb.Stats(a.Id).Received > 20, "Bob should be sent Alice's voice");
+        // A packet or two can be on its way before Alice learns about the deafening; after that nothing.
+        Assert.True(vc.Stats(a.Id).Received <= 3, $"Carol is deafened but was sent {vc.Stats(a.Id).Received} packets");
+    }
+
+    private static byte[] NoisePacket(IOpusEncoder encoder, Random random, double amplitude)
+    {
+        var pcm = new float[960];
+        for (int i = 0; i < pcm.Length; i++) pcm[i] = (float)((random.NextDouble() * 2 - 1) * amplitude);
+        var packet = new byte[1275];
+        int length = encoder.Encode(pcm, 960, packet, 1275);
+        return packet.AsSpan(0, length).ToArray();
+    }
+
+    [Fact]
+    public async Task In_a_big_call_only_the_loudest_talkers_are_decoded()
+    {
+        var hub = new InMemoryDiscoveryHub();
+        var (a, b, ra, rb) = await Pair(hub);
+        using var _ = a; using var __ = b;
+        using var listener = rb.JoinVoice();
+
+        var random = new Random(7);
+        var talkers = Enumerable.Range(0, 12).Select(i => (Id: PeerIdentity.Generate().Id, Loud: i < 4,
+            Encoder: OpusCodecFactory.CreateEncoder(48000, 1, OpusApplication.OPUS_APPLICATION_VOIP))).ToList();
+        foreach (var t in talkers) { t.Encoder.Bitrate = 32000; t.Encoder.SignalType = OpusSignal.OPUS_SIGNAL_VOICE; }
+
+        const int frames = 150;
+        var speaker = new float[960];
+        for (int f = 0; f < frames; f++)
+        {
+            var buffer = new byte[VoicePacket.HeaderSize + 1275];
+            foreach (var t in talkers)
+            {
+                var opus = NoisePacket(t.Encoder, random, t.Loud ? 0.5 : 0.0003);
+                int length = VoicePacket.Write(buffer, listener.Tag, (ushort)f, (uint)(f * 960), false, opus);
+                listener.OnPacket(t.Id, buffer.AsSpan(0, length));
+            }
+            listener.PullPlayback(speaker);
+        }
+
+        // The four loud ones are heard nearly all the time; the rest share what is left of the eight places.
+        foreach (var t in talkers.Where(t => t.Loud))
+            Assert.True(listener.DecodedFrames(t.Id) >= frames * 0.8, $"a loud talker was decoded only {listener.DecodedFrames(t.Id)} of {frames} frames");
+        int total = talkers.Sum(t => listener.DecodedFrames(t.Id));
+        Assert.True(total <= RemoteVoiceLimit * frames + 20, $"{total} frames decoded; twelve talkers fully decoded would be {12 * frames}");
+        Assert.True(talkers.Where(t => !t.Loud).Sum(t => listener.DecodedFrames(t.Id)) < 8 * frames * 0.6);
+    }
+
+    private const int RemoteVoiceLimit = VoiceSession.MaxDecoded;
+
+    [Fact]
+    public void A_skipped_person_still_counts_as_speaking_and_sounds_right_when_decoded_again()
+    {
+        using var remote = new RemoteVoice(PeerIdentity.Generate().Id);
+        var packets = EncodeTone(40, 440);
+        foreach (var (seq, data) in packets.Take(6)) remote.Enqueue(seq, data);
+
+        var frame = new float[960];
+        // Three frames go by unheard, as when they are not among the loudest.
+        for (int i = 0; i < 3; i++) remote.Skip(Environment.TickCount64);
+        Assert.True(remote.Speaking);
+        Assert.Equal(0, remote.Decoded);
+
+        // Then they are decoded again and produce sound.
+        bool heard = false;
+        for (int i = 0; i < 3; i++) if (remote.ReadFrame(frame, Environment.TickCount64) && frame.Max(Math.Abs) > 0.01f) heard = true;
+        Assert.True(heard);
+        Assert.True(remote.Decoded > 0);
+    }
 }
