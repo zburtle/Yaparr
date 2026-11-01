@@ -142,9 +142,15 @@ public class VoiceChannelTests
         await TestUtil.WaitFor(() => ra.VoiceReach.Expected == 1, 30_000);
         Assert.Empty(ra.VoiceReach.Unreachable);
 
+        // People in a call ping each other every couple of seconds, which marks them as quick to judge.
+        await TestUtil.WaitFor(() => a.Network.Get(b.Id)?.SendsFastPings == true, 20_000);
+
         // Bob's machine stops sending without a word (the connection still looks established for another half minute).
         b.Mux.OutboundFilter = (_, _) => false;
+        var silentFor = System.Diagnostics.Stopwatch.StartNew();
         await TestUtil.WaitFor(() => ra.VoiceReach.Unreachable.Contains(b.Id), 40_000);
+        // Six seconds of silence, and the check that sees it; it used to be fourteen.
+        Assert.True(silentFor.Elapsed < TimeSpan.FromSeconds(12), $"took {silentFor.Elapsed.TotalSeconds:0.0} s");
         Assert.Equal(1, ra.VoiceReach.Expected);
         Assert.Equal(0, ra.VoiceReach.Reachable);
     }

@@ -73,7 +73,7 @@ public sealed class PeerConnection : IDisposable
 
     private SessionCrypto? _crypto;
     private byte[]? _remoteEph;
-    private long _startedAt, _lastHelloSent, _lastSent, _lastReceived;
+    private long _startedAt, _lastHelloSent, _lastSent, _lastReceived, _lastPingReceived;
 
     internal PeerConnection(PeerIdentity local, IPEndPoint remote, PeerId? expected, Action<byte[], IPEndPoint> send, PeerNetworkOptions options, byte[] instance, PeerId? relayedVia = null)
     {
@@ -94,6 +94,21 @@ public sealed class PeerConnection : IDisposable
     public bool IsRelayed => RelayedVia != null;
     internal PeerId? Expected => _expected;
     internal long LastReceivedAt => Volatile.Read(ref _lastReceived);
+
+    /// <summary>
+    /// True once two pings have arrived from the other end within four seconds of each other. A version that only pings when it has been quiet for
+    /// ten seconds never does, so this says the other end pings often (see <see cref="SendPing"/>) and can be judged by a short silence.
+    /// </summary>
+    internal bool SendsFastPings { get; private set; }
+
+    /// <summary>Sends a ping now, so the other end hears from us even if there is nothing else to say.</summary>
+    internal void SendPing()
+    {
+        lock (_gate)
+        {
+            if (State == ConnectionState.Established) SendFrameLocked(new[] { FramePing });
+        }
+    }
 
     /// <summary>Random id of the remote app run. A different one from the same peer means it restarted.</summary>
     internal byte[]? RemoteInstance { get; private set; }
@@ -305,6 +320,10 @@ public sealed class PeerConnection : IDisposable
                     acked.OnAck(BinaryPrimitives.ReadUInt32BigEndian(frame.AsSpan(2)));
                     PumpLocked(now);
                 }
+                break;
+            case FramePing:
+                if (_lastPingReceived != 0 && now - _lastPingReceived <= 4000) SendsFastPings = true;
+                _lastPingReceived = now;
                 break;
             case FrameClose:
                 post.Add(() => CloseCore(notifyPeer: false, "was closed by the remote peer"));

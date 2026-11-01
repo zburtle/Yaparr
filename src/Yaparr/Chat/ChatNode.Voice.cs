@@ -12,10 +12,12 @@ public sealed partial class ChatNode
 
     // A connection that has gone silent still counts as established until the idle timeout (35 seconds), long after the audio stopped. People send
     // at least a ping every ten seconds, so one we have heard nothing from for fourteen is not there.
-    private const long LiveWithinMs = 14_000;
+    // Someone who pings every couple of seconds during a call (see MaintainVoice) is judged by a short silence, though not on one lost ping.
+    private const long LiveWithinMs = 14_000, LiveWithinFastMs = 6_000;
 
     internal bool IsLive(PeerId id) =>
-        _peers.TryGetValue(id, out var p) && p.Connection.State == ConnectionState.Established && Environment.TickCount64 - p.Connection.LastReceivedAt <= LiveWithinMs;
+        _peers.TryGetValue(id, out var p) && p.Connection.State == ConnectionState.Established
+        && Environment.TickCount64 - p.Connection.LastReceivedAt <= (p.Connection.SendsFastPings ? LiveWithinFastMs : LiveWithinMs);
 
     /// <summary>Whether the machine has a network connection at all, as the system reports it; false when Wi-Fi drops or the cable is pulled.</summary>
     public static bool NetworkAvailable => System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable();
@@ -115,6 +117,11 @@ public sealed partial class ChatNode
     private void MaintainVoice(ChatRoom room, long now)
     {
         MaintainVoiceTree(room, now);
+        // In a call everyone pings the others every couple of seconds, so that a person who drops is noticed in a few seconds; a connection
+        // otherwise pings once in ten, and a muted person who says nothing sends nothing else.
+        if (room.ActiveVoice != null)
+            foreach (var id in ActiveVoiceOthers(room))
+                if (_peers.TryGetValue(id, out var voicePeer)) voicePeer.Connection.SendPing();
         if (room.ActiveVoice != null && now - room.LastVoiceAt >= _options.VoiceInterval.TotalMilliseconds)
             PublishVoiceState(room, active: true, room.SelfMuted, room.SelfDeafened, raise: false);
 
