@@ -38,3 +38,7 @@ The [documentation](docs/README.md) is a small wiki, one page per topic:
 - Working on it: [Development](docs/development.md), including how releases are made.
 
 What is still to do is in the [backlog](BACKLOG.md).
+
+## Licence
+
+Yaparr is free software under the [GNU GPL](COPYING), version 3 or later: the library, the apps and everything else. [LICENSE.txt](LICENSE.txt) has the details, including where to get the source of each release. Releases up to v1.10.0 were published under the MIT licence and stay available under it. Third-party software is listed in [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt).

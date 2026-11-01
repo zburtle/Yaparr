@@ -32,6 +32,10 @@ alice and bob, stop bob, chat as alice, then start bob again to see the `missed`
 
 `tools/` has a headless agent and a tool that runs it on DigitalOcean machines (with simulated NATs, packet loss and failures) and checks the result; see [tools/README.md](../tools/README.md).
 
+## Licence
+
+Everything is GPL-3.0-or-later (see [LICENSE.txt](../LICENSE.txt)), and a contribution is under the same licence. Anything new you depend on has to be compatible with GPL version 3: MIT, BSD, Apache-2.0, LGPL and similar are fine; GPL-2.0-only, proprietary and "non-commercial" licences are not.
+
 ## Releases
 
 Every push to `master` runs `.github/workflows/release.yml`, where [semantic-release](https://semantic-release.org) reads the commit messages since the last tag. `fix:` makes a patch release, `feat:` a minor one, and a `!` after the type (`feat!:`) or a `BREAKING CHANGE:` footer a major one; `docs:`, `chore:`, `test:`, `ci:` and `refactor:` release nothing. When a release is due, the MSI and both .deb packages are built with that version, then the tag, the release notes and the downloads are published. A commit with no such prefix is ignored, so use them from now on.

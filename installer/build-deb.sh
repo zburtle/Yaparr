@@ -28,6 +28,7 @@ dotnet publish "$root/samples/Yaparr.Desktop/Yaparr.Desktop.csproj" -c Release -
 
 chmod 755 "$stage/opt/yaparr/Yaparr.Desktop"
 cp "$root/LICENSE.txt" "$stage/usr/share/doc/yaparr/copyright"
+cp "$root/COPYING" "$stage/usr/share/doc/yaparr/"
 cp "$root/THIRD-PARTY-NOTICES.txt" "$root/THIRD-PARTY-NOTICES-SkiaSharp.txt" "$stage/usr/share/doc/yaparr/"
 ln -s /opt/yaparr/Yaparr.Desktop "$stage/usr/bin/yaparr"
 
