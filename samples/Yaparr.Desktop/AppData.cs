@@ -54,6 +54,10 @@ public sealed class AppSettings
     public bool SoundsEnabled { get; set; } = true;
     /// <summary>Flash the taskbar button when a message arrives while the window is in the background.</summary>
     public bool FlashTaskbar { get; set; } = true;
+    /// <summary>Show the number of unread messages on the taskbar button (Windows).</summary>
+    public bool TaskbarCount { get; set; } = true;
+    /// <summary>Which sound a new message makes: one of the names in <c>UiSounds.MessageStyles</c>.</summary>
+    public string MessageSound { get; set; } = "Chime";
 
     /// <summary>How loud each person sounds to you, in percent (0 to 200), by account id. People not listed are at 100.</summary>
     public Dictionary<string, int> PersonVolumes { get; set; } = new();

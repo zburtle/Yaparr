@@ -210,6 +210,8 @@
             <MenuItem Header="_Notifications">
                 <MenuItem x:Name="SoundsItem" Header="Play _sounds" ToggleType="CheckBox" />
                 <MenuItem x:Name="FlashItem" Header="_Flash the taskbar button" ToggleType="CheckBox" />
+                <MenuItem x:Name="TaskbarCountItem" Header="Show the _unread count on the taskbar" ToggleType="CheckBox" />
+                <MenuItem x:Name="MessageSoundMenu" Header="_Message sound" />
             </MenuItem>
             <MenuItem Header="_Network">
                 <MenuItem Header="_VPN…" Click="Vpn_Click" />

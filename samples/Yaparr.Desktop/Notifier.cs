@@ -11,7 +11,20 @@ internal sealed class UiSounds
     private const long MinGapMs = 700;
 
     // (frequency in Hz, length in ms)
-    private static readonly float[] MessageClip = Notes((1319, 70), (1976, 120));
+    private static readonly Dictionary<string, float[]> MessageClips = new()
+    {
+        ["Chime"] = Notes((1319, 70), (1976, 120)),
+        ["Soft"] = Notes((880, 110), (659, 170)),
+        ["Pop"] = Notes((1568, 40), (1047, 80)),
+        ["Bell"] = Notes((1175, 60), (1568, 60), (2093, 170)),
+        ["Drop"] = Notes((988, 60), (740, 60), (494, 150)),
+    };
+
+    /// <summary>The sounds a new message can make.</summary>
+    public static IReadOnlyList<string> MessageStyles { get; } = MessageClips.Keys.ToList();
+
+    /// <summary>Which of <see cref="MessageStyles"/> a new message makes; an unknown name means the first.</summary>
+    public string MessageStyle { get; set; } = "Chime";
     private static readonly float[] JoinedClip = Notes((523, 90), (784, 130));
     private static readonly float[] LeftClip = Notes((784, 90), (523, 130));
     private static readonly float[] YouJoinedClip = Notes((523, 80), (659, 80), (784, 130));
@@ -29,15 +42,21 @@ internal sealed class UiSounds
 
     public bool Enabled { get; set; } = true;
 
-    public void Message() => Play(MessageClip, throttled: true);
+    public void Message() => Play(MessageClips.GetValueOrDefault(MessageStyle) ?? MessageClips["Chime"], throttled: true);
+
+    /// <summary>Plays a message sound to choose from, even when sounds are off.</summary>
+    public void Preview(string style)
+    {
+        if (MessageClips.TryGetValue(style, out var clip)) Play(clip, throttled: false, force: true);
+    }
     public void SomeoneJoined() => Play(JoinedClip, throttled: false);
     public void SomeoneLeft() => Play(LeftClip, throttled: false);
     public void YouJoined() => Play(YouJoinedClip, throttled: false);
     public void YouLeft() => Play(YouLeftClip, throttled: false);
 
-    private void Play(float[] clip, bool throttled)
+    private void Play(float[] clip, bool throttled, bool force = false)
     {
-        if (!Enabled) return;
+        if (!Enabled && !force) return;
         if (throttled)
         {
             long now = Environment.TickCount64;
