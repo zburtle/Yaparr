@@ -110,6 +110,12 @@ public partial class MainWindow
         RestartApp();
     }
 
+    private async void MyDevices_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_node == null) return;
+        await new DevicesDialog(_node).ShowDialog(this);
+    }
+
     private async void LinkDevice_Click(object? sender, RoutedEventArgs e)
     {
         if (_node == null || _identity == null) return;

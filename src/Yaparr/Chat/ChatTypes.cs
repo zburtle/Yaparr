@@ -40,6 +40,9 @@ public enum DeliveryState
 
 public sealed record DeliveryStatus(string MessageId, DeliveryState State, int Delivered, int Total);
 
+/// <summary>One device signed in as you: this one, or another that is connected to it.</summary>
+public sealed record DeviceInfo(PeerId Id, bool IsThisDevice, PeerLink Link);
+
 /// <summary>One person a message was sent to, and whether their app has confirmed it. A person with several devices is one entry.</summary>
 public sealed record DeliveryRecipient(PeerId Id, string Name, bool Delivered);
 

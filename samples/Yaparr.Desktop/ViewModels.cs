@@ -120,7 +120,10 @@ public sealed class MessageVm : Observable
         _ => "",
     };
 
-    public string TimeText => Time.LocalDateTime.ToString("HH:mm");
+    public string TimeText => Time.LocalDateTime.ToString("HH:mm") + (DeviceNote.Length > 0 ? "  ·  " + DeviceNote : "");
+
+    /// <summary>For a message you sent from another of your devices: which one.</summary>
+    public string DeviceNote { get; init; } = "";
     public string FullTime => Time.LocalDateTime.ToString("dddd, MMMM d, yyyy  HH:mm:ss");
 
     private bool _showDay;

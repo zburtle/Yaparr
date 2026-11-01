@@ -668,7 +668,12 @@ public partial class MainWindow : Window
     private MessageVm ToVm(ChatMessage m)
     {
         Remember(m.From);
-        var vm = new MessageVm(m.Timestamp, m.From.DisplayName, m.Text, m.IsCatchUp, isMine: _node != null && _node.IsMyDevice(m.From.Id), id: m.Id, attachment: m.Attachment) { Source = m, Channel = m.Channel };
+        bool mine = _node != null && _node.IsMyDevice(m.From.Id);
+        // A message you sent from another of your devices says which one.
+        var vm = new MessageVm(m.Timestamp, m.From.DisplayName, m.Text, m.IsCatchUp, isMine: mine, id: m.Id, attachment: m.Attachment)
+        {
+            Source = m, Channel = m.Channel, DeviceNote = mine && _node!.Id != m.From.Id ? "from your other device " + m.From.Id.Short : "",
+        };
         if (m.Attachment != null) TrackAttachment(vm);
         return vm;
     }

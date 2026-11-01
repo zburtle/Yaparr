@@ -23,6 +23,12 @@ public sealed partial class ChatNode
     /// <summary>Whether a device is this one or another of your own.</summary>
     public bool IsMyDevice(PeerId device) => device == Id || AccountOf(device) == AccountId;
 
+    /// <summary>This device and the other devices of your account that are connected to it right now.</summary>
+    public IReadOnlyList<DeviceInfo> MyDevices =>
+        new[] { new DeviceInfo(Id, true, PeerLink.Direct) }
+            .Concat(_peers.Values.Where(IsSibling).OrderBy(p => p.Id.Value, StringComparer.Ordinal).Select(p => new DeviceInfo(p.Id, false, GetLink(p.Id))))
+            .ToList();
+
     private void LearnAccount(PeerConnection conn)
     {
         if (conn.RemoteId is { } device && conn.RemoteAccount is { } account && account != device) _accounts[device] = account;

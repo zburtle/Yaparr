@@ -41,6 +41,23 @@ public class DirectSyncTests : IDisposable
     }
 
     [Fact]
+    public async Task Your_devices_list_this_one_and_the_others_that_are_connected()
+    {
+        var (first, second, bob) = await StartAsync();
+        await TestUtil.WaitFor(() => first.MyDevices.Count == 2 && second.MyDevices.Count == 2, 30_000);
+
+        var seenByFirst = first.MyDevices;
+        Assert.True(seenByFirst[0].IsThisDevice);
+        Assert.Equal(first.Id, seenByFirst[0].Id);
+        Assert.Equal(second.Id, Assert.Single(seenByFirst, d => !d.IsThisDevice).Id);
+        Assert.Equal(second.Id, second.MyDevices.Single(d => d.IsThisDevice).Id);
+
+        // Someone else's devices are not yours.
+        var only = Assert.Single(bob.MyDevices);
+        Assert.True(only.IsThisDevice);
+    }
+
+    [Fact]
     public async Task A_message_sent_from_one_device_appears_as_your_own_on_the_other()
     {
         var (first, second, bob) = await StartAsync();

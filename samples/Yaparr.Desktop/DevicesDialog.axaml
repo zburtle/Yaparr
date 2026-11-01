@@ -1,0 +1,18 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Yaparr.Desktop.DevicesDialog"
+        Title="My devices" SizeToContent="Height" Width="440" CanResize="False"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+    <StackPanel Margin="16" Spacing="8">
+        <TextBlock Text="Devices signed in as you" FontWeight="SemiBold" />
+        <ItemsControl x:Name="DeviceList">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="x:String">
+                    <TextBlock Text="{Binding}" Margin="0,2" TextWrapping="Wrap" />
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <TextBlock x:Name="Note" Classes="muted small" TextWrapping="Wrap" />
+        <Button Content="Close" IsCancel="True" HorizontalAlignment="Right" MinWidth="80" HorizontalContentAlignment="Center" Click="Close_Click" />
+    </StackPanel>
+</Window>
