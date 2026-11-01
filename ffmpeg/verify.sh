@@ -16,9 +16,9 @@ echo "$version" | head -2
 
 # Licence: no GPL part, nothing nonfree, not even version 3 (which would make it LGPL 3 instead of 2.1).
 for bad in --enable-gpl --enable-nonfree --enable-version3 --enable-libx264 --enable-libx265; do
-  if has "$version" -- "$bad"; then fail "configured with $bad"; else ok "not configured with $bad"; fi
+  if has "$version" "$bad"; then fail "configured with $bad"; else ok "not configured with $bad"; fi
 done
-has "$version" -- "--enable-libvpx" && ok "has libvpx" || fail "no libvpx"
+has "$version" "--enable-libvpx" && ok "has libvpx" || fail "no libvpx"
 
 encoders="$("$FF" -hide_banner -encoders 2>&1)"
 decoders="$("$FF" -hide_banner -decoders 2>&1)"
@@ -29,8 +29,6 @@ for f in gfxcapture hwdownload format scale; do has "$filters" " $f " && ok "fil
 
 # Nothing that should not be there: the GPL encoders, other video codecs, the network.
 for e in libx264 libx265 libopenh264 libaom mpeg4 hevc libsvtav1; do has "$encoders" " $e " && fail "encoder $e should not be in this build" || ok "no encoder $e"; done
-count="$("$FF" -hide_banner -codecs 2>&1 | grep -c '^ [D.][E.][VAS]')"
-echo "codecs in the build: $count"
 
 # The gfxcapture options Yaparr's command line uses (the build must have the October 2026 fixes, dup_frames among them).
 help="$("$FF" -hide_banner -h filter=gfxcapture 2>&1)"

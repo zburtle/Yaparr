@@ -27,7 +27,8 @@ cd src
 #   h264 (decoder, parser)     every viewer decodes H.264 in software
 #   ivf, h264 (demuxers/muxers), rawvideo, pipe   the pictures go in and out through standard input and output
 #   gfxcapture, hwdownload, format, scale   Windows Graphics Capture, then the download and conversion of each picture
-#   lavfi, color, testsrc2, null   only for Yaparr's tests and the checks in verify.sh
+#   lavfi, color, testsrc2, null, wrapped_avframe   only for Yaparr's tests and the checks in verify.sh
+#                              (wrapped_avframe is how FFmpeg itself reads a test source)
 # Nothing else is switched on: no GPL part (no x264, x265), nothing "nonfree", no network, no other codec, no other program.
 ./configure \
   --prefix="$WORK/prefix" \
@@ -42,7 +43,7 @@ cd src
   --enable-d3d11va --enable-dxva2 \
   --enable-libvpx --enable-libvpl --enable-amf --enable-ffnvcodec --enable-nvenc \
   --enable-encoder=libvpx_vp8,h264_nvenc,h264_amf,h264_qsv,rawvideo \
-  --enable-decoder=vp8,h264 \
+  --enable-decoder=vp8,h264,wrapped_avframe \
   --enable-parser=h264,vp8 \
   --enable-demuxer=ivf,h264 \
   --enable-muxer=ivf,h264,rawvideo,null \
