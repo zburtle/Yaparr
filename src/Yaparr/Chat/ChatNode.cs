@@ -320,6 +320,7 @@ public sealed partial class ChatNode : IDisposable
         _clocks = new ClockOffsets(_options.ClockOffsetsPath);
         _blobs = new BlobStore(_options.AttachmentDirectory, _options.HistoryCipher);
         _directHistory = new DirectHistory(_options.DirectHistoryDirectory, _options.MaxHistoryMessages, _options.MaxHistoryAge, _options.HistoryCipher);
+        LoadPendingDirect();
         _turnOptions = _options.Traversal.Turn;
         _useDefaultRelay = _options.Traversal.UseDefaultRelay;
         _displayName = _options.DisplayName;
@@ -738,6 +739,8 @@ public sealed partial class ChatNode : IDisposable
         public PeerId? DirectPeer { get; init; }
         public Wire? DirectWire { get; init; }
         public long SentAt;
+        /// <summary>A direct message written while nobody of theirs was connected: it goes to whichever device connects, for as long as messages are kept.</summary>
+        public bool Queued;
         public readonly HashSet<PeerId> Targets = new();
         public readonly HashSet<PeerId> Acked = new();
         public DeliveryStatus? Last;
@@ -940,7 +943,11 @@ public sealed partial class ChatNode : IDisposable
                 foreach (var o in _outbox.Values)
                 {
                     PublishDelivery(o);
-                    if (now - o.SentAt > _options.ResendWindow.TotalMilliseconds) _outbox.TryRemove(o.Id, out _);
+                    if (o.Queued ? now - o.SentAt > MaxQueuedAgeMs : now - o.SentAt > _options.ResendWindow.TotalMilliseconds)
+                    {
+                        _outbox.TryRemove(o.Id, out _);
+                        if (o.Queued) ForgetPendingDirect(o.Id);
+                    }
                 }
                 _peerCache.Save();
                 long cutoff = now - 600_000;
@@ -958,7 +965,8 @@ public sealed partial class ChatNode : IDisposable
             lock (o)
             {
                 // Only people who were meant to get it. Newcomers learn older messages through history sync, if enabled.
-                if (o.Last?.State == DeliveryState.Delivered || o.Acked.Contains(peer.Id) || !o.Targets.Contains(peer.Id)) continue;
+                if (o.Last?.State == DeliveryState.Delivered || o.Acked.Contains(peer.Id) || (!o.Queued && !o.Targets.Contains(peer.Id))) continue;
+                if (o.Queued) o.Targets.Add(peer.Id);
             }
             Send(peer.Connection, build(o));
             PublishDelivery(o);
@@ -992,6 +1000,7 @@ public sealed partial class ChatNode : IDisposable
             if (!_outbox.TryGetValue(id, out var o)) continue;
             if (room != null ? o.Room != room : o.DirectPeer != peer.AccountId && o.DirectPeer != peer.Id) continue;
             lock (o) { o.Targets.Add(peer.Id); o.Acked.Add(peer.Id); }
+            if (o.Queued) ForgetPendingDirect(o.Id);
             PublishDelivery(o);
         }
     }
@@ -1306,17 +1315,19 @@ public sealed partial class ChatNode : IDisposable
     internal string SendDirectMessage(PeerId peer, string text)
     {
         var devices = DevicesOf(peer);
-        if (devices.Count == 0) throw new InvalidOperationException($"Not connected to {peer.Short}.");
-        var wire = NewMessage(text, room: null);
         var recipient = AccountOf(peer);
+        // Nobody of theirs is connected: a conversation that exists keeps the message until one is; a first message has to wait for a connection.
+        if (devices.Count == 0 && !HasDirectConversation(recipient)) throw new InvalidOperationException($"Not connected to {peer.Short}.");
+        var wire = NewMessage(text, room: null);
         var proof = DirectProof.Create(_identity, recipient, wire.Id!, wire.Ts, text);
         wire.Pub = proof.Pub;
         wire.Acct = proof.Acct.Length > 0 ? proof.Acct : null;
         wire.Cert = proof.Cert.Length > 0 ? proof.Cert : null;
         wire.Sig = proof.Sig;
-        var outgoing = new Outgoing(wire.Id!) { DirectPeer = peer, DirectWire = wire, SentAt = Environment.TickCount64 };
+        var outgoing = new Outgoing(wire.Id!) { DirectPeer = devices.Count == 0 ? recipient : peer, DirectWire = wire, SentAt = Environment.TickCount64 };
         foreach (var device in devices) outgoing.Targets.Add(device.Id);
         _outbox[wire.Id!] = outgoing;
+        if (devices.Count == 0) QueueDirect(outgoing, recipient);
         foreach (var device in devices) Send(device.Connection, wire);
         PublishDelivery(outgoing);
         RecordDirect(new DirectRecord(wire.Id!, recipient.Value, GetPeerInfo(peer)?.DisplayName ?? DirectNameOf(peer) ?? peer.Short, true, wire.Ts, text,
