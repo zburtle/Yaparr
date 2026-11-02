@@ -13,6 +13,10 @@ Peers without the key never become members, receive introductions or see message
 band. Anyone holding the key is in, and removing one person means making a new key. There are no open rooms that
 anyone can join by name; versions before 1.4 had them, and those rooms are not found by this version.
 
+## Connections and replays
+
+A hello is a signed statement that a temporary key belongs to its author. It proves who the key is for, not that the sender holds it, and anyone who ever connected to the author has a copy that can be repeated. So a hello only makes a candidate session. The connection counts as made, or the session is replaced (a peer that restarted), once a frame arrives that is sealed with that candidate's keys, which only the holder of the temporary key can make. Candidates that are not confirmed disappear after eight seconds, connections started by someone else wait in a room of 64 (at most 4, and 30 new ones in ten seconds, per address), and a repeated hello does not count as having heard from the other end.
+
 ## What is and is not protected
 
 - **Protected:** what is said in a room (encrypted between members, signed by its author, readable only with the room key), who may join one (the key), and updates (HTTPS from this repository's releases, checked against GitHub's published SHA-256).
