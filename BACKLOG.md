@@ -163,7 +163,12 @@ No technical blocker, but a lot of work. The core library is portable .NET and t
 
 - The amd64 bundle was built and started in a Linux container on a virtual screen (it ran, found the DHT and wrote its data under `~/.var/app/com.yaparr.Yaparr`). Not tried: arm64, a real desktop, voice with a real microphone and speakers, the file dialog through the portal, and watching a screen with a real stream.
 - A hosted Flatpak repository (for example on GitHub Pages, with a `.flatpakrepo` file) so that `flatpak update` finds new versions. Without it a bundle never updates.
-- Flathub: needs the app built offline from source (a generated list of NuGet packages instead of the published output), the domain `yaparr.com` verified for `com.yaparr.Yaparr`, screenshots in the AppStream file, and a review.
+- **Flathub** (not started). Read from Flathub's requirements, not tried:
+  - The app must be built from source with no network during the build and no prebuilt binaries in the submission: a generated list of NuGet packages (`flatpak-builder-tools`) and a .NET 10 SDK extension instead of the published output. Their docs say nothing about .NET self-contained apps or about native libraries that come inside NuGet packages (SkiaSharp, miniaudio, the WebRTC audio library); ask the maintainers before investing.
+  - Verify `yaparr.com`: a token at `https://yaparr.com/.well-known/org.flathub.VerifiedApps.txt`, with the site answering over HTTPS.
+  - AppStream: screenshots (direct image URLs pinned to a tag or commit), a homepage URL, a brand colour, no warnings from `appstreamcli validate`.
+  - Explain each permission in the pull request; run `flatpak-builder-lint`; the runtime must be the latest Flathub-hosted one.
+  - Flathub does not allow AI-generated manifests or AI-opened pull requests, so the manifest and the submission have to be written and sent by hand. Submit as a pull request against `new-pr` of `flathub/flathub`.
 - Importing a profile from the `.deb` (`~/.local/share/Yaparr`) the first time, with a one-time permission to read that folder.
 - Push-to-talk works only while the window is focused; a global key would need the GlobalShortcuts portal.
 - Native Wayland instead of XWayland, when Avalonia's Wayland backend is no longer experimental.
