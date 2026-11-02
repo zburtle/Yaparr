@@ -6,4 +6,9 @@
     <Copyright>Copyright (C) 2026 Zach Burtle</Copyright>
   </PropertyGroup>
 
+  <!-- A warning is a bug that has not happened yet: the build fails on one. -->
+  <PropertyGroup>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
 </Project>

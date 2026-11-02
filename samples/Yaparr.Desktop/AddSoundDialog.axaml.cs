@@ -19,7 +19,7 @@ public partial class AddSoundDialog : Window
     internal AddSoundDialog(Func<string?> output) : this() => _output = output;
 
     public string? SoundName { get; private set; }
-    public SoundClip? Clip { get; private set; }
+    public SoundClip? NewSound { get; private set; }
 
     private async void Choose_Click(object? sender, RoutedEventArgs e)
     {
@@ -100,7 +100,7 @@ public partial class AddSoundDialog : Window
         if (name.Length == 0) { InfoText.Text = "Give the sound a name."; NameBox.Focus(); return; }
         if (Build() is not { } clip) return;
         SoundName = name;
-        Clip = clip;
+        NewSound = clip;
         Close(true);
     }
 

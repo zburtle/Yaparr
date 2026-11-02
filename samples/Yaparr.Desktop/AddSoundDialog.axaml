@@ -10,7 +10,7 @@
             <TextBlock x:Name="FileText" Text="WAV, MP3 or OGG" Classes="muted" VerticalAlignment="Center" />
         </StackPanel>
         <TextBlock Text="Name" FontWeight="SemiBold" Margin="0,8,0,0" />
-        <TextBox x:Name="NameBox" MaxLength="64" Watermark="What the tile says" />
+        <TextBox x:Name="NameBox" MaxLength="64" PlaceholderText="What the tile says" />
         <StackPanel x:Name="TrimPanel" IsVisible="False" Spacing="4" Margin="0,8,0,0">
             <TextBlock Text="Where it starts" FontWeight="SemiBold" />
             <Slider x:Name="StartBox" Minimum="0" Maximum="1" ValueChanged="Start_Changed" />

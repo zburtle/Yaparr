@@ -935,7 +935,7 @@ public partial class MainWindow : Window
             using (bitmap)
             {
                 using var ms = new MemoryStream();
-                bitmap.Save(ms);
+                bitmap.Save(ms, new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
                 await SendPictureAsync(ms.ToArray(), "pasted.png");
             }
             return true;

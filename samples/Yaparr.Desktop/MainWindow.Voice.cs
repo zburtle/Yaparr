@@ -124,7 +124,7 @@ public partial class MainWindow
     // Listens for the chosen key while you are in voice: anywhere in Windows when that is allowed, otherwise while this window is in front.
     private void ApplyPushToTalk()
     {
-        _pushToTalkHook?.Dispose();
+        if (OperatingSystem.IsWindows()) _pushToTalkHook?.Dispose();
         _pushToTalkHook = null;
         if (_voice is not { } session || _voiceConv is not { } conv) return;
         session.PushToTalkHeld = false;
@@ -246,7 +246,7 @@ public partial class MainWindow
         var conv = _voiceConv;
         _voice = null;
         _voiceConv = null;
-        _pushToTalkHook?.Dispose();
+        if (OperatingSystem.IsWindows()) _pushToTalkHook?.Dispose();
         _pushToTalkHook = null;
         if (conv != null) conv.PushToTalkHint = "";
         StopWatchingCall();

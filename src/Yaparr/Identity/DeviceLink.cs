@@ -63,7 +63,7 @@ public static class DeviceLink
         code = new string((code ?? "").Where(c => !char.IsWhiteSpace(c)).ToArray());
         if (!code.StartsWith(Prefix, StringComparison.Ordinal)) throw new FormatException("This is not a Yaparr link code.");
         byte[] raw;
-        try { raw = Base64Url.DecodeFromChars(code[Prefix.Length..]); }
+        try { raw = Base64Url.DecodeFromChars(code.AsSpan(Prefix.Length)); }
         catch (FormatException) { throw new FormatException("This is not a Yaparr link code."); }
         if (raw.Length < SaltLength + NonceLength + TagLength + 2) throw new FormatException("This link code is incomplete.");
 

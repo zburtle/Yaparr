@@ -154,7 +154,7 @@ public class PrivateRoomTests
         await TestUtil.WaitFor(() => member1.ConnectedPeers.Count == 2);
         await Task.Delay(1000);
 
-        Assert.Equal(1, r1.Members.Count);
+        Assert.Single(r1.Members);
         Assert.Empty(wrong.Members);
         Assert.Empty(guessed.Members);
 
@@ -505,7 +505,7 @@ public class DiscoveryTests
 
         await b.AnnounceAsync(topic);
         await TestUtil.WaitFor(() => a.FindPeersAsync(topic).Result.Any(e => e.Port == 41002));
-        Assert.DoesNotContain(41001, a.FindPeersAsync(topic).Result.Select(e => e.Port));
+        Assert.DoesNotContain(41001, (await a.FindPeersAsync(topic)).Select(e => e.Port));
     }
 
     [Fact]
