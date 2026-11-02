@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 256" role="img" aria-label="Yaparr">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6A84F5"/>
+      <stop offset="1" stop-color="#3A4FD0"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="58" fill="url(#bg)"/>
+  <!-- crest -->
+  <g stroke-linecap="round" stroke-width="13" fill="none">
+    <path d="M70 92L50 58" stroke="#F2A93B"/>
+    <path d="M88 86L80 48" stroke="#F0605F"/>
+    <path d="M106 86L112 50" stroke="#F2A93B"/>
+  </g>
+  <!-- head -->
+  <circle cx="86" cy="140" r="56" fill="#fff"/>
+  <circle cx="72" cy="158" r="13" fill="#F2A93B" opacity=".35"/>
+  <!-- beak: upper (hooked) and lower mandible, mouth open -->
+  <path d="M134 98C168 90 198 104 198 134C188 122 168 118 134 120Z" fill="#F2A93B" transform="rotate(-14 134 109)"/>
+  <path d="M134 142C160 144 182 150 186 166C168 176 148 168 134 158Z" fill="#E08A1E"/>
+  <!-- eye -->
+  <path d="M42 112L102 124M102 124L124 98" stroke="#26306B" stroke-width="6" stroke-linecap="round" fill="none"/>
+  <circle cx="102" cy="124" r="15" fill="#26306B"/>
+  <!-- yap waves -->
+  <g stroke="#fff" stroke-width="10" stroke-linecap="round" fill="none">
+    <path d="M208 122a22 22 0 0 1 0 34"/>
+    <path d="M222 108a42 42 0 0 1 0 64" opacity=".75"/>
+  </g>
+  <text x="296" y="168" font-family="'Segoe UI','Helvetica Neue',Arial,sans-serif" font-size="136" font-weight="700" letter-spacing="-3" fill="#3A4FD0">Yaparr</text>
+</svg>

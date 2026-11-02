@@ -10,6 +10,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <Version>1.0.0</Version>
+    <ApplicationIcon>..\..\assets\logo\yaparr.ico</ApplicationIcon>
     <Product>Yaparr</Product>
     <Company>Yaparr</Company>
     <Copyright>Copyright (C) 2026 Zach Burtle. Licensed under the GNU General Public License, version 3 or later.</Copyright>
@@ -28,6 +29,10 @@
     <None Include="..\..\COPYING" Link="COPYING" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Include="..\..\THIRD-PARTY-NOTICES.txt" Link="THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Include="..\..\THIRD-PARTY-NOTICES-SkiaSharp.txt" Link="THIRD-PARTY-NOTICES-SkiaSharp.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="..\..\assets\logo\png\yaparr-256.png" Link="Assets\yaparr.png" />
   </ItemGroup>
 
   <ItemGroup>

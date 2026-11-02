@@ -2,7 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="using:Yaparr.Desktop"
         x:Class="Yaparr.Desktop.MainWindow"
-        Title="Yaparr" Width="1080" Height="680" MinWidth="720" MinHeight="440"
+        Title="Yaparr" Icon="avares://Yaparr.Desktop/Assets/yaparr.png" Width="1080" Height="680" MinWidth="720" MinHeight="440"
         Background="{DynamicResource AppBg}">
     <Window.Styles>
         <!-- Expandable headers: a flat toggle with a chevron that turns when open. -->
@@ -498,9 +498,7 @@
                     </ListBox>
 
                     <StackPanel x:Name="EmptyPanel" Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="6" MaxWidth="360">
-                        <Border Classes="avatar" Width="64" Height="64" Background="{DynamicResource Accent}" HorizontalAlignment="Center">
-                            <TextBlock Text="Y" FontSize="28" />
-                        </Border>
+                        <Image Source="avares://Yaparr.Desktop/Assets/yaparr.png" Width="96" Height="96" HorizontalAlignment="Center" />
                         <TextBlock Text="No conversation open" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,8,0,0" />
                         <TextBlock Classes="muted" TextAlignment="Center" TextWrapping="Wrap"
                                    Text="Create a room, join one with an invite, or open a direct chat to begin." />

@@ -18,7 +18,7 @@ stage="$out/deb-$arch"
 repo="${GITHUB_REPOSITORY:-}"
 
 rm -rf "$stage"
-mkdir -p "$stage/opt/yaparr" "$stage/usr/bin" "$stage/usr/share/applications" "$stage/usr/share/doc/yaparr" "$stage/DEBIAN"
+mkdir -p "$stage/opt/yaparr" "$stage/usr/bin" "$stage/usr/share/applications" "$stage/usr/share/icons/hicolor/256x256/apps" "$stage/usr/share/icons/hicolor/48x48/apps" "$stage/usr/share/doc/yaparr" "$stage/DEBIAN"
 
 echo "Building Yaparr $version ($rid)"
 # Invariant globalization removes the dependency on libicu, whose package name differs between releases.
@@ -31,6 +31,8 @@ cp "$root/LICENSE.txt" "$stage/usr/share/doc/yaparr/copyright"
 cp "$root/COPYING" "$stage/usr/share/doc/yaparr/"
 cp "$root/THIRD-PARTY-NOTICES.txt" "$root/THIRD-PARTY-NOTICES-SkiaSharp.txt" "$stage/usr/share/doc/yaparr/"
 ln -s /opt/yaparr/Yaparr.Desktop "$stage/usr/bin/yaparr"
+cp "$root/assets/logo/png/yaparr-256.png" "$stage/usr/share/icons/hicolor/256x256/apps/yaparr.png"
+cp "$root/assets/logo/png/yaparr-48.png" "$stage/usr/share/icons/hicolor/48x48/apps/yaparr.png"
 
 cat > "$stage/usr/share/applications/yaparr.desktop" <<EOF
 [Desktop Entry]
@@ -38,6 +40,7 @@ Type=Application
 Name=Yaparr
 Comment=Serverless peer-to-peer chat
 Exec=/opt/yaparr/Yaparr.Desktop
+Icon=yaparr
 Terminal=false
 Categories=Network;Chat;InstantMessaging;
 EOF

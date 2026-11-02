@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/logo/yaparr-logo.svg" alt="Yaparr" width="420"></p>
+
 # Yaparr
 
 Serverless chat, voice calls and screen sharing for .NET, with a desktop app for Windows and Linux. Peers find each other on the **BitTorrent mainline DHT**, then open **direct, encrypted UDP connections** using **hole punching**, so there is no server to run and no port forwarding to set up. Website: [yaparr.com](https://yaparr.com).
