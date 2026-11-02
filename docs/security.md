@@ -13,6 +13,10 @@ Peers without the key never become members, receive introductions or see message
 band. Anyone holding the key is in, and removing one person means making a new key. There are no open rooms that
 anyone can join by name; versions before 1.4 had them, and those rooms are not found by this version.
 
+## Connections and replays
+
+A hello is a signed statement that a temporary key belongs to its author. It proves who the key is for, not that the sender holds it, and anyone who ever connected to the author has a copy that can be repeated. So a hello only makes a candidate session. The connection counts as made, or the session is replaced (a peer that restarted), once a frame arrives that is sealed with that candidate's keys, which only the holder of the temporary key can make. Candidates that are not confirmed disappear after eight seconds, connections started by someone else wait in a room of 64 (at most 4, and 30 new ones in ten seconds, per address), and a repeated hello does not count as having heard from the other end.
+
 ## Secrets on disk
 
 On Windows the identity, settings (private room keys), account settings, the WireGuard config, the TURN password and the history key are sealed with DPAPI, so only that Windows user on that PC can read them. Room and direct message history, and the pictures, GIFs and sounds, are encrypted with AES-GCM under that key (each line or 64 KB piece is tied to its file and place, so pieces cannot be moved, swapped, cut off or changed; files from earlier versions are sealed at the next start). Profile export writes the sealed files unsealed (with the history key) so a backup opens elsewhere, and importing seals them again, so keep the export zip safe.
