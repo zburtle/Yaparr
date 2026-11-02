@@ -1,9 +1,38 @@
 name: Test
 
+# Only a change that can affect the build or the tests runs them: the code, the project files, what the desktop app copies into its output
+# (the licence and notice files), the tools it restores, and this file. Documentation, the backlog and the other workflows do not.
+# Nothing here is a required check for merging, so a pull request that skips the tests is not held up.
 on:
   pull_request:
+    paths:
+      - 'src/**'
+      - 'samples/**'
+      - 'tests/**'
+      - 'tools/**'
+      - 'installer/**'
+      - 'Yaparr.slnx'
+      - 'Directory.Build.props'
+      - 'dotnet-tools.json'
+      - 'LICENSE.txt'
+      - 'COPYING'
+      - 'THIRD-PARTY-NOTICES*.txt'
+      - '.github/workflows/test.yml'
   push:
     branches: [master]
+    paths:
+      - 'src/**'
+      - 'samples/**'
+      - 'tests/**'
+      - 'tools/**'
+      - 'installer/**'
+      - 'Yaparr.slnx'
+      - 'Directory.Build.props'
+      - 'dotnet-tools.json'
+      - 'LICENSE.txt'
+      - 'COPYING'
+      - 'THIRD-PARTY-NOTICES*.txt'
+      - '.github/workflows/test.yml'
 
 jobs:
   test:
