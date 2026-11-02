@@ -16,20 +16,21 @@ namespace Yaparr.Screen;
 public sealed record FfmpegPackage(string Version, Uri Url, string Sha256, long SizeBytes, string ExePathInZip, string? LicensePathInZip, string? NoticesRoot = null)
 {
     /// <summary>
-    /// The one build of FFmpeg that Yaparr is known to work with: an LGPL Windows build (no GPL parts such as x264) with libvpx
-    /// and a gfxcapture filter that has the Graphics Capture fixes of 24 October 2026. No numbered release has those fixes
-    /// yet (8.1.3 and 9.0.2 capture one frame and stop), so this is a build of FFmpeg's development branch, N-128212 of
-    /// 30 October 2026, checked with the FfmpegIntegration tests and the demo. Move to a numbered release when one includes
-    /// the fixes. The file is meant to be copied to a Yaparr release (tag ffmpeg-1) so that it stays put; see README.md next
-    /// to this file.
+    /// The one build of FFmpeg that Yaparr is known to work with: Yaparr's own trimmed LGPL Windows build (no GPL parts such as
+    /// x264; see the ffmpeg folder of the repository) of commit 17a4a474f4 of FFmpeg's development branch, N-128212 of
+    /// 30 October 2026, which has the Graphics Capture fixes of 24 October 2026. No numbered release has those fixes yet (8.1.3
+    /// and 9.0.2 capture one frame and stop). It was checked with the FfmpegIntegration tests and the demo. Move to a numbered
+    /// release when one includes the fixes. The file is the asset of the Yaparr release ffmpeg-2, which also holds the exact
+    /// source; see README.md next to this file.
     /// </summary>
     public static FfmpegPackage Default { get; } = new(
-        "n128212-lgpl-win64",
-        new Uri("https://github.com/zburtle/Yaparr/releases/download/ffmpeg-1/ffmpeg-master-latest-win64-lgpl.zip"),
-        "de1d5f6ae7c16d264ab5bbeaa906e23f5a42b4edfab105980595524591a3f8a5",
-        175_268_886,
-        "ffmpeg-master-latest-win64-lgpl/bin/ffmpeg.exe",
-        "ffmpeg-master-latest-win64-lgpl/LICENSE.txt");
+        "g17a4a474f4-yaparr-win64",
+        new Uri("https://github.com/zburtle/Yaparr/releases/download/ffmpeg-2/ffmpeg-yaparr-g17a4a474f4-win64.zip"),
+        "c2ffffe1ca7292656d4674d88e6a174fb12d50947ca41ef043a11141b724eb25",
+        3_398_269,
+        "ffmpeg-yaparr-g17a4a474f4-win64/bin/ffmpeg.exe",
+        "ffmpeg-yaparr-g17a4a474f4-win64/LICENSE.txt",
+        "ffmpeg-yaparr-g17a4a474f4-win64");
 }
 
 /// <summary>Downloads FFmpeg once into the user's own application data, checks it, and keeps it there.</summary>
