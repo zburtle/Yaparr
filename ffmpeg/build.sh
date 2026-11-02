@@ -74,7 +74,7 @@ for pkg in libvpx libvpl amf-headers ffnvcodec-headers gcc-libs libwinpthread wi
     while read -r file; do [ -f "$file" ] && cp "$file" "$LICENSE_DIR/$pkg"/; done || true
 done
 
-fetch() { curl -fsSL "$1" -o "$2"; }
+fetch() { curl -fsSL "$1" -o "$2" || { echo "could not fetch $1"; exit 1; }; }
 if [ -z "$(ls -A "$LICENSE_DIR/libvpx" 2>/dev/null)" ]; then
   mkdir -p "$LICENSE_DIR/libvpx"
   version="$(pacman -Q "$PKG_PREFIX-libvpx" | awk '{print $2}' | sed 's/-[0-9]*$//')"
@@ -90,8 +90,10 @@ for required in libvpx gcc-libs; do
   [ -n "$(ls -A "$LICENSE_DIR/$required" 2>/dev/null)" ] || { echo "no licence text for $required"; exit 1; }
 done
 find "$LICENSE_DIR" -type d -empty -delete
-NO_LICENSE_TEXT="$(for pkg in libvpl amf-headers ffnvcodec-headers libwinpthread winpthreads crt headers; do
-  pacman -Qi "$PKG_PREFIX-$pkg" >/dev/null 2>&1 && [ ! -d "$LICENSE_DIR/$pkg" ] && echo -n "$pkg "; done)"
+NO_LICENSE_TEXT=""
+for pkg in libvpl amf-headers ffnvcodec-headers libwinpthread winpthreads crt headers; do
+  if pacman -Qi "$PKG_PREFIX-$pkg" >/dev/null 2>&1 && [ ! -d "$LICENSE_DIR/$pkg" ]; then NO_LICENSE_TEXT="$NO_LICENSE_TEXT$pkg "; fi
+done
 
 # The packages and versions used, as they were on the build machine.
 {
