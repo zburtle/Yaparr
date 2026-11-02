@@ -194,7 +194,9 @@ public partial class MainWindow : Window
         {
             if (manual && Updater.Repository is null)
             {
-                StatusText.Text = "Updates are not available in this build.";
+                StatusText.Text = Updater.IsFlatpak
+                    ? "Flatpak installs updates itself: run \"flatpak update\" or use your software centre."
+                    : "Updates are not available in this build.";
                 return;
             }
 

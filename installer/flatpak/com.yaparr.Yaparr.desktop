@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Yaparr
+Comment=Serverless peer-to-peer chat
+Exec=yaparr
+Icon=com.yaparr.Yaparr
+Terminal=false
+Categories=Network;Chat;InstantMessaging;
+StartupNotify=true

@@ -88,8 +88,43 @@ jobs:
           path: artifacts/*.deb
           if-no-files-found: error
 
+  flatpak:
+    needs: version
+    if: needs.version.outputs.version != ''
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install Flatpak
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+
+      - name: Build bundle
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          bash installer/build-flatpak.sh '${{ needs.version.outputs.version }}' ${{ matrix.arch }}
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: installer-flatpak-${{ matrix.arch }}
+          path: artifacts/*.flatpak
+          if-no-files-found: error
+
   publish:
-    needs: [version, windows, deb]
+    needs: [version, windows, deb, flatpak]
     if: needs.version.outputs.version != ''
     runs-on: ubuntu-latest
     steps:

@@ -1,0 +1,68 @@
+name: Flatpak build
+
+# Builds the Flatpak bundles without making a release, to check changes to the manifest or the build script, and on request.
+# A release builds the same bundles (release.yml) and attaches them.
+on:
+  pull_request:
+    paths:
+      - installer/flatpak/**
+      - installer/build-flatpak.sh
+      - .github/workflows/flatpak.yml
+  workflow_dispatch:
+
+jobs:
+  flatpak:
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install Flatpak
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder appstream
+
+      - name: Check the AppStream file
+        run: |
+          sed -e 's/@VERSION@/0.0.0/' -e "s/@DATE@/$(date -u +%Y-%m-%d)/" installer/flatpak/com.yaparr.Yaparr.metainfo.xml.in > /tmp/metainfo.xml
+          appstreamcli validate --no-net /tmp/metainfo.xml
+
+      - name: Build bundle
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: bash installer/build-flatpak.sh 0.0.0 ${{ matrix.arch }}
+
+      - name: Run the bundle in the sandbox
+        # The bundle is installed and started for a few seconds on a virtual screen, to catch a missing library or a wrong path.
+        run: |
+          sudo apt-get install -y xvfb dbus-x11
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y --noninteractive artifacts/yaparr_0.0.0_${{ matrix.arch }}.flatpak
+          cat > /tmp/check.sh <<'EOF'
+          set -ex
+          run="flatpak run --no-a11y-bus --no-documents-portal"
+          $run --command=ffmpeg com.yaparr.Yaparr -hide_banner -decoders | grep -E ' (vp8|h264) '
+          $run --command=sh com.yaparr.Yaparr -c 'ls /app/lib/yaparr | grep -E "libwebrtc-apm|libSkiaSharp|libminiaudio"'
+          status=0
+          xvfb-run -a timeout 20 $run com.yaparr.Yaparr --name check || status=$?
+          # 124 means it was still running when the time was up, which is what we want.
+          test "$status" = 124
+          $run --command=sh com.yaparr.Yaparr -c 'grep -q "starting" $XDG_DATA_HOME/Yaparr/logs/*.log'
+          EOF
+          dbus-run-session -- bash /tmp/check.sh
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: flatpak-${{ matrix.arch }}
+          path: artifacts/*.flatpak
+          if-no-files-found: error

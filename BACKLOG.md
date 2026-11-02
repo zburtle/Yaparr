@@ -158,3 +158,12 @@ No technical blocker, but a lot of work. The core library is portable .NET and t
 - Wire `network.json`, the VPN and the new connection/delivery status into `Yaparr.Host` and the Flutter UI (on the shelved `flutter-ui` branch).
 - NAT-PMP / port mapping through the VPN tunnel.
 - **Delivery per recipient.** Not done: a way to see it later, or an "everyone" view for a message in a very large room.
+
+## Flatpak
+
+- The amd64 bundle was built and started in a Linux container on a virtual screen (it ran, found the DHT and wrote its data under `~/.var/app/com.yaparr.Yaparr`). Not tried: arm64, a real desktop, voice with a real microphone and speakers, the file dialog through the portal, and watching a screen with a real stream.
+- A hosted Flatpak repository (for example on GitHub Pages, with a `.flatpakrepo` file) so that `flatpak update` finds new versions. Without it a bundle never updates.
+- Flathub: needs the app built offline from source (a generated list of NuGet packages instead of the published output), the domain `yaparr.com` verified for `com.yaparr.Yaparr`, screenshots in the AppStream file, and a review.
+- Importing a profile from the `.deb` (`~/.local/share/Yaparr`) the first time, with a one-time permission to read that folder.
+- Push-to-talk works only while the window is focused; a global key would need the GlobalShortcuts portal.
+- Native Wayland instead of XWayland, when Avalonia's Wayland backend is no longer experimental.
