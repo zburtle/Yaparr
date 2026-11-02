@@ -30,6 +30,39 @@ public sealed partial class ChatNode
     /// <summary>What this node has forwarded for other members, and what its limits turned away.</summary>
     public RelayStats RelayStats => Network.RelayStats;
 
+    private long _madeDirect, _madeViaMember, _madeViaServer, _movedOffServer, _standbyTookOver;
+
+    /// <summary>
+    /// How the people we are connected to are reached right now, and how connections have ended up since this node started: how
+    /// many were made straight, through a member and through the shared server, how many were moved off the server onto a member,
+    /// and how many times a standby path took over from one that was lost. Shows how much load the members take off the server.
+    /// </summary>
+    public ConnectionPaths GetConnectionPaths()
+    {
+        int direct = 0, member = 0, server = 0;
+        foreach (var state in _peers.Values)
+        {
+            if (state.Connection.IsRelayed) member++;
+            else if (IsOnSharedServer(state.Connection)) server++;
+            else direct++;
+        }
+        return new ConnectionPaths(direct, member, server,
+            Interlocked.Read(ref _madeDirect), Interlocked.Read(ref _madeViaMember), Interlocked.Read(ref _madeViaServer),
+            Interlocked.Read(ref _movedOffServer), Interlocked.Read(ref _standbyTookOver));
+    }
+
+    // Counts a connection that has just been made, and notes when it replaces one that ran through the shared server.
+    internal void CountConnectionMade(PeerConnection conn, PeerConnection? replaced)
+    {
+        if (conn.IsRelayed)
+        {
+            Interlocked.Increment(ref _madeViaMember);
+            if (replaced is { IsRelayed: false } && IsOnSharedServer(replaced)) Interlocked.Increment(ref _movedOffServer);
+        }
+        else if (IsOnSharedServer(conn)) Interlocked.Increment(ref _madeViaServer);
+        else Interlocked.Increment(ref _madeDirect);
+    }
+
     private bool MaySharedRoomRelay(PeerConnection a, PeerConnection b) =>
         IsRelayCapable && a.RemoteId is { } x && b.RemoteId is { } y && !IsBlocked(x) && !IsBlocked(y) &&
         _rooms.Values.Any(r => r.MemberStates.ContainsKey(x) && r.MemberStates.ContainsKey(y));
@@ -102,6 +135,7 @@ public sealed partial class ChatNode
         state.KnowSession(lost.SessionId);
         state.KnowSession(now.SessionId);
         state.Connection = now;
+        Interlocked.Increment(ref _standbyTookOver);
         _options.Log?.Invoke($"{id.Short}: path via {lost.RelayedVia?.Short ?? "direct"} lost; continuing via {now.RelayedVia?.Short} (standby)");
         // Anything sent on the lost path and not yet confirmed goes again on the new one.
         ResendTo(state, o => o.DirectPeer == id, o => o.DirectWire!);

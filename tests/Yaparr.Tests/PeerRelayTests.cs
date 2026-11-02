@@ -167,6 +167,7 @@ public class PeerRelayTests
         await ra.SendAsync("after");
         Assert.Equal("after", await got.Task.WaitAsync(TimeSpan.FromSeconds(5)));
         Assert.Equal(0, lost);
+        await TestUtil.WaitFor(() => a.GetConnectionPaths().StandbyTookOver >= 1);
         spare.Dispose();
     }
 

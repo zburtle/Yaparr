@@ -47,6 +47,9 @@ public static class DiagnosticsReport
              + $"TURN relay {(traversal.Turn is { Server.Length: > 0 } turn ? (turn.Enabled ? "on" : "set up but off") : "not set up")}");
         var relay = node.RelayStats;
         Line($"  Upload speed: {(node.MeasuredUploadBytesPerSecond is { } up ? $"about {up * 8 / 1_000_000.0:0.0} Mbit/s (passing on {node.RelayForwardKilobytes} KB/s of streams)" : "not measured yet")}");
+        var paths = node.GetConnectionPaths();
+        Line($"  Reached now: {paths.Describe()}; made since start: {paths.MadeDirect} direct, {paths.MadeViaMember} through members, {paths.MadeViaServer} through the shared server; "
+             + $"{paths.MovedOffServer} moved off the server, standby took over {paths.StandbyTookOver}x");
         Line($"  Helps others connect: {(node.IsRelayCapable ? "yes" : "no")}; forwarded {relay.ForwardedFrames} frames ({relay.ForwardedBytes / 1024} KB), dropped {relay.DroppedFrames}, {relay.ActivePairs} active");
         Line();
 

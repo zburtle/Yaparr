@@ -1378,7 +1378,8 @@ public sealed partial class ChatNode : IDisposable
         LearnAccount(conn);
         if (IsBlocked(conn.RemoteId!.Value)) { conn.Close(notifyPeer: true); return; }
         var state = new PeerState(conn);
-        bool isNew = !_peers.ContainsKey(state.Id);
+        bool isNew = !_peers.TryGetValue(state.Id, out var previous);
+        CountConnectionMade(conn, previous?.Connection);
         if (_candidates.TryGetValue(conn.RemoteEndPoint.ToString(), out var dialed)) { dialed.Failures = 0; dialed.NextDial = 0; }
         // The hello must be the first thing on the connection, so send it before anyone can find the state and write to it.
         Send(conn, new Wire { Type = Wire.Hello, Name = DisplayName, Deg = _peers.Count + (isNew ? 1 : 0), Rly = IsRelayCapable, Rooms = _rooms.Values.Select(r => RefTo(r, state)).ToArray() });

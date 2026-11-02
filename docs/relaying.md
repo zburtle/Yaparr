@@ -31,3 +31,10 @@ straight away, without the usual `RelayFallbackDelay`. Any member who says it is
 who introduced them. A member that leaves without saying goodbye is noticed within about 15 s on a relayed path
 (4 s keep-alives, 15 s idle limit, against 10 s and 35 s on direct ones). Messages not yet confirmed are sent again
 on the new path.
+
+## How connections end up
+
+`ChatNode.GetConnectionPaths()` says how the people you are connected to are reached right now (directly, through a member, or through the shared TURN server) and counts, since the node started, the connections made each way, the connections moved off the shared server onto a member, and the times a standby path took over from one that was lost. They are the numbers to look at to see how much load the members take off the server, and what a standby for every connection would have cost.
+
+The network check (Network > Check connection…) shows them under "Connected to N people", in "Some connections use the shared server" (only when there are any, with a note that its bandwidth is limited) and "Connections since Yaparr started"; the relay counters of the member relay ("You help others connect") are in the same list. Help > Copy diagnostics has the same figures in one line.
+
