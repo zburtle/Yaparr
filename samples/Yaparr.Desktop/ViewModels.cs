@@ -93,6 +93,60 @@ public sealed class MessageVm : Observable
     public bool IsMine { get; }
     public string? Id { get; }
 
+    /// <summary>What names this message, for a reply to point at (<see cref="ChatMessage.Key"/>). Null for notices.</summary>
+    public string? Key { get; init; }
+
+    /// <summary>The key of the message this one answers, if it answers one.</summary>
+    public string? ReplyKey { get; init; }
+
+    /// <summary>The people this message names.</summary>
+    public IReadOnlyList<Mention> Mentions { get; init; } = Array.Empty<Mention>();
+
+    /// <summary>It names you.</summary>
+    public bool MentionsMe { get; init; }
+
+    private IReadOnlyList<string>? _marks;
+
+    /// <summary>The words to stand out in the text: @ and the name, for each person named.</summary>
+    public IReadOnlyList<string> MentionMarks => _marks ??= Mentions.Select(m => m.Tag).ToList();
+
+    private string _quoteSender = "", _quoteText = "";
+    private bool _replyToMe;
+
+    public bool HasQuote => ReplyKey != null;
+    public string QuoteSender { get => _quoteSender; private set { _quoteSender = value; Raise(); } }
+    public string QuoteText { get => _quoteText; private set { _quoteText = value; Raise(); } }
+
+    /// <summary>It answers a message of yours.</summary>
+    public bool ReplyToMe { get => _replyToMe; private set { if (_replyToMe == value) return; _replyToMe = value; Raise(); Raise(nameof(Highlight)); } }
+
+    /// <summary>Worth a second look: it names you or answers you (not something you wrote yourself).</summary>
+    public bool Highlight => !IsMine && (MentionsMe || ReplyToMe);
+
+    /// <summary>Fills in what the reply quotes, once the message it answers is known.</summary>
+    public void SetQuote(string sender, string text, bool answersMe)
+    {
+        QuoteSender = sender;
+        QuoteText = text;
+        ReplyToMe = answersMe;
+    }
+
+    /// <summary>A short form to show in a quote or above the composer.</summary>
+    public string Preview
+    {
+        get
+        {
+            if (Attachment != null) return HasText ? "📷 " + Flatten(Text) : "📷 Picture";
+            return Flatten(Text);
+        }
+    }
+
+    private static string Flatten(string text)
+    {
+        var flat = string.Join(' ', text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)).Trim();
+        return flat.Length <= 140 ? flat : flat[..140] + "…";
+    }
+
     private string _deliveryDetail = "";
 
     /// <summary>Who has the message and who is still to get it, for the tooltip on the status line.</summary>
@@ -366,10 +420,27 @@ public sealed class ConversationVm : Observable
     public int Unread
     {
         get => _unread;
-        set { _unread = value; Raise(); Raise(nameof(Label)); Raise(nameof(HasUnread)); }
+        set
+        {
+            _unread = value;
+            if (value == 0 && _mentioned) { _mentioned = false; Raise(nameof(Mentioned)); Raise(nameof(UnreadText)); }
+            Raise(); Raise(nameof(Label)); Raise(nameof(HasUnread)); Raise(nameof(UnreadText));
+        }
     }
 
-    public string Label => Unread > 0 ? $"{Title}  ({Unread})" : Title;
+    private bool _mentioned;
+
+    /// <summary>Something unread names you or answers you.</summary>
+    public bool Mentioned
+    {
+        get => _mentioned;
+        private set { if (_mentioned == value) return; _mentioned = value; Raise(); Raise(nameof(Label)); Raise(nameof(UnreadText)); }
+    }
+
+    /// <summary>What the badge says: the number, and an @ when you are named or answered in it.</summary>
+    public string UnreadText => Unread + (Mentioned ? " @" : "");
+
+    public string Label => Unread > 0 ? $"{Title}  ({UnreadText})" : Title;
 
     // A date line goes above the first message of each day; only the inserted message and the one after it can change.
     private void MarkDays(int index)
@@ -453,9 +524,10 @@ public sealed class ConversationVm : Observable
         Unread = Channels.Where(c => c.IsText && c.Id != CurrentChannel).Sum(c => c.Unread);
     }
 
-    public void NoteUnread(string? channel)
+    public void NoteUnread(string? channel, bool mentioned = false)
     {
         Unread++;
+        if (mentioned) Mentioned = true;
         if (channel != null && Channels.FirstOrDefault(c => c.IsText && c.Id == channel) is { } c) c.Unread++;
     }
 
@@ -491,9 +563,37 @@ public sealed class ConversationVm : Observable
         foreach (var c in wanted) group.Add(c);
     }
 
+    // Replies find what they answer by its key, whichever came first.
+    private readonly Dictionary<string, MessageVm> _byKey = new();
+    private readonly Dictionary<string, List<MessageVm>> _awaitingOriginal = new();
+
+    /// <summary>The message with this key, if this conversation has it (in any channel).</summary>
+    public MessageVm? FindByKey(string key) => _byKey.GetValueOrDefault(key);
+
+    private void IndexForReplies(MessageVm message)
+    {
+        if (message.Key != null)
+        {
+            _byKey[message.Key] = message;
+            if (_awaitingOriginal.Remove(message.Key, out var waiting))
+                foreach (var reply in waiting) reply.SetQuote(message.Sender, message.Preview, message.IsMine);
+        }
+        if (message.ReplyKey is { } answers)
+        {
+            if (_byKey.TryGetValue(answers, out var original)) message.SetQuote(original.Sender, original.Preview, original.IsMine);
+            else
+            {
+                message.SetQuote("", "an earlier message that is not here", false);
+                if (!_awaitingOriginal.TryGetValue(answers, out var list)) _awaitingOriginal[answers] = list = new List<MessageVm>();
+                list.Add(message);
+            }
+        }
+    }
+
     public void Add(MessageVm message)
     {
         if (message.Id != null && !_ids.Add(message.Id)) return;
+        IndexForReplies(message);
         if (message.Id != null && _delivery.TryGetValue(message.Id, out var status))
         {
             if (_deliveryDetail.TryGetValue(message.Id, out var detail)) message.DeliveryDetail = detail;

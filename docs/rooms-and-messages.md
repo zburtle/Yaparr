@@ -43,6 +43,14 @@ being able to forge or alter it. Catch-up messages arrive via `MessageReceived` 
 `Timestamp`); `room.GetHistory()` returns everything held. Newcomers also receive recent history; set
 `SyncHistory = false` to disable. One-to-one chats are not synced. Stored history is plain text on disk.
 
+## Replies and mentions
+
+A message can answer an earlier one and name people. `room.SendAsync(text, channelId, replyTo, mentions)` and `DirectChat.SendAsync(text, replyTo)` send it, and `ChatMessage.Parts` (or just `Body` for the words) reads it: `ReplyTo` is the `ChatMessage.Key` of the message it answers, and `Mentions` are the people named, each a `Mention` with their account and the name as it was written after the @ (so it can be found in the words even when it holds a space, or the person has renamed since). Up to 20 people can be named in one message.
+
+- **How it travels.** Inside the text of the signed message, behind a marker, the way an attachment does (`MessageEnvelope`). The signature covers it, so nobody can add a reply or a name to someone else's message, and every version still accepts the message; a version from before this one shows the marker next to the words.
+- **The key.** It comes from who wrote the message and its id, so nobody else can make a message that has it. A reply points at that key and does **not** copy the words it answers: the app looks the original up in its own history, so a reply can never misquote. When the original is not there (older than the history kept), the reply says "an earlier message that is not here".
+- **In the app,** see [The desktop app](desktop-app.md#replies-and-mentions).
+
 ## Delivery and reliability
 
 - **Delivery receipts.** `SendAsync` on a room or direct chat returns the message id. `DeliveryChanged` reports `Sending`, `Delivered`, `PartlyDelivered`, `NotDelivered` or `Queued` (nobody connected). Unconfirmed messages are sent again when the recipient reconnects, and `Retry(id)` sends them on demand.

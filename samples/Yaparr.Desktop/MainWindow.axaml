@@ -127,6 +127,22 @@
         <Style Selector="Border.bubble.missed">
             <Setter Property="Opacity" Value="0.75" />
         </Style>
+        <Style Selector="Border.bubble.mention">
+            <Setter Property="BorderBrush" Value="{DynamicResource Warn}" />
+            <Setter Property="BorderThickness" Value="2" />
+        </Style>
+        <Style Selector="Border.quote">
+            <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
+            <Setter Property="BorderThickness" Value="3,0,0,0" />
+            <Setter Property="Padding" Value="8,3,8,3" />
+            <Setter Property="Margin" Value="0,0,0,4" />
+            <Setter Property="Background" Value="#22808080" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector="Border.bubble.mine Border.quote TextBlock">
+            <Setter Property="Foreground" Value="White" />
+        </Style>
         <Style Selector="Border.bubble.failed">
             <Setter Property="Background" Value="{DynamicResource Bad}" />
         </Style>
@@ -291,7 +307,7 @@
                                         </StackPanel>
                                         <Border Grid.Column="2" IsVisible="{Binding HasUnread}" Background="{DynamicResource Accent}"
                                                 CornerRadius="10" MinWidth="20" Height="20" Padding="6,0" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding Unread}" Foreground="White" FontSize="11" FontWeight="SemiBold"
+                                            <TextBlock Text="{Binding UnreadText}" Foreground="White" FontSize="11" FontWeight="SemiBold"
                                                        HorizontalAlignment="Center" VerticalAlignment="Center" />
                                         </Border>
                                         <Button Grid.Column="3" Classes="ghost" Content="{Binding OpenGlyph}" IsVisible="{Binding ShowChannels}" Padding="6,2"
@@ -468,8 +484,14 @@
                                                FontSize="12" FontWeight="SemiBold" Margin="10,6,0,0" />
                                     <Border Classes="bubble" IsVisible="{Binding !IsSystem}"
                                             Classes.mine="{Binding IsMine}" Classes.other="{Binding IsOther}"
-                                            Classes.missed="{Binding IsCatchUp}" Classes.failed="{Binding IsFailed}">
+                                            Classes.missed="{Binding IsCatchUp}" Classes.failed="{Binding IsFailed}" Classes.mention="{Binding Highlight}">
                                         <StackPanel Spacing="2">
+                                            <Border Classes="quote" IsVisible="{Binding HasQuote}" PointerReleased="Quote_PointerReleased">
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding QuoteSender}" FontSize="11" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Text="{Binding QuoteText}" FontSize="12" Opacity="0.85" MaxLines="2" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" />
+                                                </StackPanel>
+                                            </Border>
                                             <Grid IsVisible="{Binding HasAttachment}" HorizontalAlignment="Left">
                                                 <local:PictureView Data="{Binding Image}" Thumbnail="{Binding Thumbnail}"
                                                                    PixelWidth="{Binding PixelWidth}" PixelHeight="{Binding PixelHeight}" />
@@ -478,7 +500,7 @@
                                                 <Button IsVisible="{Binding NeedsAction}" Content="{Binding ActionText}" Classes="primary"
                                                         HorizontalAlignment="Center" VerticalAlignment="Center" Click="Download_Click" />
                                             </Grid>
-                                            <SelectableTextBlock Classes="body" IsVisible="{Binding HasText}" Text="{Binding Text}" TextWrapping="Wrap" />
+                                            <local:MessageText Classes="body" IsVisible="{Binding HasText}" Body="{Binding Text}" Marks="{Binding MentionMarks}" TextWrapping="Wrap" />
                                             <TextBlock Classes="time" Text="{Binding TimeText}" ToolTip.Tip="{Binding FullTime}" />
                                         </StackPanel>
                                     </Border>
@@ -488,6 +510,7 @@
                         </ListBox.ItemTemplate>
                         <ListBox.ContextMenu>
                             <ContextMenu Opening="MessageMenu_Opening">
+                                <MenuItem x:Name="ReplyItem" Header="_Reply" Click="Reply_Click" />
                                 <MenuItem x:Name="SavePictureItem" Header="_Save picture as…" Click="SavePicture_Click" />
                                 <MenuItem x:Name="RetryItem" Header="_Retry sending" Click="RetryMessage_Click" />
                                 <MenuItem x:Name="DeleteMessageItem" Header="_Delete for everyone" Click="DeleteMessage_Click" />
@@ -504,7 +527,29 @@
                                    Text="Create a room, join one with an invite, or open a direct chat to begin." />
                     </StackPanel>
 
-                    <Border Grid.Row="2" Margin="14,4,14,14" Padding="14,2,6,2" CornerRadius="22"
+                    <StackPanel Grid.Row="2">
+                    <Border x:Name="ReplyBar" IsVisible="False" Margin="14,4,14,0" Padding="12,6,6,6" CornerRadius="12" Background="{DynamicResource BubbleOther}">
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right" Content="✕" Padding="8,2" Background="Transparent" VerticalAlignment="Center"
+                                    ToolTip.Tip="Cancel the reply (Esc)" Click="CancelReply_Click" />
+                            <StackPanel>
+                                <TextBlock x:Name="ReplyBarTitle" FontSize="11" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                <TextBlock x:Name="ReplyBarText" FontSize="12" Opacity="0.8" TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+                    <Popup x:Name="MentionPopup" PlacementTarget="{Binding #InputBox}" Placement="TopEdgeAlignedLeft" IsLightDismissEnabled="False">
+                        <Border Padding="4" CornerRadius="10" MinWidth="220" Background="{DynamicResource AppBg}" BorderBrush="{DynamicResource Line}" BorderThickness="1">
+                            <ListBox x:Name="MentionList" Classes="flat" MaxHeight="190" DoubleTapped="MentionList_DoubleTapped">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate x:DataType="local:MentionChoice">
+                                        <TextBlock Text="{Binding Label}" />
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Border>
+                    </Popup>
+                    <Border Margin="14,4,14,14" Padding="14,2,6,2" CornerRadius="22"
                             Background="{DynamicResource AppBg}" BorderBrush="{DynamicResource Line}" BorderThickness="1">
                         <DockPanel>
                             <Button x:Name="SendButton" DockPanel.Dock="Right" Content="Send" Classes="primary" CornerRadius="18" Padding="18,7"
@@ -514,6 +559,7 @@
                             <TextBox x:Name="InputBox" Classes="composer" PlaceholderText="Write a message" IsEnabled="False" KeyDown="InputBox_KeyDown" />
                         </DockPanel>
                     </Border>
+                    </StackPanel>
                 </Grid>
             </Border>
 

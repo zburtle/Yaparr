@@ -11,6 +11,12 @@ one machine, give each its own folder: `Yaparr.Desktop.exe --name alice --data C
 
 The **People** list on the right is the people of the room that is open: those who are here now, then those seen in it before (a room made by this version remembers who has been in it; a room from an earlier version, which has no owner, only shows who is here now), then anyone banned from it and anyone you blocked whom you met in it. Open another room and the list changes to that room's people. For a direct chat there is nothing to list, so the panel closes and the chat takes the room.
 
+## Replies and mentions
+
+Right-click a message and choose **Reply**: a bar above the box shows what you are answering (Esc or the ✕ cancels it), and your message carries the quoted message above its words. Click a quote to jump to the message it answers when that is on screen.
+
+Type **@** at the start of a word in a room to choose someone from the people of the room (arrow keys and Enter or Tab, or click); their name is written into your message and marked. A message that names you, or answers one of yours, gets an outline, and the unread badge of that room shows an **@** until you read it. In a direct chat there is nobody to name, but replies work.
+
 To install it, see [Installer and updates](installer-and-updates.md).
 
 ## Notifications

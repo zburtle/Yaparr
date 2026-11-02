@@ -253,6 +253,7 @@ public partial class MainWindow : Window
         _log.Write($"Yaparr {Updater.CurrentVersion} starting");
         Updater.Log = _log.Write;
         SetUpNotifications();
+        SetUpReplies();
 
         if (Arg("--name") == null && _settings.DisplayName == null && !_data.HasIdentity) await OfferLinkAsync();
         if (_restarting) return;
@@ -709,9 +710,12 @@ public partial class MainWindow : Window
         Remember(m.From);
         bool mine = _node != null && _node.IsMyDevice(m.From.Id);
         // A message you sent from another of your devices says which one.
-        var vm = new MessageVm(m.Timestamp, m.From.DisplayName, m.Text, m.IsCatchUp, isMine: mine, id: m.Id, attachment: m.Attachment)
+        var parts = m.Parts;
+        var vm = new MessageVm(m.Timestamp, m.From.DisplayName, parts.Body, m.IsCatchUp, isMine: mine, id: m.Id, attachment: m.Attachment)
         {
-            Source = m, Channel = m.Channel, DeviceNote = mine && _node!.Id != m.From.Id ? "from your other device " + m.From.Id.Short : "",
+            Source = m, Key = m.Key, ReplyKey = parts.ReplyTo, Mentions = parts.Mentions,
+            MentionsMe = _node != null && parts.Mentions.Any(x => x.Account == _node.AccountId),
+            Channel = m.Channel, DeviceNote = mine && _node!.Id != m.From.Id ? "from your other device " + m.From.Id.Short : "",
         };
         if (m.Attachment != null) TrackAttachment(vm);
         return vm;
@@ -817,7 +821,7 @@ public partial class MainWindow : Window
         // A message in another channel of the open room waits like one in another room.
         bool viewing = conv == _selected && (message.Channel == null || message.Channel == conv.CurrentChannel);
         if (viewing) { ScrollToEnd(); MarkRead(conv); }
-        else if (!message.IsMine) conv.NoteUnread(message.Channel);
+        else if (!message.IsMine) conv.NoteUnread(message.Channel, message.Highlight);
         // What you wrote on another device needs no announcing.
         if (announce && !message.IsMine) NotifyMessage(conv);
     }
@@ -984,6 +988,7 @@ public partial class MainWindow : Window
 
     private async void InputBox_KeyDown(object? sender, KeyEventArgs e)
     {
+        if (HandleComposerKey(e)) { e.Handled = true; return; }
         if (e.Key == Key.Enter && e.KeyModifiers == KeyModifiers.None) { e.Handled = true; await SendAsync(); }
     }
 
@@ -995,9 +1000,17 @@ public partial class MainWindow : Window
 
         try
         {
-            var id = await conv.Send(text);
+            var reply = _replyTo;
+            var mentions = conv.IsRoom ? ActiveMentions(text) : new List<Mention>();
+            var id = await conv.Send(MessageEnvelope.Wrap(text, reply?.Key, mentions));
             InputBox.Text = "";
-            conv.Add(new MessageVm(DateTimeOffset.Now, _node.DisplayName, text, isMine: true, id: id) { Channel = conv.IsRoom ? conv.CurrentChannel : null });
+            ClearReply();
+            _chosenMentions.Clear();
+            conv.Add(new MessageVm(DateTimeOffset.Now, _node.DisplayName, text, isMine: true, id: id)
+            {
+                Channel = conv.IsRoom ? conv.CurrentChannel : null,
+                Key = ChatMessage.KeyOf(_node.Id, id), ReplyKey = reply?.Key, Mentions = mentions,
+            });
             ScrollToEnd();
         }
         catch (InvalidOperationException ex)
@@ -1009,6 +1022,7 @@ public partial class MainWindow : Window
     private void ConversationList_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
         _selected = ConversationList.SelectedItem as ConversationVm;
+        ResetComposerExtras();
         UpdateInlineScreen();
         bool has = _selected != null;
         InputBox.IsEnabled = SendButton.IsEnabled = AttachButton.IsEnabled = has;
