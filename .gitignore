@@ -485,3 +485,6 @@ $RECYCLE.BIN/
 # Network test tool: its settings (key paths) and the results of runs
 nettest.json
 results/
+
+# The tools the release workflow installs (the "release/" rule above would hide them).
+!/.github/release/

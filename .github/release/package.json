@@ -1,0 +1,9 @@
+{
+  "name": "yaparr-release-tools",
+  "private": true,
+  "description": "The tools the release workflow runs. package-lock.json records the hash of every package, and the workflow installs from it with npm ci.",
+  "dependencies": {
+    "@semantic-release/exec": "7.1.0",
+    "semantic-release": "25.0.9"
+  }
+}

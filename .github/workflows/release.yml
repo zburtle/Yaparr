@@ -33,7 +33,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          npm ci --ignore-scripts --prefix .github/release
+          (cd .github/release && npm ci --ignore-scripts)
           .github/release/node_modules/.bin/semantic-release --dry-run
 
   windows:
@@ -172,7 +172,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          npm ci --ignore-scripts --prefix .github/release
+          (cd .github/release && npm ci --ignore-scripts)
           .github/release/node_modules/.bin/semantic-release
 
   # Puts the signed builds in the Flatpak repository, served from the gh-pages branch at flatpak.yaparr.com, so that
