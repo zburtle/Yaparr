@@ -6,6 +6,13 @@ updates:
       interval: weekly
     commit-message:
       prefix: ci
+  # The tools the release workflow runs (semantic-release), pinned by .github/release/package-lock.json.
+  - package-ecosystem: npm
+    directory: /.github/release
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
   - package-ecosystem: nuget
     directory: /
     schedule:
