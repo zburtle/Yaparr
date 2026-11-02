@@ -11,6 +11,36 @@ public sealed class PeerNetwork : IDisposable
     private const int IdLength = 32;
     private const int MaxTransportConnections = 256;
 
+    // Connections started by a hello have to prove they hold their key before they count (see PeerConnection). Until then they are kept
+    // in small numbers, and only so many new ones are taken from one address.
+    private const int MaxProvisional = 64, MaxProvisionalPerAddress = 4, MaxNewInboundPerWindow = 30;
+    private static readonly long InboundWindowMs = 10_000;
+    private readonly object _inboundGate = new();
+    private readonly Dictionary<System.Net.IPAddress, (int Count, long Start)> _inboundBudget = new();
+
+    /// <summary>How many connections started by someone else are waiting to prove they hold their key.</summary>
+    internal int ProvisionalCount => _byEndPoint.Values.Count(c => c.IsProvisional);
+
+    private bool AllowNewInbound(IPEndPoint from)
+    {
+        int provisional = 0, sameAddress = 0;
+        foreach (var other in _byEndPoint.Values)
+            if (other.IsProvisional) { provisional++; if (other.RemoteEndPoint.Address.Equals(from.Address)) sameAddress++; }
+        if (provisional >= MaxProvisional || sameAddress >= MaxProvisionalPerAddress) return false;
+
+        // Each new hello costs a signature check and a key agreement, so one address gets only so many in a while.
+        long now = Environment.TickCount64;
+        lock (_inboundGate)
+        {
+            if (_inboundBudget.Count > 4096) _inboundBudget.Clear();
+            _inboundBudget.TryGetValue(from.Address, out var used);
+            if (now - used.Start > InboundWindowMs) used = (0, now);
+            if (used.Count >= MaxNewInboundPerWindow) return false;
+            _inboundBudget[from.Address] = (used.Count + 1, used.Start);
+        }
+        return true;
+    }
+
     private readonly PeerIdentity _identity;
     private readonly UdpMux _mux;
     private readonly PeerNetworkOptions _options;
@@ -188,8 +218,9 @@ public sealed class PeerNetwork : IDisposable
                 if (Get(origin) is { IsRelayed: false }) return;
                 if (RelayedAcceptPolicy?.Invoke(relay, origin) != true) return;
                 conn = CreateRelayed(relay, relayId, origin);
+                conn.Inbound = true;
                 conn.OnDatagram(payload.Span);
-                if (conn.State == ConnectionState.Connecting) conn.Dispose();
+                if (conn.State == ConnectionState.Connecting && !conn.HasCandidate) conn.Dispose();
                 return;
             }
         }
@@ -207,13 +238,14 @@ public sealed class PeerNetwork : IDisposable
         }
 
         // Anyone can start a connection, so only so many are kept at once. Real members are a handful.
-        if (_options.AcceptIncoming && packet.Span[1] == 1 && _byEndPoint.Count < MaxTransportConnections)
+        if (_options.AcceptIncoming && packet.Span[1] == 1 && _byEndPoint.Count < MaxTransportConnections && AllowNewInbound(from))
         {
-            var inbound = new PeerConnection(_identity, from, null, (p, to) => _mux.Send(p, to), _options, _instance);
+            var inbound = new PeerConnection(_identity, from, null, (p, to) => _mux.Send(p, to), _options, _instance) { Inbound = true };
             Hook(inbound);
             _byEndPoint[from] = inbound;
             inbound.OnDatagram(packet.Span);
-            if (inbound.State == ConnectionState.Connecting) inbound.Dispose();
+            // A hello that did not check out leaves nothing; one that did waits for its key to be proved.
+            if (inbound.State == ConnectionState.Connecting && !inbound.HasCandidate) inbound.Dispose();
         }
         return true;
     }
