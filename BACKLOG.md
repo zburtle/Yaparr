@@ -147,6 +147,13 @@ No technical blocker, but a lot of work. The core library is portable .NET and t
 - Pictures: checking more than the sender (for example members that already have the file) before showing a download button.
 - **Desktop notifications.** Not done: system pop-ups, the flashing button on Linux (needs the window manager's urgency hint, which Avalonia does not expose), an unread count on Linux and macOS.
 - **Connection lost warning to the sharer.** Tell the sharer when viewers cannot be reached (the call and the viewer are covered, see [Voice channels](docs/voice.md)).
+- **Notifications for being named or answered.** Today a mention or a reply to you makes the ordinary message sound under the ordinary rules: nothing plays when you are looking at that conversation in an active window (even for a mention in another text channel of the open room, which is silent although it counts as unread, because `NotifyMessage` ignores the channel), nothing within 0.7 s of another message sound, and nothing for messages caught up from history. To do:
+  - a sound of its own for being named or answered;
+  - play it even when the window is focused if the mention is in another room or channel;
+  - never hold it back for the 0.7 s throttle or the catch-up silence of a busy room (a mention that arrives while you were away should still be marked, if not played);
+  - a setting to be told only about mentions, replies to you and direct messages, for busy rooms;
+  - a way to jump to the first unread mention.
+- **Replies and mentions: more.** A reply that carries a picture (a reply can quote one, but not send one); `@everyone`; a click on a quote to reach a message in another channel or one that has scrolled out of the history shown; and versions from before this show the marker (`yaparr-env1`) next to the words of a reply.
 - First-run guide that explains the VPN and TURN options in plain words.
 - Wire `network.json`, the VPN and the new connection/delivery status into `Yaparr.Host` and the Flutter UI (on the shelved `flutter-ui` branch).
 - NAT-PMP / port mapping through the VPN tunnel.

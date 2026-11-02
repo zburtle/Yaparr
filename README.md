@@ -7,6 +7,7 @@ Serverless chat, voice calls and screen sharing for .NET, with a desktop app for
 - **Rooms and direct chats.** A room is a random 256-bit key you share with the people you want in; outsiders cannot find it or read it. Messages are signed, forwarded between members and caught up from whoever was online.
 - **Voice channels and a soundboard** in every room, with echo cancellation and noise suppression, and trees that carry big calls.
 - **Screen sharing** of a monitor or a window (Windows), watched on any system.
+- **Replies and @mentions** in rooms and direct chats.
 - **Pictures and GIFs**, checked and fetched from any member that has them.
 - **Moderation.** Owners, admins, bans, text and voice channels, and replacing the room secret so a ban holds.
 - **Several devices** for one person, linked with an encrypted code, with messages and settings kept in step.
