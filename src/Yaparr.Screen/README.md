@@ -10,11 +10,15 @@ Yaparr needs an FFmpeg **LGPL build (no GPL parts such as x264) with `libvpx` an
 
 **No numbered release works yet.** FFmpeg 8.0 has no `gfxcapture`. 8.1.3 and 9.0.2 (and BtbN's `n8.1-latest` and `n9.0-latest` builds, which follow those branches) have it, but capture one picture and then deliver nothing: four fixes to `vsrc_gfxcapture` (the timestamp default, the callback state, a device-context lock and the `dup_frames` option) were made on the development branch on 24 October 2026 and are in neither release branch. Measured on 30 October 2026 with a moving picture on the monitor, the 9.0 branch build sent one frame in ten seconds, and the development build `N-128212` delivered 9.8, 14.8 and 29.7 pictures a second when 10, 15 and 30 were asked for. So the pinned build is `N-128212`, a development-branch build. When a numbered release contains those four fixes (look for 8.1.4 or 9.0.3, and `git log -- libavfilter/vsrc_gfxcapture*` for the commits), test it as below and move to it.
 
+## Yaparr's own build
+
+The FFmpeg Yaparr pins is one it builds itself, from the `ffmpeg` folder of this repository (`build.sh`, `verify.sh` and a README that explains it): the `FFmpeg build` workflow compiles the commit above with only what Yaparr uses (libvpx, the VP8 and H.264 decoders, the NVIDIA, AMD and Intel encoders, Graphics Capture and the plumbing around them) and checks it. It is a single static `ffmpeg.exe` of about 9.5 MB (3.4 MB zipped), where the BtbN build it replaced was 175 MB zipped. Every build is published as a pre-release named `ffmpeg-N` together with the exact FFmpeg source it was made from and the licences of what is built in, which is what the LGPL asks for when the program is passed on. The downloader keeps those notices next to the program (`FfmpegPackage.NoticesRoot`).
+
 ## Pinning a build
 
-Do this for the first pin and whenever a newer FFmpeg is wanted. BtbN/FFmpeg-Builds publishes the LGPL Windows builds (`ffmpeg-master-latest-win64-lgpl.zip`, or `ffmpeg-n9.0-latest-win64-lgpl-9.0.zip` for a release branch). Their "latest" names move every day, so the exact file that passes below is the file that gets hosted.
+Do this for the first pin and whenever a newer FFmpeg is wanted. The file is the zip of a published `ffmpeg-N` release (see `ffmpeg/README.md` for how to make one, and how to build another commit), so the exact file that passes below is the file that gets hosted.
 
-1. Download the zip (not the `-shared` one) and unpack it.
+1. Download the zip from the release and unpack it.
 2. Run the integration tests against it, on a Windows PC with a monitor:
 
    ```
@@ -24,12 +28,12 @@ Do this for the first pin and whenever a newer FFmpeg is wanted. BtbN/FFmpeg-Bui
 
    They capture a real monitor with the exact command Yaparr uses, check that the stream is VP8 in IVF (and, on a computer where the graphics card can encode, H.264) with a key frame first and the size it says, and decode the frames back into a picture. A build without the fixes fails them (the capture stops after one frame). They do nothing when there is no FFmpeg or no monitor, so the build server skips them.
 3. Try `tools/Yaparr.ScreenDemo` on a monitor and a browser window (`--list` shows the numbers), with something moving on screen, at 10, 15 and 30 pictures a second: the viewer should get about the rate asked, with nothing dropped or lost.
-4. Compute the SHA-256 and the size of the zip, and copy the exact file to a Yaparr release (tag `ffmpeg-N`, with the licence and the source link in its description).
-5. Put the version, URL, SHA-256, size and the paths inside the zip into `FfmpegPackage.Default`, and say in the commit which FFmpeg version it is.
+4. Take the SHA-256 and the size of the zip from the release (`SHA256SUMS.txt`).
+5. Put the version, URL, SHA-256, size, the paths inside the zip and its notices folder (`NoticesRoot`) into `FfmpegPackage.Default`, and say in the commit which FFmpeg version it is.
 
 ## Encoding
 
-`ScreenOptions.Codec` is `Auto` unless a caller says otherwise. The sharer then tries **H.264 on the NVIDIA graphics card** (`h264_nvenc`) first, and when FFmpeg stops before the first picture (no NVIDIA card, an old driver, all the encoder sessions of the card in use) it starts again with **VP8 in software** (`libvpx`). `ScreenSharer.Codec` says what is in use and `FallbackReason` why the card was not. Nothing is probed beforehand: starting the encoder is the test, and a failure costs well under a second.
+`ScreenOptions.Codec` is `Auto` unless a caller says otherwise. The sharer then tries **H.264 on the graphics card**, NVIDIA's `h264_nvenc` first, then AMD's `h264_amf`, then Intel's `h264_qsv` (`ScreenOptions.Encoder` names one), and when FFmpeg stops before the first picture (no such card, an old driver, all the encoder sessions of the card in use) it tries the next, and last **VP8 in software** (`libvpx`). Intel's encoder takes NV12 and not planar YUV, so its command converts to that. `ScreenSharer.Codec` and `ScreenSharer.Encoder` say what is in use and `FallbackReason` why each card that was tried was not used. `H264Reader.RepeatParameterSets` puts the parameter sets back in front of an IDR picture that comes without them, so a late viewer can always start on it. Nothing is probed beforehand: starting the encoder is the test, and a failure costs well under a second.
 
 - **H.264** is written as an Annex B byte stream with an access unit delimiter in front of every picture (`-aud 1`), no B-frames, a key frame (an IDR picture with its parameter sets) every `KeyFrameSeconds`, and a variable rate (a fixed rate would pad a still screen with filler up to the bitrate). `H264Reader` cuts the stream into pictures, each released when the next delimiter arrives, so the sender is one picture (100 ms at 10 fps) behind the encoder. `H264.TryGetSize` reads the picture size from the sequence parameter set, cropping included.
 - **VP8** is written as IVF, as before.

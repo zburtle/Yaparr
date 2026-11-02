@@ -8,7 +8,12 @@ namespace Yaparr.Screen;
 /// <param name="Sha256">The SHA-256 of the downloaded file in hex. A file that does not match is thrown away.</param>
 /// <param name="ExePathInZip">Where ffmpeg.exe is inside the zip.</param>
 /// <param name="LicensePathInZip">The licence file, which is kept next to the program.</param>
-public sealed record FfmpegPackage(string Version, Uri Url, string Sha256, long SizeBytes, string ExePathInZip, string? LicensePathInZip)
+/// <param name="NoticesRoot">
+/// The folder in the zip that holds the program's own notices (LICENSE.txt, SOURCE.txt, BUILD-INFO.txt and a licenses folder,
+/// as Yaparr's own build writes them). Everything in it except the bin folder is kept next to the program, so the licences and
+/// the note about where the source is travel with it. Without it the licence file is kept and a note is written.
+/// </param>
+public sealed record FfmpegPackage(string Version, Uri Url, string Sha256, long SizeBytes, string ExePathInZip, string? LicensePathInZip, string? NoticesRoot = null)
 {
     /// <summary>
     /// The one build of FFmpeg that Yaparr is known to work with: an LGPL Windows build (no GPL parts such as x264) with libvpx
@@ -103,10 +108,13 @@ public static class FfmpegInstaller
             {
                 Extract(archive, package.ExePathInZip, Path.Combine(staging, ExeName));
                 if (package.LicensePathInZip != null) Extract(archive, package.LicensePathInZip, Path.Combine(staging, "LICENSE.txt"), required: false);
+                if (package.NoticesRoot != null) ExtractNotices(archive, package.NoticesRoot, staging);
             }
-            File.WriteAllText(Path.Combine(staging, "SOURCE.txt"),
-                $"FFmpeg ({package.Version}), downloaded from {package.Url}.{Environment.NewLine}" +
-                $"It is licensed under the LGPL; see LICENSE.txt. The source code and build scripts are at https://github.com/BtbN/FFmpeg-Builds and https://ffmpeg.org.{Environment.NewLine}");
+            // A build that brings its own note about where the source is keeps it; otherwise one is written.
+            if (!File.Exists(Path.Combine(staging, "SOURCE.txt")))
+                File.WriteAllText(Path.Combine(staging, "SOURCE.txt"),
+                    $"FFmpeg ({package.Version}), downloaded from {package.Url}.{Environment.NewLine}" +
+                    $"It is licensed under the LGPL; see LICENSE.txt. The source code and build scripts are at https://github.com/BtbN/FFmpeg-Builds and https://ffmpeg.org.{Environment.NewLine}");
 
             if (Directory.Exists(target)) Directory.Delete(target, recursive: true);
             Directory.Move(staging, target);
@@ -116,6 +124,24 @@ public static class FfmpegInstaller
         finally
         {
             try { Directory.Delete(work, recursive: true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
+    }
+
+    // Everything under the root except its bin folder (the program is taken from there on its own), with the folders kept. A path
+    // that would land outside the destination is refused.
+    private static void ExtractNotices(ZipArchive archive, string root, string destination)
+    {
+        root = root.TrimEnd('/') + "/";
+        var full = Path.GetFullPath(destination) + Path.DirectorySeparatorChar;
+        foreach (var entry in archive.Entries)
+        {
+            if (!entry.FullName.StartsWith(root, StringComparison.Ordinal) || entry.FullName.EndsWith('/')) continue;
+            var relative = entry.FullName[root.Length..];
+            if (relative.StartsWith("bin/", StringComparison.Ordinal)) continue;
+            var target = Path.GetFullPath(Path.Combine(destination, relative));
+            if (!target.StartsWith(full, StringComparison.Ordinal)) throw new InvalidDataException($"The download has an unsafe path '{entry.FullName}'.");
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            entry.ExtractToFile(target, overwrite: true);
         }
     }
 
