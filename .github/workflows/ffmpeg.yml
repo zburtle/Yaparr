@@ -36,7 +36,7 @@ jobs:
           msystem: UCRT64
           update: true
           install: >-
-            git make diffutils zip xz
+            git make diffutils zip xz curl
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-nasm
             mingw-w64-ucrt-x86_64-pkgconf

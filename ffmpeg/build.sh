@@ -61,14 +61,37 @@ cp ffmpeg.exe "$OUT/$NAME/bin/ffmpeg.exe"
 strip "$OUT/$NAME/bin/ffmpeg.exe"
 cp COPYING.LGPLv2.1 "$OUT/$NAME/LICENSE.txt"
 
-# The licences of what was built in. MSYS2 keeps each package's licence files under share/licenses; the packages here are the
-# ones whose code (or headers) ended up in ffmpeg.exe. Missing ones are reported, not hidden.
-LICENSE_ROOT="${MINGW_PREFIX:-/ucrt64}/share/licenses"
-for pkg in libvpx libvpl amf-headers ffnvcodec-headers gcc-libs; do
-  dir="$LICENSE_ROOT/$pkg"
-  if [ -d "$dir" ]; then mkdir -p "$OUT/$NAME/licenses/$pkg" && cp -r "$dir"/. "$OUT/$NAME/licenses/$pkg"/
-  else echo "NOTE: no licence folder for $pkg under $LICENSE_ROOT" | tee -a "$OUT/$NAME/licenses/MISSING.txt"; fi
+# The licences of what was built in: the packages whose code (or headers) ended up in ffmpeg.exe. Each package's licence files
+# are found through its file list. libvpx (BSD, with Google's patent grant) and the compiler runtime (GPL with the GCC runtime
+# exception) must come with the binary: if a package carries no licence files they are fetched from upstream, and the build
+# stops if there is still nothing.
+LICENSE_DIR="$OUT/$NAME/licenses"
+PKG_PREFIX="${MINGW_PACKAGE_PREFIX:-mingw-w64-ucrt-x86_64}"
+for pkg in libvpx libvpl amf-headers ffnvcodec-headers gcc-libs libwinpthread winpthreads crt headers; do
+  pacman -Qi "$PKG_PREFIX-$pkg" >/dev/null 2>&1 || continue
+  mkdir -p "$LICENSE_DIR/$pkg"
+  pacman -Ql "$PKG_PREFIX-$pkg" | awk '{print $2}' | grep -E '/share/(licenses|doc)/.*[^/]$' | grep -i -E 'licen[cs]e|copying|copyright|notice|patents' |
+    while read -r file; do [ -f "$file" ] && cp "$file" "$LICENSE_DIR/$pkg"/; done || true
 done
+
+fetch() { curl -fsSL "$1" -o "$2"; }
+if [ -z "$(ls -A "$LICENSE_DIR/libvpx" 2>/dev/null)" ]; then
+  mkdir -p "$LICENSE_DIR/libvpx"
+  version="$(pacman -Q "$PKG_PREFIX-libvpx" | awk '{print $2}' | sed 's/-[0-9]*$//')"
+  fetch "https://raw.githubusercontent.com/webmproject/libvpx/v$version/LICENSE" "$LICENSE_DIR/libvpx/LICENSE"
+  fetch "https://raw.githubusercontent.com/webmproject/libvpx/v$version/PATENTS" "$LICENSE_DIR/libvpx/PATENTS"
+fi
+if [ -z "$(ls -A "$LICENSE_DIR/gcc-libs" 2>/dev/null)" ]; then
+  mkdir -p "$LICENSE_DIR/gcc-libs"
+  fetch "https://raw.githubusercontent.com/gcc-mirror/gcc/master/COPYING.RUNTIME" "$LICENSE_DIR/gcc-libs/COPYING.RUNTIME"
+  fetch "https://raw.githubusercontent.com/gcc-mirror/gcc/master/COPYING3" "$LICENSE_DIR/gcc-libs/COPYING3"
+fi
+for required in libvpx gcc-libs; do
+  [ -n "$(ls -A "$LICENSE_DIR/$required" 2>/dev/null)" ] || { echo "no licence text for $required"; exit 1; }
+done
+find "$LICENSE_DIR" -type d -empty -delete
+NO_LICENSE_TEXT="$(for pkg in libvpl amf-headers ffnvcodec-headers libwinpthread winpthreads crt headers; do
+  pacman -Qi "$PKG_PREFIX-$pkg" >/dev/null 2>&1 && [ ! -d "$LICENSE_DIR/$pkg" ] && echo -n "$pkg "; done)"
 
 # The packages and versions used, as they were on the build machine.
 {
@@ -79,7 +102,8 @@ done
   echo "configure: $CONFIGURE_LINE"
   echo
   echo "Libraries and headers used:"
-  for pkg in libvpx libvpl amf-headers ffnvcodec-headers gcc-libs; do pacman -Q "${MINGW_PACKAGE_PREFIX:-mingw-w64-ucrt-x86_64}-$pkg" 2>/dev/null || true; done
+  for pkg in libvpx libvpl amf-headers ffnvcodec-headers gcc-libs libwinpthread winpthreads crt headers; do pacman -Q "$PKG_PREFIX-$pkg" 2>/dev/null || true; done
+  [ -z "$NO_LICENSE_TEXT" ] || echo "Packages that carry no licence files of their own: $NO_LICENSE_TEXT"
   echo
   echo "Compiler: $(gcc --version | head -1)"
 } > "$OUT/$NAME/BUILD-INFO.txt"
