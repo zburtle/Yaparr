@@ -47,6 +47,10 @@ The [documentation](docs/README.md) is a small wiki, one page per topic:
 
 What is still to do is in the [backlog](BACKLOG.md).
 
+## Privacy and security
+
+There is no account, no server of ours and no telemetry. Other members of a room see your IP address, because they connect to you directly, and so does the BitTorrent DHT; STUN servers (Google's and Cloudflare's by default, changeable) learn it too. The app checks GitHub for updates when it starts. What is protected, what is not and what the app contacts are in [docs/security.md](docs/security.md). Yaparr has not had an independent security review, and the built-in WireGuard client is experimental. To report a problem privately, see [SECURITY.md](SECURITY.md).
+
 ## Licence
 
 Yaparr is free software under the [GNU GPL](COPYING), version 3 or later: the library, the apps and everything else. [LICENSE.txt](LICENSE.txt) has the details, including where to get the source of each release. Releases up to v1.10.0 were published under the MIT licence and stay available under it. Third-party software is listed in [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt).

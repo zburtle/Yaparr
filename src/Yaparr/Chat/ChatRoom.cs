@@ -69,6 +69,12 @@ public sealed class ChatRoom
     public IReadOnlyList<RotationCandidate> RotationCandidates => _node.GetRotationCandidates(this);
 
     /// <summary>
+    /// Everyone this device has seen in the room, here now or not, one entry per person (not per device), without you. The ones who
+    /// are away come from the room's memory of who has been in it, which a room made by an earlier version, one with no owner, does not keep.
+    /// </summary>
+    public IReadOnlyList<RoomPerson> People => _node.GetRoomPeople(this);
+
+    /// <summary>
     /// Replaces the room's secret (owner only) and gives the new one to <paramref name="recipients"/>, by account. Everyone else, banned people
     /// included, is locked out: they can no longer find the room or talk in it, which a ban alone cannot do. Anyone who is not online now has to be
     /// given <see cref="Invite"/> some other way. Returns the new invite.

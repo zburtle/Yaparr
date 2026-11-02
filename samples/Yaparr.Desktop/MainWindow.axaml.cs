@@ -604,19 +604,42 @@ public partial class MainWindow : Window
         if (changed) _data.SaveSettings(_settings);
 
         var blocked = _settings.BlockedPeers.Select(b => b.Id).ToHashSet();
-        // Roles belong to a room, so the list shows them for the room that is open.
+
+        // The list is the people of the room that is open. For a direct chat there is no list, and the panel is closed.
         var open = SelectedRoom;
-        RoomRole RoleOf(string id) => open?.RoleOf(new PeerId(id)) ?? RoomRole.Member;
-        var online = live.Values.Where(p => !blocked.Contains(p.Account.Value))
-            .Select(p => new PeerVm(p.Account.Value, p.DisplayName, true, now, p.IsRelayed, _node.GetLink(p.Account), Role: RoleOf(p.Account.Value), BannedHere: open?.IsBanned(p.Account) == true));
-        var offline = _settings.KnownPeers
-            .Where(k => !live.ContainsKey(k.Id) && !_node.IsMyDevice(new PeerId(k.Id)) && !blocked.Contains(k.Id))
-            .Select(k => new PeerVm(k.Id, string.IsNullOrWhiteSpace(k.Name) ? k.Id[..8] : k.Name, false, k.LastSeen, false, _node.GetLink(new PeerId(k.Id)), Role: RoleOf(k.Id), BannedHere: open?.IsBanned(new PeerId(k.Id)) == true));
-        var shut = _settings.BlockedPeers
+        PeoplePanel.IsVisible = open != null;
+        if (open == null)
+        {
+            PeopleList.ItemsSource = null;
+            PeopleCount.Text = "";
+            RefreshMembers();
+            return;
+        }
+
+        // One entry per person, however many devices they are on; your own other devices are not listed.
+        var here = new Dictionary<string, PeerInfo>();
+        foreach (var p in open.Members)
+        {
+            if (_node.IsMyDevice(p.Id)) continue;
+            if (!here.TryGetValue(p.Account.Value, out var seen) || (seen.IsRelayed && !p.IsRelayed)) here[p.Account.Value] = p;
+        }
+        if (gone is { } away && !_node.ConnectedPeers.Any(c => c.Account == away)) here.Remove(away.Value);
+
+        // Roles belong to a room, so the list shows them for the room that is open.
+        RoomRole RoleOf(string id) => open.RoleOf(new PeerId(id));
+        var seenHere = open.People;
+        var online = here.Values.Where(p => !blocked.Contains(p.Account.Value))
+            .Select(p => new PeerVm(p.Account.Value, p.DisplayName, true, now, p.IsRelayed, _node.GetLink(p.Account), Role: RoleOf(p.Account.Value), BannedHere: open.IsBanned(p.Account)));
+        var offline = seenHere
+            .Where(k => !here.ContainsKey(k.Account.Value) && !blocked.Contains(k.Account.Value))
+            .Select(k => new PeerVm(k.Account.Value, string.IsNullOrWhiteSpace(k.Name) ? k.Account.Value[..8] : k.Name, false, k.LastSeen, false, _node.GetLink(k.Account), Role: RoleOf(k.Account.Value), BannedHere: open.IsBanned(k.Account)));
+        // Someone you blocked stays in the list of the rooms you met them in, marked as blocked, so that they can be unblocked.
+        var metHere = seenHere.Select(k => k.Account.Value).ToHashSet();
+        var shut = _settings.BlockedPeers.Where(b => metHere.Contains(b.Id))
             .Select(b => new PeerVm(b.Id, string.IsNullOrWhiteSpace(b.Name) ? b.Id[..8] : b.Name, false, b.LastSeen, Blocked: true));
         // Someone banned here whom this device never met still needs a line, so that they can be unbanned.
         var listed = online.Concat(offline).Select(p => p.Id).ToHashSet();
-        var banned = (open?.Banned ?? Array.Empty<BannedPerson>()).Where(b => !listed.Contains(b.Account.Value) && !blocked.Contains(b.Account.Value))
+        var banned = open.Banned.Where(b => !listed.Contains(b.Account.Value) && !blocked.Contains(b.Account.Value))
             .Select(b => new PeerVm(b.Account.Value, b.Name, false, now, BannedHere: true));
         var people = online.Concat(offline).Concat(banned).Concat(shut)
             .OrderByDescending(p => p.Online)
