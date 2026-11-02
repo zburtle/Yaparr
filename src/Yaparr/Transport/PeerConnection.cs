@@ -73,6 +73,37 @@ public sealed class PeerConnection : IDisposable
 
     private SessionCrypto? _crypto;
     private byte[]? _remoteEph;
+
+    // A hello is a signed statement that "this temporary key is mine". It is not proof that the one sending it now holds the key: a
+    // hello is public to everyone who ever connected to its author, and can be repeated by anyone. So a hello only makes a
+    // candidate session, and the connection counts as made (or the session as replaced) once a frame arrives that is sealed with
+    // that session's keys, which only the holder of the temporary key can make.
+    private sealed class Candidate
+    {
+        public required SessionCrypto Crypto { get; init; }
+        public required byte[] Eph { get; init; }
+        public required byte[] SessionId { get; init; }
+        public required byte[] PublicKey { get; init; }
+        public required byte[] Instance { get; init; }
+        public required PeerId Id { get; init; }
+        public required PeerId Account { get; init; }
+        public long At { get; set; }
+    }
+
+    private readonly List<Candidate> _candidates = new();
+    private const int MaxCandidates = 4;
+
+    /// <summary>How long a candidate is kept without hearing the hello again. A real peer keeps repeating its hello until it is answered.</summary>
+    internal static readonly TimeSpan CandidateLifetime = TimeSpan.FromSeconds(8);
+
+    /// <summary>The connection was started by a hello from someone else (not dialled by us).</summary>
+    internal bool Inbound { get; set; }
+
+    /// <summary>A hello checked out but nothing has been confirmed yet.</summary>
+    internal bool HasCandidate { get { lock (_gate) return _candidates.Count > 0; } }
+
+    /// <summary>An inbound connection that has not proved anything yet. These are few and short-lived.</summary>
+    internal bool IsProvisional { get { lock (_gate) return Inbound && State == ConnectionState.Connecting && _candidates.Count > 0; } }
     private long _startedAt, _lastHelloSent, _lastSent, _lastReceived, _lastPingReceived;
 
     internal PeerConnection(PeerIdentity local, IPEndPoint remote, PeerId? expected, Action<byte[], IPEndPoint> send, PeerNetworkOptions options, byte[] instance, PeerId? relayedVia = null)
@@ -173,6 +204,8 @@ public sealed class PeerConnection : IDisposable
             CloseReason = reason;
             _crypto?.Dispose();
             _crypto = null;
+            foreach (var candidate in _candidates) candidate.Crypto.Dispose();
+            _candidates.Clear();
         }
         _established.TrySetException(new IOException($"Connection to {RemoteEndPoint} {reason}."));
         Closed?.Invoke(this);
@@ -189,10 +222,13 @@ public sealed class PeerConnection : IDisposable
         string? timeout = null;
         lock (_gate)
         {
+            for (int i = _candidates.Count - 1; i >= 0; i--)
+                if (now - _candidates[i].At > CandidateLifetime.TotalMilliseconds) { _candidates[i].Crypto.Dispose(); _candidates.RemoveAt(i); }
             switch (State)
             {
                 case ConnectionState.Connecting:
-                    if (now - _startedAt > _options.ConnectTimeout.TotalMilliseconds) timeout = "timed out while punching";
+                    if (Inbound && _candidates.Count == 0) timeout = "did not prove it holds its key";
+                    else if (now - _startedAt > _options.ConnectTimeout.TotalMilliseconds) timeout = "timed out while punching";
                     else if (now - _lastHelloSent >= _options.HelloInterval.TotalMilliseconds) SendHelloLocked(now);
                     break;
                 case ConnectionState.Established:
@@ -255,33 +291,66 @@ public sealed class PeerConnection : IDisposable
         if (State == ConnectionState.Established && RemoteId != remoteId) return;
 
         long now = Environment.TickCount64;
-        _lastReceived = now;
-        bool newSession = _remoteEph == null || !_remoteEph.AsSpan().SequenceEqual(ephKey);
-        if (newSession)
+
+        // The temporary key of the session in use again: the other end repeating its hello until it hears from us. It says nothing
+        // new, so it does not count as hearing from the other end (only a sealed frame does).
+        if (State == ConnectionState.Established && _remoteEph != null && _remoteEph.AsSpan().SequenceEqual(ephKey))
         {
-            _crypto?.Dispose();
-            _crypto = DeriveSession(ephKey);
-            _remoteEph = ephKey;
-            _channels.Clear();
-            RemoteId = remoteId;
-            RemoteAccount = remoteAccount;
-            RemotePublicKey = idKey;
-            RemoteInstance = instance;
-            State = ConnectionState.Established;
-            _lastSent = now;
-            post.Add(() => { _established.TrySetResult(this); Connected?.Invoke(this); });
+            if (now - _lastHelloSent >= 100) SendHelloLocked(now);
+            return;
         }
 
+        var candidate = _candidates.Find(c => c.Eph.AsSpan().SequenceEqual(ephKey));
+        if (candidate == null)
+        {
+            var crypto = DeriveSession(ephKey, out var sessionId);
+            candidate = new Candidate { Crypto = crypto, Eph = ephKey, SessionId = sessionId, PublicKey = idKey, Instance = instance, Id = remoteId, Account = remoteAccount, At = now };
+            _candidates.Add(candidate);
+            while (_candidates.Count > MaxCandidates) { _candidates[0].Crypto.Dispose(); _candidates.RemoveAt(0); }
+        }
+        candidate.At = now;
+
+        // Answer with a frame sealed with the candidate's keys. The real owner of the temporary key can open it, and its own answer is
+        // what confirms the session on this side.
+        SendFrameWith(candidate.Crypto, new[] { FramePing });
         if (now - _lastHelloSent >= 100) SendHelloLocked(now);
+    }
+
+    // A frame opened with a candidate's keys proves the other end holds the temporary key it signed: that session replaces the one in
+    // use (a restarted peer), or is the first.
+    private void PromoteLocked(Candidate candidate, List<Action> post, long now)
+    {
+        _crypto?.Dispose();
+        _crypto = candidate.Crypto;
+        _candidates.Remove(candidate);
+        foreach (var other in _candidates) other.Crypto.Dispose();
+        _candidates.Clear();
+        _remoteEph = candidate.Eph;
+        SessionId = candidate.SessionId;
+        _channels.Clear();
+        RemoteId = candidate.Id;
+        RemoteAccount = candidate.Account;
+        RemotePublicKey = candidate.PublicKey;
+        RemoteInstance = candidate.Instance;
+        State = ConnectionState.Established;
+        _lastSent = _lastReceived = now;
+        // The other end may not have heard from us yet: tell it, so it can confirm on its side without waiting for something to say.
+        SendFrameLocked(new[] { FramePing });
+        post.Add(() => { _established.TrySetResult(this); Connected?.Invoke(this); });
     }
 
     private void OnDataLocked(ReadOnlySpan<byte> packet, List<Action> post)
     {
-        if (State != ConnectionState.Established || _crypto == null) return;
-        var frame = _crypto.Decrypt(packet, headerLength: 2);
+        if (_crypto == null && _candidates.Count == 0) return;
+        var frame = _crypto?.Decrypt(packet, headerLength: 2);
+        Candidate? via = null;
+        if (frame == null)
+            foreach (var candidate in _candidates)
+                if ((frame = candidate.Crypto.Decrypt(packet, headerLength: 2)) != null) { via = candidate; break; }
         if (frame == null || frame.Length == 0) return;
 
         long now = Environment.TickCount64;
+        if (via != null) PromoteLocked(via, post, now);
         _lastReceived = now;
 
         switch (frame[0])
@@ -359,9 +428,11 @@ public sealed class PeerConnection : IDisposable
     private void SendFrameLocked(byte[] frame)
     {
         if (_crypto == null) return;
-        _send(_crypto.Encrypt(new[] { Magic, PacketData }, frame), RemoteEndPoint);
+        SendFrameWith(_crypto, frame);
         _lastSent = Environment.TickCount64;
     }
+
+    private void SendFrameWith(SessionCrypto crypto, byte[] frame) => _send(crypto.Encrypt(new[] { Magic, PacketData }, frame), RemoteEndPoint);
 
     private void SendHelloLocked(long now)
     {
@@ -381,7 +452,7 @@ public sealed class PeerConnection : IDisposable
         _lastHelloSent = now;
     }
 
-    private SessionCrypto DeriveSession(byte[] remoteEph)
+    private SessionCrypto DeriveSession(byte[] remoteEph, out byte[] sessionId)
     {
         using var theirs = ECDiffieHellman.Create();
         theirs.ImportSubjectPublicKeyInfo(remoteEph, out _);
@@ -389,7 +460,7 @@ public sealed class PeerConnection : IDisposable
 
         bool low = _ephPublic.AsSpan().SequenceCompareTo(remoteEph) < 0;
         var salt = SHA256.HashData(low ? _ephPublic.Concat(remoteEph).ToArray() : remoteEph.Concat(_ephPublic).ToArray());
-        SessionId = salt;
+        sessionId = salt;
         var keys = HKDF.DeriveKey(HashAlgorithmName.SHA256, secret, 64, salt, Encoding.ASCII.GetBytes("yaparr/v1/transport"));
         var lowToHigh = keys[..32];
         var highToLow = keys[32..];
