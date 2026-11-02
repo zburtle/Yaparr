@@ -23,12 +23,15 @@ public static class Updater
     {
         get
         {
-            if (InstallerExtension is null) return null;
+            if (InstallerExtension is null || IsFlatpak) return null;
             var repo = Assembly.GetExecutingAssembly().GetCustomAttributes<AssemblyMetadataAttribute>()
                 .FirstOrDefault(a => a.Key == "UpdateRepository")?.Value;
             return string.IsNullOrWhiteSpace(repo) ? null : repo;
         }
     }
+
+    /// <summary>True when running inside a Flatpak sandbox, which updates the app itself and cannot install a package.</summary>
+    public static bool IsFlatpak => OperatingSystem.IsLinux() && File.Exists("/.flatpak-info");
 
     private static string? InstallerExtension =>
         OperatingSystem.IsWindows() ? ".msi" : OperatingSystem.IsLinux() ? ".deb" : null;

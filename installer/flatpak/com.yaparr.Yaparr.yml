@@ -1,0 +1,88 @@
+# Flatpak manifest for Yaparr. Built by installer/build-flatpak.sh, which publishes the app first (self-contained, so the
+# runtime needs no .NET) and points the "yaparr" module at the result.
+app-id: com.yaparr.Yaparr
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+command: yaparr
+
+finish-args:
+  # Peers are reached over UDP: the DHT, hole punching, port mapping and local discovery.
+  - --share=network
+  # Avalonia draws through X11 (on Wayland through XWayland); --share=ipc lets it use shared memory.
+  - --share=ipc
+  - --socket=x11
+  - --device=dri
+  # Microphone and speakers for voice, through PulseAudio or PipeWire's PulseAudio service.
+  - --socket=pulseaudio
+
+modules:
+  # Watching a screen needs an ffmpeg program to decode the pictures. This one decodes VP8 and H.264 from a pipe and writes raw
+  # pictures, and nothing else (no GPL parts, no network, no encoders). It is LGPL 2.1 and a separate program, as on Windows.
+  - name: ffmpeg
+    buildsystem: simple
+    sources:
+      - type: archive
+        url: https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n8.1.3.tar.gz
+        sha256: 09f990289327d3ebfedf4fc15cae3f884a65dab7a5aac7bbb5b01ff83900efd9
+      - type: inline
+        dest-filename: ffmpeg-SOURCE.txt
+        contents: |
+          This ffmpeg is FFmpeg n8.1.3, built for Yaparr (https://github.com/zburtle/Yaparr) with only the parts Yaparr uses to
+          show a screen: the VP8 and H.264 decoders, the IVF and H.264 readers, raw picture output and the pipe protocol.
+          FFmpeg is licensed under the GNU Lesser General Public License, version 2.1 or later (ffmpeg-LICENSE.txt). It is
+          built without any GPL or nonfree part. Yaparr runs it as a separate program.
+          The source is https://github.com/FFmpeg/FFmpeg/tree/n8.1.3 and the way it is built is in the "ffmpeg" module of
+          installer/flatpak/com.yaparr.Yaparr.yml in the Yaparr source.
+          FFmpeg is a trademark of Fabrice Bellard, originator of the FFmpeg project. Yaparr is not endorsed by the FFmpeg project.
+    build-commands:
+      - >-
+        ./configure --prefix=/app
+        --disable-everything --disable-autodetect --disable-doc --disable-debug --disable-network
+        --disable-ffplay --disable-ffprobe --disable-shared --enable-static
+        --enable-decoder=vp8,h264
+        --enable-parser=h264,vp8
+        --enable-demuxer=ivf,h264
+        --enable-muxer=rawvideo
+        --enable-encoder=rawvideo
+        --enable-protocol=pipe
+        --enable-filter=scale,format,null
+      - make -j"$FLATPAK_BUILDER_N_JOBS" ffmpeg
+      - install -Dm755 ffmpeg /app/bin/ffmpeg
+      - install -Dm644 COPYING.LGPLv2.1 /app/share/licenses/com.yaparr.Yaparr/ffmpeg-LICENSE.txt
+      - install -Dm644 ffmpeg-SOURCE.txt /app/share/licenses/com.yaparr.Yaparr/ffmpeg-SOURCE.txt
+
+  - name: yaparr
+    buildsystem: simple
+    # The published app has its own libraries, already ready to use; stripping them is slow and can damage a .NET runtime.
+    build-options:
+      strip: false
+      no-debuginfo: true
+    sources:
+      # The published app, made by build-flatpak.sh.
+      - type: dir
+        path: ../../artifacts/flatpak-app
+        dest: app
+      - type: dir
+        path: .
+        dest: data
+      - type: dir
+        path: ../../assets/logo
+        dest: icons
+      - type: file
+        path: ../../artifacts/flatpak-meta/com.yaparr.Yaparr.metainfo.xml
+        dest: data
+      - type: script
+        dest-filename: yaparr.sh
+        commands:
+          - exec /app/lib/yaparr/Yaparr.Desktop "$@"
+    build-commands:
+      - mkdir -p /app/lib && cp -r app /app/lib/yaparr && chmod 755 /app/lib/yaparr/Yaparr.Desktop
+      - install -Dm755 yaparr.sh /app/bin/yaparr
+      - install -Dm644 data/com.yaparr.Yaparr.desktop /app/share/applications/com.yaparr.Yaparr.desktop
+      - install -Dm644 data/com.yaparr.Yaparr.metainfo.xml /app/share/metainfo/com.yaparr.Yaparr.metainfo.xml
+      - install -Dm644 icons/png/yaparr-512.png /app/share/icons/hicolor/512x512/apps/com.yaparr.Yaparr.png
+      - install -Dm644 icons/png/yaparr-256.png /app/share/icons/hicolor/256x256/apps/com.yaparr.Yaparr.png
+      - install -Dm644 icons/png/yaparr-128.png /app/share/icons/hicolor/128x128/apps/com.yaparr.Yaparr.png
+      - install -Dm644 icons/png/yaparr-48.png /app/share/icons/hicolor/48x48/apps/com.yaparr.Yaparr.png
+      - install -Dm644 icons/yaparr-icon.svg /app/share/icons/hicolor/scalable/apps/com.yaparr.Yaparr.svg

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The template of the AppStream file: installer/build-flatpak.sh fills in @VERSION@ and @DATE@. -->
+<component type="desktop-application">
+  <id>com.yaparr.Yaparr</id>
+  <name>Yaparr</name>
+  <summary>Serverless peer-to-peer chat, voice and screen sharing</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <developer id="com.yaparr">
+    <name>Zach Burtle</name>
+  </developer>
+  <description>
+    <p>Yaparr is a chat app with no server and no account. People find each other on the BitTorrent DHT and talk over direct, encrypted connections.</p>
+    <ul>
+      <li>Invite-only rooms and direct chats, with pictures and GIFs</li>
+      <li>Voice channels with echo cancellation and a soundboard</li>
+      <li>Watch a shared screen</li>
+      <li>Use one account on several devices</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">com.yaparr.Yaparr.desktop</launchable>
+  <url type="homepage">https://github.com/zburtle/Yaparr</url>
+  <url type="bugtracker">https://github.com/zburtle/Yaparr/issues</url>
+  <content_rating type="oars-1.1">
+    <content_attribute id="social-chat">intense</content_attribute>
+    <content_attribute id="social-audio">intense</content_attribute>
+  </content_rating>
+  <categories>
+    <category>Network</category>
+    <category>Chat</category>
+  </categories>
+  <provides>
+    <binary>yaparr</binary>
+  </provides>
+  <releases>
+    <release version="@VERSION@" date="@DATE@"/>
+  </releases>
+</component>

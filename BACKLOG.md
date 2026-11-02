@@ -158,3 +158,17 @@ No technical blocker, but a lot of work. The core library is portable .NET and t
 - Wire `network.json`, the VPN and the new connection/delivery status into `Yaparr.Host` and the Flutter UI (on the shelved `flutter-ui` branch).
 - NAT-PMP / port mapping through the VPN tunnel.
 - **Delivery per recipient.** Not done: a way to see it later, or an "everyone" view for a message in a very large room.
+
+## Flatpak
+
+- The amd64 bundle was built and started in a Linux container on a virtual screen (it ran, found the DHT and wrote its data under `~/.var/app/com.yaparr.Yaparr`). Not tried: arm64, a real desktop, voice with a real microphone and speakers, the file dialog through the portal, and watching a screen with a real stream.
+- The hosted repository at `flatpak.yaparr.com` is built and tested against a local web server (install from a bundle, then `flatpak update` to a newer version), but not yet live: it needs the `FLATPAK_GPG_PRIVATE_KEY` secret, GitHub Pages on the `gh-pages` branch with the custom domain, and the DNS record for `flatpak.yaparr.com`. Keep a copy of the private key somewhere safe: if it is lost, everyone who installed has to add a new repository by hand.
+- **Flathub** (not started). Read from Flathub's requirements, not tried:
+  - The app must be built from source with no network during the build and no prebuilt binaries in the submission: a generated list of NuGet packages (`flatpak-builder-tools`) and a .NET 10 SDK extension instead of the published output. Their docs say nothing about .NET self-contained apps or about native libraries that come inside NuGet packages (SkiaSharp, miniaudio, the WebRTC audio library); ask the maintainers before investing.
+  - Verify `yaparr.com`: a token at `https://yaparr.com/.well-known/org.flathub.VerifiedApps.txt`, with the site answering over HTTPS.
+  - AppStream: screenshots (direct image URLs pinned to a tag or commit), a homepage URL, a brand colour, no warnings from `appstreamcli validate`.
+  - Explain each permission in the pull request; run `flatpak-builder-lint`; the runtime must be the latest Flathub-hosted one.
+  - Flathub does not allow AI-generated manifests or AI-opened pull requests, so the manifest and the submission have to be written and sent by hand. Submit as a pull request against `new-pr` of `flathub/flathub`.
+- Importing a profile from the `.deb` (`~/.local/share/Yaparr`) the first time, with a one-time permission to read that folder.
+- Push-to-talk works only while the window is focused; a global key would need the GlobalShortcuts portal.
+- Native Wayland instead of XWayland, when Avalonia's Wayland backend is no longer experimental.
