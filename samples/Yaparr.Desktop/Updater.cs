@@ -3,6 +3,7 @@ using System.IO;
 using System.Net.Http;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Yaparr.Updates;
@@ -151,8 +152,13 @@ public static class Updater
     {
         if (OperatingSystem.IsWindows())
         {
+            // Another program of this user could replace the file between its check and the moment msiexec opens it. So it is checked
+            // again through a handle that nobody else can write to or delete through, and that handle stays until msiexec has the
+            // package open itself.
+            using var locked = await UpdateVerifier.OpenVerifiedAsync(path, sha256, ct);
             Log?.Invoke("update: starting the installer " + path);
-            Process.Start(new ProcessStartInfo("msiexec.exe", $"/i \"{path}\"") { UseShellExecute = false });
+            using var msiexec = Process.Start(new ProcessStartInfo("msiexec.exe", $"/i \"{path}\"") { UseShellExecute = false });
+            await WaitUntilOpenedByAnotherAsync(path, ct);
             return true;
         }
 
@@ -165,6 +171,31 @@ public static class Updater
         await process.WaitForExitAsync(ct);
         Log?.Invoke("update: the package installer finished with code " + process.ExitCode);
         return process.ExitCode == 0;
+    }
+
+    /// <summary>
+    /// Waits until a program other than this one has the file open, which is msiexec reading the package, so that the lock held
+    /// here is not let go before it has its own. Gives up after a time: Windows may not say, and the lock is only a precaution.
+    /// </summary>
+    [SupportedOSPlatform("windows")]
+    private static async Task WaitUntilOpenedByAnotherAsync(string path, CancellationToken ct)
+    {
+        var until = Environment.TickCount64 + 15_000;
+        try
+        {
+            while (Environment.TickCount64 < until)
+            {
+                if (FileHolders.Others(path).Count > 0) { Log?.Invoke("update: the installer has the package open"); return; }
+                await Task.Delay(100, ct);
+            }
+        }
+        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException or MarshalDirectiveException)
+        {
+            // No Restart Manager: hold on for a short while instead.
+            await Task.Delay(3000, ct);
+            return;
+        }
+        Log?.Invoke("update: the installer was not seen opening the package within 15 seconds");
     }
 
     private static bool TryParse(string? text, out Version version)

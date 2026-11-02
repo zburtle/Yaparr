@@ -26,4 +26,6 @@ The Windows installer carries the FFmpeg that screen sharing runs (`installer/bu
 
 The desktop app updates itself from this repository's releases, and the download shows a progress bar and can be cancelled. An update is only taken from this repository's release downloads over https, must have a published SHA-256 (an asset without one is refused), is downloaded under a `.part` name and only gets its real name after the checksum matches, and a mismatch deletes it. Tested against v1.7.1: good download, wrong checksum, no checksum, foreign address and a missing file.
 
-What the updater does not cover is listed in the [backlog](../BACKLOG.md).
+**Between the check and the install.** On Linux the package is copied where only root can write, checked again there and installed from that copy. On Windows the MSI sits in the user's own folder, so just before msiexec is started the file is opened so that no other program can write to it, delete it or rename it, and its checksum is taken again through that same handle (`UpdateVerifier.OpenVerifiedAsync`). The handle is kept until msiexec has the package open itself, asked of the Windows Restart Manager (`FileHolders`), for at most 15 seconds. This closes the gap in which another program of the same user could swap the file after the check. It is not a security boundary: such a program can also change the installed app, which lives in the same user's folder.
+
+What the updater does not cover is listed in the [issues](https://github.com/zburtle/Yaparr/issues?q=is%3Aissue+is%3Aopen+label%3A%22area%3A+security%22).
