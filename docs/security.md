@@ -13,6 +13,14 @@ Peers without the key never become members, receive introductions or see message
 band. Anyone holding the key is in, and removing one person means making a new key. There are no open rooms that
 anyone can join by name; versions before 1.4 had them, and those rooms are not found by this version.
 
+## What is and is not protected
+
+- **Protected:** what is said in a room (encrypted between members, signed by its author, readable only with the room key), who may join one (the key), and updates (HTTPS from this repository's releases, checked against GitHub's published SHA-256).
+- **Not hidden:** your IP address. Members of a room see it, because they connect to you directly. The BitTorrent DHT sees it too, and so do the STUN servers used to find your public address (Google's and Cloudflare's by default; the list is in `network.json`). A TURN relay, when one is set up, sees the addresses and timing of what it forwards, never the content.
+- **What the app contacts:** the DHT bootstrap nodes (`router.bittorrent.com`, `dht.transmissionbt.com`, `router.utorrent.com`, `dht.libtorrent.org`), the STUN servers, the TURN relay you set up, other members, and GitHub: the update check at start (`api.github.com`) and, the first time you share or watch a screen on a computer that has no copy, the FFmpeg download (`github.com`). There is no account, no server of ours and no telemetry. The update check cannot be switched off yet (it is in the [backlog](../BACKLOG.md)).
+- **Not independently reviewed:** the protocol, the room proofs and the built-in WireGuard client. The WireGuard client is experimental.
+- **Pictures and screens from other members** are decoded by native libraries (SkiaSharp for pictures, FFmpeg, trimmed to the VP8 and H.264 decoders, for screens). Headers are checked first, and FFmpeg runs as a separate process, but a flaw in a decoder is a flaw that a member could reach, so keep Yaparr up to date.
+
 ## Secrets on disk
 
 On Windows the identity, settings (private room keys), account settings, the WireGuard config, the TURN password and the history key are sealed with DPAPI, so only that Windows user on that PC can read them. Room and direct message history, and the pictures, GIFs and sounds, are encrypted with AES-GCM under that key (each line or 64 KB piece is tied to its file and place, so pieces cannot be moved, swapped, cut off or changed; files from earlier versions are sealed at the next start). Profile export writes the sealed files unsealed (with the history key) so a backup opens elsewhere, and importing seals them again, so keep the export zip safe.

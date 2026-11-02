@@ -17,7 +17,7 @@ services:
       - --realm=${TURN_REALM:-yaparr}
       - --fingerprint
       - --lt-cred-mech
-      - --user=${TURN_USER}:${TURN_PASSWORD}
+      - --user=${TURN_USER}:${TURN_PASSWORD:?Set TURN_PASSWORD in .env (see .env.example)}
       - --min-port=${TURN_MIN_PORT:-49152}
       - --max-port=${TURN_MAX_PORT:-49400}
       - --no-tls

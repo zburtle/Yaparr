@@ -32,7 +32,7 @@ jobs:
         id: version
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: npx --yes -p semantic-release@25 -p @semantic-release/exec@7 semantic-release --dry-run
+        run: npx --yes -p semantic-release@25.0.9 -p @semantic-release/exec@7.1.0 semantic-release --dry-run
 
   windows:
     needs: version
@@ -112,4 +112,4 @@ jobs:
       - name: Publish release
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: npx --yes -p semantic-release@25 -p @semantic-release/exec@7 semantic-release
+        run: npx --yes -p semantic-release@25.0.9 -p @semantic-release/exec@7.1.0 semantic-release
