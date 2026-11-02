@@ -162,7 +162,7 @@ No technical blocker, but a lot of work. The core library is portable .NET and t
 ## Flatpak
 
 - The amd64 bundle was built and started in a Linux container on a virtual screen (it ran, found the DHT and wrote its data under `~/.var/app/com.yaparr.Yaparr`). Not tried: arm64, a real desktop, voice with a real microphone and speakers, the file dialog through the portal, and watching a screen with a real stream.
-- A hosted Flatpak repository (for example on GitHub Pages, with a `.flatpakrepo` file) so that `flatpak update` finds new versions. Without it a bundle never updates.
+- The hosted repository at `flatpak.yaparr.com` is built and tested against a local web server (install from a bundle, then `flatpak update` to a newer version), but not yet live: it needs the `FLATPAK_GPG_PRIVATE_KEY` secret, GitHub Pages on the `gh-pages` branch with the custom domain, and the DNS record for `flatpak.yaparr.com`. Keep a copy of the private key somewhere safe: if it is lost, everyone who installed has to add a new repository by hand.
 - **Flathub** (not started). Read from Flathub's requirements, not tried:
   - The app must be built from source with no network during the build and no prebuilt binaries in the submission: a generated list of NuGet packages (`flatpak-builder-tools`) and a .NET 10 SDK extension instead of the published output. Their docs say nothing about .NET self-contained apps or about native libraries that come inside NuGet packages (SkiaSharp, miniaudio, the WebRTC audio library); ask the maintainers before investing.
   - Verify `yaparr.com`: a token at `https://yaparr.com/.well-known/org.flathub.VerifiedApps.txt`, with the site answering over HTTPS.

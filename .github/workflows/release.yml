@@ -111,6 +111,21 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y flatpak flatpak-builder
 
+      # The bundles are signed, and say where updates come from, when the repository's key is a secret of this repository.
+      - name: Signing key
+        id: key
+        env:
+          KEY: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}
+        run: |
+          if [ -n "$KEY" ]; then
+            export GNUPGHOME="$RUNNER_TEMP/gnupg"
+            mkdir -m 700 "$GNUPGHOME"
+            echo "$KEY" | gpg --batch --import
+            echo "FLATPAK_GPG_HOME=$GNUPGHOME" >> "$GITHUB_ENV"
+            echo "FLATPAK_GPG_KEY=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr/ {print $10; exit}')" >> "$GITHUB_ENV"
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build bundle
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -121,6 +136,13 @@ jobs:
         with:
           name: installer-flatpak-${{ matrix.arch }}
           path: artifacts/*.flatpak
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v7
+        if: steps.key.outputs.signed == 'true'
+        with:
+          name: flatpak-repo-${{ matrix.arch }}
+          path: artifacts/flatpak-repo-${{ matrix.arch }}
           if-no-files-found: error
 
   publish:
@@ -148,3 +170,43 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: npx --yes -p semantic-release@25.0.9 -p @semantic-release/exec@7.1.0 semantic-release
+
+  # Puts the signed builds in the Flatpak repository, served from the gh-pages branch at flatpak.yaparr.com, so that
+  # "flatpak update" finds them. Only runs when the signing key is set up.
+  flatpak-repo:
+    needs: [version, publish]
+    if: needs.version.outputs.version != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: flatpak-repo-*
+          path: flatpak-repos
+
+      - name: Add to the repository
+        env:
+          KEY: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}
+          TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "$KEY" ] || [ ! -d flatpak-repos ]; then echo "No signed Flatpak builds; nothing to publish."; exit 0; fi
+          sudo apt-get update
+          sudo apt-get install -y flatpak ostree gnupg
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -m 700 "$GNUPGHOME"
+          echo "$KEY" | gpg --batch --import
+          export FLATPAK_GPG_HOME="$GNUPGHOME"
+          export FLATPAK_GPG_KEY="$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr/ {print $10; exit}')"
+          remote="https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git clone --depth 1 --branch gh-pages "$remote" site || mkdir site
+          rm -rf site/.git
+          bash installer/publish-flatpak-repo.sh site flatpak-repos/*
+          # One commit with the whole site: the branch holds the repository, not its history.
+          cd site
+          git init -q -b gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Flatpak repository for ${{ needs.version.outputs.version }}"
+          git push -q --force "$remote" gh-pages
