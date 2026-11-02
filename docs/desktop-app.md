@@ -9,6 +9,8 @@ open a direct chat by peer ID. Under each connected person in the People list it
 one machine, give each its own folder: `Yaparr.Desktop.exe --name alice --data C:\temp\alice` (the launch profiles
 `alice` and `bob` do this). Run it with `dotnet run --project samples/Yaparr.Desktop`.
 
+The **People** list on the right is the people of the room that is open: those who are here now, then those seen in it before (a room made by this version remembers who has been in it; a room from an earlier version, which has no owner, only shows who is here now), then anyone banned from it and anyone you blocked whom you met in it. Open another room and the list changes to that room's people. For a direct chat there is nothing to list, so the panel closes and the chat takes the room.
+
 To install it, see [Installer and updates](installer-and-updates.md).
 
 ## Notifications
