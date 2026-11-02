@@ -36,6 +36,44 @@ public class FfmpegInstallerTests
         "test-1", new Uri("https://example.invalid/ffmpeg.zip"), sha ?? Convert.ToHexString(SHA256.HashData(zip)), zip.Length,
         "ff/bin/ffmpeg.exe", "ff/LICENSE.txt");
 
+    [Fact]
+    public async Task A_build_that_brings_its_own_notices_keeps_them_all_next_to_the_program()
+    {
+        var dir = Temp();
+        try
+        {
+            var zip = Zip(("ff/bin/ffmpeg.exe", "program"), ("ff/LICENSE.txt", "lgpl"), ("ff/SOURCE.txt", "source is in the release"), ("ff/BUILD-INFO.txt", "configure..."),
+                ("ff/licenses/libvpx/LICENSE", "bsd"), ("ff/licenses/libvpx/PATENTS", "grant"), ("other/LICENSE.txt", "not this one"));
+            var package = Package(zip) with { NoticesRoot = "ff" };
+            var path = await FfmpegInstaller.InstallAsync(package, null, dir, new Serve(zip));
+            var folder = Path.GetDirectoryName(path)!;
+
+            Assert.Equal("program", File.ReadAllText(path));
+            Assert.Equal("lgpl", File.ReadAllText(Path.Combine(folder, "LICENSE.txt")));
+            Assert.Equal("source is in the release", File.ReadAllText(Path.Combine(folder, "SOURCE.txt")));   // theirs, not ours
+            Assert.Equal("configure...", File.ReadAllText(Path.Combine(folder, "BUILD-INFO.txt")));
+            Assert.Equal("bsd", File.ReadAllText(Path.Combine(folder, "licenses", "libvpx", "LICENSE")));
+            Assert.Equal("grant", File.ReadAllText(Path.Combine(folder, "licenses", "libvpx", "PATENTS")));
+            Assert.False(Directory.Exists(Path.Combine(folder, "bin")));
+            Assert.DoesNotContain("not this one", Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories).Select(File.ReadAllText));
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public async Task A_path_that_climbs_out_of_the_folder_is_refused()
+    {
+        var dir = Temp();
+        try
+        {
+            var zip = Zip(("ff/bin/ffmpeg.exe", "program"), ("ff/../../escaped.txt", "x"));
+            var package = Package(zip) with { NoticesRoot = "ff" };
+            await Assert.ThrowsAsync<InvalidDataException>(() => FfmpegInstaller.InstallAsync(package, null, dir, new Serve(zip)));
+            Assert.Null(FfmpegInstaller.FindAny(dir));
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); }
+    }
+
     private static string Temp() => Path.Combine(Path.GetTempPath(), "yaparr-ffinst-" + Guid.NewGuid().ToString("N"));
 
     [Fact]

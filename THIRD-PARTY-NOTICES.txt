@@ -272,8 +272,25 @@ SCREEN SHARING
 
 FFmpeg (the FFmpeg developers), downloaded on first use
 ------------------------------------------------------------------------------
-Yaparr does not contain FFmpeg and does not link to it. When you share or watch a screen it offers to download an LGPL
-build of FFmpeg (without GPL components such as x264) into your own application data folder and runs it as a separate
-program. FFmpeg is licensed under the GNU Lesser General Public License, version 2.1 or later; the licence text is kept
-next to the downloaded program (LICENSE.txt), together with a note of where the source code and build scripts are
-(https://ffmpeg.org and https://github.com/BtbN/FFmpeg-Builds). The build includes libvpx (BSD-3-Clause, Google).
+Yaparr does not link to FFmpeg. It runs FFmpeg as a separate program, which it can replace (set YAPARR_FFMPEG to another
+ffmpeg.exe, or put one in an "ffmpeg" folder next to the app). The Windows installer carries a build of FFmpeg that Yaparr
+makes itself, with only the parts Yaparr uses; where it is missing, the app offers to download the same build into your own
+application data folder.
+
+FFmpeg is licensed under the GNU Lesser General Public License, version 2.1 or later. The build has no GPL or "nonfree"
+part (no x264, no x265). Next to the program are the licence text (LICENSE.txt), SOURCE.txt, BUILD-INFO.txt (how it was
+configured and with which versions of what) and a licenses folder with the licences of what is built in.
+
+The exact FFmpeg source of every build is published with it, in the same release, as ffmpeg-<commit>-source.tar.xz at
+https://github.com/zburtle/Yaparr/releases (the releases named ffmpeg-N), and the way it is built is in the ffmpeg folder of the
+Yaparr source (https://github.com/zburtle/Yaparr/tree/master/ffmpeg). FFmpeg is at https://ffmpeg.org.
+
+Built into it:
+  libvpx (VP8), BSD-3-Clause with Google's patent grant (licenses/libvpx/LICENSE and PATENTS)
+  oneVPL dispatcher, Intel's Quick Sync interface, MIT (licenses/libvpl)
+  The AMD AMF and NVIDIA codec headers, MIT: they are used to talk to the graphics driver, which is not part of Yaparr
+    (licenses/amf-headers, licenses/ffnvcodec-headers)
+  The compiler's runtime (libgcc, libstdc++), GPL-3.0-or-later with the GCC Runtime Library Exception, and the MinGW-w64
+    runtime and winpthreads (licenses/gcc-libs, licenses/crt, licenses/winpthreads)
+
+FFmpeg is a trademark of Fabrice Bellard, originator of the FFmpeg project. Yaparr is not endorsed by the FFmpeg project.

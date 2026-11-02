@@ -8,23 +8,29 @@ namespace Yaparr.Screen;
 /// <param name="Sha256">The SHA-256 of the downloaded file in hex. A file that does not match is thrown away.</param>
 /// <param name="ExePathInZip">Where ffmpeg.exe is inside the zip.</param>
 /// <param name="LicensePathInZip">The licence file, which is kept next to the program.</param>
-public sealed record FfmpegPackage(string Version, Uri Url, string Sha256, long SizeBytes, string ExePathInZip, string? LicensePathInZip)
+/// <param name="NoticesRoot">
+/// The folder in the zip that holds the program's own notices (LICENSE.txt, SOURCE.txt, BUILD-INFO.txt and a licenses folder,
+/// as Yaparr's own build writes them). Everything in it except the bin folder is kept next to the program, so the licences and
+/// the note about where the source is travel with it. Without it the licence file is kept and a note is written.
+/// </param>
+public sealed record FfmpegPackage(string Version, Uri Url, string Sha256, long SizeBytes, string ExePathInZip, string? LicensePathInZip, string? NoticesRoot = null)
 {
     /// <summary>
-    /// The one build of FFmpeg that Yaparr is known to work with: an LGPL Windows build (no GPL parts such as x264) with libvpx
-    /// and a gfxcapture filter that has the Graphics Capture fixes of 24 October 2026. No numbered release has those fixes
-    /// yet (8.1.3 and 9.0.2 capture one frame and stop), so this is a build of FFmpeg's development branch, N-128212 of
-    /// 30 October 2026, checked with the FfmpegIntegration tests and the demo. Move to a numbered release when one includes
-    /// the fixes. The file is meant to be copied to a Yaparr release (tag ffmpeg-1) so that it stays put; see README.md next
-    /// to this file.
+    /// The one build of FFmpeg that Yaparr is known to work with: Yaparr's own trimmed LGPL Windows build (no GPL parts such as
+    /// x264; see the ffmpeg folder of the repository) of commit 17a4a474f4 of FFmpeg's development branch, N-128212 of
+    /// 30 October 2026, which has the Graphics Capture fixes of 24 October 2026. No numbered release has those fixes yet (8.1.3
+    /// and 9.0.2 capture one frame and stop). It was checked with the FfmpegIntegration tests and the demo. Move to a numbered
+    /// release when one includes the fixes. The file is the asset of the Yaparr release ffmpeg-2, which also holds the exact
+    /// source; see README.md next to this file.
     /// </summary>
     public static FfmpegPackage Default { get; } = new(
-        "n128212-lgpl-win64",
-        new Uri("https://github.com/zburtle/Yaparr/releases/download/ffmpeg-1/ffmpeg-master-latest-win64-lgpl.zip"),
-        "de1d5f6ae7c16d264ab5bbeaa906e23f5a42b4edfab105980595524591a3f8a5",
-        175_268_886,
-        "ffmpeg-master-latest-win64-lgpl/bin/ffmpeg.exe",
-        "ffmpeg-master-latest-win64-lgpl/LICENSE.txt");
+        "g17a4a474f4-yaparr-win64",
+        new Uri("https://github.com/zburtle/Yaparr/releases/download/ffmpeg-2/ffmpeg-yaparr-g17a4a474f4-win64.zip"),
+        "c2ffffe1ca7292656d4674d88e6a174fb12d50947ca41ef043a11141b724eb25",
+        3_398_269,
+        "ffmpeg-yaparr-g17a4a474f4-win64/bin/ffmpeg.exe",
+        "ffmpeg-yaparr-g17a4a474f4-win64/LICENSE.txt",
+        "ffmpeg-yaparr-g17a4a474f4-win64");
 }
 
 /// <summary>Downloads FFmpeg once into the user's own application data, checks it, and keeps it there.</summary>
@@ -103,10 +109,13 @@ public static class FfmpegInstaller
             {
                 Extract(archive, package.ExePathInZip, Path.Combine(staging, ExeName));
                 if (package.LicensePathInZip != null) Extract(archive, package.LicensePathInZip, Path.Combine(staging, "LICENSE.txt"), required: false);
+                if (package.NoticesRoot != null) ExtractNotices(archive, package.NoticesRoot, staging);
             }
-            File.WriteAllText(Path.Combine(staging, "SOURCE.txt"),
-                $"FFmpeg ({package.Version}), downloaded from {package.Url}.{Environment.NewLine}" +
-                $"It is licensed under the LGPL; see LICENSE.txt. The source code and build scripts are at https://github.com/BtbN/FFmpeg-Builds and https://ffmpeg.org.{Environment.NewLine}");
+            // A build that brings its own note about where the source is keeps it; otherwise one is written.
+            if (!File.Exists(Path.Combine(staging, "SOURCE.txt")))
+                File.WriteAllText(Path.Combine(staging, "SOURCE.txt"),
+                    $"FFmpeg ({package.Version}), downloaded from {package.Url}.{Environment.NewLine}" +
+                    $"It is licensed under the LGPL; see LICENSE.txt. The source code and build scripts are at https://github.com/BtbN/FFmpeg-Builds and https://ffmpeg.org.{Environment.NewLine}");
 
             if (Directory.Exists(target)) Directory.Delete(target, recursive: true);
             Directory.Move(staging, target);
@@ -116,6 +125,24 @@ public static class FfmpegInstaller
         finally
         {
             try { Directory.Delete(work, recursive: true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
+    }
+
+    // Everything under the root except its bin folder (the program is taken from there on its own), with the folders kept. A path
+    // that would land outside the destination is refused.
+    private static void ExtractNotices(ZipArchive archive, string root, string destination)
+    {
+        root = root.TrimEnd('/') + "/";
+        var full = Path.GetFullPath(destination) + Path.DirectorySeparatorChar;
+        foreach (var entry in archive.Entries)
+        {
+            if (!entry.FullName.StartsWith(root, StringComparison.Ordinal) || entry.FullName.EndsWith('/')) continue;
+            var relative = entry.FullName[root.Length..];
+            if (relative.StartsWith("bin/", StringComparison.Ordinal)) continue;
+            var target = Path.GetFullPath(Path.Combine(destination, relative));
+            if (!target.StartsWith(full, StringComparison.Ordinal)) throw new InvalidDataException($"The download has an unsafe path '{entry.FullName}'.");
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            entry.ExtractToFile(target, overwrite: true);
         }
     }
 
