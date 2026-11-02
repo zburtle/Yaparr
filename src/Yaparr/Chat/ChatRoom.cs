@@ -264,6 +264,14 @@ public sealed class ChatRoom
     /// <summary>Sends a message to a text channel (see <see cref="Channels"/>) and returns its id.</summary>
     public Task<string> SendAsync(string text, string channelId) => Task.FromResult(_node.SendRoomMessage(this, text, channelId));
 
+    /// <summary>
+    /// Sends a message that answers the message with the key <paramref name="replyTo"/> (<see cref="ChatMessage.Key"/>) and names
+    /// <paramref name="mentions"/> (accounts, up to <see cref="MessageEnvelope.MaxMentions"/>); the words themselves should say
+    /// who is named: each <see cref="Mention"/> says whom, and the name as it is written after an @ in the words. Either can be left out. Returns the id of the message.
+    /// </summary>
+    public Task<string> SendAsync(string text, string? channelId, string? replyTo, IReadOnlyCollection<Mention>? mentions = null) =>
+        Task.FromResult(_node.SendRoomMessage(this, MessageEnvelope.Wrap(text, replyTo, mentions), channelId));
+
     /// <summary>Sends an unconfirmed message again to the members who have not confirmed it.</summary>
     public void Retry(string messageId) => _node.RetryMessage(messageId);
 
@@ -309,6 +317,9 @@ public sealed class DirectChat
     public event Action<DeliveryStatus>? DeliveryChanged;
 
     public Task<string> SendAsync(string text) => Task.FromResult(_node.SendDirectMessage(PeerId, text));
+
+    /// <summary>Sends a message that answers the message with the key <paramref name="replyTo"/> (<see cref="ChatMessage.Key"/>).</summary>
+    public Task<string> SendAsync(string text, string? replyTo) => Task.FromResult(_node.SendDirectMessage(PeerId, MessageEnvelope.Wrap(text, replyTo, null)));
 
     /// <summary>Who a message you sent has reached, while it is still being tracked.</summary>
     public IReadOnlyList<DeliveryRecipient> GetDeliveryDetails(string messageId) => _node.GetDeliveryDetails(messageId);

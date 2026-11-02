@@ -48,7 +48,23 @@ public sealed record DeviceInfo(PeerId Id, bool IsThisDevice, PeerLink Link);
 public sealed record DeliveryRecipient(PeerId Id, string Name, bool Delivered);
 
 /// <param name="Channel">The text channel of a room message (<see cref="RoomChannels.DefaultText"/> for the first one and for messages from earlier versions); null for direct messages.</param>
-public sealed record ChatMessage(PeerInfo From, string? Room, string Id, string Text, DateTimeOffset Timestamp, bool IsCatchUp = false, Attachment? Attachment = null, string? Channel = null);
+public sealed record ChatMessage(PeerInfo From, string? Room, string Id, string Text, DateTimeOffset Timestamp, bool IsCatchUp = false, Attachment? Attachment = null, string? Channel = null)
+{
+    /// <summary>
+    /// What names this message: the same for every copy of it on every device. A reply points at it with this (see
+    /// <see cref="MessageParts.ReplyTo"/>). It comes from who wrote it and the message id, so nobody else can make a message that has it.
+    /// </summary>
+    public string Key => KeyOf(From.Id, Id);
+
+    /// <summary>The key of a message written by the device <paramref name="sender"/> with the id <paramref name="id"/>.</summary>
+    public static string KeyOf(PeerId sender, string id) => SignedMessage.KeyOf(sender.Value, id);
+
+    /// <summary>The words, which message this answers and whom it names. <see cref="Text"/> is the same thing as it was sent.</summary>
+    public MessageParts Parts => Attachment != null ? new MessageParts(Text, null, Array.Empty<Mention>()) : MessageEnvelope.Parse(Text);
+
+    /// <summary>The words of the message, without the part that says what it answers or whom it names.</summary>
+    public string Body => Parts.Body;
+}
 
 public static class Topics
 {
