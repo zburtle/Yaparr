@@ -17,12 +17,17 @@ site_url="${FLATPAK_SITE_URL:-https://flatpak.yaparr.com}"
 app_id=com.yaparr.Yaparr
 branch=stable
 
+# Git and CI artifacts keep no empty directories, and ostree needs them: they are made again for every repository we open.
+ensure_dirs() {
+  mkdir -p "$1/objects" "$1/refs/heads" "$1/refs/mirrors" "$1/refs/remotes" "$1/tmp" "$1/extensions" "$1/state" "$1/deltas"
+}
+
 mkdir -p "$site"
-[ -d "$site/repo" ] || ostree --repo="$site/repo" init --mode=archive
+[ -f "$site/repo/config" ] || ostree --repo="$site/repo" init --mode=archive
+ensure_dirs "$site/repo"
 
 for source in "$@"; do
-  # A repository that went through a CI artifact has lost its empty directories, which ostree needs to list the refs.
-  mkdir -p "$source/refs/heads" "$source/refs/mirrors" "$source/refs/remotes" "$source/tmp" "$source/objects"
+  ensure_dirs "$source"
   # The refs this build made (app/<id>/<arch>/<branch>); the appstream refs are made again below.
   refs="$(ostree --repo="$source" refs | grep "^app/$app_id/" || true)"
   [ -n "$refs" ] || { echo "No $app_id build in $source" >&2; exit 1; }
