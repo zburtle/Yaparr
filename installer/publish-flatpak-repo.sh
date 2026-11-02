@@ -21,8 +21,12 @@ mkdir -p "$site"
 [ -d "$site/repo" ] || ostree --repo="$site/repo" init --mode=archive
 
 for source in "$@"; do
+  # A repository that went through a CI artifact has lost its empty directories, which ostree needs to list the refs.
+  mkdir -p "$source/refs/heads" "$source/refs/mirrors" "$source/refs/remotes" "$source/tmp" "$source/objects"
   # The refs this build made (app/<id>/<arch>/<branch>); the appstream refs are made again below.
-  for ref in $(ostree --repo="$source" refs | grep "^app/$app_id/"); do
+  refs="$(ostree --repo="$source" refs | grep "^app/$app_id/" || true)"
+  [ -n "$refs" ] || { echo "No $app_id build in $source" >&2; exit 1; }
+  for ref in $refs; do
     echo "Adding $ref"
     ostree --repo="$site/repo" pull-local "$source" "$ref"
   done
