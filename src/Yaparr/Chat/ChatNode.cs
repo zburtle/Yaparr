@@ -640,8 +640,13 @@ public sealed partial class ChatNode : IDisposable
     private ChatRoom? ResolveRoom(PeerState peer, string reference)
     {
         var sessions = peer.Sessions();
-        return _rooms.Values.FirstOrDefault(r => sessions.Any(s => r.RefFor(s, peer.Id) == reference));
+        return _rooms.Values.FirstOrDefault(r => sessions.Any(s => SameProof(r.RefFor(s, peer.Id), reference)));
     }
+
+    // The reference is a keyed hash that proves the sender knows the room secret, so it is compared in constant time: how soon a
+    // comparison fails must not tell the sender how much of a guess was right.
+    private static bool SameProof(string expected, string given) =>
+        System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(System.Text.Encoding.UTF8.GetBytes(expected), System.Text.Encoding.UTF8.GetBytes(given));
 
     internal Task LeaveRoomAsync(ChatRoom room)
     {
