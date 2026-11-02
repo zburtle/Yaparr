@@ -44,4 +44,8 @@ Screen sharing runs a trimmed FFmpeg that this repository builds: `ffmpeg/build.
 
 Every push to `master` runs `.github/workflows/release.yml`, where [semantic-release](https://semantic-release.org) reads the commit messages since the last tag. `fix:` makes a patch release, `feat:` a minor one, and a `!` after the type (`feat!:`) or a `BREAKING CHANGE:` footer a major one; `docs:`, `chore:`, `test:`, `ci:` and `refactor:` release nothing. When a release is due, the MSI and both .deb packages are built with that version, then the tag, the release notes and the downloads are published. A commit with no such prefix is ignored, so use them from now on.
 
+## Pinned workflow dependencies
+
+Every action in `.github/workflows` is pinned to a full commit hash, with its version in a comment (`uses: actions/checkout@3d3c42e… # v7.0.1`), so a moved or hijacked tag cannot change what runs with the repository's permissions. The release tools (semantic-release and its plugin) are installed from `.github/release/package-lock.json` with `npm ci`, which checks the hash of every package. Dependabot raises weekly pull requests for both, and for a new action use the hash of its release, not the tag.
+
 Pull requests are squash-merged, so the pull request title becomes the commit on `master`. A check fails a title that is not a conventional commit, such as `fix: ...` or `feat: ...`.
