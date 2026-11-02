@@ -85,6 +85,22 @@ public sealed partial class ChatNode
         if (save) SaveRoster(room);
     }
 
+    internal IReadOnlyList<RoomPerson> GetRoomPeople(ChatRoom room)
+    {
+        var people = new Dictionary<string, RoomPerson>();
+        foreach (var member in room.Members)
+        {
+            if (IsMyDevice(member.Id) || IsMyDevice(member.Account)) continue;
+            if (!people.ContainsKey(member.Account.Value))
+                people[member.Account.Value] = new RoomPerson(member.Account, member.DisplayName, true, DateTimeOffset.UtcNow);
+        }
+        lock (room.RosterGate)
+            foreach (var (key, entry) in room.Roster)
+                if (IsValidPeerId(key) && !people.ContainsKey(key) && !IsMyDevice(new PeerId(key)))
+                    people[key] = new RoomPerson(new PeerId(key), entry.Name, false, DateTimeOffset.FromUnixTimeMilliseconds(entry.LastSeen));
+        return people.Values.ToList();
+    }
+
     internal IReadOnlyList<RotationCandidate> GetRotationCandidates(ChatRoom room)
     {
         foreach (var member in room.Members) NoteMember(room, member.Id, member.DisplayName);
