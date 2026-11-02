@@ -1,7 +1,7 @@
 ﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="Yaparr.Desktop.ShareDialog"
-        Title="Share your screen" SizeToContent="Height" Width="420" CanResize="False"
+        Title="Share your screen" Icon="avares://Yaparr.Desktop/Assets/yaparr.png" SizeToContent="Height" Width="420" CanResize="False"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
     <StackPanel Margin="16" Spacing="4">
         <TextBlock Text="What to share" FontWeight="SemiBold" />

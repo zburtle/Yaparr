@@ -1,3 +1,5 @@
+<p align="center"><img src="../assets/logo/yaparr-icon.svg" alt="Yaparr" width="96"></p>
+
 # Yaparr documentation
 
 Yaparr is a serverless chat, voice and screen sharing library for .NET with a desktop app. These pages describe how it works and how to use it. What is still to do is in the [backlog](../BACKLOG.md); the [main README](../README.md) is the short introduction.

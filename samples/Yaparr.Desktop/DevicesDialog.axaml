@@ -1,7 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="Yaparr.Desktop.DevicesDialog"
-        Title="My devices" SizeToContent="Height" Width="440" CanResize="False"
+        Title="My devices" Icon="avares://Yaparr.Desktop/Assets/yaparr.png" SizeToContent="Height" Width="440" CanResize="False"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
     <StackPanel Margin="16" Spacing="8">
         <TextBlock Text="Devices signed in as you" FontWeight="SemiBold" />
