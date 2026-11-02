@@ -48,4 +48,31 @@ public static class UpdateVerifier
         File.Delete(path);
         throw new InvalidDataException("The downloaded installer failed its checksum, so it was not used.");
     }
+
+    /// <summary>
+    /// Checks a file against the published checksum and keeps it that way: it is opened so that no other program can write to it,
+    /// delete it or rename it, and the checksum is taken through that same handle. What is checked is therefore what is read while
+    /// the handle stays open. A file that does not match is deleted and an exception thrown. Dispose the result to let go.
+    /// </summary>
+    public static async Task<FileStream> OpenVerifiedAsync(string path, string expectedSha256, CancellationToken ct = default)
+    {
+        var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        try
+        {
+            var actual = Convert.ToHexString(await SHA256.HashDataAsync(file, ct).ConfigureAwait(false));
+            if (actual.Equals(expectedSha256, StringComparison.OrdinalIgnoreCase))
+            {
+                file.Position = 0;
+                return file;
+            }
+        }
+        catch
+        {
+            await file.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+        await file.DisposeAsync().ConfigureAwait(false);
+        File.Delete(path);
+        throw new InvalidDataException("The downloaded installer failed its checksum, so it was not used.");
+    }
 }
