@@ -97,7 +97,7 @@ public class FfmpegInstallerTests
             Assert.Equal("lgpl", File.ReadAllText(Path.Combine(Path.GetDirectoryName(path)!, "LICENSE.txt")));
             Assert.Contains("BtbN", File.ReadAllText(Path.Combine(Path.GetDirectoryName(path)!, "SOURCE.txt")));
             Assert.False(File.Exists(Path.Combine(Path.GetDirectoryName(path)!, "ffplay.exe")));
-            Assert.Empty(Directory.GetDirectories(dir).Where(d => Path.GetFileName(d).StartsWith("download-")));
+            Assert.DoesNotContain(Directory.GetDirectories(dir), d => Path.GetFileName(d).StartsWith("download-"));
             Assert.Equal(1.0, steps.Last());
 
             // Already there: nothing is fetched again.

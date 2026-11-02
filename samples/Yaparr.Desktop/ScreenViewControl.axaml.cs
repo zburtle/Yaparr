@@ -15,7 +15,7 @@ public partial class ScreenViewControl : UserControl
 {
     private readonly MediaView? _view;
     private readonly ScreenViewer? _viewer;
-    private readonly string _name;
+    private readonly string _name = "";
     private WriteableBitmap? _bitmap;
     private long _shown;
     private int _pending;

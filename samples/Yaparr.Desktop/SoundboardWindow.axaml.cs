@@ -157,10 +157,10 @@ public partial class SoundboardWindow : Window
     private async void Add_Click(object? sender, RoutedEventArgs e)
     {
         var dialog = new AddSoundDialog(_output);
-        if (!await dialog.ShowDialog<bool>(this) || dialog.Clip == null || dialog.SoundName == null) return;
+        if (!await dialog.ShowDialog<bool>(this) || dialog.NewSound == null || dialog.SoundName == null) return;
         try
         {
-            _room.AddSound(dialog.SoundName, dialog.Clip);
+            _room.AddSound(dialog.SoundName, dialog.NewSound);
             Footer.Text = $"Added {dialog.SoundName}.";
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { Footer.Text = ex.Message; }

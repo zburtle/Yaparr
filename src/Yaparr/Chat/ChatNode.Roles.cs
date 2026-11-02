@@ -104,10 +104,11 @@ public sealed partial class ChatNode
         var accepted = new List<StoredRole>();
         foreach (var r in roles.Take(32))
         {
+            if (r.Subject is null) continue; // from the network, so the field can be missing
             // A statement we already have, or an older one, is skipped before the signature is checked, which is what costs.
             lock (room.RoleGate)
             {
-                if (room.RoleEntries.TryGetValue(r.Subject ?? "", out var have) && have.Ts >= r.Ts) continue;
+                if (room.RoleEntries.TryGetValue(r.Subject, out var have) && have.Ts >= r.Ts) continue;
                 if (have == null && room.RoleEntries.Count >= MaxRoleEntries) continue;
             }
             if (!SignedRole.Verify(r, room.Key, owner)) continue;

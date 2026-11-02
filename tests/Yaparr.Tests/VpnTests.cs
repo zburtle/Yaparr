@@ -27,7 +27,6 @@ internal sealed class TestWireGuardServer : IDisposable
     public byte[] PublicKey { get; }
     public IPEndPoint EndPoint => (IPEndPoint)_socket.Client.LocalEndPoint!;
     public int Handshakes;
-    public bool DropData;
     public List<(IPEndPoint To, byte[] Payload, int SourcePort)> Received { get; } = new();
     public Func<IPEndPoint, byte[], byte[]?>? Reply { get; set; }
 
@@ -62,7 +61,7 @@ internal sealed class TestWireGuardServer : IDisposable
                 var r = await _socket.ReceiveAsync(_cts.Token);
                 var m = r.Buffer;
                 if (m.Length == 148 && m[0] == 1) Respond(m, r.RemoteEndPoint);
-                else if (m.Length >= 32 && m[0] == 4 && !DropData) await HandleData(m);
+                else if (m.Length >= 32 && m[0] == 4) await HandleData(m);
             }
         }
         catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException or SocketException) { }

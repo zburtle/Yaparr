@@ -448,6 +448,6 @@ public class DeviceLinkTests
 
         // The device saw the room and the block in the account settings, so joining it did not announce anything new.
         await Task.Delay(300);
-        Assert.Single(first.AccountEntries.Where(e => e.Key.StartsWith("room:")));
+        Assert.Single(first.AccountEntries, e => e.Key.StartsWith("room:"));
     }
 }
