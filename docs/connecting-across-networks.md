@@ -9,7 +9,7 @@ Peers behind home routers have to punch through their NATs. Yaparr does this in 
 2. **STUN.** The node asks public STUN servers what address and port they see, from the same socket the DHT uses. If
    two servers see different ports the NAT is symmetric, and direct connections to strangers are unlikely. The result
    is shown in the status bar.
-3. **TURN (your own relay, off until you set one up).** Yaparr ships with no relay and no relay password. Set up a TURN server of your own ([see below](#running-your-own-relay)), or import one that someone shared with you, under **Network > TURN relay…** in the Desktop app (or fill in the `turn` block of `network.json` and set `"enabled": true`). When enabled, if the NAT is symmetric (or `always` is set), the node allocates a relay
+3. **TURN (your own relay, off until you set one up).** Yaparr ships with no relay and no relay password. Set up a TURN server of your own (any will do; [coturn](https://github.com/coturn/coturn) is a common one), or import one that someone shared with you, under **Network > TURN relay…** in the Desktop app (or fill in the `turn` block of `network.json` and set `"enabled": true`). When enabled, if the NAT is symmetric (or `always` is set), the node allocates a relay
    address, announces that address to the DHT through the relay, and mirrors handshake packets through it. Data
    switches to the relay only for peers that cannot be reached directly. A TURN server is the one piece of
    infrastructure involved; it forwards encrypted packets and cannot read them.
@@ -40,29 +40,6 @@ Settings live in `network.json` in the profile folder (all keys optional). The D
 ```
 
 Group members still relay for each other once connected, so a TURN server mainly helps the very first connection.
-
-### Running your own relay
-
-Any TURN server works; [coturn](https://github.com/coturn/coturn) is the usual one. Yaparr uses UDP, a user name and a password, and nothing else, so a locked-down setup is short:
-
-```
-turnserver -n --listening-port=443 --external-ip=<public ip> --realm=yaparr \
-  --fingerprint --lt-cred-mech --user=<name>:<password> \
-  --min-port=49152 --max-port=49400 \
-  --no-tls --no-dtls --no-tcp-relay --no-cli --no-multicast-peers \
-  --stale-nonce=600 --user-quota=12 --total-quota=200 --max-bps=250000 \
-  --denied-peer-ip=0.0.0.0-0.255.255.255 --denied-peer-ip=10.0.0.0-10.255.255.255 \
-  --denied-peer-ip=100.64.0.0-100.127.255.255 --denied-peer-ip=127.0.0.0-127.255.255.255 \
-  --denied-peer-ip=169.254.0.0-169.254.255.255 --denied-peer-ip=172.16.0.0-172.31.255.255 \
-  --denied-peer-ip=192.168.0.0-192.168.255.255
-```
-
-Open the listening port and the relay port range (UDP) in the firewall; enter the server as `host:port` in **Network > TURN relay…**. Behind NAT, give `--external-ip` as `public/private`.
-
-- **Use a long random password**, for example from `openssl rand -base64 32`. Anyone who has it can use the relay.
-- **The denied ranges matter.** They stop the relay from reaching private networks behind the server, which a relay open to the internet must never do.
-- **The bandwidth cap** (`--max-bps`, bytes a second per relayed session, about 2 Mbit/s here) and the quotas limit what a leaked password is worth. Chat is tiny and voice is about 32 kbit/s.
-- **A relay cannot read what it forwards:** Yaparr encrypts end to end. It does see who talks to whom and how much.
 
 ### Sharing your relay
 
