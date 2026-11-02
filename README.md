@@ -12,6 +12,12 @@ Serverless chat, voice calls and screen sharing for .NET, with a desktop app for
 - **Several devices** for one person, linked with an encrypted code, with messages and settings kept in step.
 - **Hard networks.** Port mapping, STUN, members relaying for each other, an optional TURN server of your own (shareable with friends as a code) and a built-in WireGuard client.
 
+## The name
+
+**Yaparr** (*noun*): from *yap*, to talk, and at length, plus *-arr*, borrowed from the family of self-hosted apps such as Sonarr and Radarr, whose names pair a pirate's "arr!" with sonar and radar.
+
+The ending is a nod to shared roots and not a claim of kinship: Yaparr does not download or manage media. It does find its people the way torrent clients find each other, through the BitTorrent mainline DHT, and then talks to them directly with no server in the middle. Yap, in pirate.
+
 ## Try it
 
 ```csharp
