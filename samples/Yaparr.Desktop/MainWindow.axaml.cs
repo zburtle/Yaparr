@@ -42,6 +42,8 @@ public partial class MainWindow : Window
         AddHandler(KeyDownEvent, OnPushToTalkKey, RoutingStrategies.Tunnel);
         AddHandler(KeyUpEvent, OnPushToTalkKey, RoutingStrategies.Tunnel);
         AddHandler(KeyDownEvent, OnSettingsKey, RoutingStrategies.Tunnel);
+        // The tree items handle a press themselves (to select), so this has to look on the way down, before they do.
+        SettingsTree.AddHandler(PointerPressedEvent, SettingsTree_PointerPressed, RoutingStrategies.Tunnel);
         // A key held while this window loses the focus would never be seen coming up.
         Deactivated += (_, _) => { if (_voice != null && _pushToTalkHook == null) _voice.PushToTalkHeld = false; };
         ConversationList.ItemsSource = _conversations;
@@ -204,7 +206,7 @@ public partial class MainWindow : Window
             }
             StatusText.Text = copied
                 ? "The bug report is open in your browser. Paste the diagnostics (already copied) into its Diagnostics box and read them first."
-                : "The bug report is open in your browser. The diagnostics could not be copied; use Settings > Updates & diagnostics > Copy diagnostics and paste them in.";
+                : "The bug report is open in your browser. The diagnostics could not be copied; use Settings > About > Copy diagnostics and paste them in.";
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
@@ -282,6 +284,10 @@ public partial class MainWindow : Window
         _log.Write($"Yaparr {Updater.CurrentVersion} starting");
         Updater.Log = _log.Write;
         SetUpNotifications();
+        VoiceView.Attach(_settings, OnVoiceSettingChanged, () => _voice?.InputLevel);
+        NetworkView.Attach(() => _node);
+        VpnPanel.Attach(_vpn);
+        TurnPanel.Attach(() => _node, Path.Combine(_data.Directory, "network.json"));
         SetUpReplies();
 
         if (Arg("--name") == null && _settings.DisplayName == null && !_data.HasIdentity) await OfferLinkAsync();
@@ -421,16 +427,10 @@ public partial class MainWindow : Window
         if (e.Mode == Microsoft.Win32.PowerModes.Resume) _node?.NotifyNetworkChanged();
     }
 
-    private async void Vpn_Click(object? sender, RoutedEventArgs e)
-    {
-        if (_node == null) return;
-        await new VpnDialog(_vpn).ShowDialog(this);
-    }
+    // The VPN, the TURN relay and the connection check are sections of the settings (the connection guide opens them there).
+    private void Vpn_Click(object? sender, RoutedEventArgs e) => ShowSettings("vpn");
 
-    private async void Turn_Click(object? sender, RoutedEventArgs e)
-    {
-        await new TurnDialog(_node, Path.Combine(_data.Directory, "network.json")).ShowDialog(this);
-    }
+    private void Turn_Click(object? sender, RoutedEventArgs e) => ShowSettings("turn");
 
     private async void CreateRoom_Click(object? sender, RoutedEventArgs e)
     {
@@ -489,13 +489,7 @@ public partial class MainWindow : Window
 
     private async void ConnectionGuide_Click(object? sender, RoutedEventArgs e) => await ShowConnectionGuideAsync();
 
-    private async void CheckNetwork_Click(object? sender, RoutedEventArgs e)
-    {
-        if (_node == null) return;
-        var dialog = new NetworkCheckDialog(_node);
-        dialog.Show(this);
-        await dialog.RunAsync();
-    }
+    private void CheckNetwork_Click(object? sender, RoutedEventArgs e) => ShowSettings("network");
 
     private async void RenameRoom_Click(object? sender, RoutedEventArgs e)
     {

@@ -223,6 +223,9 @@
             </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem Header="_Connection guide…" Click="ConnectionGuide_Click" />
+                <MenuItem Header="Check for _updates…" Click="CheckUpdates_Click" />
+                <MenuItem Header="_Report a problem…" Click="ReportProblem_Click" />
+                <Separator />
                 <MenuItem Header="_About Yaparr" Click="About_Click" />
             </MenuItem>
         </Menu>
@@ -242,13 +245,17 @@
             <Border Grid.Column="0" Classes="card" Margin="0,0,8,8">
                 <DockPanel>
                     <StackPanel DockPanel.Dock="Top" Margin="8,8,8,6">
-                        <ToggleButton x:Name="ProfileToggle" Classes="expander">
+                        <ToggleButton x:Name="ProfileToggle" Classes="expander" PointerEntered="ProfileToggle_PointerEntered" PointerExited="ProfileToggle_PointerExited">
                             <Grid ColumnDefinitions="Auto,*,Auto">
                                 <Border x:Name="ProfileAvatar" Classes="avatar" Width="40" Height="40" Background="{DynamicResource Accent}">
                                     <TextBlock x:Name="ProfileInitial" FontSize="16" />
                                 </Border>
                                 <StackPanel Grid.Column="1" Margin="10,0,6,0" VerticalAlignment="Center">
-                                    <TextBlock x:Name="NameText" FontWeight="SemiBold" FontSize="15" TextTrimming="CharacterEllipsis" />
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock x:Name="NameText" FontWeight="SemiBold" FontSize="15" TextTrimming="CharacterEllipsis" />
+                                        <Button x:Name="RenameButton" Grid.Column="1" Classes="ghost" Content="✎" Padding="6,0" Margin="4,0,0,0" IsVisible="False"
+                                                ToolTip.Tip="Change my name" Click="Rename_Click" />
+                                    </Grid>
                                     <TextBlock x:Name="IdText" Classes="muted small" TextTrimming="CharacterEllipsis" />
                                 </StackPanel>
                                 <TextBlock Grid.Column="2" Classes="chevron" />
@@ -257,9 +264,11 @@
                         <Border Classes="details" Margin="4,4,4,0" IsVisible="{Binding #ProfileToggle.IsChecked}">
                             <StackPanel Spacing="6">
                                 <TextBlock Classes="label" Text="YOUR PEER ID" />
-                                <SelectableTextBlock x:Name="ProfileIdText" Classes="mono" />
-                                <Button Content="Copy ID" HorizontalAlignment="Left" Padding="10,5" Click="CopyId_Click"
-                                        ToolTip.Tip="Copy your peer ID so others can open a direct chat with you" />
+                                <!-- The border has a background so the whole block answers the pointer, also between the lines of the ID. -->
+                                <Border Background="Transparent" Cursor="Hand" ToolTip.Tip="Click to copy your ID so others can open a direct chat with you"
+                                        PointerReleased="ProfileId_PointerReleased">
+                                    <TextBlock x:Name="ProfileIdText" Classes="mono" TextWrapping="Wrap" />
+                                </Border>
                             </StackPanel>
                         </Border>
                     </StackPanel>
@@ -604,35 +613,49 @@
     <!-- The settings: sections on the left, the section's controls on the right, over the window. Escape, the cross or a click outside closes it. -->
     <Border x:Name="SettingsOverlay" IsVisible="False" Background="#D8000000" Padding="24" Focusable="True"
             PointerPressed="SettingsOverlay_PointerPressed" KeyDown="SettingsOverlay_KeyDown">
-        <Border Classes="card" HorizontalAlignment="Center" VerticalAlignment="Center" Width="780" MaxHeight="560" Padding="0">
+        <Border Classes="card" HorizontalAlignment="Center" VerticalAlignment="Stretch" Width="780" MaxHeight="960" Padding="0">
             <Grid RowDefinitions="Auto,*" ColumnDefinitions="200,*">
                 <TextBlock Text="Settings" FontSize="17" FontWeight="SemiBold" Margin="18,14,0,10" VerticalAlignment="Center" />
                 <Button Grid.Column="1" Classes="ghost" Content="✕" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,8,12,0"
                         ToolTip.Tip="Close (Esc)" Click="CloseSettings_Click" />
-                <ListBox x:Name="SettingsSections" Grid.Row="1" Classes="flat" Margin="8,0,0,8" SelectionChanged="SettingsSections_SelectionChanged">
-                    <ListBoxItem Content="Profile" />
-                    <ListBoxItem Content="Devices" />
-                    <ListBoxItem Content="Notifications" />
-                    <ListBoxItem Content="Voice &amp; audio" />
-                    <ListBoxItem Content="Network" />
-                    <ListBoxItem Content="Updates &amp; diagnostics" />
-                    <ListBoxItem Content="About" />
-                </ListBox>
+                <TreeView x:Name="SettingsTree" Grid.Row="1" Margin="8,0,0,8" SelectionChanged="SettingsTree_SelectionChanged">
+                    <TreeViewItem Header="Devices" Tag="devices" />
+                    <TreeViewItem Header="Notifications" Tag="notifications" />
+                    <TreeViewItem Header="Voice &amp; audio" Tag="voice" />
+                    <TreeViewItem x:Name="NetworkNode" Header="Network" Tag="network">
+                        <TreeViewItem Header="VPN" Tag="vpn" />
+                        <TreeViewItem Header="TURN relay" Tag="turn" />
+                    </TreeViewItem>
+                    <TreeViewItem Header="Blocked people" Tag="blocked" />
+                    <TreeViewItem Header="Backup" Tag="backup" />
+                    <TreeViewItem Header="About" Tag="about" />
+                </TreeView>
                 <ScrollViewer Grid.Row="1" Grid.Column="1" VerticalScrollBarVisibility="Auto">
                     <Panel Margin="18,4,18,18">
-                        <StackPanel x:Name="SectionProfile" Spacing="10">
-                            <TextBlock Text="Profile" FontSize="15" FontWeight="SemiBold" />
-                            <TextBlock Classes="muted" TextWrapping="Wrap" Text="The name people see, the ID others use to open a direct chat with you, and a backup of your account." />
-                            <Button Content="Change my name…" Click="Rename_Click" />
-                            <Button Content="Copy my ID" Click="CopyId_Click" />
-                            <Button Content="Back up profile…" Click="BackupProfile_Click" />
-                            <Button Content="Blocked people…" Click="BlockedPeople_Click" />
-                        </StackPanel>
-                        <StackPanel x:Name="SectionDevices" Spacing="10" IsVisible="False">
+                        <StackPanel x:Name="SectionDevices" Spacing="10">
                             <TextBlock Text="Devices" FontSize="15" FontWeight="SemiBold" />
                             <TextBlock Classes="muted" TextWrapping="Wrap" Text="One person can use Yaparr on several computers. Your name, rooms and blocks carry over to a linked device." />
-                            <Button Content="My devices…" Click="MyDevices_Click" />
-                            <Button Content="Link another device…" Click="LinkDevice_Click" />
+                            <Border Classes="details" Padding="10,8">
+                                <StackPanel Spacing="4">
+                                    <Grid ColumnDefinitions="*,*">
+                                        <TextBlock Classes="label" Text="DEVICE" />
+                                        <TextBlock Grid.Column="1" Classes="label" Text="CONNECTION" />
+                                    </Grid>
+                                    <ItemsControl x:Name="DeviceTable">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="local:DeviceRow">
+                                                <Grid ColumnDefinitions="*,*" Margin="0,2">
+                                                    <TextBlock Text="{Binding Device}" TextWrapping="Wrap" />
+                                                    <TextBlock Grid.Column="1" Text="{Binding Connection}" Classes="muted" TextWrapping="Wrap" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+                            <TextBlock Classes="muted small" TextWrapping="Wrap"
+                                       Text="Your other devices show here while they are on and connected to this one. A message you sent from another device says so next to its time." />
+                            <Button Content="Link another device…" HorizontalAlignment="Left" Click="LinkDevice_Click" />
                         </StackPanel>
                         <StackPanel x:Name="SectionNotifications" Spacing="10" IsVisible="False">
                             <TextBlock Text="Notifications" FontSize="15" FontWeight="SemiBold" />
@@ -647,28 +670,51 @@
                         </StackPanel>
                         <StackPanel x:Name="SectionVoice" Spacing="10" IsVisible="False">
                             <TextBlock Text="Voice &amp; audio" FontSize="15" FontWeight="SemiBold" />
-                            <TextBlock Classes="muted" TextWrapping="Wrap" Text="Microphone and speakers, volume, push to talk, echo cancellation and noise suppression." />
-                            <Button Content="Voice settings…" Click="VoiceSettings_Click" />
+                            <local:VoiceSettingsView x:Name="VoiceView" />
                         </StackPanel>
                         <StackPanel x:Name="SectionNetwork" Spacing="10" IsVisible="False">
                             <TextBlock Text="Network" FontSize="15" FontWeight="SemiBold" />
-                            <TextBlock Classes="muted" TextWrapping="Wrap" Text="If people cannot reach you: check the connection first, then a VPN or a TURN relay can help." />
-                            <Button Content="Check my connection…" Click="CheckNetwork_Click" />
-                            <Button Content="VPN…" Click="Vpn_Click" />
-                            <Button Content="TURN relay…" Click="Turn_Click" />
-                            <Button Content="Connection guide…" Click="ConnectionGuide_Click" />
+                            <TextBlock Classes="muted" TextWrapping="Wrap" Text="If people cannot reach you, this shows why. A VPN or a TURN relay, under Network in the list, can help." />
+                            <local:NetworkCheckView x:Name="NetworkView" />
                         </StackPanel>
-                        <StackPanel x:Name="SectionUpdates" Spacing="10" IsVisible="False">
-                            <TextBlock Text="Updates &amp; diagnostics" FontSize="15" FontWeight="SemiBold" />
-                            <Button Content="Check for updates…" Click="CheckUpdates_Click" />
-                            <Button Content="Report a problem…" Click="ReportProblem_Click" />
-                            <Button Content="Copy diagnostics" Click="CopyDiagnostics_Click" />
-                            <Button Content="Open log file" Click="OpenLog_Click" />
-                            <Button Content="Open log folder" Click="OpenLogFolder_Click" />
+                        <StackPanel x:Name="SectionVpn" Spacing="10" IsVisible="False">
+                            <TextBlock Text="VPN" FontSize="15" FontWeight="SemiBold" />
+                            <local:VpnView x:Name="VpnPanel" />
+                        </StackPanel>
+                        <StackPanel x:Name="SectionTurn" Spacing="10" IsVisible="False">
+                            <TextBlock Text="TURN relay" FontSize="15" FontWeight="SemiBold" />
+                            <local:TurnView x:Name="TurnPanel" />
+                        </StackPanel>
+                        <StackPanel x:Name="SectionBlocked" Spacing="10" IsVisible="False">
+                            <TextBlock Text="Blocked people" FontSize="15" FontWeight="SemiBold" />
+                            <TextBlock Classes="muted" TextWrapping="Wrap" Text="You do not see their messages or hear them. Unblocking lets them back into your lists." />
+                            <TextBlock x:Name="BlockedEmpty" Classes="muted" Text="You have not blocked anyone." />
+                            <ItemsControl x:Name="BlockedList">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="local:BlockedRow">
+                                        <Grid ColumnDefinitions="*,Auto" Margin="0,3">
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="{Binding ShortId}" Classes="muted small" />
+                                            </StackPanel>
+                                            <Button Grid.Column="1" Content="Unblock" MinWidth="80" HorizontalContentAlignment="Center" Click="Unblock_Click" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                        <StackPanel x:Name="SectionBackup" Spacing="10" IsVisible="False">
+                            <TextBlock Text="Backup" FontSize="15" FontWeight="SemiBold" />
+                            <TextBlock Classes="muted" TextWrapping="Wrap"
+                                       Text="Saves a zip of everything Yaparr keeps for you: your identity key, rooms, message history, pictures and settings. Keep it somewhere safe; it holds your account key." />
+                            <Button Content="Back up profile…" HorizontalAlignment="Left" Click="BackupProfile_Click" />
                         </StackPanel>
                         <StackPanel x:Name="SectionAbout" Spacing="10" IsVisible="False">
                             <TextBlock Text="About" FontSize="15" FontWeight="SemiBold" />
                             <TextBlock x:Name="AboutText" TextWrapping="Wrap" />
+                            <Button Content="Copy diagnostics" Click="CopyDiagnostics_Click" />
+                            <Button Content="Open log file" Click="OpenLog_Click" />
+                            <Button Content="Open log folder" Click="OpenLogFolder_Click" />
                             <Button Content="Open source licences" Click="OpenLicences_Click" />
                         </StackPanel>
                     </Panel>

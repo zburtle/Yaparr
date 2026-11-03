@@ -36,5 +36,5 @@ on the new path.
 
 `ChatNode.GetConnectionPaths()` says how the people you are connected to are reached right now (directly, through a member, or through the shared TURN server) and counts, since the node started, the connections made each way, the connections moved off the shared server onto a member, and the times a standby path took over from one that was lost. They are the numbers to look at to see how much load the members take off the server, and what a standby for every connection would have cost.
 
-The network check (Settings > Network > Check my connection…) shows them under "Connected to N people", in "Some connections use the shared server" (only when there are any, with a note that its bandwidth is limited) and "Connections since Yaparr started"; the relay counters of the member relay ("You help others connect") are in the same list. Settings > Updates & diagnostics > Copy diagnostics has the same figures in one line.
+The network check (Settings > Network) shows them under "Connected to N people", in "Some connections use the shared server" (only when there are any, with a note that its bandwidth is limited) and "Connections since Yaparr started"; the relay counters of the member relay ("You help others connect") are in the same list. Settings > About > Copy diagnostics has the same figures in one line.
 
