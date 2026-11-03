@@ -39,7 +39,9 @@ public partial class VoiceSettingsView : UserControl
         EchoBox.IsCheckedChanged += (_, _) => Commit();
         AlwaysBox.IsCheckedChanged += (_, _) => Commit();
         PushToTalkBox.IsCheckedChanged += (_, _) => PushToTalkToggled();
+        PushToTalkSoundBox.IsCheckedChanged += (_, _) => Commit();
         KeyDown += OnKeyDown;
+        AddHandler(PointerPressedEvent, OnPointerDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
 
         _timer.Tick += (_, _) => ShowLevel();
     }
@@ -74,6 +76,7 @@ public partial class VoiceSettingsView : UserControl
             AlwaysBox.IsChecked = _settings.VoiceAlwaysOn;
             PushToTalkBox.IsChecked = _settings.VoicePushToTalk;
             _pushToTalkKey = _settings.VoicePushToTalkKey;
+            PushToTalkSoundBox.IsChecked = _settings.VoicePushToTalkSound;
             NoiseBox.SelectedItem = Enum.TryParse<NoiseSuppression>(_settings.VoiceNoiseSuppression, out var noise) ? noise.ToString() : nameof(NoiseSuppression.Moderate);
             EchoBox.IsChecked = _settings.VoiceEchoCancellation;
             SensitivityBox.Value = _settings.VoiceSensitivity;
@@ -97,6 +100,7 @@ public partial class VoiceSettingsView : UserControl
         _settings.VoiceOutput = Chosen(OutputBox);
         _settings.VoiceOutputVolume = (int)OutputVolumeBox.Value;
         _settings.VoiceAlwaysOn = AlwaysBox.IsChecked == true;
+        _settings.VoicePushToTalkSound = PushToTalkSoundBox.IsChecked == true;
         _settings.VoiceEchoCancellation = EchoBox.IsChecked == true;
         _settings.VoiceNoiseSuppression = NoiseBox.SelectedItem as string ?? nameof(NoiseSuppression.Moderate);
         _settings.VoiceSensitivity = (int)SensitivityBox.Value;
@@ -112,8 +116,8 @@ public partial class VoiceSettingsView : UserControl
         Commit();
     }
 
-    private void ShowKey() => PushToTalkKeyButton.Content = _choosingKey ? "Press a key… (Esc to cancel)"
-        : string.IsNullOrEmpty(_pushToTalkKey) ? "Choose a key…" : $"Key: {_pushToTalkKey} (click to change)";
+    private void ShowKey() => PushToTalkKeyButton.Content = _choosingKey ? "Press a key or a mouse button… (Esc to cancel)"
+        : PushToTalkTrigger.Parse(_pushToTalkKey) is not { } trigger ? "Choose a key or button…" : $"Hold: {trigger.Description} (click to change)";
 
     private void PushToTalkKey_Click(object? sender, RoutedEventArgs e) => StartChoosingKey();
 
@@ -122,6 +126,22 @@ public partial class VoiceSettingsView : UserControl
         _choosingKey = true;
         ShowKey();
         Focus();
+    }
+
+    // The middle, back or forward button of the mouse can be chosen too (not left and right, which the click that opened this needs).
+    private void OnPointerDown(object? sender, Avalonia.Input.PointerPressedEventArgs e)
+    {
+        if (!_choosingKey || PushToTalkTrigger.ButtonOf(e.GetCurrentPoint(this).Properties) is not (> 0 and var button)) return;
+        e.Handled = true;
+        _choosingKey = false;
+        _pushToTalkKey = "Mouse" + button;
+        _settings.VoicePushToTalkKey = _pushToTalkKey;
+        _loading = true;
+        PushToTalkBox.IsChecked = true;
+        _loading = false;
+        _settings.VoicePushToTalk = true;
+        Commit();
+        ShowKey();
     }
 
     // The next key pressed becomes the push-to-talk key.

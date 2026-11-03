@@ -27,6 +27,8 @@ internal sealed class UiSounds
     public string MessageStyle { get; set; } = "Chime";
     // Being named or answered: three rising notes, more insistent than any of the message sounds so it can be told apart.
     private static readonly float[] MentionClip = Notes((1047, 70), (1319, 70), (1760, 160));
+    // The push-to-talk key went down: one short, soft tick, so that you know the microphone is open without looking.
+    private static readonly float[] TalkClip = Notes((1397, 35));
     private static readonly float[] JoinedClip = Notes((523, 90), (784, 130));
     private static readonly float[] LeftClip = Notes((784, 90), (523, 130));
     private static readonly float[] YouJoinedClip = Notes((523, 80), (659, 80), (784, 130));
@@ -51,6 +53,9 @@ internal sealed class UiSounds
 
     /// <summary>The sound of being named or answered. It is never held back by the gap between message sounds.</summary>
     public void Mentioned() => Play(MentionClip, throttled: false);
+
+    /// <summary>The push-to-talk key went down. It has a setting of its own, so it plays even when the other sounds are off.</summary>
+    public void PushToTalk() => Play(TalkClip, throttled: false, force: true);
 
     /// <summary>Plays a message sound to choose from, even when sounds are off.</summary>
     public void Preview(string style)

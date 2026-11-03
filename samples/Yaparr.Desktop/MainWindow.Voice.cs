@@ -109,34 +109,43 @@ public partial class MainWindow
 
     private void ApplyVoiceSettings(VoiceSession session)
     {
-        session.Activation = PushToTalkKey != null ? VoiceActivation.PushToTalk : _settings.VoiceAlwaysOn ? VoiceActivation.Open : VoiceActivation.VoiceActivity;
+        session.Activation = PushToTalk != null ? VoiceActivation.PushToTalk : _settings.VoiceAlwaysOn ? VoiceActivation.Open : VoiceActivation.VoiceActivity;
         session.Sensitivity = _settings.VoiceSensitivity / 1000f;
         session.OutputGain = Math.Clamp(_settings.VoiceOutputVolume, 0, 300) / 100f;
     }
 
     // ---- push to talk ---------------------------------------------------------------------------
 
-    private GlobalKeyHook? _pushToTalkHook;
+    private IDisposable? _pushToTalkHook;
 
-    private Avalonia.Input.Key? PushToTalkKey =>
-        _settings.VoicePushToTalk && Enum.TryParse<Avalonia.Input.Key>(_settings.VoicePushToTalkKey, out var key) && key != Avalonia.Input.Key.None ? key : null;
+    private PushToTalkTrigger? PushToTalk => _settings.VoicePushToTalk ? PushToTalkTrigger.Parse(_settings.VoicePushToTalkKey) : null;
 
-    // Listens for the chosen key while you are in voice: anywhere in Windows when that is allowed, otherwise while this window is in front.
+    // The key or mouse button went down or up. The tick on going down is a setting of its own.
+    private void SetPushToTalkHeld(bool down)
+    {
+        if (_voice is not { } session) return;
+        if (down && !session.PushToTalkHeld && _settings.VoicePushToTalkSound) _sounds.PushToTalk();
+        session.PushToTalkHeld = down;
+    }
+
+    // Listens for the chosen key or mouse button while you are in voice: anywhere in Windows when that is allowed, otherwise while this window is in front.
     private void ApplyPushToTalk()
     {
-        if (OperatingSystem.IsWindows()) _pushToTalkHook?.Dispose();
+        _pushToTalkHook?.Dispose();
         _pushToTalkHook = null;
         if (_voice is not { } session || _voiceConv is not { } conv) return;
         session.PushToTalkHeld = false;
-        if (PushToTalkKey is not { } key) { conv.PushToTalkHint = ""; return; }
+        if (PushToTalk is not { } trigger) { conv.PushToTalkHint = ""; return; }
 
-        string hint = $"Hold {key} to talk";
+        string hint = $"Hold {trigger.Description} to talk";
         if (OperatingSystem.IsWindows())
         {
             try
             {
-                var code = (uint)Avalonia.Win32.Input.KeyInterop.VirtualKeyFromKey(key);
-                _pushToTalkHook = new GlobalKeyHook(code, down => UI(() => { if (_voice != null) _voice.PushToTalkHeld = down; }));
+                Action<bool> changed = down => UI(() => SetPushToTalkHeld(down));
+                _pushToTalkHook = trigger.IsMouse
+                    ? new GlobalMouseHook(trigger.MouseButton, changed)
+                    : new GlobalKeyHook((uint)Avalonia.Win32.Input.KeyInterop.VirtualKeyFromKey(trigger.Key), changed);
             }
             catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
             {
@@ -151,8 +160,17 @@ public partial class MainWindow
     // The same key seen by this window, which is all that works where the system gives no global key events.
     private void OnPushToTalkKey(object? sender, Avalonia.Input.KeyEventArgs e)
     {
-        if (_voice is not { } session || _pushToTalkHook != null || PushToTalkKey != e.Key) return;
-        session.PushToTalkHeld = e.RoutedEvent == Avalonia.Input.InputElement.KeyDownEvent;
+        if (_voice == null || _pushToTalkHook != null || PushToTalk is not { IsMouse: false } trigger || trigger.Key != e.Key) return;
+        SetPushToTalkHeld(e.RoutedEvent == Avalonia.Input.InputElement.KeyDownEvent);
+    }
+
+    // The same for a mouse button.
+    private void OnPushToTalkPointer(object? sender, Avalonia.Input.PointerEventArgs e)
+    {
+        if (_voice == null || _pushToTalkHook != null || PushToTalk is not { IsMouse: true } trigger) return;
+        var properties = e.GetCurrentPoint(this).Properties;
+        if (PushToTalkTrigger.ButtonOf(properties) != trigger.MouseButton) return;
+        SetPushToTalkHeld(e is Avalonia.Input.PointerPressedEventArgs);
     }
 
     private VoiceProcessing ProcessingSettings => new(
@@ -246,7 +264,7 @@ public partial class MainWindow
         var conv = _voiceConv;
         _voice = null;
         _voiceConv = null;
-        if (OperatingSystem.IsWindows()) _pushToTalkHook?.Dispose();
+        _pushToTalkHook?.Dispose();
         _pushToTalkHook = null;
         if (conv != null) conv.PushToTalkHint = "";
         StopWatchingCall();

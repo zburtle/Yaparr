@@ -44,6 +44,8 @@ public partial class MainWindow : Window
         AddHandler(KeyDownEvent, OnSettingsKey, RoutingStrategies.Tunnel);
         // The tree items handle a press themselves (to select), so this has to look on the way down, before they do.
         SettingsTree.AddHandler(PointerPressedEvent, SettingsTree_PointerPressed, RoutingStrategies.Tunnel);
+        AddHandler(PointerPressedEvent, OnPushToTalkPointer, RoutingStrategies.Tunnel);
+        AddHandler(PointerReleasedEvent, OnPushToTalkPointer, RoutingStrategies.Tunnel);
         // A key held while this window loses the focus would never be seen coming up.
         Deactivated += (_, _) => { if (_voice != null && _pushToTalkHook == null) _voice.PushToTalkHeld = false; };
         ConversationList.ItemsSource = _conversations;
