@@ -10,6 +10,9 @@ on:
       - .github/workflows/flatpak.yml
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   flatpak:
     strategy:

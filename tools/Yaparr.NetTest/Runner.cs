@@ -162,10 +162,10 @@ internal sealed class Runner
         }
 
         _api = new DigitalOcean(_settings.Token);
-        var (limit, email) = await _api.AccountAsync(ct);
+        var (limit, _) = await _api.AccountAsync(ct);
         var existing = await _api.ListByTagAsync(_settings.Tag, ct);
         int need = _scenario.Nodes.Count + (_scenario.Turn ? 1 : 0);
-        Log($"DigitalOcean account {email}: limit {limit} droplets, {existing.Count} tagged '{_settings.Tag}' already running.");
+        Log($"DigitalOcean account: limit {limit} droplets, {existing.Count} tagged '{_settings.Tag}' already running.");
         if (existing.Count > 0) _notes.Add($"{existing.Count} machine(s) tagged '{_settings.Tag}' were already running before this run (from an earlier one?). Run 'cleanup' to remove them.");
         if (need > _settings.MaxDroplets) throw new InvalidOperationException($"This scenario needs {need} machines but maxDroplets is {_settings.MaxDroplets}.");
         if (existing.Count + need > limit) throw new InvalidOperationException($"Your account allows {limit} droplets and {existing.Count} are in use; this needs {need} more.");
