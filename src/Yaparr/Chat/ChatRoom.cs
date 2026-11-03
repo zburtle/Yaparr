@@ -203,9 +203,25 @@ public sealed class ChatRoom
     /// <summary>Removes a channel (owner or admin only); the first text and voice channels cannot be removed. Its messages stay in the history but are no longer shown.</summary>
     public void DeleteChannel(string id) => _node.DeleteChannel(this, id);
 
-    /// <summary>A channel was added, renamed or removed.</summary>
+    /// <summary>
+    /// Moves a channel up or down among the channels of its kind (owner or admin only). The first text channel and the first voice
+    /// channel cannot be moved and stay first. Does nothing when the channel is already at that end.
+    /// </summary>
+    public void MoveChannel(string id, bool up) => _node.MoveChannel(this, id, up);
+
+    /// <summary>A channel was added, renamed, moved or removed.</summary>
     public event Action? ChannelsChanged;
-    internal void RaiseChannelsChanged() => ChannelsChanged?.Invoke();
+
+    internal void RaiseChannelsChanged()
+    {
+        // The voice session ends first, so that anyone who hears of the change finds you already out of the channel.
+        _node.LeaveRemovedVoiceChannel(this);
+        ChannelsChanged?.Invoke();
+    }
+
+    /// <summary>The voice channel you were in was removed, and you were taken out of it. The argument is the channel's id.</summary>
+    public event Action<string>? VoiceChannelRemoved;
+    internal void RaiseVoiceChannelRemoved(string channelId) => VoiceChannelRemoved?.Invoke(channelId);
 
     /// <summary>The owner appointed or removed an admin.</summary>
     public event Action? RolesChanged;

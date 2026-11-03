@@ -181,4 +181,79 @@ public class ChannelTests
         Assert.Equal(new[] { "busy 3", "busy 4", "busy 5" }, kept.Where(t => t.StartsWith("busy")));
         Assert.Equal(new[] { "quiet 0", "quiet 1" }, kept.Where(t => t.StartsWith("quiet")));
     }
+
+    [Fact]
+    public async Task Admins_move_channels_up_and_down_among_their_kind_and_everyone_sees_the_order()
+    {
+        var t = await StartTrio();
+        using var _ = t.Owner; using var __ = t.B; using var ___ = t.C;
+
+        var alpha = t.Ro.CreateChannel("alpha", ChannelKind.Text);
+        var beta = t.Ro.CreateChannel("beta", ChannelKind.Text);
+        var gamma = t.Ro.CreateChannel("gamma", ChannelKind.Text);
+        t.Ro.CreateChannel("Lounge", ChannelKind.Voice);
+        List<string> TextNames(ChatRoom room) => room.Channels.Where(c => c.Kind == ChannelKind.Text).Select(c => c.Name).ToList();
+        await TestUtil.WaitFor(() => TextNames(t.Rc).Count == 4 && t.Rc.Channels.Count == 6, 20_000);
+        Assert.Equal(new[] { "general", "alpha", "beta", "gamma" }, TextNames(t.Rc));
+
+        t.Ro.MoveChannel(gamma.Id, up: true);
+        await TestUtil.WaitFor(() => TextNames(t.Rc).SequenceEqual(new[] { "general", "alpha", "gamma", "beta" }), 20_000);
+        t.Ro.MoveChannel(gamma.Id, up: true);
+        await TestUtil.WaitFor(() => TextNames(t.Rb).SequenceEqual(new[] { "general", "gamma", "alpha", "beta" }), 20_000);
+
+        // At the top already, nothing changes; neither at the bottom. The first channels do not move, and a member who is no admin cannot.
+        t.Ro.MoveChannel(gamma.Id, up: true);
+        t.Ro.MoveChannel(beta.Id, up: false);
+        Assert.Equal(new[] { "general", "gamma", "alpha", "beta" }, TextNames(t.Ro));
+        Assert.Throws<InvalidOperationException>(() => t.Ro.MoveChannel(RoomChannels.DefaultText, up: false));
+        Assert.Throws<InvalidOperationException>(() => t.Rb.MoveChannel(alpha.Id, up: true));
+        Assert.Throws<KeyNotFoundException>(() => t.Ro.MoveChannel("0123456789abcdef", up: true));
+
+        // The voice channels have an order of their own, and the text channels' moves leave them alone.
+        var second = t.Ro.CreateChannel("Games", ChannelKind.Voice);
+        await TestUtil.WaitFor(() => t.Rc.Channels.Any(c => c.Id == second.Id), 20_000);
+        t.Ro.MoveChannel(second.Id, up: true);
+        await TestUtil.WaitFor(() => t.Rc.Channels.Where(c => c.Kind == ChannelKind.Voice).Select(c => c.Name).SequenceEqual(new[] { "Voice", "Games", "Lounge" }), 20_000);
+        Assert.Equal(new[] { "general", "gamma", "alpha", "beta" }, TextNames(t.Rc));
+    }
+
+    [Fact]
+    public async Task A_voice_channel_that_is_removed_takes_you_out_of_it()
+    {
+        var t = await StartTrio();
+        using var _ = t.Owner; using var __ = t.B; using var ___ = t.C;
+
+        var lounge = t.Ro.CreateChannel("Lounge", ChannelKind.Voice);
+        var games = t.Ro.CreateChannel("Games", ChannelKind.Voice);
+        await TestUtil.WaitFor(() => t.Rb.Channels.Any(c => c.Id == lounge.Id) && t.Rb.Channels.Any(c => c.Id == games.Id), 20_000);
+
+        // Bob is in one, and the owner is in the other.
+        var removedAtBob = new List<string>(); var removedAtOwner = new List<string>();
+        t.Rb.VoiceChannelRemoved += id => { lock (removedAtBob) removedAtBob.Add(id); };
+        t.Ro.VoiceChannelRemoved += id => { lock (removedAtOwner) removedAtOwner.Add(id); };
+        using var bobSession = t.Rb.JoinVoice(lounge.Id);
+        using var ownerSession = t.Ro.JoinVoice(games.Id);
+        await TestUtil.WaitFor(() => t.Rc.VoiceParticipants.Count(p => p.Channel == lounge.Id) == 1 && t.Rc.VoiceParticipants.Count(p => p.Channel == games.Id) == 1, 20_000);
+
+        // Someone else removes Bob's channel: his session ends by itself and he is told.
+        t.Ro.DeleteChannel(lounge.Id);
+        await TestUtil.WaitFor(() => { lock (removedAtBob) return removedAtBob.Count == 1; }, 20_000);
+        Assert.Equal(lounge.Id, removedAtBob[0]);
+        await TestUtil.WaitFor(() => t.Rc.VoiceParticipants.Count(p => p.Channel == lounge.Id) == 0, 20_000);
+        Assert.Throws<InvalidOperationException>(() => t.Rb.JoinVoice(lounge.Id));
+
+        // Removing the channel you are in yourself does the same.
+        t.Ro.DeleteChannel(games.Id);
+        lock (removedAtOwner) Assert.Equal(new[] { games.Id }, removedAtOwner);
+        await TestUtil.WaitFor(() => t.Rc.VoiceParticipants.Count(p => p.Channel == games.Id) == 0, 20_000);
+
+        // A channel you are not in changes nothing for you.
+        var other = t.Ro.CreateChannel("Other", ChannelKind.Voice);
+        await TestUtil.WaitFor(() => t.Rb.Channels.Any(c => c.Id == other.Id), 20_000);
+        using var inDefault = t.Rb.JoinVoice(RoomChannels.DefaultVoice);
+        t.Ro.DeleteChannel(other.Id);
+        await Task.Delay(500);
+        lock (removedAtBob) Assert.Single(removedAtBob);
+        Assert.Contains(t.Rb.VoiceParticipants, p => p.Channel == RoomChannels.DefaultVoice);
+    }
 }

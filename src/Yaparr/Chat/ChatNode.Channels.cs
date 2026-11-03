@@ -121,6 +121,38 @@ public sealed partial class ChatNode
         PublishChannel(room, id, channel.Name, channel.Kind, channel.Order, deleted: true);
     }
 
+    // A channel moves up or down among the channels of its kind. Every statement already carries the place of its channel, and every version
+    // sorts by it, so a move is the same kind of statement as a rename. The first text channel and the first voice channel keep their places
+    // (they stay first), and the places of the others are handed out again in the new order, so that two that were equal (two admins at
+    // once) are told apart. Only a channel whose place changed gets a new statement.
+    internal void MoveChannel(ChatRoom room, string id, bool up)
+    {
+        RequireAdmin(room);
+        var channel = FindChannel(room, id) ?? throw new KeyNotFoundException("There is no such channel.");
+        if (channel.IsDefault) throw new InvalidOperationException("The first text channel and the first voice channel stay where they are.");
+        var sameKind = GetChannels(room).Where(c => c.Kind == channel.Kind && !c.IsDefault).ToList();
+        int at = sameKind.FindIndex(c => c.Id == id), to = up ? at - 1 : at + 1;
+        if (to < 0 || to >= sameKind.Count) return;
+
+        int first = Math.Max(2, sameKind.Min(c => c.Order));
+        var wanted = sameKind.ToList();
+        (wanted[at], wanted[to]) = (wanted[to], wanted[at]);
+        for (int i = 0; i < wanted.Count; i++)
+            if (wanted[i].Order != first + i)
+                PublishChannel(room, wanted[i].Id, wanted[i].Name, wanted[i].Kind, first + i, deleted: false);
+    }
+
+    // The voice channel you are in is gone (removed here or by another admin, or its admin lost the role): you leave it, instead of the
+    // session going on in a channel that no longer exists.
+    internal void LeaveRemovedVoiceChannel(ChatRoom room)
+    {
+        if (room.ActiveVoice is not { } session) return;
+        if (FindChannel(room, session.ChannelId) is { Kind: ChannelKind.Voice }) return;
+        _options.Log?.Invoke($"the voice channel you were in, in '{room.Name}', was removed; leaving it");
+        session.Leave();
+        room.RaiseVoiceChannelRemoved(session.ChannelId);
+    }
+
     private static string CleanChannelName(string name)
     {
         name = string.Join(' ', (name ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
