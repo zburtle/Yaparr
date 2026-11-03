@@ -29,6 +29,10 @@ Known gaps: someone away for more than 30 days, or never seen by the owner's dev
 
 ## Channels
 
-Every room has a first text and a first voice channel, and the owner and admins add, rename and remove more. Everyone can use every channel; this is organisation, not a lock, since everybody still gets every message (private channels would need a key per channel, a redesign). A message carries its channel and is signed with it; the history limit is per channel; a voice session is in one voice channel at a time, each with its own tree; a screen share belongs to the voice channel its sharer is in.
+Every room has a first text and a first voice channel, and the owner and admins add, rename, move and remove more. Everyone can use every channel; this is organisation, not a lock, since everybody still gets every message (private channels would need a key per channel, a redesign). A message carries its channel and is signed with it; the history limit is per channel; a voice session is in one voice channel at a time, each with its own tree; a screen share belongs to the voice channel its sharer is in.
 
-Not done: the desktop buttons and menus have not been run by hand; a channel removed while you are in it only sends you out of voice in the desktop app (the library leaves the session running); unread counts are not kept across restarts; the channel on show is not remembered; channel order cannot be changed after creation.
+- **Order.** `room.MoveChannel(id, up)` moves a channel up or down among the channels of its kind. It is the same signed statement as a rename (every statement already carries the place of its channel, and every version sorts by it), so older versions follow the new order too. The first text channel and the first voice channel always stay first and cannot be moved. In the app: right-click a channel, **Move up** or **Move down**.
+- **A removed voice channel.** If the voice channel you are in is removed, by you, by an admin, or because the admin who made it lost the role, your voice session ends and `room.VoiceChannelRemoved` says which channel it was; nothing keeps running in a channel that no longer exists.
+- **In the app,** the text channel on show in each room comes back the next time, and what was unread when the app was closed is still unread when it is opened (for each text channel the app remembers the time up to which you have seen it).
+
+Not done: the desktop buttons and menus have not been run by hand.

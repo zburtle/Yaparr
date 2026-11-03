@@ -23,6 +23,8 @@ public partial class MainWindow
             StatusText.Text = "The voice channel you were in was removed.";
         }
         UpdateVoiceChannels(conv, room);
+        // The channel that was on show last time, once it is known; not while you are looking at the room.
+        if (conv != _selected) RestoreChannel(conv, room);
         if (conv == _selected) UpdateComposer();
     }
 
@@ -69,6 +71,9 @@ public partial class MainWindow
             return;
         }
         conv.SelectChannel(channel.Id);
+        conv.PendingChannel = null;
+        RememberChannel(room, channel.Id);
+        MarkShownRead(conv);
         UpdateComposer();
         ScrollToEnd();
         InputBox.Focus();
@@ -87,12 +92,24 @@ public partial class MainWindow
         var items = new List<Control> { rename };
         if (!channel.IsDefault)
         {
+            var up = new MenuItem { Header = "Move up" };
+            up.Click += (_, _) => MoveChannel(room, channel, up: true);
+            var down = new MenuItem { Header = "Move down" };
+            down.Click += (_, _) => MoveChannel(room, channel, up: false);
+            items.Add(up);
+            items.Add(down);
             var delete = new MenuItem { Header = "Delete" };
             delete.Click += async (_, _) => await DeleteChannelAsync(room, channel);
             items.Add(delete);
         }
         new ContextMenu { ItemsSource = items }.Open(button);
         e.Handled = true;
+    }
+
+    private void MoveChannel(ChatRoom room, ChannelVm channel, bool up)
+    {
+        try { room.MoveChannel(channel.Id, up); }
+        catch (Exception ex) when (ex is InvalidOperationException or KeyNotFoundException) { StatusText.Text = ex.Message; }
     }
 
     private async Task RenameChannelAsync(ChatRoom room, ChannelVm channel)
