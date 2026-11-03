@@ -11,6 +11,33 @@ public class ReplyTests
     private static readonly PeerId Bob = new(new string('2', 64));
 
     [Fact]
+    public async Task A_message_that_is_missing_from_the_history_is_asked_for_and_comes_from_a_member_that_holds_it()
+    {
+        var hub = new InMemoryDiscoveryHub();
+        using var alice = TestUtil.NewNode(hub, "alice");
+        using var bob = TestUtil.NewNode(hub, "bob");
+        var ra = await alice.JoinRoomAsync("lobby");
+        var rb = await bob.JoinRoomAsync("lobby");
+        await TestUtil.WaitFor(() => ra.Members.Count == 1 && rb.Members.Count == 1);
+        await ra.SendAsync("the old news");
+        await TestUtil.WaitFor(() => rb.GetHistory().Any(m => m.Body == "the old news"));
+        var key = rb.GetHistory().First(m => m.Body == "the old news").Key;
+
+        // Bob's history lost it (it was trimmed, or never handed over); Alice still holds it.
+        rb.History.Remove(new[] { key });
+        Assert.DoesNotContain(rb.GetHistory(), m => m.Key == key);
+
+        Assert.Equal(0, rb.RequestMessages(new[] { "not a key" }));
+        Assert.Equal(1, rb.RequestMessages(new[] { key }));
+        await TestUtil.WaitFor(() => rb.GetHistory().Any(m => m.Key == key));
+
+        // Nobody holds this one: the request is made, nothing comes back, and nothing breaks.
+        Assert.Equal(1, rb.RequestMessages(new[] { new string('b', 32) }));
+        await Task.Delay(300);
+        Assert.Single(rb.GetHistory());
+    }
+
+    [Fact]
     public void A_picture_can_answer_a_message_and_a_bad_key_is_refused()
     {
         var att = new Attachment(Attachment.HashOf("x"u8), "cat.png", 10, "image/png", 30, 20);

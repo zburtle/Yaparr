@@ -13,7 +13,7 @@ The **People** list on the right is the people of the room that is open: those w
 
 ## Replies and mentions
 
-Right-click a message and choose **Reply**: a bar above the box shows what you are answering (Esc or the ✕ cancels it), and your message carries the quoted message above its words. A reply can carry a picture: with a reply bar open, send a picture and it answers that message. Click a quote to jump to the message it answers, in another text channel of the room too.
+Right-click a message and choose **Reply**: a bar above the box shows what you are answering (Esc or the ✕ cancels it), and your message carries the quoted message above its words. A reply can carry a picture: with a reply bar open, send a picture and it answers that message. Click a quote to jump to the message it answers, in another text channel of the room too. When the message is no longer in your history, the app asks the members who are connected for it and jumps to it if one still holds it.
 
 Type **@** at the start of a word in a room to choose someone from the people of the room (arrow keys and Enter or Tab, or click); their name is written into your message and marked. Admins and the owner can also type **@everyone** to name every member; from anyone else it is only words. A message that names you, or answers one of yours, gets an outline, and the unread badge of that room shows an **@** until you read it. In a direct chat there is nobody to name, but replies work.
 

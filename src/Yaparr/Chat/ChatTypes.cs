@@ -137,7 +137,7 @@ internal sealed class Wire
 
     public const string Caps = "caps", Rename = "name", Account = "acct", Media = "media", Sound = "snd", Play = "play", Roles = "roles", Moderate = "mod", Channels = "chan", Rekey = "rekey", Takeover = "takeover", Speed = "speed";
 
-    public const string Ack = "ack", Hello = "hi", Join = "join", Leave = "leave", Message = "msg", Introduce = "peers", Sync = "sync", History = "hist", Links = "links", Presence = "pres", Voice = "voice";
+    public const string Ack = "ack", Hello = "hi", Join = "join", Leave = "leave", Message = "msg", Introduce = "peers", Sync = "sync", Want = "want", History = "hist", Links = "links", Presence = "pres", Voice = "voice";
 }
 
 internal sealed class WirePeer

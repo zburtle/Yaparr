@@ -298,6 +298,14 @@ public sealed class ChatRoom
     public Task<string> SendAsync(string text, string? channelId, string? replyTo, IReadOnlyCollection<Mention>? mentions = null) =>
         Task.FromResult(_node.SendRoomMessage(this, MessageEnvelope.Wrap(text, replyTo, mentions), channelId));
 
+    /// <summary>
+    /// Asks the members you are connected to for messages you do not have, by key (<see cref="ChatMessage.Key"/>), for example the
+    /// message a reply answers that has dropped out of your history. What they still hold arrives through
+    /// <see cref="MessageReceived"/> (marked <see cref="ChatMessage.IsCatchUp"/>); what nobody holds never comes. Returns how many
+    /// members were asked. At most <see cref="ChatNode.MaxWanted"/> keys are asked for at once.
+    /// </summary>
+    public int RequestMessages(IEnumerable<string> keys) => _node.RequestMessages(this, keys);
+
     /// <summary>Sends an unconfirmed message again to the members who have not confirmed it.</summary>
     public void Retry(string messageId) => _node.RetryMessage(messageId);
 
