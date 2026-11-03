@@ -25,6 +25,12 @@ public sealed class AppSettings
     public bool VpnEnabled { get; set; }
     public List<PrivateRoomSetting> PrivateRooms { get; set; } = new();
 
+    /// <summary>For each text channel (the room's id, a slash and the channel's id), the time in milliseconds up to which it has been seen; what is newer is unread.</summary>
+    public Dictionary<string, long> ReadMarks { get; set; } = new();
+
+    /// <summary>The text channel that was on show in each room (by the room's id), which comes back the next time.</summary>
+    public Dictionary<string, string> RoomChannels { get; set; } = new();
+
     /// <summary>Names of the microphone and speakers to use; empty means the system default.</summary>
     public string? VoiceInput { get; set; }
     public string? VoiceOutput { get; set; }

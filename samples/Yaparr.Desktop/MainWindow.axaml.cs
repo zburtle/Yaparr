@@ -294,7 +294,7 @@ public partial class MainWindow : Window
         _node.NetworkStatusChanged += _ => UI(UpdateStatus);
         _node.AttachmentChanged += update => UI(() => OnAttachmentChanged(update));
         if (OperatingSystem.IsWindows()) Microsoft.Win32.SystemEvents.PowerModeChanged += OnPowerModeChanged;
-        _linkTimer.Tick += (_, _) => { RefreshPeers(); WatchConnection(); };
+        _linkTimer.Tick += (_, _) => { RefreshPeers(); WatchConnection(); SaveMarks(); };
         SetUpConnectionWatch();
         _node.NetworkChanged += () => _call.NetworkChanged(Environment.TickCount64);
         _linkTimer.Start();
@@ -317,16 +317,27 @@ public partial class MainWindow : Window
         RefreshPeers();
         foreach (var stored in _node.StoredDirectChats) _ = AddDirect(stored);
 
-        foreach (var priv in _settings.PrivateRooms.ToList())
+        // Opening each room as it comes back is not reading it: what was unread when the app was closed stays unread.
+        _restoringRooms = true;
+        try
         {
-            try { await JoinKeyedRoomAsync(priv.Label, RoomKey.Parse(priv.Key), persist: false); }
-            catch (FormatException) { }
+            foreach (var priv in _settings.PrivateRooms.ToList())
+            {
+                try { await JoinKeyedRoomAsync(priv.Label, RoomKey.Parse(priv.Key), persist: false); }
+                catch (FormatException) { }
+            }
         }
+        finally { _restoringRooms = false; }
+        // The room that ends up on show is the one being looked at.
+        _selected?.Opened();
+        MarkShownRead(_selected);
     }
 
     private void Shutdown()
     {
         _linkTimer.Stop();
+        MarkShownRead(_selected);
+        SaveMarks();
         if (OperatingSystem.IsWindows()) Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         LeaveVoiceCore();
         CloseScreens();
@@ -553,8 +564,15 @@ public partial class MainWindow : Window
         room.SecretChanged += (before, after) => UI(() => OnSecretChanged(conv, before, after));
         room.ModerationChanged += () => UI(() => { conv.Reload(room.GetHistory().Select(ToVm).ToList()); RefreshPeers(); RefreshMembers(); });
 
+        if (_settings.RoomChannels.TryGetValue(room.RoomId, out var wantedChannel)) conv.PendingChannel = wantedChannel;
         RefreshChannels(conv, room);
-        foreach (var m in room.GetHistory()) conv.Add(ToVm(m));
+        // What came while the app was shut counts as unread when it is newer than what was seen.
+        foreach (var m in room.GetHistory())
+        {
+            var vm = ToVm(m);
+            conv.Add(vm);
+            CountIfUnread(conv, room, vm);
+        }
         _conversations.Add(conv);
         ConversationList.SelectedItem = conv;
         RefreshPeers();
@@ -822,7 +840,12 @@ public partial class MainWindow : Window
         conv.Add(message);
         // A message in another channel of the open room waits like one in another room.
         bool viewing = conv == _selected && (message.Channel == null || message.Channel == conv.CurrentChannel);
-        if (viewing) { ScrollToEnd(); MarkRead(conv); }
+        if (viewing)
+        {
+            ScrollToEnd();
+            MarkRead(conv);
+            if (message.Channel is { } shownChannel && RoomFor(conv) is { } shownRoom) MarkChannelRead(shownRoom, shownChannel, message.Time.ToUnixTimeMilliseconds());
+        }
         else if (!message.IsMine) conv.NoteUnread(message.Channel, message.Highlight);
         // What you wrote on another device needs no announcing.
         if (announce && !message.IsMine) NotifyMessage(conv);
@@ -1042,7 +1065,11 @@ public partial class MainWindow : Window
         UpdateHeaderSubtitle();
         if (_selected != null)
         {
-            _selected.Opened();
+            if (!_restoringRooms)
+            {
+                _selected.Opened();
+                MarkShownRead(_selected);
+            }
             UpdateComposer();
             MarkRead(_selected);
             ScrollToEnd();

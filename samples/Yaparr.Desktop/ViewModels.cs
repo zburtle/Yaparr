@@ -498,6 +498,9 @@ public sealed class ConversationVm : Observable
     }
 
     public string CurrentChannel { get; private set; } = RoomChannels.DefaultText;
+
+    /// <summary>A channel that was on show last time, to show once the room's channels are known (it may arrive after the room does).</summary>
+    public string? PendingChannel { get; set; }
     public string CurrentChannelName => Channels.FirstOrDefault(c => c.IsText && c.Id == CurrentChannel)?.Name ?? "general";
 
     public void SelectChannel(string id)

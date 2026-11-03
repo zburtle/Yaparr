@@ -17,6 +17,10 @@ Right-click a message and choose **Reply**: a bar above the box shows what you a
 
 Type **@** at the start of a word in a room to choose someone from the people of the room (arrow keys and Enter or Tab, or click); their name is written into your message and marked. A message that names you, or answers one of yours, gets an outline, and the unread badge of that room shows an **@** until you read it. In a direct chat there is nobody to name, but replies work.
 
+## Channels
+
+A room made by this version lists its channels under it, text and voice. Click a text channel to show it, a voice channel to join it. The owner and admins right-click a channel to rename it, move it up or down (the first text and voice channels stay first) or delete it. The app remembers which text channel was on show in each room, and keeps count of what you have not read in each channel across restarts: the number on a room is what has arrived in its channels since you last looked at them, and a first start after an upgrade counts everything already there as read.
+
 To install it, see [Installer and updates](installer-and-updates.md).
 
 ## Notifications
