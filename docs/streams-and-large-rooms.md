@@ -13,6 +13,7 @@ the stream is announced like a voice beacon, signed by the sharer.
   most `MediaFanout` (3) others, the sharer to `MediaRootFanout` (3), and only members whose connection can relay
   (`IsRelayCapable`) are ever used as parents. If the sharer's places are all held by members who cannot pass the stream
   on, one of them steps aside for one who can.
+- **Checking the tree.** The root learns who sits under whom from reports that travel up the tree, so it does not just trust them. Every `MediaAuditInterval` (10 s) it asks up to eight members it is connected to who their parent is, and what a member says about itself replaces what the root was told. A member that says it is not attached, or that sits under itself, is taken off the root's picture, and so is anyone put directly under the sharer who the sharer never took on. The next join is then placed by the corrected picture.
 - **When someone leaves.** Neighbours ping each other every maintenance interval. A member whose parent goes silent
   (`MediaEdgeTimeout`, 3 s) or whose connection closes asks the root again and is placed elsewhere, with its own
   children still attached to it. A newcomer is given the packets since the last key straight away by whoever it

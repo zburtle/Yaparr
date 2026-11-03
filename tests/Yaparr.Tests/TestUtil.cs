@@ -41,6 +41,7 @@ internal static class TestUtil
         MediaFanout = media?.Fanout ?? 3,
         MediaRootFanout = media?.RootFanout ?? 3,
         MediaEdgeTimeout = media?.EdgeTimeout ?? TimeSpan.FromSeconds(6),
+        MediaAuditInterval = media?.Audit ?? TimeSpan.FromSeconds(10),
         MediaAnnounceInterval = media?.Announce ?? TimeSpan.FromSeconds(10),
         MeasureUpload = false,
         VoiceAnnounceInterval = media?.Announce is { } announce && announce < TimeSpan.FromSeconds(1) ? announce : TimeSpan.FromSeconds(1),
@@ -65,6 +66,7 @@ internal sealed record MediaOptions
     public int? Fanout { get; init; }
     public int? RootFanout { get; init; }
     public TimeSpan? EdgeTimeout { get; init; }
+    public TimeSpan? Audit { get; init; }
     public TimeSpan? Announce { get; init; }
     public int? BytesPerSecond { get; init; }
     public int? VoiceThreshold { get; init; }
@@ -78,6 +80,7 @@ internal sealed record MediaOptions
         Fanout = fanout,
         RootFanout = rootFanout,
         EdgeTimeout = TimeSpan.FromMilliseconds(1500),
+        Audit = TimeSpan.FromMilliseconds(500),
         Announce = TimeSpan.FromSeconds(2),
         VoiceRankDelay = TimeSpan.FromMilliseconds(300),
     };
