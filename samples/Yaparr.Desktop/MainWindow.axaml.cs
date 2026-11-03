@@ -331,6 +331,7 @@ public partial class MainWindow : Window
         // The room that ends up on show is the one being looked at.
         _selected?.Opened();
         MarkShownRead(_selected);
+        if (!_settings.ConnectionGuideShown) await ShowConnectionGuideAsync();
     }
 
     private void Shutdown()
@@ -457,6 +458,8 @@ public partial class MainWindow : Window
     {
         if (_selected is { Retry: { } retry } && MessageList.SelectedItem is MessageVm { CanRetry: true, Id: { } id }) retry(id);
     }
+
+    private async void ConnectionGuide_Click(object? sender, RoutedEventArgs e) => await ShowConnectionGuideAsync();
 
     private async void CheckNetwork_Click(object? sender, RoutedEventArgs e)
     {
