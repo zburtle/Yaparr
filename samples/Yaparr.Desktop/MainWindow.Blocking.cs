@@ -48,6 +48,17 @@ public partial class MainWindow
         if (!ReplyItem.IsVisible && !SavePictureItem.IsVisible && !RetryItem.IsVisible && !BlockSenderItem.IsVisible && !DeleteMessageItem.IsVisible && !BanSenderItem.IsVisible) e.Cancel = true;
     }
 
+    // Everyone blocked, by name where it is known, so that someone met only in a direct chat can be unblocked too.
+    private async void BlockedPeople_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_node == null) { StatusText.Text = "Yaparr is still starting."; return; }
+        IReadOnlyList<(string Id, string Name)> People() => _node.BlockedPeers
+            .Select(p => (Id: p.Value, Name: _settings.BlockedPeers.FirstOrDefault(b => b.Id == p.Value)?.Name is { Length: > 0 } saved ? saved
+                : _settings.KnownPeers.FirstOrDefault(k => k.Id == p.Value)?.Name ?? ""))
+            .OrderBy(p => p.Name.Length == 0).ThenBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+        await BlockedDialog.ShowAsync(this, People, id => _node.Unblock(new PeerId(id)));
+    }
+
     private async void BlockPerson_Click(object? sender, RoutedEventArgs e) => await BlockAsync(PeopleList.SelectedItem);
 
     private async void BlockSender_Click(object? sender, RoutedEventArgs e) => await BlockAsync(MessageList.SelectedItem);
