@@ -17,7 +17,7 @@ public partial class MainWindow
             "Some home and work networks make that hard, usually because the router is strict. If people cannot reach you, there are two ways to help:\n\n" +
             "VPN: your Yaparr traffic goes through a WireGuard VPN you already pay for. Other programs are not affected, and people can reach you through the VPN's address.\n\n" +
             "TURN relay: a server that passes Yaparr's traffic along when a direct connection fails. Yaparr has none of its own, so you run one or import one a friend shares. Messages stay signed and encrypted between you and the other person; the relay only forwards them.\n\n" +
-            "You can skip all of this. If something does not connect, Check my connection tells you why. These are all under the Network menu.",
+            "You can skip all of this. If something does not connect, Check my connection tells you why. These are all in Settings, under Network.",
             "Check my connection", "VPN…", "TURN relay…", "Close");
         switch (next)
         {

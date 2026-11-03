@@ -216,40 +216,13 @@
                 <MenuItem Header="_Create room…" Click="CreateRoom_Click" />
                 <MenuItem Header="_Join with invite…" Click="JoinRoom_Click" />
                 <Separator />
-                <MenuItem Header="Change my _name…" Click="Rename_Click" />
-                <MenuItem Header="Copy my _ID" Click="CopyId_Click" />
-                <MenuItem Header="My _devices…" Click="MyDevices_Click" />
-                <MenuItem Header="_Blocked people…" Click="BlockedPeople_Click" />
-                <MenuItem Header="_Link another device…" Click="LinkDevice_Click" />
-                <MenuItem Header="_Back up profile…" Click="BackupProfile_Click" />
+                <MenuItem Header="_Settings…" InputGesture="Ctrl+," Click="Settings_Click" />
+                <MenuItem Header="Go to the first unread m_ention" Click="GoToFirstMention_Click" />
                 <Separator />
                 <MenuItem Header="E_xit" Click="Exit_Click" />
             </MenuItem>
-            <MenuItem Header="_Notifications">
-                <MenuItem x:Name="SoundsItem" Header="Play _sounds" ToggleType="CheckBox" />
-                <MenuItem x:Name="FlashItem" Header="_Flash the taskbar button" ToggleType="CheckBox" />
-                <MenuItem x:Name="TaskbarCountItem" Header="Show the _unread count on the taskbar" ToggleType="CheckBox" />
-                <MenuItem x:Name="MessageSoundMenu" Header="_Message sound" />
-                <MenuItem x:Name="PopupsItem" Header="Show _pop-ups when the window is in the background" ToggleType="CheckBox" IsVisible="False" />
-                <MenuItem x:Name="MentionsOnlyItem" Header="Only for _mentions, replies and direct messages" ToggleType="CheckBox" />
-                <Separator />
-                <MenuItem Header="Go to the first unread m_ention" Click="GoToFirstMention_Click" />
-            </MenuItem>
-            <MenuItem Header="_Network">
-                <MenuItem Header="_VPN…" Click="Vpn_Click" />
-                <MenuItem Header="_TURN relay…" Click="Turn_Click" />
-                <Separator />
-                <MenuItem Header="_Check connection…" Click="CheckNetwork_Click" />
-            </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem Header="_Connection guide…" Click="ConnectionGuide_Click" />
-                <MenuItem Header="Check for _updates…" Click="CheckUpdates_Click" />
-                <MenuItem Header="_Report a problem…" Click="ReportProblem_Click" />
-                <MenuItem Header="Copy _diagnostics" Click="CopyDiagnostics_Click" />
-                <MenuItem Header="Open _log file" Click="OpenLog_Click" />
-                <MenuItem Header="Open log _folder" Click="OpenLogFolder_Click" />
-                <MenuItem Header="Open source _licences" Click="OpenLicences_Click" />
-                <Separator />
                 <MenuItem Header="_About Yaparr" Click="About_Click" />
             </MenuItem>
         </Menu>
@@ -292,6 +265,8 @@
                     </StackPanel>
 
                     <StackPanel DockPanel.Dock="Bottom" Margin="12,6,12,12" Spacing="6">
+                        <Button Content="Settings" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="8,7" Click="Settings_Click"
+                                ToolTip.Tip="Settings (Ctrl+,)" />
                         <Button Content="New room" Classes="primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="CreateRoom_Click" />
                         <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
                             <Button Content="Join with invite" Padding="8,7" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="JoinRoom_Click" />
@@ -625,6 +600,82 @@
             </Border>
         </Grid>
     </DockPanel>
+
+    <!-- The settings: sections on the left, the section's controls on the right, over the window. Escape, the cross or a click outside closes it. -->
+    <Border x:Name="SettingsOverlay" IsVisible="False" Background="#D8000000" Padding="24" Focusable="True"
+            PointerPressed="SettingsOverlay_PointerPressed" KeyDown="SettingsOverlay_KeyDown">
+        <Border Classes="card" HorizontalAlignment="Center" VerticalAlignment="Center" Width="780" MaxHeight="560" Padding="0">
+            <Grid RowDefinitions="Auto,*" ColumnDefinitions="200,*">
+                <TextBlock Text="Settings" FontSize="17" FontWeight="SemiBold" Margin="18,14,0,10" VerticalAlignment="Center" />
+                <Button Grid.Column="1" Classes="ghost" Content="✕" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,8,12,0"
+                        ToolTip.Tip="Close (Esc)" Click="CloseSettings_Click" />
+                <ListBox x:Name="SettingsSections" Grid.Row="1" Classes="flat" Margin="8,0,0,8" SelectionChanged="SettingsSections_SelectionChanged">
+                    <ListBoxItem Content="Profile" />
+                    <ListBoxItem Content="Devices" />
+                    <ListBoxItem Content="Notifications" />
+                    <ListBoxItem Content="Voice &amp; audio" />
+                    <ListBoxItem Content="Network" />
+                    <ListBoxItem Content="Updates &amp; diagnostics" />
+                    <ListBoxItem Content="About" />
+                </ListBox>
+                <ScrollViewer Grid.Row="1" Grid.Column="1" VerticalScrollBarVisibility="Auto">
+                    <Panel Margin="18,4,18,18">
+                        <StackPanel x:Name="SectionProfile" Spacing="10">
+                            <TextBlock Text="Profile" FontSize="15" FontWeight="SemiBold" />
+                            <TextBlock Classes="muted" TextWrapping="Wrap" Text="The name people see, the ID others use to open a direct chat with you, and a backup of your account." />
+                            <Button Content="Change my name…" Click="Rename_Click" />
+                            <Button Content="Copy my ID" Click="CopyId_Click" />
+                            <Button Content="Back up profile…" Click="BackupProfile_Click" />
+                            <Button Content="Blocked people…" Click="BlockedPeople_Click" />
+                        </StackPanel>
+                        <StackPanel x:Name="SectionDevices" Spacing="10" IsVisible="False">
+                            <TextBlock Text="Devices" FontSize="15" FontWeight="SemiBold" />
+                            <TextBlock Classes="muted" TextWrapping="Wrap" Text="One person can use Yaparr on several computers. Your name, rooms and blocks carry over to a linked device." />
+                            <Button Content="My devices…" Click="MyDevices_Click" />
+                            <Button Content="Link another device…" Click="LinkDevice_Click" />
+                        </StackPanel>
+                        <StackPanel x:Name="SectionNotifications" Spacing="10" IsVisible="False">
+                            <TextBlock Text="Notifications" FontSize="15" FontWeight="SemiBold" />
+                            <CheckBox x:Name="SoundsItem" Content="Play sounds" />
+                            <CheckBox x:Name="FlashItem" Content="Flash the taskbar button" />
+                            <CheckBox x:Name="TaskbarCountItem" Content="Show the unread count on the taskbar" />
+                            <CheckBox x:Name="PopupsItem" Content="Show pop-ups when the window is in the background" IsVisible="False" />
+                            <CheckBox x:Name="MentionsOnlyItem" Content="Only for mentions, replies and direct messages" />
+                            <TextBlock Text="Message sound" FontWeight="SemiBold" Margin="0,6,0,0" />
+                            <ComboBox x:Name="MessageSoundBox" HorizontalAlignment="Left" MinWidth="200" />
+                            <TextBlock Classes="muted small" TextWrapping="Wrap" Text="Each sound plays when it is picked." />
+                        </StackPanel>
+                        <StackPanel x:Name="SectionVoice" Spacing="10" IsVisible="False">
+                            <TextBlock Text="Voice &amp; audio" FontSize="15" FontWeight="SemiBold" />
+                            <TextBlock Classes="muted" TextWrapping="Wrap" Text="Microphone and speakers, volume, push to talk, echo cancellation and noise suppression." />
+                            <Button Content="Voice settings…" Click="VoiceSettings_Click" />
+                        </StackPanel>
+                        <StackPanel x:Name="SectionNetwork" Spacing="10" IsVisible="False">
+                            <TextBlock Text="Network" FontSize="15" FontWeight="SemiBold" />
+                            <TextBlock Classes="muted" TextWrapping="Wrap" Text="If people cannot reach you: check the connection first, then a VPN or a TURN relay can help." />
+                            <Button Content="Check my connection…" Click="CheckNetwork_Click" />
+                            <Button Content="VPN…" Click="Vpn_Click" />
+                            <Button Content="TURN relay…" Click="Turn_Click" />
+                            <Button Content="Connection guide…" Click="ConnectionGuide_Click" />
+                        </StackPanel>
+                        <StackPanel x:Name="SectionUpdates" Spacing="10" IsVisible="False">
+                            <TextBlock Text="Updates &amp; diagnostics" FontSize="15" FontWeight="SemiBold" />
+                            <Button Content="Check for updates…" Click="CheckUpdates_Click" />
+                            <Button Content="Report a problem…" Click="ReportProblem_Click" />
+                            <Button Content="Copy diagnostics" Click="CopyDiagnostics_Click" />
+                            <Button Content="Open log file" Click="OpenLog_Click" />
+                            <Button Content="Open log folder" Click="OpenLogFolder_Click" />
+                        </StackPanel>
+                        <StackPanel x:Name="SectionAbout" Spacing="10" IsVisible="False">
+                            <TextBlock Text="About" FontSize="15" FontWeight="SemiBold" />
+                            <TextBlock x:Name="AboutText" TextWrapping="Wrap" />
+                            <Button Content="Open source licences" Click="OpenLicences_Click" />
+                        </StackPanel>
+                    </Panel>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+    </Border>
 
     <!-- A picture from the chat shown large over everything else. A click or Escape closes it. -->
     <Border x:Name="PictureOverlay" IsVisible="False" Background="#D8000000" Padding="32" Focusable="True"

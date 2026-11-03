@@ -9,7 +9,7 @@ They are not told, and everyone else still sees them. `Unblock` undoes it, `Bloc
 app keep the list (`ChatNodeOptions.BlockedPeers` restores it on the next start). Your app still passes a room's
 messages along as it always did; a block does not decide what other people get. In the Desktop app, right-click someone
 in the People list or one of their messages. Blocked people stay in the People list, marked "blocked", so they can be
-unblocked. File > Blocked people… lists everyone you have blocked, by name where it is known, with an Unblock button for each; it is the way to unblock someone you knew only from a direct chat.
+unblocked. Settings > Profile > Blocked people… lists everyone you have blocked, by name where it is known, with an Unblock button for each; it is the way to unblock someone you knew only from a direct chat.
 
 Blocking someone does not stop them seeing you in rooms you share, or your messages: they can only be kept out by removing their access to the room.
 

@@ -41,6 +41,7 @@ public partial class MainWindow : Window
         AddHandler(KeyDownEvent, OnPasteKey, RoutingStrategies.Tunnel);
         AddHandler(KeyDownEvent, OnPushToTalkKey, RoutingStrategies.Tunnel);
         AddHandler(KeyUpEvent, OnPushToTalkKey, RoutingStrategies.Tunnel);
+        AddHandler(KeyDownEvent, OnSettingsKey, RoutingStrategies.Tunnel);
         // A key held while this window loses the focus would never be seen coming up.
         Deactivated += (_, _) => { if (_voice != null && _pushToTalkHook == null) _voice.PushToTalkHeld = false; };
         ConversationList.ItemsSource = _conversations;
@@ -203,7 +204,7 @@ public partial class MainWindow : Window
             }
             StatusText.Text = copied
                 ? "The bug report is open in your browser. Paste the diagnostics (already copied) into its Diagnostics box and read them first."
-                : "The bug report is open in your browser. The diagnostics could not be copied; use Help > Copy diagnostics and paste them in.";
+                : "The bug report is open in your browser. The diagnostics could not be copied; use Settings > Updates & diagnostics > Copy diagnostics and paste them in.";
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
