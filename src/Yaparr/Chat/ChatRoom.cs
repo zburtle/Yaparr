@@ -156,6 +156,16 @@ public sealed class ChatRoom
     /// <summary>What a person (by account, see <see cref="PeerInfo.Account"/>) is in this room.</summary>
     public RoomRole RoleOf(PeerId account) => _node.RoleIn(this, account);
 
+    /// <summary>
+    /// Whether <paramref name="message"/> names <paramref name="account"/>: by name, or with @everyone when the one who wrote it is
+    /// an admin or the owner of this room (from a member, @everyone is only words).
+    /// </summary>
+    public bool Names(ChatMessage message, PeerId account)
+    {
+        var named = message.Parts.Mentions;
+        return named.Any(m => m.Account == account) || (named.Any(m => m.IsEveryone) && RoleOf(message.From.Account) >= RoomRole.Admin);
+    }
+
     /// <summary>The admins the owner has appointed, not counting the owner.</summary>
     public IReadOnlyList<PeerId> Admins => _node.GetAdmins(this);
 
@@ -287,6 +297,14 @@ public sealed class ChatRoom
     /// </summary>
     public Task<string> SendAsync(string text, string? channelId, string? replyTo, IReadOnlyCollection<Mention>? mentions = null) =>
         Task.FromResult(_node.SendRoomMessage(this, MessageEnvelope.Wrap(text, replyTo, mentions), channelId));
+
+    /// <summary>
+    /// Asks the members you are connected to for messages you do not have, by key (<see cref="ChatMessage.Key"/>), for example the
+    /// message a reply answers that has dropped out of your history. What they still hold arrives through
+    /// <see cref="MessageReceived"/> (marked <see cref="ChatMessage.IsCatchUp"/>); what nobody holds never comes. Returns how many
+    /// members were asked. At most <see cref="ChatNode.MaxWanted"/> keys are asked for at once.
+    /// </summary>
+    public int RequestMessages(IEnumerable<string> keys) => _node.RequestMessages(this, keys);
 
     /// <summary>Sends an unconfirmed message again to the members who have not confirmed it.</summary>
     public void Retry(string messageId) => _node.RetryMessage(messageId);

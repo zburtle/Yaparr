@@ -242,6 +242,17 @@ public sealed partial class ChatNode : IDisposable
                 return true;
             }
         }
+        private readonly Dictionary<string, long> _lastWanted = new();
+        public bool TryStartWanting(string roomKey)
+        {
+            lock (_gate)
+            {
+                long now = Environment.TickCount64;
+                if (_lastWanted.TryGetValue(roomKey, out var last) && now - last < 2000) return false;
+                _lastWanted[roomKey] = now;
+                return true;
+            }
+        }
         public string? Name { get; set; }
         public volatile int Degree;
         /// <summary>Whether this peer relays for others: null until it says (older versions never do).</summary>
@@ -1631,6 +1642,11 @@ public sealed partial class ChatNode : IDisposable
             case Wire.Sync when wire.Room != null && wire.Have != null
                                 && ResolveRoom(peer, wire.Room) is { } syncRoom && syncRoom.MemberStates.ContainsKey(peer.Id):
                 OnSyncRequest(peer, syncRoom, wire.Have.Take(2000).ToArray());
+                break;
+
+            case Wire.Want when wire.Room != null && wire.Have != null
+                                && ResolveRoom(peer, wire.Room) is { } wantRoom && wantRoom.MemberStates.ContainsKey(peer.Id):
+                OnWantRequest(peer, wantRoom, wire.Have);
                 break;
 
             case Wire.History when wire.Room != null && wire.Msgs != null && Environment.TickCount64 < peer.HistoryExpectedUntil

@@ -193,6 +193,16 @@ internal sealed class RoomHistory
         }
     }
 
+    /// <summary>The messages held for these keys, oldest first (keys that are not held are left out).</summary>
+    public List<StoredMessage> Find(IEnumerable<string> keys)
+    {
+        lock (_gate)
+        {
+            Trim();
+            return keys.Distinct().Select(k => _messages.GetValueOrDefault(k)).Where(m => m != null).Select(m => m!).OrderBy(m => m.Ts).ToList();
+        }
+    }
+
     public List<StoredMessage> Missing(HashSet<string> have, int cap)
     {
         lock (_gate)
