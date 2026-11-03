@@ -301,17 +301,19 @@ public partial class MainWindow
         _voiceConv.Deafened = _voice.Deafened;
     }
 
-    private async void VoiceSettings_Click(object? sender, RoutedEventArgs e)
+    // The voice settings are in the settings window; the room's menu opens them there.
+    private void VoiceSettings_Click(object? sender, RoutedEventArgs e) => ShowSettings("Voice");
+
+    // A voice setting was changed in the settings window: keep it, and apply it to the call you are in.
+    private void OnVoiceSettingChanged(bool devicesChanged)
     {
-        var dialog = new VoiceSettingsDialog(_settings, _voice == null ? null : () => _voice.InputLevel);
-        await dialog.ShowDialog(this);
-        if (!dialog.Saved) return;
         _data.SaveSettings(_settings);
         if (_voice == null) return;
 
         ApplyVoiceSettings(_voice);
         ApplyPushToTalk();
         ApplyProcessing(_voice);
+        if (!devicesChanged) return;
         _voiceAudio?.Dispose();
         _voiceAudio = null;
         try { _voiceAudio = new VoiceAudio(_voice, _settings.VoiceInput, _settings.VoiceOutput); }

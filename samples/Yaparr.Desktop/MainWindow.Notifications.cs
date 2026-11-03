@@ -14,14 +14,14 @@ public partial class MainWindow
         FlashItem.IsChecked = _settings.FlashTaskbar;
         SoundsItem.PropertyChanged += (_, e) =>
         {
-            if (e.Property != MenuItem.IsCheckedProperty) return;
-            _settings.SoundsEnabled = _sounds.Enabled = SoundsItem.IsChecked;
+            if (e.Property != Avalonia.Controls.Primitives.ToggleButton.IsCheckedProperty) return;
+            _settings.SoundsEnabled = _sounds.Enabled = SoundsItem.IsChecked == true;
             _data.SaveSettings(_settings);
         };
         FlashItem.PropertyChanged += (_, e) =>
         {
-            if (e.Property != MenuItem.IsCheckedProperty) return;
-            _settings.FlashTaskbar = FlashItem.IsChecked;
+            if (e.Property != Avalonia.Controls.Primitives.ToggleButton.IsCheckedProperty) return;
+            _settings.FlashTaskbar = FlashItem.IsChecked == true;
             if (!_settings.FlashTaskbar) TaskbarFlash.Stop(this);
             _data.SaveSettings(_settings);
         };
@@ -30,25 +30,23 @@ public partial class MainWindow
 
         // The sound a new message makes, to choose from: each plays when it is picked.
         _sounds.MessageStyle = _settings.MessageSound;
-        foreach (var style in UiSounds.MessageStyles)
+        MessageSoundBox.ItemsSource = UiSounds.MessageStyles;
+        MessageSoundBox.SelectedItem = UiSounds.MessageStyles.Contains(_settings.MessageSound) ? _settings.MessageSound : UiSounds.MessageStyles[0];
+        MessageSoundBox.SelectionChanged += (_, _) =>
         {
-            var item = new MenuItem { Header = style, ToggleType = MenuItemToggleType.Radio, GroupName = "message-sound", IsChecked = style == _settings.MessageSound };
-            item.Click += (_, _) =>
-            {
-                _settings.MessageSound = _sounds.MessageStyle = style;
-                _data.SaveSettings(_settings);
-                _sounds.Preview(style);
-            };
-            MessageSoundMenu.Items.Add(item);
-        }
+            if (MessageSoundBox.SelectedItem is not string style || style == _settings.MessageSound) return;
+            _settings.MessageSound = _sounds.MessageStyle = style;
+            _data.SaveSettings(_settings);
+            _sounds.Preview(style);
+        };
 
         // Pop-ups in the desktop's notification area (Linux).
         PopupsItem.IsVisible = LinuxDesktop.Available || WindowsToast.Available;
         PopupsItem.IsChecked = _settings.DesktopPopups;
         PopupsItem.PropertyChanged += (_, e) =>
         {
-            if (e.Property != MenuItem.IsCheckedProperty) return;
-            _settings.DesktopPopups = PopupsItem.IsChecked;
+            if (e.Property != Avalonia.Controls.Primitives.ToggleButton.IsCheckedProperty) return;
+            _settings.DesktopPopups = PopupsItem.IsChecked == true;
             _data.SaveSettings(_settings);
         };
 
@@ -56,8 +54,8 @@ public partial class MainWindow
         MentionsOnlyItem.IsChecked = _settings.NotifyOnlyMentions;
         MentionsOnlyItem.PropertyChanged += (_, e) =>
         {
-            if (e.Property != MenuItem.IsCheckedProperty) return;
-            _settings.NotifyOnlyMentions = MentionsOnlyItem.IsChecked;
+            if (e.Property != Avalonia.Controls.Primitives.ToggleButton.IsCheckedProperty) return;
+            _settings.NotifyOnlyMentions = MentionsOnlyItem.IsChecked == true;
             _data.SaveSettings(_settings);
         };
 
@@ -65,8 +63,8 @@ public partial class MainWindow
         TaskbarCountItem.IsChecked = _settings.TaskbarCount;
         TaskbarCountItem.PropertyChanged += (_, e) =>
         {
-            if (e.Property != MenuItem.IsCheckedProperty) return;
-            _settings.TaskbarCount = TaskbarCountItem.IsChecked;
+            if (e.Property != Avalonia.Controls.Primitives.ToggleButton.IsCheckedProperty) return;
+            _settings.TaskbarCount = TaskbarCountItem.IsChecked == true;
             _data.SaveSettings(_settings);
             UpdateTaskbarBadge();
         };

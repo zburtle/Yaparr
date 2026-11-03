@@ -6,29 +6,48 @@ using Yaparr.Vpn;
 
 namespace Yaparr.Desktop;
 
-public partial class VpnDialog : Window
+/// <summary>The VPN, shown in the settings under Network. It follows the VPN's state while it is on screen.</summary>
+public partial class VpnView : UserControl
 {
-    private readonly VpnController _vpn = null!;
+    private VpnController? _vpn;
+    private ChatNode? _watching;
     private bool _busy;
+    private readonly Action<VpnState> _onState;
+    private readonly Action<NetworkStatus> _onNetwork;
 
-    public VpnDialog() => InitializeComponent();
-
-    public VpnDialog(VpnController vpn) : this()
+    public VpnView()
     {
-        _vpn = vpn;
-        Refresh();
-        if (vpn.Node is { } node)
+        InitializeComponent();
+        _onState = _ => Dispatcher.UIThread.Post(Refresh);
+        _onNetwork = _ => Dispatcher.UIThread.Post(Refresh);
+    }
+
+    internal void Attach(VpnController vpn) => _vpn = vpn;
+
+    private Window? Owner => TopLevel.GetTopLevel(this) as Window;
+
+    /// <summary>Called when the section is shown or put away: shows the current state and follows it only while on screen.</summary>
+    internal void SetActive(bool active)
+    {
+        if (_watching != null)
         {
-            Action<VpnState> onState = _ => Dispatcher.UIThread.Post(Refresh);
-            Action<NetworkStatus> onNetwork = _ => Dispatcher.UIThread.Post(Refresh);
-            node.VpnStateChanged += onState;
-            node.NetworkStatusChanged += onNetwork;
-            Closed += (_, _) => { node.VpnStateChanged -= onState; node.NetworkStatusChanged -= onNetwork; };
+            _watching.VpnStateChanged -= _onState;
+            _watching.NetworkStatusChanged -= _onNetwork;
+            _watching = null;
         }
+        if (!active || _vpn == null) return;
+        if (_vpn.Node is { } node)
+        {
+            node.VpnStateChanged += _onState;
+            node.NetworkStatusChanged += _onNetwork;
+            _watching = node;
+        }
+        Refresh();
     }
 
     private void Refresh()
     {
+        if (_vpn == null) return;
         var config = _vpn.LoadConfig();
         var state = _vpn.Node?.VpnState ?? VpnState.Disconnected;
 
@@ -51,38 +70,40 @@ public partial class VpnDialog : Window
         RemoveButton.IsEnabled = !_busy && _vpn.HasConfig;
     }
 
-    private void Close_Click(object? sender, RoutedEventArgs e) => Close();
-
     private async void Import_Click(object? sender, RoutedEventArgs e)
     {
-        var path = await Dialogs.PickOpenAsync(this, "Import WireGuard configuration", Dialogs.WireGuard, Dialogs.AllFiles);
+        if (_vpn == null || Owner is not { } owner) return;
+        var path = await Dialogs.PickOpenAsync(owner, "Import WireGuard configuration", Dialogs.WireGuard, Dialogs.AllFiles);
         if (path == null) return;
         try { _vpn.Import(path); }
         catch (Exception ex) when (ex is FormatException or System.IO.IOException or UnauthorizedAccessException)
         {
-            await Dialogs.MessageAsync(this, "Import WireGuard configuration", ex.Message);
+            await Dialogs.MessageAsync(owner, "Import WireGuard configuration", ex.Message);
         }
         Refresh();
     }
 
     private async void Toggle_Click(object? sender, RoutedEventArgs e)
     {
+        if (_vpn == null || Owner is not { } owner) return;
+        var vpn = _vpn;
         await RunAsync(async () =>
         {
-            if ((_vpn.Node?.VpnState ?? VpnState.Disconnected) == VpnState.Disconnected)
+            if ((vpn.Node?.VpnState ?? VpnState.Disconnected) == VpnState.Disconnected)
             {
                 StatusText.Text = "Connecting…";
-                if (!await _vpn.ConnectAsync())
-                    await Dialogs.MessageAsync(this, "VPN",
+                if (!await vpn.ConnectAsync())
+                    await Dialogs.MessageAsync(owner, "VPN",
                         "The VPN server did not answer. Yaparr will keep trying; check the server address and keys in the configuration.");
             }
-            else await _vpn.DisconnectAsync();
+            else await vpn.DisconnectAsync();
         });
     }
 
     private async void Remove_Click(object? sender, RoutedEventArgs e)
     {
-        if (!await Dialogs.ConfirmAsync(this, "VPN", "Remove the saved VPN configuration?")) return;
+        if (_vpn == null || Owner is not { } owner) return;
+        if (!await Dialogs.ConfirmAsync(owner, "VPN", "Remove the saved VPN configuration?")) return;
         await RunAsync(_vpn.RemoveAsync);
     }
 
@@ -93,7 +114,7 @@ public partial class VpnDialog : Window
         try { await action(); }
         catch (Exception ex) when (ex is System.Net.Sockets.SocketException or InvalidOperationException or FormatException)
         {
-            await Dialogs.MessageAsync(this, "VPN", ex.Message);
+            if (Owner is { } owner) await Dialogs.MessageAsync(owner, "VPN", ex.Message);
         }
         finally
         {

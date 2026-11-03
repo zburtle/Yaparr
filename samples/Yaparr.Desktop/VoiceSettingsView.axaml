@@ -1,9 +1,8 @@
-<Window xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        x:Class="Yaparr.Desktop.VoiceSettingsDialog"
-        Title="Voice settings" Icon="avares://Yaparr.Desktop/Assets/yaparr.png" SizeToContent="Height" Width="440" CanResize="False"
-        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
-    <StackPanel Margin="16" Spacing="4">
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Yaparr.Desktop.VoiceSettingsView"
+             Focusable="True">
+    <StackPanel Spacing="4">
         <TextBlock Text="Microphone" FontWeight="SemiBold" />
         <ComboBox x:Name="InputBox" HorizontalAlignment="Stretch" />
         <TextBlock Text="Speakers or headphones" FontWeight="SemiBold" Margin="0,8,0,0" />
@@ -33,9 +32,5 @@
         <Slider x:Name="SensitivityBox" Minimum="1" Maximum="100" />
         <TextBlock x:Name="HintText" Classes="muted small" TextWrapping="Wrap"
                    Text="The bar moves while you are in a voice channel." />
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,12,0,0">
-            <Button Content="Save" Classes="primary" MinWidth="80" HorizontalContentAlignment="Center" IsDefault="True" Click="Save_Click" />
-            <Button Content="Cancel" IsCancel="True" MinWidth="70" HorizontalContentAlignment="Center" Click="Cancel_Click" />
-        </StackPanel>
     </StackPanel>
-</Window>
+</UserControl>

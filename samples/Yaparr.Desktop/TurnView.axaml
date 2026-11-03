@@ -1,9 +1,7 @@
-﻿<Window xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        x:Class="Yaparr.Desktop.TurnDialog"
-        Title="TURN relay" Icon="avares://Yaparr.Desktop/Assets/yaparr.png" SizeToContent="Height" Width="460" CanResize="False"
-        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
-    <StackPanel Margin="16" Spacing="4">
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Yaparr.Desktop.TurnView">
+    <StackPanel Spacing="4">
         <TextBlock TextWrapping="Wrap" Margin="0,0,0,8"
                    Text="A TURN server relays Yaparr's traffic when two peers cannot connect directly (for example behind symmetric NAT). Messages stay end-to-end signed; the relay only forwards packets. Yaparr has no relay of its own: run one yourself, or import one that a friend shares with you." />
         <CheckBox x:Name="EnabledBox" Content="Use this TURN relay" />
@@ -15,13 +13,10 @@
         <TextBox x:Name="PasswordBox" PasswordChar="●" />
         <CheckBox x:Name="AlwaysBox" Margin="0,4,0,0" Content="Always relay (otherwise only when behind a NAT that blocks direct connections)" />
         <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+            <Button x:Name="SaveButton" Content="Save" Classes="primary" MinWidth="80" HorizontalContentAlignment="Center" Click="Save_Click" />
             <Button Content="Share this relay…" Click="Share_Click" />
             <Button Content="Import a relay…" Click="Import_Click" />
         </StackPanel>
         <TextBlock x:Name="StatusText" TextWrapping="Wrap" Foreground="Gray" />
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,12,0,0">
-            <Button x:Name="SaveButton" Content="Save" Classes="primary" MinWidth="80" HorizontalContentAlignment="Center" IsDefault="True" Click="Save_Click" />
-            <Button Content="Close" IsCancel="True" MinWidth="70" HorizontalContentAlignment="Center" Click="Close_Click" />
-        </StackPanel>
     </StackPanel>
-</Window>
+</UserControl>

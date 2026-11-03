@@ -49,14 +49,23 @@ public partial class MainWindow
     }
 
     // Everyone blocked, by name where it is known, so that someone met only in a direct chat can be unblocked too.
-    private async void BlockedPeople_Click(object? sender, RoutedEventArgs e)
+    private void RefreshBlocked()
     {
-        if (_node == null) { StatusText.Text = "Yaparr is still starting."; return; }
-        IReadOnlyList<(string Id, string Name)> People() => _node.BlockedPeers
-            .Select(p => (Id: p.Value, Name: _settings.BlockedPeers.FirstOrDefault(b => b.Id == p.Value)?.Name is { Length: > 0 } saved ? saved
-                : _settings.KnownPeers.FirstOrDefault(k => k.Id == p.Value)?.Name ?? ""))
-            .OrderBy(p => p.Name.Length == 0).ThenBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
-        await BlockedDialog.ShowAsync(this, People, id => _node.Unblock(new PeerId(id)));
+        if (_node == null) return;
+        var rows = _node.BlockedPeers
+            .Select(p => new BlockedRow(p.Value,
+                _settings.BlockedPeers.FirstOrDefault(b => b.Id == p.Value)?.Name is { Length: > 0 } saved ? saved
+                    : _settings.KnownPeers.FirstOrDefault(k => k.Id == p.Value)?.Name is { Length: > 0 } known ? known : "Unknown name"))
+            .OrderBy(r => r.Name == "Unknown name").ThenBy(r => r.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+        BlockedList.ItemsSource = rows;
+        BlockedEmpty.IsVisible = rows.Count == 0;
+    }
+
+    private void Unblock_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_node == null || (sender as Avalonia.Controls.Control)?.DataContext is not BlockedRow row) return;
+        _node.Unblock(new PeerId(row.Id));
+        RefreshBlocked();
     }
 
     private async void BlockPerson_Click(object? sender, RoutedEventArgs e) => await BlockAsync(PeopleList.SelectedItem);
@@ -97,7 +106,14 @@ public partial class MainWindow
             _data.SaveSettings(_settings);
         }
         RefreshPeers();
+        if (SettingsOverlay.IsVisible) RefreshBlocked();
         foreach (var conv in _roomConversations.Values) conv.VoiceMembersChanged();
         foreach (var (room, conv) in _roomConversations) RefreshVoice(conv, room, announce: false);
     }
+}
+
+/// <summary>One line of the blocked people in the settings.</summary>
+internal sealed record BlockedRow(string Id, string Name)
+{
+    public string ShortId => Id.Length > 12 ? Id[..12] + "…" : Id;
 }
