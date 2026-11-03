@@ -391,10 +391,16 @@ public sealed class ConversationVm : Observable
         var got = recipients.Where(r => r.Delivered).Select(r => r.Name).ToList();
         var waiting = recipients.Where(r => !r.Delivered).Select(r => r.Name).ToList();
         var lines = new List<string>();
-        if (got.Count > 0) lines.Add("Received by: " + string.Join(", ", got));
-        if (waiting.Count > 0) lines.Add("Not confirmed yet: " + string.Join(", ", waiting));
+        // In a very large room the full list would not fit in a tooltip: say how many, and name the ones still waiting first.
+        if (recipients.Count > MaxNamedRecipients) lines.Add($"Received by {got.Count} of {recipients.Count}");
+        else if (got.Count > 0) lines.Add("Received by: " + string.Join(", ", got));
+        if (waiting.Count > 0)
+            lines.Add("Not confirmed yet: " + string.Join(", ", waiting.Take(MaxNamedRecipients))
+                + (waiting.Count > MaxNamedRecipients ? $" and {waiting.Count - MaxNamedRecipients} more" : ""));
         return string.Join("\n", lines);
     }
+
+    private const int MaxNamedRecipients = 20;
 
     private string? _invite;
 

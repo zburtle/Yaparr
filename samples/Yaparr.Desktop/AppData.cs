@@ -23,6 +23,9 @@ public sealed class AppSettings
     public List<KnownPeer> KnownPeers { get; set; } = new();
     public string? DisplayName { get; set; }
     public bool VpnEnabled { get; set; }
+
+    /// <summary>The first-run connection guide has been shown, so it does not come up again by itself.</summary>
+    public bool ConnectionGuideShown { get; set; }
     public List<PrivateRoomSetting> PrivateRooms { get; set; } = new();
 
     /// <summary>For each text channel (the room's id, a slash and the channel's id), the time in milliseconds up to which it has been seen; what is newer is unread.</summary>

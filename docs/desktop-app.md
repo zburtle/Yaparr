@@ -31,6 +31,8 @@ The Windows taskbar button shows the number of unread messages (Notifications > 
 
 ## Diagnostics
 
+Help > "Connection guide" explains in plain words when the VPN and TURN options help and opens them. It also comes up once on the first start.
+
 Help > "Copy diagnostics" puts the version, system, network state and check, how each person is reached, the voice settings and the last 300 log lines on the clipboard. Names of people and rooms are left out, ids and addresses are shortened (`LogScrubber`) and keys and passwords removed.
 
 ## Logs
