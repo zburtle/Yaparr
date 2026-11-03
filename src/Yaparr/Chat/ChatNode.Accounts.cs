@@ -36,13 +36,27 @@ public sealed partial class ChatNode
     internal bool LearnAccount(StoredPresence beacon)
     {
         if (!SignedPresence.TryGetAccount(beacon, out var device, out var account)) return false;
-        return !_accounts.TryGetValue(device, out var known) || known != account ? (_accounts[device] = account) == account : false;
+        if (_accounts.TryGetValue(device, out var known) && known == account) return false;
+        _accounts[device] = account;
+        AccountLearned?.Invoke(device);
+        return true;
     }
 
     private void LearnAccount(PeerConnection conn)
     {
-        if (conn.RemoteId is { } device && conn.RemoteAccount is { } account && account != device) _accounts[device] = account;
+        if (conn.RemoteId is { } device && conn.RemoteAccount is { } account && account != device
+            && (!_accounts.TryGetValue(device, out var known) || known != account))
+        {
+            _accounts[device] = account;
+            AccountLearned?.Invoke(device);
+        }
     }
+
+    /// <summary>
+    /// Raised when it becomes known which person a device belongs to. Messages from a device can arrive before that is known, so a
+    /// message that looked like someone else's may turn out to be yours (<see cref="IsMyDevice"/>).
+    /// </summary>
+    public event Action<PeerId>? AccountLearned;
 
     /// <summary>Your other devices that are connected right now.</summary>
     public IReadOnlyCollection<PeerInfo> MyOtherDevices =>

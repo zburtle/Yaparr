@@ -299,6 +299,7 @@ public partial class MainWindow : Window
         _node.VpnStateChanged += _ => UI(UpdateStatus);
         _node.BlockChanged += (id, blocked) => UI(() => OnBlockChanged(id, blocked));
         _node.PeerRenamed += p => UI(() => OnPeerRenamed(p));
+        _node.AccountLearned += _ => UI(ClaimOwnMessages);
         _node.SyncedRoomChanged += OnSyncedRoomChanged;
         _node.DisplayNameChanged += OnDisplayNameChanged;
         _node.PeerConnected += p => UI(() => { Remember(p); RefreshPeers(); UpdateStatus(); });
@@ -735,6 +736,16 @@ public partial class MainWindow : Window
             tcs.SetResult();
         });
         return tcs.Task;
+    }
+
+    // A message from one of your devices can arrive before this device knows that the device is yours; it moves to your side once it does.
+    private void ClaimOwnMessages()
+    {
+        if (_node == null) return;
+        foreach (var conv in _conversations)
+            foreach (var vm in conv.AllMessages)
+                if (!vm.IsMine && vm.Source is { } m && _node.IsMyDevice(m.From.Id))
+                    vm.ClaimAsMine(_node.Id != m.From.Id ? "from your other device " + m.From.Id.Short : "");
     }
 
     private MessageVm ToVm(ChatMessage m)
