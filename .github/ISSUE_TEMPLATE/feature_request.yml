@@ -1,0 +1,20 @@
+name: Feature request
+description: Something Yaparr could do, or do better.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: wanted
+    attributes:
+      label: What would you like
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How could it work
+      description: Optional. Ideas, or something you have seen elsewhere that works well.
+  - type: markdown
+    attributes:
+      value: |
+        Yaparr has no server of ours and no accounts, so some ideas fit it better than others. See the [backlog](https://github.com/zburtle/Yaparr/issues) first, the idea may already be there.

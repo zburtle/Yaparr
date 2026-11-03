@@ -243,6 +243,7 @@
             <MenuItem Header="_Help">
                 <MenuItem Header="_Connection guide…" Click="ConnectionGuide_Click" />
                 <MenuItem Header="Check for _updates…" Click="CheckUpdates_Click" />
+                <MenuItem Header="_Report a problem…" Click="ReportProblem_Click" />
                 <MenuItem Header="Copy _diagnostics" Click="CopyDiagnostics_Click" />
                 <MenuItem Header="Open _log file" Click="OpenLog_Click" />
                 <MenuItem Header="Open log _folder" Click="OpenLogFolder_Click" />

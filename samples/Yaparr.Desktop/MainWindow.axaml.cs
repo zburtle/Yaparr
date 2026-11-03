@@ -185,6 +185,34 @@ public partial class MainWindow : Window
         }
     }
 
+    // Opens the bug report form on GitHub with the version and system filled in. The diagnostics are too long for a link, so they go
+    // on the clipboard to be pasted into the form.
+    private async void ReportProblem_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_node == null) { StatusText.Text = "Yaparr is still starting."; return; }
+        StatusText.Text = "Collecting diagnostics…";
+        try
+        {
+            var text = await DiagnosticsReport.BuildAsync(_node, _settings, _log, _data.Directory, _cts.Token);
+            bool copied = await Dialogs.CopyAsync(this, text);
+            var link = Updater.IssueFormUrl("bug_report.yml", Updater.CurrentVersion.ToString(), System.Runtime.InteropServices.RuntimeInformation.OSDescription);
+            if (!await Launcher.LaunchUriAsync(new Uri(link)))
+            {
+                await Dialogs.MessageAsync(this, "Report a problem", "Open " + link + " in a browser to report it.");
+                return;
+            }
+            StatusText.Text = copied
+                ? "The bug report is open in your browser. Paste the diagnostics (already copied) into its Diagnostics box and read them first."
+                : "The bug report is open in your browser. The diagnostics could not be copied; use Help > Copy diagnostics and paste them in.";
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            _log.Write("could not start a problem report: " + ex);
+            StatusText.Text = "Couldn't start the report: " + ex.Message;
+        }
+    }
+
     private async void About_Click(object? sender, RoutedEventArgs e) =>
         await Dialogs.MessageAsync(this, "About Yaparr", $"Yaparr {Updater.CurrentVersion}\nServerless peer-to-peer chat over the BitTorrent DHT.");
 

@@ -19,4 +19,12 @@ public class LinuxDesktopTests
         if (!OperatingSystem.IsWindows() || IntPtr.Size != 8) return;
         Assert.Equal(976, WindowsToast.RecordSize);
     }
+
+    [Fact]
+    public void The_bug_report_link_names_the_form_and_escapes_what_it_fills_in()
+    {
+        var link = Updater.IssueFormUrl("bug_report.yml", "1.2.3", "Windows 11 (x64) & more");
+        Assert.StartsWith("https://github.com/", link);
+        Assert.Contains("/issues/new?template=bug_report.yml&version=1.2.3&system=Windows%2011%20%28x64%29%20%26%20more", link);
+    }
 }
