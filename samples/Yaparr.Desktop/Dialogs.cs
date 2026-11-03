@@ -15,6 +15,11 @@ public static class Dialogs
     public static async Task<bool> ConfirmAsync(Window owner, string title, string text, string yes = "Yes", string no = "No") =>
         await ChoiceAsync(owner, title, text, yes, no) == yes;
 
+    // Wide enough for the buttons to stand in one row (about 8 pixels a letter and 32 of padding each, with the gaps and the margins),
+    // but no wider than a dialog should be; beyond that the row wraps.
+    private static double WidthFor(string[] buttons) =>
+        Math.Clamp(buttons.Sum(b => Math.Max(80, b.Length * 8 + 32)) + (buttons.Length - 1) * 8 + 32 + 16, 440, 620);
+
     public static async Task<string?> ChoiceAsync(Window owner, string title, string text, params string[] buttons)
     {
         string? result = null;
@@ -23,7 +28,7 @@ public static class Dialogs
         var dialog = new Window
         {
             Title = title,
-            Width = 440,
+            Width = WidthFor(buttons),
             SizeToContent = SizeToContent.Height,
             CanResize = false,
             ShowInTaskbar = false,
