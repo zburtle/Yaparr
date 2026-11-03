@@ -91,7 +91,7 @@ public partial class MainWindow
             });
             _sharer = sharer;
             _sharerConv = conv;
-            _sharerStats = new SharerStatsWindow(sharer, dialog.Result.Fps);
+            _sharerStats = new SharerStatsWindow(sharer, dialog.Result.Fps, room);
             _sharerStats.Show(this);
             conv.IsSharing = true;
             conv.Add(MessageVm.System($"You are sharing your {what}. Everyone in the room can watch it."));

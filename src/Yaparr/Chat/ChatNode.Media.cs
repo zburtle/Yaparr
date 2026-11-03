@@ -43,6 +43,8 @@ internal sealed class MediaGroup
     public readonly Dictionary<PeerId, MapNode> Map = new();
     /// <summary>Root only: when the map was last checked against the members, and where in it that check has got to.</summary>
     public long AuditAt;
+    /// <summary>Root only: who asked to join and when (first, latest), until they are attached. Shows those who keep asking without getting in.</summary>
+    public readonly Dictionary<PeerId, (long First, long Last)> JoinAsked = new();
     public int AuditCursor;
     public Action<MediaPacket>? Deliver;
 
@@ -159,6 +161,15 @@ public sealed class MediaSource : IDisposable
     public event Action? KeyFrameRequested;
 
     public MediaStatus Status => _node.StatusOf(_group);
+
+    /// <summary>Everyone who is watching now, however far down the tree they sit, as far as the reports up the tree have said.</summary>
+    public IReadOnlyList<PeerId> Viewers => _node.ViewersOf(_group);
+
+    /// <summary>
+    /// People who keep asking to join but are not getting in, for at least <paramref name="after"/> (the stream cannot reach them or
+    /// they cannot reach any place in the tree).
+    /// </summary>
+    public IReadOnlyList<PeerId> Unreached(TimeSpan after) => _node.UnreachedViewers(_group, after);
 
     public void Dispose()
     {
@@ -313,6 +324,23 @@ public sealed partial class ChatNode
     }
 
     public MediaStatus? GetMediaStatus(ChatRoom room, string groupId) => room.Media.TryGetValue(groupId, out var g) ? StatusOf(g) : null;
+
+    internal IReadOnlyList<PeerId> ViewersOf(MediaGroup g)
+    {
+        lock (g.Gate) return g.Map.Keys.Concat(g.Children.Keys).Distinct().OrderBy(k => k.Value, StringComparer.Ordinal).ToList();
+    }
+
+    // Someone who asked a few times over the last while and is neither in the picture of the tree nor a direct child.
+    internal IReadOnlyList<PeerId> UnreachedViewers(MediaGroup g, TimeSpan after)
+    {
+        long now = Environment.TickCount64;
+        lock (g.Gate)
+        {
+            foreach (var gone in g.JoinAsked.Where(kv => now - kv.Value.Last > 30_000).Select(kv => kv.Key).ToList()) g.JoinAsked.Remove(gone);
+            return g.JoinAsked.Where(kv => now - kv.Value.First >= after.TotalMilliseconds && !g.Map.ContainsKey(kv.Key) && !g.Children.ContainsKey(kv.Key))
+                .Select(kv => kv.Key).OrderBy(k => k.Value, StringComparer.Ordinal).ToList();
+        }
+    }
 
     internal MediaStatus StatusOf(MediaGroup g)
     {
@@ -742,6 +770,8 @@ public sealed partial class ChatNode
         {
             var reach = (m.Reach ?? Array.Empty<string>()).Take(MaxReach).Where(IsValidPeerId).Select(x => new PeerId(x)).ToHashSet();
             place = ChoosePlace(g, peer.Id, exclude, reach);
+            long now = Environment.TickCount64;
+            g.JoinAsked[peer.Id] = (g.JoinAsked.TryGetValue(peer.Id, out var asked) ? asked.First : now, now);
             // No room, and the one asking can pass the stream on: if the sharer's own places are held by members who
             // cannot, one of them steps aside. It asks again and is placed under someone who can carry it.
             if (place == null && m.Cap > 0 && !g.Children.ContainsKey(peer.Id))
@@ -929,7 +959,7 @@ public sealed partial class ChatNode
             up = g.Parent;
             if (g.IsRoot)
             {
-                if (body.Add) g.Map[child] = new MapNode(parent, Math.Clamp(body.Cap, 0, 64));
+                if (body.Add) { g.Map[child] = new MapNode(parent, Math.Clamp(body.Cap, 0, 64)); g.JoinAsked.Remove(child); }
                 // A late removal must not undo a newer placement.
                 else if (g.Map.TryGetValue(child, out var node) && node.Parent == parent) g.Map.Remove(child);
                 return;

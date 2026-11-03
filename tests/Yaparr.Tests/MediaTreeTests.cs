@@ -224,7 +224,7 @@ public class MediaTreeTests
     [Fact]
     public async Task In_a_two_way_stream_every_member_hears_every_other_member_but_not_themselves()
     {
-        using var c = await Cluster.StartAsync(7, fanout: 2, rootFanout: 2);
+        using var c = await MediaTreeTests.Cluster.StartAsync(7, fanout: 2, rootFanout: 2);
         using var source = c.Root.StartMedia(c.Rooms[0], "chatter", "two-way", signed: false, upstream: true);
         var views = await c.WatchAllAsync(source.Info.Id);
         try
@@ -426,6 +426,31 @@ public class VoiceTreeTests
         await Task.Delay(3000);
         Assert.Empty(ra.Media);
         Assert.Empty(rb.Media);
+    }
+
+    [Fact]
+    public async Task The_sharer_can_list_everyone_watching_and_those_who_keep_asking_without_getting_in()
+    {
+        using var c = await MediaTreeTests.Cluster.StartAsync(7, fanout: 2, rootFanout: 2);
+        using var source = c.Root.StartMedia(c.Rooms[0], "screen", "screen");
+        var views = await c.WatchAllAsync(source.Info.Id);
+        try
+        {
+            var watchers = c.Nodes.Skip(1).Select(n => n.Id).OrderBy(i => i.Value, StringComparer.Ordinal).ToList();
+            await TestUtil.WaitFor(() => source.Viewers.SequenceEqual(watchers), 10_000);
+            Assert.Empty(source.Unreached(TimeSpan.Zero));
+
+            // Someone who asked to join twelve seconds ago and has not been placed, and someone who only just asked.
+            var group = c.Rooms[0].Media.Values.Single(g => g.Id == source.Info.Id);
+            var waiting = new PeerId(new string('a', 64));
+            var fresh = new PeerId(new string('b', 64));
+            long now = Environment.TickCount64;
+            lock (group.Gate) { group.JoinAsked[waiting] = (now - 12_000, now - 1000); group.JoinAsked[fresh] = (now - 1000, now - 500); }
+
+            Assert.Equal(new[] { waiting }, source.Unreached(TimeSpan.FromSeconds(10)));
+            Assert.Equal(new[] { waiting, fresh }, source.Unreached(TimeSpan.Zero));
+        }
+        finally { foreach (var v in views) v.Dispose(); }
     }
 
     [Fact]
