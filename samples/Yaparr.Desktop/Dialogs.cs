@@ -18,7 +18,8 @@ public static class Dialogs
     public static async Task<string?> ChoiceAsync(Window owner, string title, string text, params string[] buttons)
     {
         string? result = null;
-        var panel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 8 };
+        // Wraps onto a second line when the labels do not fit side by side, instead of running off the edge.
+        var panel = new WrapPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, ItemSpacing = 8, LineSpacing = 8 };
         var dialog = new Window
         {
             Title = title,
