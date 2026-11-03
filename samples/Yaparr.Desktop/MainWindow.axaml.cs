@@ -207,9 +207,7 @@ public partial class MainWindow : Window
                 return;
             }
 
-            var notes = string.IsNullOrWhiteSpace(update.Notes) ? "" : $"\n\n{update.Notes.Trim()}";
-            var answer = await Dialogs.ConfirmAsync(this, "Update available",
-                $"Yaparr {update.Version} is available (you have {Updater.CurrentVersion}). Update now?{notes}");
+            var answer = await UpdateDialog.AskAsync(this, update.Version, Updater.CurrentVersion, update.Notes);
             if (!answer) return;
 
             // A hundred megabytes is a while: show how far it is, and let it be cancelled.
