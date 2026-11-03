@@ -427,4 +427,29 @@ public class VoiceTreeTests
         Assert.Empty(ra.Media);
         Assert.Empty(rb.Media);
     }
+
+    [Fact]
+    public async Task The_sharer_corrects_its_picture_of_the_tree_by_asking_the_members()
+    {
+        using var c = await MediaTreeTests.Cluster.StartAsync(6, fanout: 2, rootFanout: 2);
+        using var source = c.Root.StartMedia(c.Rooms[0], "screen", "screen");
+        var views = await c.WatchAllAsync(source.Info.Id);
+        try
+        {
+            var group = c.Rooms[0].Media.Values.Single(g => g.Id == source.Info.Id);
+            var victim = views[0];
+            var truth = victim.Status.Parent!.Value;
+            var stranger = c.Nodes[^1].Id == truth ? c.Nodes[^2].Id : c.Nodes[^1].Id;
+
+            // A report that put a member under someone it does not sit under, and one that invented a member nobody has heard of.
+            var invented = new PeerId(new string('e', 64));
+            lock (group.Gate) { group.Map[c.Nodes[1].Id] = new MapNode(stranger, 2); group.Map[invented] = new MapNode(c.Root.Id, 2); }
+
+            await TestUtil.WaitFor(() =>
+            {
+                lock (group.Gate) return group.Map[c.Nodes[1].Id].Parent == views[0].Status.Parent && !group.Map.ContainsKey(invented);
+            }, 10_000);
+        }
+        finally { foreach (var v in views) v.Dispose(); }
+    }
 }

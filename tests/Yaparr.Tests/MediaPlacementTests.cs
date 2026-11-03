@@ -40,4 +40,42 @@ public class MediaPlacementTests
         var g = Group(out _, out var a, out var b);
         Assert.Equal(a, ChatNode.ChoosePlace(g, P("j"), new HashSet<PeerId> { b }, new HashSet<PeerId> { b }));
     }
+
+    [Fact]
+    public void What_a_member_says_about_itself_replaces_what_the_root_was_told()
+    {
+        var g = Group(out var root, out var a, out var b);
+
+        ChatNode.ReconcileMap(g, b, root, 1);                       // b says it sits under the root, but the root never took it on
+        Assert.False(g.Map.ContainsKey(b));
+
+        ChatNode.ReconcileMap(g, a, null, 0);                       // a says it is not attached at all
+        Assert.False(g.Map.ContainsKey(a));
+
+        g.Children[a] = new ChildLink { Cap = 2 };
+        ChatNode.ReconcileMap(g, a, root, 2);                       // a is a child of the root after all
+        Assert.Equal(new MapNode(root, 2), g.Map[a]);
+
+        ChatNode.ReconcileMap(g, b, a, 500);                        // b under a again; the place count is kept sane
+        Assert.Equal(new MapNode(a, 64), g.Map[b]);
+
+        ChatNode.ReconcileMap(g, a, a, 1);                          // nobody sits under themselves
+        Assert.False(g.Map.ContainsKey(a));
+        ChatNode.ReconcileMap(g, root, a, 1);                       // and the sharer is never moved
+        Assert.False(g.Map.ContainsKey(root));
+    }
+
+    [Fact]
+    public void A_member_the_map_puts_under_the_root_without_the_root_having_taken_it_on_is_dropped()
+    {
+        var g = Group(out var root, out var a, out var b);
+        g.Map[P("liar")] = new MapNode(root, 3);
+        g.Children[a] = new ChildLink { Cap = 2 };
+
+        ChatNode.DropFalseRootChildren(g);
+
+        Assert.False(g.Map.ContainsKey(P("liar")));
+        Assert.True(g.Map.ContainsKey(a));
+        Assert.True(g.Map.ContainsKey(b));
+    }
 }

@@ -97,6 +97,9 @@ public sealed class ChatNodeOptions
     /// <summary>How long a parent or child of a stream may stay silent before it is given up. Pings go out four times in this time.</summary>
     public TimeSpan MediaEdgeTimeout { get; init; } = TimeSpan.FromSeconds(3);
 
+    /// <summary>How often the sharer of a stream asks a few members who they sit under, to check what the reports up the tree told it.</summary>
+    public TimeSpan MediaAuditInterval { get; init; } = TimeSpan.FromSeconds(10);
+
     /// <summary>
     /// A voice channel with this many people (counting you) or more stops using a connection between every pair and
     /// passes the audio along a tree instead.

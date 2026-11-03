@@ -41,6 +41,9 @@ internal sealed class MediaGroup
     public readonly Dictionary<PeerId, ChildLink> Children = new();
     /// <summary>Root only: who sits under whom, learned from the reports that travel up the tree.</summary>
     public readonly Dictionary<PeerId, MapNode> Map = new();
+    /// <summary>Root only: when the map was last checked against the members, and where in it that check has got to.</summary>
+    public long AuditAt;
+    public int AuditCursor;
     public Action<MediaPacket>? Deliver;
 
     /// <summary>Called at the root when a viewer needs a new key frame.</summary>
@@ -554,6 +557,8 @@ public sealed partial class ChatNode
             case "leave": OnMediaLeave(peer, g); break;
             case "ping": OnMediaPing(peer, g); break;
             case "link": OnMediaLink(peer, g, m); break;
+            case "audit": OnMediaAudit(peer, g); break;
+            case "here": OnMediaHere(peer, g, m); break;
             case "key": OnMediaKey(peer, g); break;
             case "nack": OnMediaNack(peer, g, m); break;
             case "replay": OnMediaReplay(peer, g, m); break;
@@ -933,6 +938,61 @@ public sealed partial class ChatNode
         if (up is { } next) SendMedia(next, g, new WireMedia { Op = "link", Parent = body.Parent, Child = body.Child, Cap = body.Cap, Add = body.Add });
     }
 
+    // The reports up the tree are second-hand: a member can only mislead where newcomers are placed, but the root does not have to
+    // take it. Every so often it asks a few members it is connected to who they sit under, and what they say about themselves wins.
+    private const int AuditBatch = 8;
+
+    private void AuditMap(MediaGroup g, long now)
+    {
+        List<PeerId> ask;
+        lock (g.Gate)
+        {
+            if (now - g.AuditAt < (long)_options.MediaAuditInterval.TotalMilliseconds) return;
+            g.AuditAt = now;
+            DropFalseRootChildren(g);
+            if (g.Map.Count == 0) return;
+            var members = g.Map.Keys.OrderBy(k => k.Value, StringComparer.Ordinal).ToList();
+            ask = Enumerable.Range(0, Math.Min(AuditBatch, members.Count)).Select(i => members[(g.AuditCursor + i) % members.Count]).ToList();
+            g.AuditCursor = (g.AuditCursor + ask.Count) % members.Count;
+        }
+        foreach (var id in ask) SendMedia(id, g, new WireMedia { Op = "audit" });
+    }
+
+    // The root knows its own children first-hand: a member the map puts directly under it, that it did not take on, is not there.
+    internal static void DropFalseRootChildren(MediaGroup g)
+    {
+        foreach (var (id, node) in g.Map.ToList())
+            if (node.Parent == g.Info.Root && !g.Children.ContainsKey(id)) g.Map.Remove(id);
+    }
+
+    // The root asks: say who you sit under.
+    private void OnMediaAudit(PeerState peer, MediaGroup g)
+    {
+        if (g.IsRoot || peer.Id != g.Info.Root) return;
+        string parent;
+        lock (g.Gate) parent = g.Joined && g.Parent is { } p ? p.Value : "";
+        SendMedia(peer.Id, g, new WireMedia { Op = "here", Parent = parent, Cap = FanoutOf(g) });
+    }
+
+    private void OnMediaHere(PeerState peer, MediaGroup g, WireMedia m)
+    {
+        if (!g.IsRoot) return;
+        PeerId? parent = IsValidPeerId(m.Parent ?? "") ? new PeerId(m.Parent!) : null;
+        lock (g.Gate) ReconcileMap(g, peer.Id, parent, m.Cap);
+    }
+
+    /// <summary>
+    /// Sets what the root believes about a member to what the member itself says: not attached (<paramref name="parent"/> null)
+    /// takes it off the map, and a different parent replaces the old one. Someone who says they sit directly under the sharer
+    /// has to be one of the sharer's own children.
+    /// </summary>
+    internal static void ReconcileMap(MediaGroup g, PeerId member, PeerId? parent, int cap)
+    {
+        if (member == g.Info.Root) return;
+        if (parent is not { } p || p == member || (p == g.Info.Root && !g.Children.ContainsKey(member))) { g.Map.Remove(member); return; }
+        g.Map[member] = new MapNode(p, Math.Clamp(cap, 0, 64));
+    }
+
     // ---- upkeep -----------------------------------------------------------------------------
 
     private void MaintainMedia(ChatRoom room, long now)
@@ -948,6 +1008,7 @@ public sealed partial class ChatNode
                 continue;
             }
             if (g.IsRoot && now - g.LastAnnouncedAt >= AnnounceIntervalOf(g).TotalMilliseconds) SendMediaAnnounce(room, g, active: true);
+            if (g.IsRoot) AuditMap(g, now);
 
             List<PeerId> deadChildren = new(), neighbours;
             PeerId? deadParent = null;

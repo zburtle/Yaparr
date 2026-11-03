@@ -85,10 +85,10 @@ internal static class SignedMedia
 /// <summary>The control messages between neighbours in a group's tree. They travel on the chat connection. Ops: join, place, attach, ok, refuse, leave, ping, link, key, nack.</summary>
 internal sealed class WireMedia
 {
-    /// <summary>join, place, attach, ok, refuse, leave, ping or link.</summary>
+    /// <summary>join, place, attach, ok, refuse, leave, ping, link, audit or here.</summary>
     public string Op { get; set; } = "";
     public string Group { get; set; } = "";
-    /// <summary>For place: the member to attach to (empty if there is no room). For link: the member that took the child on.</summary>
+    /// <summary>For place: the member to attach to (empty if there is no room). For link: the member that took the child on. For here: who the sender sits under (empty if nobody).</summary>
     public string? Parent { get; set; }
     /// <summary>For link: the member that attached or detached.</summary>
     public string? Child { get; set; }
