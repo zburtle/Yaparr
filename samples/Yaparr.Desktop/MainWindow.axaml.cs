@@ -883,7 +883,7 @@ public partial class MainWindow : Window
         }
         else if (!message.IsMine) conv.NoteUnread(message.Channel, message.Highlight);
         // What you wrote on another device needs no announcing.
-        if (announce && !message.IsMine) NotifyMessage(conv);
+        if (announce && !message.IsMine) NotifyMessage(conv, message);
     }
 
     // A direct conversation you are looking at is read on all of your devices.

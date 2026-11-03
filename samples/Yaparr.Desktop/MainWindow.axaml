@@ -229,6 +229,10 @@
                 <MenuItem x:Name="FlashItem" Header="_Flash the taskbar button" ToggleType="CheckBox" />
                 <MenuItem x:Name="TaskbarCountItem" Header="Show the _unread count on the taskbar" ToggleType="CheckBox" />
                 <MenuItem x:Name="MessageSoundMenu" Header="_Message sound" />
+                <MenuItem x:Name="PopupsItem" Header="Show _pop-ups when the window is in the background" ToggleType="CheckBox" IsVisible="False" />
+                <MenuItem x:Name="MentionsOnlyItem" Header="Only for _mentions, replies and direct messages" ToggleType="CheckBox" />
+                <Separator />
+                <MenuItem Header="Go to the first unread m_ention" Click="GoToFirstMention_Click" />
             </MenuItem>
             <MenuItem Header="_Network">
                 <MenuItem Header="_VPN…" Click="Vpn_Click" />
