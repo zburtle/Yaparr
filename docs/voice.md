@@ -13,7 +13,7 @@ Every room has a voice channel you can join and leave whenever you like, with no
 
 ## Push-to-talk
 
-Voice settings has "Push to talk" and a key to hold. On Windows a low-level keyboard hook (`GlobalKeyHook`) sees the key while another program is in front (not for programs running as administrator); elsewhere it works while the Yaparr window is in front.
+Voice settings has "Push to talk" and a key or mouse button to hold: any keyboard key, or the middle, back (button 4) or forward (button 5) button of the mouse (the left and right buttons are not offered). On Windows a low-level keyboard or mouse hook (`GlobalKeyHook`, `GlobalMouseHook`) sees it while another program is in front (not for programs running as administrator); the click or key still reaches that program. Elsewhere it works while the Yaparr window is in front. "Play a short tick when the key goes down" (off by default, and independent of the Notifications sounds) plays a 35 ms tick on the speakers when the key or button goes down, so you know the microphone is open without looking.
 
 ## Volume per person
 
