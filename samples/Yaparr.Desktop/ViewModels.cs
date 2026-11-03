@@ -44,10 +44,12 @@ public sealed class MessageVm : Observable
     private byte[]? _image;
     private AttachmentState? _state;
     private long _received;
+    private bool _isMine;
+    private string _deviceNote = "";
 
     public MessageVm(DateTimeOffset time, string sender, string text, bool isCatchUp = false, bool isSystem = false, bool isMine = false, string? id = null, Attachment? attachment = null)
     {
-        Time = time; Sender = sender; Text = text; IsCatchUp = isCatchUp; IsSystem = isSystem; IsMine = isMine; Id = id; Attachment = attachment;
+        Time = time; Sender = sender; Text = text; IsCatchUp = isCatchUp; IsSystem = isSystem; _isMine = isMine; Id = id; Attachment = attachment;
     }
 
     public Attachment? Attachment { get; }
@@ -90,8 +92,21 @@ public sealed class MessageVm : Observable
     public string Text { get; }
     public bool IsCatchUp { get; }
     public bool IsSystem { get; }
-    public bool IsMine { get; }
+    public bool IsMine => _isMine;
     public string? Id { get; }
+
+    /// <summary>
+    /// A message shows as yours once it is known to come from one of your own devices. That can be learned after the message arrived
+    /// (the proof that a device is yours travels with its presence, not with its messages), so it is set later.
+    /// </summary>
+    public void ClaimAsMine(string deviceNote)
+    {
+        if (_isMine) return;
+        _isMine = true;
+        _deviceNote = deviceNote;
+        foreach (var name in new[] { nameof(IsMine), nameof(ShowSender), nameof(IsOther), nameof(Kind), nameof(Status), nameof(HasStatus), nameof(IsFailed), nameof(CanRetry), nameof(DeviceNote), nameof(TimeText), nameof(Display), nameof(Highlight) })
+            Raise(name);
+    }
 
     /// <summary>What names this message, for a reply to point at (<see cref="ChatMessage.Key"/>). Null for notices.</summary>
     public string? Key { get; init; }
@@ -177,7 +192,7 @@ public sealed class MessageVm : Observable
     public string TimeText => Time.LocalDateTime.ToString("HH:mm") + (DeviceNote.Length > 0 ? "  ·  " + DeviceNote : "");
 
     /// <summary>For a message you sent from another of your devices: which one.</summary>
-    public string DeviceNote { get; init; } = "";
+    public string DeviceNote { get => _deviceNote; init => _deviceNote = value; }
     public string FullTime => Time.LocalDateTime.ToString("dddd, MMMM d, yyyy  HH:mm:ss");
 
     private bool _showDay;
@@ -422,6 +437,9 @@ public sealed class ConversationVm : Observable
     }
 
     public ObservableCollection<MessageVm> Messages { get; } = new();
+
+    /// <summary>Every message of the conversation, including those of channels that are not on screen.</summary>
+    public IEnumerable<MessageVm> AllMessages => Messages.Concat(_stored.Values.SelectMany(l => l));
 
     public int Unread
     {

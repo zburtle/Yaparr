@@ -123,6 +123,25 @@ public class MultiDeviceTests
     }
 
     [Fact]
+    public async Task Learning_that_a_device_is_yours_is_announced_so_earlier_messages_can_move_to_your_side()
+    {
+        var hub = new InMemoryDiscoveryHub();
+        using var firstId = PeerIdentity.Generate();
+        using var secondId = firstId.CreateDevice();
+        using var first = TestUtil.NewNode(hub, "alice", identity: firstId);
+        using var second = TestUtil.NewNode(hub, "alice", identity: secondId);
+        var learned = new List<PeerId>();
+        first.AccountLearned += learned.Add;
+
+        await first.JoinRoomAsync("lobby");
+        await second.JoinRoomAsync("lobby");
+        await TestUtil.WaitFor(() => first.IsMyDevice(second.Id));
+        await TestUtil.WaitFor(() => learned.Count > 0);
+
+        Assert.Equal(new[] { second.Id }, learned.Distinct());
+    }
+
+    [Fact]
     public async Task A_message_from_either_device_reaches_the_other_device_and_the_rest_of_the_room()
     {
         using var d = await Devices.StartAsync();
