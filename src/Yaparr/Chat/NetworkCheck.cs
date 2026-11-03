@@ -20,6 +20,28 @@ public sealed record NetworkCheckReport(IReadOnlyList<CheckItem> Items)
     };
 }
 
+/// <summary>
+/// How connections end up. The first three are the people reached now; the others count since the node started (connections made
+/// each way, connections moved off the shared server onto a member, and standby paths that took over from a lost one).
+/// </summary>
+public sealed record ConnectionPaths(
+    int Direct, int ViaMember, int ViaServer,
+    long MadeDirect, long MadeViaMember, long MadeViaServer,
+    long MovedOffServer, long StandbyTookOver)
+{
+    public int Total => Direct + ViaMember + ViaServer;
+
+    /// <summary>One sentence for the people reached now, such as "6 directly, 2 through other members, 1 through the shared server".</summary>
+    public string Describe()
+    {
+        var parts = new List<string>();
+        if (Direct > 0) parts.Add(Total == Direct ? "all directly" : $"{Direct} directly");
+        if (ViaMember > 0) parts.Add($"{ViaMember} through other members");
+        if (ViaServer > 0) parts.Add($"{ViaServer} through the shared server");
+        return parts.Count == 0 ? "nobody" : string.Join(", ", parts);
+    }
+}
+
 public enum PeerLink
 {
     /// <summary>Not connected and not being retried.</summary>
@@ -39,6 +61,8 @@ public enum PeerLink
 public sealed partial class ChatNode
 {
     private long _lastFoundAt;
+
+    private static string Capitalise(string text) => text.Length == 0 ? text : char.ToUpperInvariant(text[0]) + text[1..];
 
     /// <summary>How Yaparr currently reaches one person.</summary>
     public PeerLink GetLink(PeerId peer)
@@ -151,9 +175,18 @@ public sealed partial class ChatNode
             bool foundRecently = _lastFoundAt != 0 && Environment.TickCount64 - _lastFoundAt < 120_000;
             if (connected > 0)
             {
-                int relayed = _peers.Values.Count(p => p.Connection.IsRelayed);
-                items.Add(new(CheckLevel.Ok, $"Connected to {connected} {(connected == 1 ? "person" : "people")}",
-                    relayed > 0 ? $"{relayed} through other members." : "All directly."));
+                var paths = GetConnectionPaths();
+                items.Add(new(CheckLevel.Ok, $"Connected to {connected} {(connected == 1 ? "person" : "people")}", Capitalise(paths.Describe()) + "."));
+                if (paths.ViaServer > 0)
+                    items.Add(new(CheckLevel.Info, "Some connections use the shared server",
+                        $"{paths.ViaServer} of {paths.Total} connections run through the shared server, whose bandwidth is limited. "
+                        + (paths.MovedOffServer > 0 ? $"{paths.MovedOffServer} were moved onto a member since Yaparr started." : "Members take over a connection from it when they can.")));
+                else if (paths.MovedOffServer > 0)
+                    items.Add(new(CheckLevel.Ok, "Members carry connections for the shared server",
+                        $"{paths.MovedOffServer} {(paths.MovedOffServer == 1 ? "connection was" : "connections were")} moved from the shared server onto a member since Yaparr started."));
+                items.Add(new(CheckLevel.Info, "Connections since Yaparr started",
+                    $"{paths.MadeDirect} direct, {paths.MadeViaMember} through members, {paths.MadeViaServer} through the shared server"
+                    + (paths.StandbyTookOver > 0 ? $"; a standby path took over {paths.StandbyTookOver} {(paths.StandbyTookOver == 1 ? "time" : "times")}." : ".")));
             }
             else if (foundRecently)
                 items.Add(new(CheckLevel.Warning, "People were found but none connected",
