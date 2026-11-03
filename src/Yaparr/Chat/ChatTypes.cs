@@ -60,7 +60,7 @@ public sealed record ChatMessage(PeerInfo From, string? Room, string Id, string 
     public static string KeyOf(PeerId sender, string id) => SignedMessage.KeyOf(sender.Value, id);
 
     /// <summary>The words, which message this answers and whom it names. <see cref="Text"/> is the same thing as it was sent.</summary>
-    public MessageParts Parts => Attachment != null ? new MessageParts(Text, null, Array.Empty<Mention>()) : MessageEnvelope.Parse(Text);
+    public MessageParts Parts => Attachment != null ? new MessageParts(Text, Attachment.ReplyTo, Array.Empty<Mention>()) : MessageEnvelope.Parse(Text);
 
     /// <summary>The words of the message, without the part that says what it answers or whom it names.</summary>
     public string Body => Parts.Body;

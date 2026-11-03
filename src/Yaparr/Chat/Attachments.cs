@@ -146,7 +146,7 @@ public static class ImageSniffer
 /// A picture or GIF attached to a message. The message itself only carries this small description (including a
 /// content hash, which the message signature covers); the file is fetched separately from whoever has it.
 /// </summary>
-public sealed record Attachment(string Hash, string FileName, long Size, string Mime, int Width, int Height, byte[]? Thumbnail = null)
+public sealed record Attachment(string Hash, string FileName, long Size, string Mime, int Width, int Height, byte[]? Thumbnail = null, string? ReplyTo = null)
 {
     public const long MaxBytes = 8 * 1024 * 1024;
     public const int MaxThumbnailBytes = 3000;
@@ -157,13 +157,18 @@ public sealed record Attachment(string Hash, string FileName, long Size, string 
 
     public static string HashOf(ReadOnlySpan<byte> data) => Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant();
 
-    /// <summary>The message text that carries this attachment, with an optional caption.</summary>
-    public string ToText(string caption)
+    /// <summary>
+    /// The message text that carries this attachment, with an optional caption and the key (<see cref="ChatMessage.Key"/>) of the
+    /// message it answers. Versions from before picture replies show the picture and leave the reply out.
+    /// </summary>
+    public string ToText(string caption, string? replyTo = null)
     {
+        if (replyTo != null && !MessageEnvelope.IsKey(replyTo)) throw new ArgumentException("That is not the key of a message.", nameof(replyTo));
         var dto = new Dto
         {
             H = Hash, N = FileName, S = Size, M = Mime, W = Width, X = Height,
             T = Thumbnail is { Length: > 0 } ? Convert.ToBase64String(Thumbnail) : null,
+            R = replyTo?.ToLowerInvariant(),
             C = string.IsNullOrWhiteSpace(caption) ? null : caption.Trim() is { Length: > 1000 } longCaption ? longCaption[..1000] : caption.Trim(),
         };
         return Marker + JsonSerializer.Serialize(dto, Json);
@@ -190,7 +195,7 @@ public sealed record Attachment(string Hash, string FileName, long Size, string 
                 if (thumb != null && !(thumb.Length <= MaxThumbnailBytes && ImageSniffer.TryRead(thumb, out var t)
                         && t.Frames == 1 && t.Width <= MaxThumbnailDimension && t.Height <= MaxThumbnailDimension)) thumb = null;
             }
-            attachment = new Attachment(hash.ToLowerInvariant(), CleanName(dto.N), dto.S, dto.M, dto.W, dto.X, thumb);
+            attachment = new Attachment(hash.ToLowerInvariant(), CleanName(dto.N), dto.S, dto.M, dto.W, dto.X, thumb, dto.R is { } reply && MessageEnvelope.IsKey(reply) ? reply.ToLowerInvariant() : null);
             caption = dto.C ?? "";
             return true;
         }
@@ -215,6 +220,7 @@ public sealed record Attachment(string Hash, string FileName, long Size, string 
         public int X { get; set; }
         public string? T { get; set; }
         public string? C { get; set; }
+        public string? R { get; set; }
     }
 }
 

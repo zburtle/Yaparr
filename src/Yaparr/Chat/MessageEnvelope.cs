@@ -13,6 +13,17 @@ public sealed record Mention(PeerId Account, string Name)
 {
     /// <summary>What to look for in the words: the name behind an @.</summary>
     public string Tag => "@" + Name;
+
+    /// <summary>The name that stands for every member of the room (<see cref="Everyone"/>).</summary>
+    public const string EveryoneName = "everyone";
+
+    /// <summary>
+    /// Names everyone in the room. It uses an account id that no one can have (all zeros), and only counts when the author
+    /// is an admin or the owner of the room (see <see cref="ChatRoom.Names"/>), so a member cannot call everyone to a message.
+    /// </summary>
+    public static Mention Everyone { get; } = new(new PeerId(new string('0', 64)), EveryoneName);
+
+    public bool IsEveryone => Account == Everyone.Account;
 }
 
 /// <summary>

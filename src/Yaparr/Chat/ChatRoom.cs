@@ -156,6 +156,16 @@ public sealed class ChatRoom
     /// <summary>What a person (by account, see <see cref="PeerInfo.Account"/>) is in this room.</summary>
     public RoomRole RoleOf(PeerId account) => _node.RoleIn(this, account);
 
+    /// <summary>
+    /// Whether <paramref name="message"/> names <paramref name="account"/>: by name, or with @everyone when the one who wrote it is
+    /// an admin or the owner of this room (from a member, @everyone is only words).
+    /// </summary>
+    public bool Names(ChatMessage message, PeerId account)
+    {
+        var named = message.Parts.Mentions;
+        return named.Any(m => m.Account == account) || (named.Any(m => m.IsEveryone) && RoleOf(message.From.Account) >= RoomRole.Admin);
+    }
+
     /// <summary>The admins the owner has appointed, not counting the owner.</summary>
     public IReadOnlyList<PeerId> Admins => _node.GetAdmins(this);
 

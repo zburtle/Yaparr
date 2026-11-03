@@ -11,6 +11,32 @@ public class ReplyTests
     private static readonly PeerId Bob = new(new string('2', 64));
 
     [Fact]
+    public void A_picture_can_answer_a_message_and_a_bad_key_is_refused()
+    {
+        var att = new Attachment(Attachment.HashOf("x"u8), "cat.png", 10, "image/png", 30, 20);
+        Assert.True(Attachment.TryParse(att.ToText("see", Key), out var parsed, out var caption));
+        Assert.Equal(Key, parsed.ReplyTo);
+        Assert.Equal("see", caption);
+        var message = new ChatMessage(new PeerInfo(Alice, "alice", null), "lobby", "1", caption, DateTimeOffset.UtcNow, Attachment: parsed);
+        Assert.Equal(Key, message.Parts.ReplyTo);
+
+        Assert.True(Attachment.TryParse(att.ToText("see"), out var plain, out _));
+        Assert.Null(plain.ReplyTo);
+        Assert.Throws<ArgumentException>(() => att.ToText("see", "not a key"));
+        // A key that is not one is dropped when reading, and the picture is still a picture.
+        Assert.True(Attachment.TryParse(att.ToText("see", Key).Replace(Key, "zz"), out var odd, out _));
+        Assert.Null(odd.ReplyTo);
+    }
+
+    [Fact]
+    public void Everyone_travels_as_a_name_like_any_other()
+    {
+        var parts = MessageEnvelope.Parse(MessageEnvelope.Wrap("@everyone dinner", null, new[] { Mention.Everyone, new Mention(Bob, "bob") }));
+        Assert.Contains(parts.Mentions, m => m.IsEveryone && m.Tag == "@everyone");
+        Assert.Contains(parts.Mentions, m => !m.IsEveryone && m.Account == Bob);
+    }
+
+    [Fact]
     public void A_message_with_no_reply_and_no_names_is_sent_as_it_is()
     {
         Assert.Equal("hello", MessageEnvelope.Wrap("hello", null, null));

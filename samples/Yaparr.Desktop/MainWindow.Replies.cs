@@ -66,6 +66,15 @@ public partial class MainWindow
     private void Quote_PointerReleased(object? sender, PointerReleasedEventArgs e)
     {
         if ((sender as Control)?.DataContext is not MessageVm { ReplyKey: { } key } || _selected is not { } conv || conv.FindByKey(key) is not { } original) return;
+        // The answered message may be in another text channel of the room: go there first.
+        if (original.Channel is { } channel && channel != conv.CurrentChannel && RoomFor(conv) is { } room)
+        {
+            conv.SelectChannel(channel);
+            conv.PendingChannel = null;
+            RememberChannel(room, channel);
+            MarkShownRead(conv);
+            UpdateComposer();
+        }
         if (conv.Messages.Contains(original)) MessageList.ScrollIntoView(original);
     }
 
@@ -84,14 +93,16 @@ public partial class MainWindow
 
         var me = _node.AccountId;
         var blocked = _settings.BlockedPeers.Select(b => b.Id).ToHashSet();
-        var choices = room.People
+        var everyone = room.MyRole >= RoomRole.Admin && Mention.EveryoneName.StartsWith(query, StringComparison.OrdinalIgnoreCase)
+            ? new[] { new MentionChoice(Mention.Everyone.Account, Mention.EveryoneName, true) } : Array.Empty<MentionChoice>();
+        var choices = everyone.Concat(room.People
             .Where(p => p.Account != me && !blocked.Contains(p.Account.Value) && !room.IsBanned(p.Account) && p.Name.Length > 0)
             .Where(p => query.Length == 0 || p.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(p => p.Online)
             .ThenByDescending(p => p.Name.StartsWith(query, StringComparison.OrdinalIgnoreCase))
             .ThenBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase)
             .Take(8)
-            .Select(p => new MentionChoice(p.Account, p.Name, p.Online))
+            .Select(p => new MentionChoice(p.Account, p.Name, p.Online)))
             .ToList();
         if (choices.Count == 0) { CloseMentionList(); return; }
 

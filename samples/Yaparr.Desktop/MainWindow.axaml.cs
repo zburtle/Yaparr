@@ -748,12 +748,18 @@ public partial class MainWindow : Window
         var vm = new MessageVm(m.Timestamp, m.From.DisplayName, parts.Body, m.IsCatchUp, isMine: mine, id: m.Id, attachment: m.Attachment)
         {
             Source = m, Key = m.Key, ReplyKey = parts.ReplyTo, Mentions = parts.Mentions,
-            MentionsMe = _node != null && parts.Mentions.Any(x => x.Account == _node.AccountId),
+            MentionsMe = _node != null && NamesMe(m),
             Channel = m.Channel, DeviceNote = mine && _node!.Id != m.From.Id ? "from your other device " + m.From.Id.Short : "",
         };
         if (m.Attachment != null) TrackAttachment(vm);
         return vm;
     }
+
+    // Named by name, or by @everyone from someone who may call everyone.
+    private bool NamesMe(ChatMessage m) =>
+        _node != null && _roomConversations.Keys.FirstOrDefault(r => r.Name == m.Room) is { } room
+            ? room.Names(m, _node.AccountId)
+            : _node != null && m.Parts.Mentions.Any(x => x.Account == _node.AccountId);
 
     private readonly Dictionary<string, List<MessageVm>> _attachmentVms = new();
 
@@ -833,9 +839,15 @@ public partial class MainWindow : Window
             var prepared = await Task.Run(() => ImageTools.Prepare(original, fileName));
             var attachment = _node.PrepareAttachment(prepared.Bytes, prepared.FileName, prepared.Thumbnail);
             var caption = InputBox.Text?.Trim() ?? "";
-            var id = await conv.Send(attachment.ToText(caption));
+            var reply = _replyTo;
+            var id = await conv.Send(attachment.ToText(caption, reply?.Key));
             InputBox.Text = "";
-            var vm = new MessageVm(DateTimeOffset.Now, _node.DisplayName, caption, isMine: true, id: id, attachment: attachment) { Channel = conv.IsRoom ? conv.CurrentChannel : null };
+            ClearReply();
+            var vm = new MessageVm(DateTimeOffset.Now, _node.DisplayName, caption, isMine: true, id: id, attachment: attachment)
+            {
+                Channel = conv.IsRoom ? conv.CurrentChannel : null,
+                Key = ChatMessage.KeyOf(_node.Id, id), ReplyKey = reply?.Key,
+            };
             vm.SetImage(prepared.Bytes);
             conv.Add(vm);
             ScrollToEnd();

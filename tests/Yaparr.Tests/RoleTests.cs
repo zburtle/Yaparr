@@ -91,6 +91,30 @@ public class RoleTests
     }
 
     [Fact]
+    public async Task Everyone_is_only_named_by_an_admin_or_the_owner()
+    {
+        var hub = new InMemoryDiscoveryHub();
+        var (a, b, c, ra, rb, rc) = await Trio(hub);
+        using var _ = a; using var __ = b; using var ___ = c;
+        var atCarol = new List<ChatMessage>();
+        rc.MessageReceived += m => { lock (atCarol) atCarol.Add(m); };
+
+        await ra.SendAsync("lunch is here", null, null, new[] { Mention.Everyone });
+        await rb.SendAsync("free pizza", null, null, new[] { Mention.Everyone });
+        await TestUtil.WaitFor(() => { lock (atCarol) return atCarol.Count == 2; }, 20_000);
+        ChatMessage fromOwner, fromMember;
+        lock (atCarol) { fromOwner = atCarol.First(m => m.Body == "lunch is here"); fromMember = atCarol.First(m => m.Body == "free pizza"); }
+
+        Assert.Contains(fromOwner.Parts.Mentions, m => m.IsEveryone);
+        Assert.True(rc.Names(fromOwner, c.AccountId));
+        Assert.False(rc.Names(fromMember, c.AccountId));
+
+        ra.SetAdmin(b.AccountId, true);
+        await TestUtil.WaitFor(() => rc.RoleOf(b.AccountId) == RoomRole.Admin, 20_000);
+        Assert.True(rc.Names(fromMember, c.AccountId));
+    }
+
+    [Fact]
     public async Task Someone_who_joins_later_learns_who_the_admins_are()
     {
         var hub = new InMemoryDiscoveryHub();
