@@ -39,6 +39,8 @@ Help > "Connection guide" explains in plain words when the VPN and TURN options 
 
 Help > "Copy diagnostics" puts the version, system, network state and check, how each person is reached, the voice settings and the last 300 log lines on the clipboard. Names of people and rooms are left out, ids and addresses are shortened (`LogScrubber`) and keys and passwords removed.
 
+Help > "Report a problem…" does that and then opens the bug report form on GitHub in your browser, with the version and system already filled in; the diagnostics are too long for a link, so they are on the clipboard to paste into the form's Diagnostics box (read them first). The repository's issue forms (bug report and feature request) are in `.github/ISSUE_TEMPLATE`, and a vulnerability is pointed to the private security report instead.
+
 ## Logs
 
 One file per day (`logs/yaparr-2026-10-31.log`), seven days kept, a day stops at 20 MB.

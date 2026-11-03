@@ -31,6 +31,10 @@ public static class Updater
         }
     }
 
+    /// <summary>The link that opens an issue form of the project's repository with some of its fields filled in (the form's field ids as the names).</summary>
+    public static string IssueFormUrl(string template, string version, string system) =>
+        $"https://github.com/{Repository ?? "zburtle/Yaparr"}/issues/new?template={Uri.EscapeDataString(template)}&version={Uri.EscapeDataString(version)}&system={Uri.EscapeDataString(system)}";
+
     /// <summary>True when running inside a Flatpak sandbox, which updates the app itself and cannot install a package.</summary>
     public static bool IsFlatpak => OperatingSystem.IsLinux() && File.Exists("/.flatpak-info");
 

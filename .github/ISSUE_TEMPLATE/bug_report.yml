@@ -1,0 +1,42 @@
+name: Bug report
+description: Something does not work as it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting it. In the app, **Help > Report a problem…** opens this form with the version and system filled in and the diagnostics on your clipboard.
+        For a security problem, please do not use this form: see [SECURITY.md](https://github.com/zburtle/Yaparr/blob/master/SECURITY.md).
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What did you see, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen
+      description: The steps, or what you were doing at the time. If it only happens with certain people or rooms, say so.
+  - type: input
+    id: version
+    attributes:
+      label: Yaparr version
+      description: Help > About, or the number in the update dialog.
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: System
+      description: For example Windows 11, Ubuntu 24.04, or Flatpak on Fedora.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: |
+        Use **Help > Copy diagnostics** in the app and paste it here. Addresses and ids are shortened, names of people and rooms are left out, and keys are removed. Please read it before you post it.
+      render: text
