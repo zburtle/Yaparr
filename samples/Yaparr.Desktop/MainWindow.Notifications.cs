@@ -42,6 +42,25 @@ public partial class MainWindow
             MessageSoundMenu.Items.Add(item);
         }
 
+        // Pop-ups in the desktop's notification area (Linux).
+        PopupsItem.IsVisible = LinuxDesktop.Available;
+        PopupsItem.IsChecked = _settings.DesktopPopups;
+        PopupsItem.PropertyChanged += (_, e) =>
+        {
+            if (e.Property != MenuItem.IsCheckedProperty) return;
+            _settings.DesktopPopups = PopupsItem.IsChecked;
+            _data.SaveSettings(_settings);
+        };
+
+        // Busy rooms: only being named, answered or written to directly makes a sound.
+        MentionsOnlyItem.IsChecked = _settings.NotifyOnlyMentions;
+        MentionsOnlyItem.PropertyChanged += (_, e) =>
+        {
+            if (e.Property != MenuItem.IsCheckedProperty) return;
+            _settings.NotifyOnlyMentions = MentionsOnlyItem.IsChecked;
+            _data.SaveSettings(_settings);
+        };
+
         // The number of unread messages on the taskbar button.
         TaskbarCountItem.IsChecked = _settings.TaskbarCount;
         TaskbarCountItem.PropertyChanged += (_, e) =>
@@ -63,17 +82,61 @@ public partial class MainWindow
     // The total of what is unread, on the program's button in the taskbar (Windows only).
     private void UpdateTaskbarBadge()
     {
-        if (!OperatingSystem.IsWindows() || _settings == null) return;
+        if (_settings == null) return;
+        if (LinuxDesktop.Available) { LinuxDesktop.SetUnread(_settings.TaskbarCount ? _conversations.Sum(c => c.Unread) : 0, text => _log.Write(text)); return; }
+        if (!OperatingSystem.IsWindows()) return;
         if (TryGetPlatformHandle()?.Handle is not { } window || window == IntPtr.Zero) return;
         TaskbarBadge.Set(window, _settings.TaskbarCount ? _conversations.Sum(c => c.Unread) : 0);
     }
 
-    /// <summary>A new message arrived. Tells you unless you are already looking at that conversation.</summary>
-    private void NotifyMessage(ConversationVm conv)
+    /// <summary>
+    /// A new message arrived. Tells you unless you are already looking at it: the window is active and the message is in the
+    /// conversation and the text channel on show. Being named or answered has a sound of its own that nothing holds back; with
+    /// "only for mentions" on, other messages in rooms are silent (direct messages still count).
+    /// </summary>
+    private void NotifyMessage(ConversationVm conv, MessageVm message)
     {
-        bool watching = conv == _selected && IsActive;
+        bool watching = conv == _selected && IsActive && (message.Channel == null || message.Channel == conv.CurrentChannel);
         if (watching) return;
-        _sounds.Message();
+        if (message.Highlight) _sounds.Mentioned();
+        else if (_settings.NotifyOnlyMentions && !conv.IsDirect) return;
+        else _sounds.Message();
         if (_settings.FlashTaskbar && !IsActive) TaskbarFlash.Start(this);
+        if (_settings.DesktopPopups && !IsActive && LinuxDesktop.Available)
+        {
+            var who = message.Highlight ? $"{message.Sender} named you in {conv.Title}" : conv.IsDirect ? message.Sender : $"{message.Sender} in {conv.Title}";
+            var text = message.HasAttachment && !message.HasText ? "Sent a picture" : message.Text;
+            LinuxDesktop.Notify(who, text.Length > 140 ? text[..139] + "…" : text, t => _log.Write(t));
+        }
+    }
+
+    // Goes to the oldest message that names you or answers you and that you have not seen yet, in whichever room it is.
+    private void GoToFirstMention_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        (ConversationVm Conv, MessageVm Message)? first = null;
+        foreach (var conv in _conversations.Where(c => c.Mentioned))
+        {
+            var room = RoomFor(conv);
+            var unseen = room != null
+                ? conv.AllMessages.Where(m => m.Highlight && m.Channel is { } ch && Marks.IsUnread(room.RoomId, ch, m.Time.ToUnixTimeMilliseconds()))
+                : conv.Messages.Skip(Math.Max(0, conv.Messages.Count - conv.Unread)).Where(m => m.Highlight);
+            foreach (var m in unseen)
+                if (first == null || m.Time < first.Value.Message.Time) first = (conv, m);
+        }
+        if (first is not { } target) { StatusText.Text = "Nothing unread names you or answers you."; return; }
+
+        ConversationList.SelectedItem = target.Conv;
+        if (target.Message.Channel is { } channel && channel != target.Conv.CurrentChannel && RoomFor(target.Conv) is { } room2)
+        {
+            target.Conv.SelectChannel(channel);
+            target.Conv.PendingChannel = null;
+            RememberChannel(room2, channel);
+            MarkShownRead(target.Conv);
+            UpdateComposer();
+        }
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            if (target.Conv.Messages.Contains(target.Message)) MessageList.ScrollIntoView(target.Message);
+        });
     }
 }
