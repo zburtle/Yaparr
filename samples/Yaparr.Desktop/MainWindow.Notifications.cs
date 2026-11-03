@@ -43,7 +43,7 @@ public partial class MainWindow
         }
 
         // Pop-ups in the desktop's notification area (Linux).
-        PopupsItem.IsVisible = LinuxDesktop.Available;
+        PopupsItem.IsVisible = LinuxDesktop.Available || WindowsToast.Available;
         PopupsItem.IsChecked = _settings.DesktopPopups;
         PopupsItem.PropertyChanged += (_, e) =>
         {
@@ -102,12 +102,22 @@ public partial class MainWindow
         else if (_settings.NotifyOnlyMentions && !conv.IsDirect) return;
         else _sounds.Message();
         if (_settings.FlashTaskbar && !IsActive) TaskbarFlash.Start(this);
-        if (_settings.DesktopPopups && !IsActive && LinuxDesktop.Available)
-        {
-            var who = message.Highlight ? $"{message.Sender} named you in {conv.Title}" : conv.IsDirect ? message.Sender : $"{message.Sender} in {conv.Title}";
-            var text = message.HasAttachment && !message.HasText ? "Sent a picture" : message.Text;
-            LinuxDesktop.Notify(who, text.Length > 140 ? text[..139] + "…" : text, t => _log.Write(t));
-        }
+        if (_settings.DesktopPopups && !IsActive) ShowPopup(conv, message);
+    }
+
+    private void ShowPopup(ConversationVm conv, MessageVm message)
+    {
+        var who = message.Highlight ? $"{message.Sender} named you in {conv.Title}" : conv.IsDirect ? message.Sender : $"{message.Sender} in {conv.Title}";
+        var text = message.HasAttachment && !message.HasText ? "Sent a picture" : message.Text;
+        text = text.Length > 140 ? text[..139] + "…" : text;
+        if (LinuxDesktop.Available) LinuxDesktop.Notify(who, text, t => _log.Write(t));
+        else if (WindowsToast.Available && TryGetPlatformHandle()?.Handle is { } window)
+            WindowsToast.Show(window, who, text, () => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+                Activate();
+                ConversationList.SelectedItem = conv;
+            }));
     }
 
     // Goes to the oldest message that names you or answers you and that you have not seen yet, in whichever room it is.

@@ -66,7 +66,7 @@ public sealed class AppSettings
     public bool SoundsEnabled { get; set; } = true;
     /// <summary>Flash the taskbar button when a message arrives while the window is in the background.</summary>
     public bool FlashTaskbar { get; set; } = true;
-    /// <summary>Linux: show a pop-up in the desktop's notification area for a message that arrives while the window is in the background.</summary>
+    /// <summary>Linux and Windows: show a pop-up in the system's notification area for a message that arrives while the window is in the background.</summary>
     public bool DesktopPopups { get; set; } = true;
     /// <summary>For busy rooms: only being named or answered, and direct messages, make a sound or flash the taskbar. Other messages still count as unread.</summary>
     public bool NotifyOnlyMentions { get; set; }
