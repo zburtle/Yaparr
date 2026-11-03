@@ -681,7 +681,18 @@ public partial class MainWindow : Window
         if (text.Length != 64 || !text.All(Uri.IsHexDigit)) { await Dialogs.MessageAsync(this, "Yaparr", "A peer ID is 64 hex characters."); return; }
         if (text == _node.AccountId.Value || text == _node.Id.Value) { await Dialogs.MessageAsync(this, "Yaparr", "That's your own ID."); return; }
 
-        var id = new PeerId(text);
+        await OpenDirectAsync(new PeerId(text));
+    }
+
+    private async void DirectChatPerson_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_node == null || PeopleList.SelectedItem is not PeerVm person) return;
+        await OpenDirectAsync(new PeerId(person.Id));
+    }
+
+    private async Task OpenDirectAsync(PeerId id)
+    {
+        if (_node == null) return;
         StatusText.Text = $"Looking for {id.Short}… this can take a minute if they just came online.";
         try
         {

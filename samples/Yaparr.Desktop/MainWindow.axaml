@@ -585,6 +585,7 @@
                     <ListBox x:Name="PeopleList" Classes="flat people" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                         <ListBox.ContextMenu>
                             <ContextMenu Opening="PeopleMenu_Opening">
+                                <MenuItem x:Name="DirectChatPersonItem" Header="_Direct chat" Click="DirectChatPerson_Click" />
                                 <MenuItem x:Name="MakeAdminItem" Header="Make _admin of this room" Click="MakeAdmin_Click" />
                                 <MenuItem x:Name="RemoveAdminItem" Header="Remove _admin from this room" Click="RemoveAdmin_Click" />
                                 <MenuItem x:Name="BanPersonItem" Header="Ban from this _room…" Click="BanPerson_Click" />

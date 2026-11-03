@@ -24,6 +24,7 @@ public partial class MainWindow
     private void PeopleMenu_Opening(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         if (PeopleList.SelectedItem is not PeerVm person || BlockedIdOf(person) == null) { e.Cancel = true; return; }
+        DirectChatPersonItem.IsVisible = !person.Blocked;
         BlockPersonItem.IsVisible = !person.Blocked;
         UnblockPersonItem.IsVisible = person.Blocked;
         bool canChange = CanChangeAdmin(person, out _);
