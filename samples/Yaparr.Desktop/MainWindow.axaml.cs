@@ -41,6 +41,8 @@ public partial class MainWindow : Window
         AddHandler(KeyDownEvent, OnPasteKey, RoutingStrategies.Tunnel);
         AddHandler(KeyDownEvent, OnPushToTalkKey, RoutingStrategies.Tunnel);
         AddHandler(KeyUpEvent, OnPushToTalkKey, RoutingStrategies.Tunnel);
+        AddHandler(PointerPressedEvent, OnPushToTalkPointer, RoutingStrategies.Tunnel);
+        AddHandler(PointerReleasedEvent, OnPushToTalkPointer, RoutingStrategies.Tunnel);
         // A key held while this window loses the focus would never be seen coming up.
         Deactivated += (_, _) => { if (_voice != null && _pushToTalkHook == null) _voice.PushToTalkHeld = false; };
         ConversationList.ItemsSource = _conversations;
