@@ -79,8 +79,7 @@ public sealed partial class ChatNode
         var chat = GetDirectChat(person);
         if (!existed) IncomingDirectChat?.Invoke(chat);
         chat.RaiseMessage(msg);
-        if (r.Mine || IsAcquaintanceAccount(person)) AutoFetch(msg);
-        else if (msg.Attachment is { } waiting && !_blobs.Has(waiting.Hash)) RaiseAttachment(waiting.Hash, AttachmentState.NeedsConfirmation, 0, waiting.Size);
+        AutoFetch(msg, trustedOnly: !r.Mine && !IsAcquaintanceAccount(person));
     }
 
     private bool IsAcquaintanceAccount(PeerId account) =>

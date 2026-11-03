@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Net;
 using Yaparr.Chat;
 using Yaparr.Discovery;
+using Yaparr.Identity;
 using Yaparr.Transport;
 
 namespace Yaparr.Tests;
@@ -185,6 +186,38 @@ public class AttachmentTests
         var ghost = new Attachment(Attachment.HashOf("nobody has this"u8), "x.gif", 5000, "image/gif", 10, 10);
         var missing = new ChatMessage(message.From, "Limits", "ghost", "", DateTimeOffset.UtcNow, false, ghost);
         Assert.Equal(AttachmentState.Unavailable, await b.FetchAttachmentAsync(missing, force: true));
+    }
+
+    [Fact]
+    public async Task A_picture_from_a_stranger_is_fetched_from_our_other_device_that_already_has_it()
+    {
+        var hub = new InMemoryDiscoveryHub();
+        using var firstId = PeerIdentity.Generate();
+        using var secondId = firstId.CreateDevice();
+        using var first = TestUtil.NewNode(hub, "alice", identity: firstId);
+        using var second = TestUtil.NewNode(hub, "alice", identity: secondId);
+        using var carol = TestUtil.NewNode(hub, "carol");
+        // Carol shares no room with us, so she is a stranger to both devices.
+        var roomFirst = await first.JoinRoomAsync("lobby");
+        var roomSecond = await second.JoinRoomAsync("lobby");
+        await TestUtil.WaitFor(() => roomFirst.Members.Count == 1 && roomSecond.Members.Count == 1);
+
+        var file = Gif(64, 64, 50_000);
+        var att = carol.PrepareAttachment(file, "pic.gif");
+        var got = new TaskCompletionSource<ChatMessage>();
+        second.IncomingDirectChat += c => c.MessageReceived += m => { if (m.Attachment != null) got.TrySetResult(m); };
+        var chat = await carol.OpenDirectChatAsync(first.AccountId);
+        await chat.SendAsync(att.ToText("a gif"));
+
+        // A stranger's picture waits for a click on this device, so the second device has to fetch it by hand.
+        var message = await got.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        Assert.Equal(AttachmentState.Ready, await second.FetchAttachmentAsync(message, force: true));
+
+        // Sent again, the first device now has a holder it trusts (its own other device), so it does not wait for a click.
+        await TestUtil.WaitFor(() => first.ConnectedPeers.Any(p => p.Id == second.Id), timeoutMs: 15_000);
+        await chat.SendAsync(att.ToText("again"));
+        await TestUtil.WaitFor(() => first.HasAttachment(att.Hash), timeoutMs: 15_000);
+        Assert.Equal(file, first.ReadAttachment(att.Hash));
     }
 
     [Fact]
