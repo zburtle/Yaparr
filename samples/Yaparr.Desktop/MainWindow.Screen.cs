@@ -79,13 +79,15 @@ public partial class MainWindow
         {
             var what = dialog.Result.WindowHandle != null ? "window" : "screen";
             var sharer = ScreenSharer.Start(_node, room, $"{_settings.DisplayName}'s {what}", dialog.Result, ffmpeg);
+            _log.Write($"sharing your {what}: {dialog.Result.Fps} fps, {dialog.Result.Kbps} kbit/s, up to {dialog.Result.MaxWidth}x{dialog.Result.MaxHeight}, FFmpeg {ffmpeg}");
             sharer.Ended += ex => UI(() =>
             {
                 if (_sharer != sharer) return;
+                _log.Write($"screen sharing ended: {ScreenCodecs.Describe(sharer.Codec, sharer.Encoder)}{(sharer.FallbackReason is { } why ? $" (not used: {why})" : "")}, {sharer.Frames} frames sent");
                 StopSharingCore();
                 if (ex != null)
                 {
-                    _log.Write("screen sharing stopped: " + ex.Message);
+                    _log.Write("screen sharing stopped: " + ex.Message + (sharer.LastErrors.Length > 0 ? " | FFmpeg: " + sharer.LastErrors : ""));
                     StatusText.Text = "Screen sharing stopped: " + ex.Message;
                 }
             });
@@ -138,8 +140,10 @@ public partial class MainWindow
 
         try
         {
+            _log.Write($"watching the screen {share.Name}");
             var view = _node.WatchMedia(room, share.Id);
             var control = new ScreenViewControl(share.Name, view, ffmpeg);
+            control.DecoderFailed += message => _log.Write($"the picture of the screen {share.Name} stopped: {message}");
             // The sound, if the sharer shares it, is a stream of its own that names this share.
             if (room.MediaGroups.FirstOrDefault(g => g.Kind == ScreenSharer.SoundKind && g.Name == ScreenSharer.SoundNameFor(share.Id)) is { } sound)
             {
