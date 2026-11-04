@@ -12,11 +12,11 @@ Yaparr needs an FFmpeg **LGPL build (no GPL parts such as x264) with `libvpx` an
 
 ## Yaparr's own build
 
-The FFmpeg Yaparr pins is one it builds itself, from the `ffmpeg` folder of this repository (`build.sh`, `verify.sh` and a README that explains it): the `FFmpeg build` workflow compiles the commit above with only what Yaparr uses (libvpx, the VP8 and H.264 decoders, the NVIDIA, AMD and Intel encoders, Graphics Capture and the plumbing around them) and checks it. It is a single static `ffmpeg.exe` of about 9.5 MB (3.4 MB zipped), where the BtbN build it replaced was 175 MB zipped. Every build is published as a pre-release named `ffmpeg-N` together with the exact FFmpeg source it was made from and the licences of what is built in, which is what the LGPL asks for when the program is passed on. The downloader keeps those notices next to the program (`FfmpegPackage.NoticesRoot`).
+The FFmpeg Yaparr pins is one it builds itself, in its own repository, [Yaparr.FFmpeg](https://github.com/zburtle/Yaparr.FFmpeg) (`build.sh`, `verify.sh` and a README that explains it): its `Build` workflow compiles the commit above with only what Yaparr uses (libvpx, the VP8 and H.264 decoders, the NVIDIA, AMD and Intel encoders, Graphics Capture and the plumbing around them) and checks it. It is a single static `ffmpeg.exe` of about 9.5 MB (3.4 MB zipped), where the BtbN build it replaced was 175 MB zipped. Every build is published as a release named `ffmpeg-N` (up to `ffmpeg-3` as pre-releases of this repository, which stay there) together with the exact FFmpeg source it was made from and the licences of what is built in, which is what the LGPL asks for when the program is passed on. The downloader keeps those notices next to the program (`FfmpegPackage.NoticesRoot`).
 
 ## Pinning a build
 
-Do this for the first pin and whenever a newer FFmpeg is wanted. The file is the zip of a published `ffmpeg-N` release (see `ffmpeg/README.md` for how to make one, and how to build another commit), so the exact file that passes below is the file that gets hosted.
+Do this for the first pin and whenever a newer FFmpeg is wanted. The file is the zip of a published `ffmpeg-N` release (see the README of [Yaparr.FFmpeg](https://github.com/zburtle/Yaparr.FFmpeg) for how to make one, and how to build another commit), so the exact file that passes below is the file that gets hosted.
 
 1. Download the zip from the release and unpack it.
 2. Run the integration tests against it, on a Windows PC with a monitor:

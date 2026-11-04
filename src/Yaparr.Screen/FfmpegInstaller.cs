@@ -17,7 +17,7 @@ public sealed record FfmpegPackage(string Version, Uri Url, string Sha256, long 
 {
     /// <summary>
     /// The one build of FFmpeg that Yaparr is known to work with: Yaparr's own trimmed LGPL Windows build (no GPL parts such as
-    /// x264; see the ffmpeg folder of the repository) of commit 17a4a474f4 of FFmpeg's development branch, N-128212 of
+    /// x264; see https://github.com/zburtle/Yaparr.FFmpeg) of commit 17a4a474f4 of FFmpeg's development branch, N-128212 of
     /// 30 October 2026, which has the Graphics Capture fixes of 24 October 2026. No numbered release has those fixes yet (8.1.3
     /// and 9.0.2 capture one frame and stop). It was checked with the FfmpegIntegration tests and the demo. Move to a numbered
     /// release when one includes the fixes. The file is the asset of the Yaparr release ffmpeg-3 (ffmpeg-2 plus the H.264 hardware decoders), which also holds the exact

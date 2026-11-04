@@ -38,7 +38,7 @@ Everything is GPL-3.0-or-later (see [LICENSE.txt](../LICENSE.txt)), and a contri
 
 ## The FFmpeg build
 
-Screen sharing runs a trimmed FFmpeg that this repository builds: `ffmpeg/build.sh` and `ffmpeg/verify.sh`, run by the `FFmpeg build` workflow on a Windows machine in MSYS2. A pull request that touches `ffmpeg/` builds and checks it; running the workflow by hand with a tag such as `ffmpeg-2` publishes the build, its exact source and its licences as a pre-release. `ffmpeg/README.md` has what is in the build, how to change it and how to pin a new one in `FfmpegPackage.Default`. Nothing GPL or "nonfree" may go into it.
+Screen sharing runs a trimmed FFmpeg that has a repository of its own, [Yaparr.FFmpeg](https://github.com/zburtle/Yaparr.FFmpeg): `build.sh` and `verify.sh`, run by its `Build` workflow on a Windows machine in MSYS2. A pull request there builds and checks it; running the workflow by hand with a tag such as `ffmpeg-4` publishes the build, its exact source and its licences as a release. Its README has what is in the build, how to change it and how to pin a new one in `FfmpegPackage.Default` here. Builds up to `ffmpeg-3` are releases of this repository, and stay here because Yaparr versions already out download them from these addresses. Nothing GPL or "nonfree" may go into it.
 
 ## Releases
 
