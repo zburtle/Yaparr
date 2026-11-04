@@ -91,6 +91,12 @@ public partial class MainWindow
                     StatusText.Text = "Screen sharing stopped: " + ex.Message;
                 }
             });
+            sharer.SoundFailed += ex => UI(() =>
+            {
+                if (_sharer != sharer) return;
+                _log.Write("the shared sound stopped: " + ex);
+                conv.Add(MessageVm.System("The sound stopped: " + ex.Message + " The picture is still shared."));
+            });
             _sharer = sharer;
             _sharerConv = conv;
             _sharerStats = new SharerStatsWindow(sharer, dialog.Result.Fps, room);

@@ -22,21 +22,42 @@ public sealed class ProcessLoopback : IDisposable
     private IntPtr _event;
     private Thread? _thread;
     private volatile bool _stop;
+    private Action<Exception>? _onFailed;
 
     private ProcessLoopback(Action<float[], int> onSamples) => _onSamples = onSamples;
 
     /// <summary>
     /// Starts recording. <paramref name="processId"/> is the program to record, or with <paramref name="exclude"/> the one to leave out.
     /// <paramref name="onSamples"/> gets interleaved stereo samples and how many values are valid; it runs on the recording thread.
+    /// <paramref name="onFailed"/> is told, on that thread, if the recording ends on its own.
     /// </summary>
-    public static ProcessLoopback Start(int processId, bool exclude, Action<float[], int> onSamples)
+    public static ProcessLoopback Start(int processId, bool exclude, Action<float[], int> onSamples, Action<Exception>? onFailed = null)
     {
         if (!IsSupported) throw new PlatformNotSupportedException("Sharing sound needs Windows 10 version 2004 or newer.");
-        var loopback = new ProcessLoopback(onSamples);
-        try { loopback.Open(processId, exclude); }
-        catch { loopback.Dispose(); throw; }
+        var loopback = new ProcessLoopback(onSamples) { _onFailed = onFailed };
+        // Everything is opened and used on the recording thread: Windows' audio objects belong to the thread (apartment) that made
+        // them, and another thread asking for their interfaces gets "no such interface".
+        using var ready = new ManualResetEventSlim();
+        Exception? failure = null;
+        loopback._thread = new Thread(() =>
+        {
+            try { loopback.Open(processId, exclude); }
+            catch (Exception ex) { failure = ex; }
+            finally { ready.Set(); }
+            if (failure == null) loopback.Run();
+        }) { IsBackground = true, Name = "screen sound" };
+        loopback._thread.Start();
+        ready.Wait();
+        if (failure != null)
+        {
+            loopback.Dispose();
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
+        }
         return loopback;
     }
+
+    /// <summary>Why the recording ended on its own (the device went away, say), or null while it runs or after it was stopped.</summary>
+    public Exception? Failure { get; private set; }
 
     private void Open(int processId, bool exclude)
     {
@@ -59,9 +80,6 @@ public sealed class ProcessLoopback : IDisposable
         Check(_client.GetService(ref captureId, out var service), "starting the recording");
         _capture = (IAudioCaptureClient)service;
         Check(_client.Start(), "starting the recording");
-
-        _thread = new Thread(Run) { IsBackground = true, Name = "screen sound" };
-        _thread.Start();
     }
 
     // ActivateAudioInterfaceAsync with the virtual "process loopback" device: the answer comes on another thread.
@@ -118,7 +136,7 @@ public sealed class ProcessLoopback : IDisposable
             }
         }
         catch (Exception) when (_stop) { }
-        catch (COMException) { } // the device went away; the recording ends
+        catch (Exception ex) { Failure = ex; try { _onFailed?.Invoke(ex); } catch (Exception) { } } // the device went away or Windows refused: the sound ends, the program does not
     }
 
     private static void Check(int hr, string what)
