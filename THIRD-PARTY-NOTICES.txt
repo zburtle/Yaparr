@@ -282,8 +282,8 @@ part (no x264, no x265). Next to the program are the licence text (LICENSE.txt),
 configured and with which versions of what) and a licenses folder with the licences of what is built in.
 
 The exact FFmpeg source of every build is published with it, in the same release, as ffmpeg-<commit>-source.tar.xz at
-https://github.com/zburtle/Yaparr/releases (the releases named ffmpeg-N), and the way it is built is in the ffmpeg folder of the
-Yaparr source (https://github.com/zburtle/Yaparr/tree/master/ffmpeg). FFmpeg is at https://ffmpeg.org.
+https://github.com/zburtle/Yaparr/releases (the releases named ffmpeg-1 to ffmpeg-3) and https://github.com/zburtle/Yaparr.FFmpeg/releases (later ones), and the way it
+is built is in the source of https://github.com/zburtle/Yaparr.FFmpeg. FFmpeg is at https://ffmpeg.org.
 
 Built into it:
   libvpx (VP8), BSD-3-Clause with Google's patent grant (licenses/libvpx/LICENSE and PATENTS)
