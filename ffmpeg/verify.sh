@@ -25,7 +25,7 @@ decoders="$("$FF" -hide_banner -decoders 2>&1)"
 filters="$("$FF" -hide_banner -filters 2>&1)"
 for e in libvpx h264_nvenc h264_amf h264_qsv rawvideo; do has "$encoders" " $e " && ok "encoder $e" || fail "encoder $e is missing"; done
 for d in vp8 h264; do has "$decoders" " $d " && ok "decoder $d" || fail "decoder $d is missing"; done
-for f in gfxcapture hwdownload format scale scale_d3d11; do has "$filters" " $f " && ok "filter $f" || fail "filter $f is missing"; done
+for f in gfxcapture hwdownload format scale; do has "$filters" " $f " && ok "filter $f" || fail "filter $f is missing"; done
 
 # Nothing that should not be there: the GPL encoders, other video codecs, the network.
 for e in libx264 libx265 libopenh264 libaom mpeg4 hevc libsvtav1; do has "$encoders" " $e " && fail "encoder $e should not be in this build" || ok "no encoder $e"; done

@@ -4,7 +4,8 @@
 //   Yaparr.ScreenDemo [--seconds 20] [--fps 10] [--kbps 800] [--width 1280] [--height 720] [--monitor N | --window N] [--codec auto|vp8|h264] [--encoder nvenc|amf|qsv] [--save picture.bmp]
 //   Yaparr.ScreenDemo --list     shows the monitors and windows and their numbers
 //   Yaparr.ScreenDemo --install-ffmpeg <folder>     downloads the pinned FFmpeg into the folder (the installer build bundles it)
-//   --gpu-scale scales and converts on the graphics card (H.264 on NVIDIA; falls back to the processor if FFmpeg cannot).
+//   --gpu-scale scales on the graphics card before encoding (H.264 on NVIDIA, a monitor; falls back to the processor if FFmpeg cannot).
+//   --gpu-decode makes the viewer decode H.264 on the graphics card (Direct3D 11) where it can; by default it decodes on the processor.
 //   Without --monitor or --window the primary monitor is shared.
 //
 // FFmpeg is found through YAPARR_FFMPEG, an 'ffmpeg' folder next to this program, or the PATH.
@@ -93,7 +94,7 @@ while ((group = viewerRoom.MediaGroups.FirstOrDefault()) == null && wait.Elapsed
 if (group == null) { Console.Error.WriteLine("The viewer never saw the share."); return 1; }
 
 using var view = viewerNode.WatchMedia(viewerRoom, group.Id);
-using var viewer = new ScreenViewer(view, ffmpeg);
+using var viewer = new ScreenViewer(view, ffmpeg, gpuDecode: args.Contains("--gpu-decode"));
 Picture? last = null;
 long firstPictureMs = -1;
 var clock = Stopwatch.StartNew();
@@ -115,6 +116,7 @@ for (int s = 1; s <= seconds; s++)
 var cpu = Cpu() - cpu0;
 
 Console.WriteLine();
+Console.WriteLine($"Viewer decoding: {(viewer.GpuDecoding ? "on the graphics card" : "on the processor")}");
 Console.WriteLine($"Codec: {ScreenCodecs.Describe(sharer.Codec, sharer.Encoder)}{(sharer.FallbackReason is { } why ? $" (not used: {why})" : "")}");
 Console.WriteLine($"First picture after {firstPictureMs} ms");
 Console.WriteLine($"Sent {sharer.Frames} frames, {sharer.Bytes * 8 / 1000 / seconds} kbit/s on average ({sharer.KeyFrames} key frames)");

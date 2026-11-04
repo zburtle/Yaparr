@@ -24,8 +24,18 @@ public sealed class ScreenViewer : IDisposable
 
     private const int MaxQueuedFrames = 90;
 
-    public ScreenViewer(MediaView view, string? ffmpegPath = null)
+    // When asked for, H.264 is decoded on the graphics card while that works; the first time it does not, this turns off and the processor does it.
+    private bool _gpu;
+    private byte[]? _lastKey;
+
+    /// <summary>
+    /// FFmpeg hands over NV12 and the picture is converted to BGRA here, with vector instructions, which costs less than FFmpeg doing it.
+    /// <paramref name="gpuDecode"/>: also decode H.264 on the graphics card (Windows, Direct3D 11), falling back to the processor if
+    /// FFmpeg cannot. Off by default: on the machines measured (issue #100) it did not use less processor time than decoding in software.
+    /// </summary>
+    public ScreenViewer(MediaView view, string? ffmpegPath = null, bool gpuDecode = false)
     {
+        _gpu = gpuDecode && OperatingSystem.IsWindows();
         _view = view;
         _ffmpeg = ffmpegPath ?? FfmpegLocator.Find() ?? throw new FileNotFoundException("FFmpeg was not found. Put ffmpeg.exe in an 'ffmpeg' folder next to the app, or set YAPARR_FFMPEG.");
         _view.FrameReceived += OnFrame;
@@ -37,6 +47,9 @@ public sealed class ScreenViewer : IDisposable
     public event Action<Exception>? Failed;
 
     public long Pictures => Interlocked.Read(ref _pictures);
+
+    /// <summary>Whether the current decoder runs on the graphics card.</summary>
+    public bool GpuDecoding { get { lock (_gate) return _gpu && _decoder?.Codec == ScreenCodec.H264; } }
 
     /// <summary>Frames not handed to the decoder because it fell behind; the viewer then waits for the next key frame.</summary>
     public long Dropped => Interlocked.Read(ref _dropped);
@@ -80,6 +93,7 @@ public sealed class ScreenViewer : IDisposable
         {
             if (_disposed) return;
             decoder = _decoder;
+            if (frame.IsKey) _lastKey = data;
             if (frame.IsKey && ScreenCodecs.TryGetKeyFrame(data, out var codec, out int w, out int h)
                 && (decoder == null || decoder.Codec != codec || decoder.Width != w || decoder.Height != h))
             {
@@ -93,7 +107,7 @@ public sealed class ScreenViewer : IDisposable
     private Decoder StartDecoder(ScreenCodec codec, int width, int height)
     {
         var psi = new ProcessStartInfo(_ffmpeg) { RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
-        foreach (var a in FfmpegArgs.Decode(codec)) psi.ArgumentList.Add(a);
+        foreach (var a in FfmpegArgs.DecodeForViewer(codec, _gpu)) psi.ArgumentList.Add(a);
         var process = Process.Start(psi) ?? throw new InvalidOperationException("FFmpeg did not start.");
         process.ErrorDataReceived += (_, e) =>
         {
@@ -101,7 +115,7 @@ public sealed class ScreenViewer : IDisposable
             lock (_gate) { _errors.Enqueue(e.Data); while (_errors.Count > 5) _errors.Dequeue(); }
         };
         process.BeginErrorReadLine();
-        var decoder = new Decoder(this, process, codec, width, height);
+        var decoder = new Decoder(this, process, codec, width, height, _gpu && codec == ScreenCodec.H264);
         decoder.Start(_cts.Token);
         return decoder;
     }
@@ -121,9 +135,11 @@ public sealed class ScreenViewer : IDisposable
         public int Width { get; }
         public int Height { get; }
 
-        public Decoder(ScreenViewer owner, Process process, ScreenCodec codec, int width, int height)
+        public bool OnCard { get; }
+
+        public Decoder(ScreenViewer owner, Process process, ScreenCodec codec, int width, int height, bool onCard)
         {
-            _owner = owner; _process = process; Codec = codec; Width = width; Height = height;
+            _owner = owner; _process = process; Codec = codec; Width = width; Height = height; OnCard = onCard;
         }
 
         public void Start(CancellationToken ct)
@@ -180,10 +196,12 @@ public sealed class ScreenViewer : IDisposable
             {
                 var stdout = _process.StandardOutput.BaseStream;
                 int size = Width * Height * 4;
+                var raw = new byte[Nv12.Size(Width, Height)];
                 while (!ct.IsCancellationRequested)
                 {
+                    await stdout.ReadExactlyAsync(raw, ct).ConfigureAwait(false);
                     var picture = _owner.Rent(size);
-                    await stdout.ReadExactlyAsync(picture, ct).ConfigureAwait(false);
+                    Nv12.ToBgra(raw, Width, Height, picture);
                     Interlocked.Increment(ref _owner._pictures);
                     _owner.PictureReceived?.Invoke(new Picture(Width, Height, picture));
                 }
@@ -191,8 +209,9 @@ public sealed class ScreenViewer : IDisposable
             catch (OperationCanceledException) { }
             catch (EndOfStreamException)
             {
-                if (!_stop.IsCancellationRequested && !_owner._disposed)
-                    _owner.Failed?.Invoke(new InvalidOperationException("FFmpeg stopped decoding. " + _owner.LastErrors));
+                if (_stop.IsCancellationRequested || _owner._disposed) return;
+                if (OnCard && _owner.FallBackToProcessor(this)) return;
+                _owner.Failed?.Invoke(new InvalidOperationException("FFmpeg stopped decoding. " + _owner.LastErrors));
             }
         }
 
@@ -203,6 +222,24 @@ public sealed class ScreenViewer : IDisposable
             try { if (!_process.HasExited) _process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
             _process.Dispose();
         }
+    }
+
+    /// <summary>The graphics card could not decode: the processor takes over, starting with the key frame that is already here.</summary>
+    private bool FallBackToProcessor(Decoder failed)
+    {
+        Decoder? replacement = null;
+        byte[]? key;
+        lock (_gate)
+        {
+            if (_disposed || _decoder != failed) return _decoder != failed && !_disposed;
+            _gpu = false;
+            key = _lastKey;
+            _decoder = null;
+            if (key != null && ScreenCodecs.TryGetKeyFrame(key, out var codec, out int w, out int h)) replacement = _decoder = StartDecoder(codec, w, h);
+        }
+        failed.Stop();
+        replacement?.Enqueue(key!, true);
+        return true;
     }
 
     public void Dispose()

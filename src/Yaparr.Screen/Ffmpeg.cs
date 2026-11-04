@@ -220,6 +220,23 @@ public static class FfmpegArgs
         return args;
     }
 
+    /// <summary>
+    /// The viewer's decoder: the same input, but the pictures come out as raw NV12 (see <see cref="Nv12"/>), which is much cheaper
+    /// for FFmpeg to produce than BGRA. With <paramref name="gpu"/> (H.264 only) the decoding runs on the graphics card through
+    /// Direct3D 11, which any maker's card supports, and only the finished picture is copied back. FFmpeg stops with an error if
+    /// the card or driver cannot, and the viewer then starts again without it.
+    /// </summary>
+    public static List<string> DecodeForViewer(ScreenCodec codec, bool gpu)
+    {
+        gpu &= codec == ScreenCodec.H264;
+        var args = new List<string> { "-hide_banner", "-loglevel", "error", "-flags", "low_delay", "-probesize", "32", "-analyzeduration", "0" };
+        if (gpu) args.AddRange(new[] { "-hwaccel", "d3d11va", "-hwaccel_output_format", "d3d11" });
+        args.AddRange(new[] { "-f", codec == ScreenCodec.H264 ? "h264" : "ivf", "-i", "pipe:0" });
+        if (gpu) args.AddRange(new[] { "-vf", "hwdownload,format=nv12" });
+        args.AddRange(new[] { "-f", "rawvideo", "-pix_fmt", "nv12", "pipe:1" });
+        return args;
+    }
+
     /// <summary>Read IVF (VP8) or an H.264 byte stream from standard input and write the pictures as raw BGRA to standard output.</summary>
     public static List<string> Decode(ScreenCodec codec = ScreenCodec.Vp8) => new()
     {
