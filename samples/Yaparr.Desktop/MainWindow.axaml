@@ -638,13 +638,28 @@
 
     <!-- The settings: sections on the left, the section's controls on the right, over the window. Escape, the cross or a click outside closes it. -->
     <Border x:Name="SettingsOverlay" IsVisible="False" Background="#D8000000" Padding="24" Focusable="True"
+            AutomationProperties.Name="Settings" SizeChanged="SettingsOverlay_SizeChanged"
             PointerPressed="SettingsOverlay_PointerPressed" KeyDown="SettingsOverlay_KeyDown">
-        <Border Classes="card" HorizontalAlignment="Center" VerticalAlignment="Stretch" Width="780" MaxHeight="960" Padding="0">
-            <Grid RowDefinitions="Auto,*" ColumnDefinitions="200,*">
+        <Border Classes="card" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" MaxWidth="780" MaxHeight="960" Padding="0"
+                KeyboardNavigation.TabNavigation="Cycle">
+            <Grid x:Name="SettingsGrid" RowDefinitions="Auto,Auto,*" ColumnDefinitions="200,*">
                 <TextBlock Text="Settings" FontSize="17" FontWeight="SemiBold" Margin="18,14,0,10" VerticalAlignment="Center" />
                 <Button Grid.Column="1" Classes="ghost" Content="✕" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,8,12,0"
-                        ToolTip.Tip="Close (Esc)" Click="CloseSettings_Click" />
-                <TreeView x:Name="SettingsTree" Grid.Row="1" Margin="8,0,0,8" SelectionChanged="SettingsTree_SelectionChanged">
+                        AutomationProperties.Name="Close settings" ToolTip.Tip="Close (Esc)" Click="CloseSettings_Click" />
+                <!-- In a narrow window the list of sections is this drop-down instead. -->
+                <ComboBox x:Name="SettingsPicker" Grid.Row="1" Grid.ColumnSpan="2" IsVisible="False" HorizontalAlignment="Stretch" Margin="18,0,18,10"
+                          AutomationProperties.Name="Settings section" SelectionChanged="SettingsPicker_SelectionChanged">
+                    <ComboBoxItem Content="Devices" Tag="devices" />
+                    <ComboBoxItem Content="Notifications" Tag="notifications" />
+                    <ComboBoxItem Content="Voice &amp; audio" Tag="voice" />
+                    <ComboBoxItem Content="Network" Tag="network" />
+                    <ComboBoxItem Content="VPN" Tag="vpn" />
+                    <ComboBoxItem Content="TURN relay" Tag="turn" />
+                    <ComboBoxItem Content="Blocked people" Tag="blocked" />
+                    <ComboBoxItem Content="Backup" Tag="backup" />
+                    <ComboBoxItem Content="About" Tag="about" />
+                </ComboBox>
+                <TreeView x:Name="SettingsTree" Grid.Row="2" Margin="8,0,0,8" AutomationProperties.Name="Settings sections" SelectionChanged="SettingsTree_SelectionChanged">
                     <TreeViewItem Header="Devices" Tag="devices" />
                     <TreeViewItem Header="Notifications" Tag="notifications" />
                     <TreeViewItem Header="Voice &amp; audio" Tag="voice" />
@@ -656,7 +671,7 @@
                     <TreeViewItem Header="Backup" Tag="backup" />
                     <TreeViewItem Header="About" Tag="about" />
                 </TreeView>
-                <ScrollViewer Grid.Row="1" Grid.Column="1" VerticalScrollBarVisibility="Auto">
+                <ScrollViewer x:Name="SettingsPage" Grid.Row="2" Grid.Column="1" VerticalScrollBarVisibility="Auto">
                     <Panel Margin="18,4,18,18">
                         <StackPanel x:Name="SectionDevices" Spacing="10">
                             <TextBlock Text="Devices" FontSize="15" FontWeight="SemiBold" />

@@ -24,7 +24,8 @@ public partial class MainWindow
         SettingsOverlay.IsVisible = true;
         var node = FindSettingsNode(SettingsTree.Items.OfType<TreeViewItem>(), section) ?? FindSettingsNode(SettingsTree.Items.OfType<TreeViewItem>(), "devices")!;
         if (SettingsTree.SelectedItem == node) ShowSettingsSection(section); else SettingsTree.SelectedItem = node;
-        SettingsOverlay.Focus();
+        // Focus goes into the sections, so the arrow keys work at once.
+        Avalonia.Threading.Dispatcher.UIThread.Post(() => (SettingsPicker.IsVisible ? (Control)SettingsPicker : node).Focus());
     }
 
     private static TreeViewItem? FindSettingsNode(IEnumerable<TreeViewItem> items, string key)
@@ -111,7 +112,35 @@ public partial class MainWindow
     {
         if (SettingsTree.SelectedItem is not TreeViewItem { Tag: string key }) return;
         if (key is "network" or "vpn" or "turn") NetworkNode.IsExpanded = true;
+        SelectInPicker(key);
         ShowSettingsSection(key);
+    }
+
+    private void SelectInPicker(string key)
+    {
+        if (SettingsPicker.SelectedItem is ComboBoxItem { Tag: string current } && current == key) return;
+        SettingsPicker.SelectedItem = SettingsPicker.Items.OfType<ComboBoxItem>().FirstOrDefault(i => i.Tag as string == key);
+    }
+
+    private void SettingsPicker_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (SettingsPicker.SelectedItem is not ComboBoxItem { Tag: string key }) return;
+        if (SettingsTree.SelectedItem is TreeViewItem { Tag: string current } && current == key) return;
+        if (FindSettingsNode(SettingsTree.Items.OfType<TreeViewItem>(), key) is { } node) SettingsTree.SelectedItem = node;
+    }
+
+    // In a narrow window the list of sections would leave too little room for the page, so it becomes a drop-down above it.
+    private const double SettingsNarrow = 640;
+
+    private void SettingsOverlay_SizeChanged(object? sender, SizeChangedEventArgs e)
+    {
+        bool narrow = e.NewSize.Width < SettingsNarrow;
+        if (SettingsPicker.IsVisible == narrow) return;
+        SettingsPicker.IsVisible = narrow;
+        SettingsTree.IsVisible = !narrow;
+        SettingsGrid.ColumnDefinitions[0].Width = narrow ? new GridLength(0) : new GridLength(200);
+        Grid.SetColumn(SettingsPage, narrow ? 0 : 1);
+        Grid.SetColumnSpan(SettingsPage, narrow ? 2 : 1);
     }
 
     // A click on the dark area around the panel puts the settings away; a click on the panel itself does not reach it.
