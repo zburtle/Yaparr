@@ -141,7 +141,7 @@ public class FfmpegInstallerTests
     {
         var p = FfmpegPackage.Default;
         Assert.Equal("https", p.Url.Scheme);
-        Assert.Contains("zburtle/Yaparr/releases", p.Url.AbsoluteUri);
+        Assert.Contains("zburtle/Yaparr.FFmpeg/releases", p.Url.AbsoluteUri);
         Assert.Equal(64, p.Sha256.Length);
         Assert.EndsWith("ffmpeg.exe", p.ExePathInZip);
     }
