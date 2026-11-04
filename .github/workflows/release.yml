@@ -175,6 +175,17 @@ jobs:
           (cd .github/release && npm ci --ignore-scripts)
           .github/release/node_modules/.bin/semantic-release
 
+  # The library as a package in GitHub Packages, for the version that was just tagged.
+  package:
+    needs: [version, publish]
+    if: needs.version.outputs.version != ''
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/nuget.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+
   # Puts the signed builds in the Flatpak repository, served from the gh-pages branch at flatpak.yaparr.com, so that
   # "flatpak update" finds them. Only runs when the signing key is set up.
   flatpak-repo:

@@ -36,6 +36,19 @@ alice and bob, stop bob, chat as alice, then start bob again to see the `missed`
 
 Everything is GPL-3.0-or-later (see [LICENSE.txt](../LICENSE.txt)), and a contribution is under the same licence. Anything new you depend on has to be compatible with GPL version 3: MIT, BSD, Apache-2.0, LGPL and similar are fine; GPL-2.0-only, proprietary and "non-commercial" licences are not.
 
+## The library as a package
+
+The chat library (`src/Yaparr`) is published as the NuGet package `Yaparr` to GitHub Packages, at `https://nuget.pkg.github.com/zburtle/index.json`. The release workflow runs `.github/workflows/nuget.yml` after it has tagged a release, so every release has a package with the same version. To publish the package for a release that already exists, run the `Publish package` workflow by hand and give it the version without the `v` (for example `1.30.0`); a version already in the feed is skipped.
+
+GitHub Packages asks for a sign-in even to read a public package. To use it from another project, make a personal access token (classic) with `read:packages` and add the feed with it:
+
+```
+dotnet nuget add source https://nuget.pkg.github.com/zburtle/index.json --name yaparr --username <your GitHub name> --password <the token> --store-password-in-clear-text
+dotnet add package Yaparr
+```
+
+The package is the library only (`net10.0`); `Yaparr.Screen`, the apps and the tools are not packaged. It is under the GPL, like everything else here, so a program that uses it has to be GPL-compatible.
+
 ## The FFmpeg build
 
 Screen sharing runs a trimmed FFmpeg that has a repository of its own, [Yaparr.FFmpeg](https://github.com/zburtle/Yaparr.FFmpeg): `build.sh` and `verify.sh`, run by its `Build` workflow on a Windows machine in MSYS2. A pull request there builds and checks it; running the workflow by hand with a tag such as `ffmpeg-4` publishes the build, its exact source and its licences as a release. Its README has what is in the build, how to change it and how to pin a new one in `FfmpegPackage.Default` here. Builds up to `ffmpeg-3` are releases of this repository, and stay here because Yaparr versions already out download them from these addresses. Nothing GPL or "nonfree" may go into it.
