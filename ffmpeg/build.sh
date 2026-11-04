@@ -44,6 +44,7 @@ cd src
   --enable-libvpx --enable-libvpl --enable-amf --enable-ffnvcodec --enable-nvenc \
   --enable-encoder=libvpx_vp8,h264_nvenc,h264_amf,h264_qsv,rawvideo \
   --enable-decoder=vp8,h264,wrapped_avframe \
+  --enable-hwaccel=h264_d3d11va,h264_d3d11va2,h264_dxva2 \
   --enable-parser=h264,vp8 \
   --enable-demuxer=ivf,h264 \
   --enable-muxer=ivf,h264,rawvideo,null \

@@ -20,14 +20,14 @@ public sealed record FfmpegPackage(string Version, Uri Url, string Sha256, long 
     /// x264; see the ffmpeg folder of the repository) of commit 17a4a474f4 of FFmpeg's development branch, N-128212 of
     /// 30 October 2026, which has the Graphics Capture fixes of 24 October 2026. No numbered release has those fixes yet (8.1.3
     /// and 9.0.2 capture one frame and stop). It was checked with the FfmpegIntegration tests and the demo. Move to a numbered
-    /// release when one includes the fixes. The file is the asset of the Yaparr release ffmpeg-2, which also holds the exact
+    /// release when one includes the fixes. The file is the asset of the Yaparr release ffmpeg-3 (ffmpeg-2 plus the H.264 hardware decoders), which also holds the exact
     /// source; see README.md next to this file.
     /// </summary>
     public static FfmpegPackage Default { get; } = new(
-        "g17a4a474f4-yaparr-win64",
-        new Uri("https://github.com/zburtle/Yaparr/releases/download/ffmpeg-2/ffmpeg-yaparr-g17a4a474f4-win64.zip"),
-        "c2ffffe1ca7292656d4674d88e6a174fb12d50947ca41ef043a11141b724eb25",
-        3_398_269,
+        "g17a4a474f4-yaparr-3-win64",
+        new Uri("https://github.com/zburtle/Yaparr/releases/download/ffmpeg-3/ffmpeg-yaparr-g17a4a474f4-win64.zip"),
+        "0e5120197a6f77866751de0f4bceb9a850e18a3bad582b1e953ecd3b1bdc7bde",
+        3_411_264,
         "ffmpeg-yaparr-g17a4a474f4-win64/bin/ffmpeg.exe",
         "ffmpeg-yaparr-g17a4a474f4-win64/LICENSE.txt",
         "ffmpeg-yaparr-g17a4a474f4-win64");

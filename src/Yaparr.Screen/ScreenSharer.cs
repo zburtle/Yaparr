@@ -124,14 +124,22 @@ public sealed class ScreenSharer : IDisposable
             // Auto tries the graphics cards first, one after the other. If FFmpeg cannot start an encoder (no such card, an old
             // driver, all the encoder sessions in use) it stops before the first picture, and the next one is tried, VP8 in
             // software last.
-            var plan = Plan(_options);
-            var reasons = new List<string>();
-            for (int i = 0; i < plan.Count; i++)
+            // With GpuScale, an NVIDIA attempt first tries scaling on the graphics card, and the processor path if FFmpeg cannot start that.
+            var attempts = new List<(ScreenCodec Codec, HardwareEncoder? Encoder, bool GpuScale)>();
+            foreach (var (codec, encoder) in Plan(_options))
             {
-                try { await RunAsync(plan[i].Codec, plan[i].Encoder, ct).ConfigureAwait(false); break; }
-                catch (Exception ex) when (!ct.IsCancellationRequested && i < plan.Count - 1 && Interlocked.Read(ref _frames) == 0 && !WindowGone)
+                if (_options.GpuScale && codec == ScreenCodec.H264 && encoder == HardwareEncoder.Nvenc) attempts.Add((codec, encoder, true));
+                attempts.Add((codec, encoder, false));
+            }
+            var reasons = new List<string>();
+            for (int i = 0; i < attempts.Count; i++)
+            {
+                var (attempt, card, onCard) = attempts[i];
+                try { await RunAsync(attempt, card, onCard, ct).ConfigureAwait(false); break; }
+                catch (Exception ex) when (!ct.IsCancellationRequested && i < attempts.Count - 1 && Interlocked.Read(ref _frames) == 0 && !WindowGone)
                 {
-                    reasons.Add(plan[i].Encoder is { } card ? $"{HardwareEncoders.Maker(card)}: {ex.Message}" : ex.Message);
+                    string? who = card is { } known ? HardwareEncoders.Maker(known) + (onCard ? " (scaling on the card)" : "") : null;
+                    reasons.Add(who != null ? $"{who}: {ex.Message}" : ex.Message);
                     _fallback = string.Join("; ", reasons);
                 }
             }
@@ -155,13 +163,13 @@ public sealed class ScreenSharer : IDisposable
     private bool WindowGone => _options.WindowHandle is { } handle && !ShareWindows.Exists(handle);
 
     // One run of FFmpeg with one codec: returns when stopped on purpose, throws when FFmpeg stops by itself.
-    private async Task RunAsync(ScreenCodec codec, HardwareEncoder? encoder, CancellationToken ct)
+    private async Task RunAsync(ScreenCodec codec, HardwareEncoder? encoder, bool gpuScale, CancellationToken ct)
     {
         _codec = codec;
         _hardware = encoder;
         lock (_gate) _errors.Clear();
         var psi = new ProcessStartInfo(_ffmpeg) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
-        foreach (var a in FfmpegArgs.Capture(_options, codec, encoder ?? HardwareEncoder.Nvenc)) psi.ArgumentList.Add(a);
+        foreach (var a in FfmpegArgs.Capture(_options, codec, encoder ?? HardwareEncoder.Nvenc, gpuScale)) psi.ArgumentList.Add(a);
         var process = Process.Start(psi) ?? throw new InvalidOperationException("FFmpeg did not start.");
         lock (_gate) _process = process;
         process.ErrorDataReceived += (_, e) =>

@@ -8,7 +8,7 @@ Yaparr shares and shows screens by running FFmpeg as a separate program (see `sr
 |---|---|
 | VP8 in software | `libvpx` (encoder), `vp8` (decoder), the IVF container |
 | H.264 on the graphics card | `h264_nvenc` (NVIDIA), `h264_amf` (AMD), `h264_qsv` (Intel) |
-| Viewing H.264 | the `h264` decoder and parser |
+| Viewing H.264 | the `h264` decoder and parser, and the `h264_d3d11va`, `h264_d3d11va2` and `h264_dxva2` hardware decoders (used only when the viewer is asked to decode on the graphics card) |
 | Capture | the `gfxcapture` filter (Windows Graphics Capture), `hwdownload`, `format`, `scale` |
 | Input and output | the `pipe` protocol, raw pictures, the raw H.264 stream |
 | Tests only | `lavfi`, the `color` and `testsrc2` filters, the `null` muxer |

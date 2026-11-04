@@ -109,7 +109,7 @@ public sealed class ScreenOptions
     public int Kbps { get; init; } = 800;
 
     /// <summary>Seconds between key frames. A viewer that joins or loses packets waits at most this long for one.</summary>
-    public double KeyFrameSeconds { get; init; } = 2;
+    public double KeyFrameSeconds { get; init; } = 1;
 
     public ScreenCodec Codec { get; init; } = ScreenCodec.Auto;
 
@@ -121,6 +121,12 @@ public sealed class ScreenOptions
     /// does not go round). Needs Windows 10 version 2004 or newer; without it the picture is shared alone.
     /// </summary>
     public bool ShareSound { get; init; }
+
+    /// <summary>
+    /// Scale and convert the picture on the graphics card rather than the processor, so the frames never come down to system
+    /// memory. Only for H.264 on NVIDIA's encoder so far. The sharer falls back to the processor path if FFmpeg cannot start it.
+    /// </summary>
+    public bool GpuScale { get; init; }
 
     /// <summary>Whether to draw the mouse pointer into the picture.</summary>
     public bool ShowCursor { get; init; } = true;
@@ -147,7 +153,7 @@ public static class FfmpegArgs
     /// anything else VP8 in IVF; <see cref="ScreenCodec.Auto"/> is for the sharer to resolve and here means VP8, which needs no
     /// particular hardware. For H.264 the encoder says which graphics card makes it.
     /// </summary>
-    public static List<string> Capture(ScreenOptions o, ScreenCodec codec, HardwareEncoder encoder = HardwareEncoder.Nvenc)
+    public static List<string> Capture(ScreenOptions o, ScreenCodec codec, HardwareEncoder encoder = HardwareEncoder.Nvenc, bool gpuScale = false)
     {
         if (o.Fps is < 1 or > 60) throw new ArgumentOutOfRangeException(nameof(o), "Frames per second must be between 1 and 60.");
         if (o.Kbps is < 50 or > 20_000) throw new ArgumentOutOfRangeException(nameof(o), "The bitrate must be between 50 and 20000 kbit/s.");
@@ -159,10 +165,25 @@ public static class FfmpegArgs
         else throw new ArgumentException("Choose a monitor or a window to share.", nameof(o));
 
         // Even sizes only: the encoder works on pairs of pixels. A window that is resized keeps its shape inside the first size.
-        var filter = $"gfxcapture={source}:max_framerate={o.Fps.ToString(CultureInfo.InvariantCulture)}:capture_cursor={(o.ShowCursor ? 1 : 0)}:resize_mode=scale_aspect:dup_frames=1,"
-            + "hwdownload,format=bgra,"
-            // Intel's encoder takes NV12 and not planar YUV; the others take either.
-            + $"scale='min({o.MaxWidth},iw)':'min({o.MaxHeight},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,format={(codec == ScreenCodec.H264 && encoder == HardwareEncoder.Qsv ? "nv12" : "yuv420p")}";
+        var capture = $"gfxcapture={source}:max_framerate={o.Fps.ToString(CultureInfo.InvariantCulture)}:capture_cursor={(o.ShowCursor ? 1 : 0)}:resize_mode=scale_aspect:dup_frames=1";
+        string filter;
+        if (gpuScale && codec == ScreenCodec.H264 && encoder == HardwareEncoder.Nvenc && o.WindowHandle == null && o.Display is { Handle: not 0, Width: > 0, Height: > 0 } shown)
+        {
+            // The frames stay on the graphics card: gfxcapture scales them to the size asked for there (the filter after it,
+            // scale_d3d11, cannot take its frames) and NVENC converts them itself. Measured in issue #100. The shape is kept
+            // by working the size out here, in even numbers and never above the source, since gfxcapture would add bars
+            // instead. Only for a monitor, whose size is known; a window is resized while shared, so it takes the processor path.
+            double factor = Math.Min(1.0, Math.Min((double)o.MaxWidth / shown.Width, (double)o.MaxHeight / shown.Height));
+            int w = Math.Max(2, (int)(shown.Width * factor) / 2 * 2), h = Math.Max(2, (int)(shown.Height * factor) / 2 * 2);
+            filter = w == shown.Width && h == shown.Height ? capture : capture + $":width={w}:height={h}";
+        }
+        else
+        {
+            filter = capture + ","
+                + "hwdownload,format=bgra,"
+                // Intel's encoder takes NV12 and not planar YUV; the others take either.
+                + $"scale='min({o.MaxWidth},iw)':'min({o.MaxHeight},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,format={(codec == ScreenCodec.H264 && encoder == HardwareEncoder.Qsv ? "nv12" : "yuv420p")}";
+        }
         var args = new List<string> { "-hide_banner", "-loglevel", "error", "-nostdin", "-filter_complex", filter };
         var rate = new[]
         {
@@ -196,6 +217,23 @@ public static class FfmpegArgs
             args.AddRange(rate);
             args.AddRange(new[] { "-f", "ivf", "pipe:1" });
         }
+        return args;
+    }
+
+    /// <summary>
+    /// The viewer's decoder: the same input, but the pictures come out as raw NV12 (see <see cref="Nv12"/>), which is much cheaper
+    /// for FFmpeg to produce than BGRA. With <paramref name="gpu"/> (H.264 only) the decoding runs on the graphics card through
+    /// Direct3D 11, which any maker's card supports, and only the finished picture is copied back. FFmpeg stops with an error if
+    /// the card or driver cannot, and the viewer then starts again without it.
+    /// </summary>
+    public static List<string> DecodeForViewer(ScreenCodec codec, bool gpu)
+    {
+        gpu &= codec == ScreenCodec.H264;
+        var args = new List<string> { "-hide_banner", "-loglevel", "error", "-flags", "low_delay", "-probesize", "32", "-analyzeduration", "0" };
+        if (gpu) args.AddRange(new[] { "-hwaccel", "d3d11va", "-hwaccel_output_format", "d3d11" });
+        args.AddRange(new[] { "-f", codec == ScreenCodec.H264 ? "h264" : "ivf", "-i", "pipe:0" });
+        if (gpu) args.AddRange(new[] { "-vf", "hwdownload,format=nv12" });
+        args.AddRange(new[] { "-f", "rawvideo", "-pix_fmt", "nv12", "pipe:1" });
         return args;
     }
 

@@ -11,9 +11,9 @@ public partial class ShareDialog : Window
 
     private static readonly Quality[] Qualities =
     {
-        new("Sharp: 1080p, 12 FPS, about 1.6 Mbit/s", 1920, 1080, 12, 1600),
-        new("Smooth: 720p, 30 FPS, up to 2 Mbit/s", 1280, 720, 30, 2000),
-        new("Smooth and sharp: 1080p, 30 FPS, up to 4 Mbit/s", 1920, 1080, 30, 4000),
+        new("720p, 30 FPS", 1280, 720, 30, 2000),
+        new("1080p, 30 FPS", 1920, 1080, 30, 4000),
+        new("1080p, 60 FPS", 1920, 1080, 60, 6000),
     };
 
     private readonly IReadOnlyList<Display> _displays = Displays.List();
