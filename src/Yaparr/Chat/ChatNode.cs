@@ -1624,9 +1624,9 @@ public sealed partial class ChatNode : IDisposable
                 var chat = GetDirectChat(peer.AccountId);
                 if (!existed) IncomingDirectChat?.Invoke(chat);
                 chat.RaiseMessage(msg);
-                // Pictures from someone we have no connection to through a room or by our own choice wait for a click.
-                if (IsAcquaintance(peer)) AutoFetch(msg);
-                else if (msg.Attachment is { } waiting && !_blobs.Has(waiting.Hash)) RaiseAttachment(waiting.Hash, AttachmentState.NeedsConfirmation, 0, waiting.Size);
+                // Pictures from someone we have no connection to through a room or by our own choice are fetched only from our
+                // own devices and contacts that have them; otherwise they wait for a click.
+                AutoFetch(msg, trustedOnly: !IsAcquaintance(peer));
                 break;
 
             case Wire.Message when wire.Room != null && wire.Msgs != null

@@ -57,22 +57,27 @@ public sealed partial class ChatNode
     /// Downloads an attachment from the sender or any other connected room member that has it. A file that is too big
     /// to fetch automatically over this connection is only fetched when <paramref name="force"/> is set.
     /// </summary>
-    public Task<AttachmentState> FetchAttachmentAsync(ChatMessage message, bool force = false, CancellationToken ct = default)
+    public Task<AttachmentState> FetchAttachmentAsync(ChatMessage message, bool force = false, CancellationToken ct = default) =>
+        StartFetch(message, force, trustedOnly: false, ct);
+
+    private Task<AttachmentState> StartFetch(ChatMessage message, bool force, bool trustedOnly, CancellationToken ct)
     {
         if (message.Attachment is not { } a) return Task.FromResult(AttachmentState.Unavailable);
         if (_blobs.Has(a.Hash)) return Task.FromResult(AttachmentState.Ready);
         lock (_fetches)
         {
             if (_fetches.TryGetValue(a.Hash, out var running) && !running.IsCompleted) return running;
-            var task = Task.Run(() => FetchCoreAsync(message, a, force, ct));
+            var task = Task.Run(() => FetchCoreAsync(message, a, force, trustedOnly, ct));
             _fetches[a.Hash] = task;
             return task;
         }
     }
 
-    private void AutoFetch(ChatMessage message)
+    // A picture from someone we do not know is only fetched from people we know who already have it (our own devices, our
+    // contacts). Otherwise it waits for a click, as it does when it is too big.
+    private void AutoFetch(ChatMessage message, bool trustedOnly = false)
     {
-        if (message.Attachment != null && !_blobs.Has(message.Attachment.Hash)) _ = FetchAttachmentAsync(message);
+        if (message.Attachment != null && !_blobs.Has(message.Attachment.Hash)) _ = StartFetch(message, force: false, trustedOnly, CancellationToken.None);
     }
 
     private void RaiseAttachment(string hash, AttachmentState state, long received, long total) =>
@@ -96,12 +101,17 @@ public sealed partial class ChatNode
         return list.OrderBy(p => IsMetered(p.Connection)).ToList();
     }
 
-    private async Task<AttachmentState> FetchCoreAsync(ChatMessage message, Attachment a, bool force, CancellationToken ct)
+    // Our own devices and our contacts. Anyone else holding the file is a stranger as far as the automatic fetch goes.
+    private bool IsTrustedHolder(PeerState peer) => IsSibling(peer) || IsAcquaintance(peer);
+
+    private async Task<AttachmentState> FetchCoreAsync(ChatMessage message, Attachment a, bool force, bool trustedOnly, CancellationToken ct)
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _cts.Token);
-        bool deferred = false;
+        // With trusted holders only, no trusted holder having the file means it waits for a click.
+        bool deferred = trustedOnly;
         foreach (var holder in Holders(message))
         {
+            if (trustedOnly && !IsTrustedHolder(holder)) continue;
             long limit = IsMetered(holder.Connection) ? _options.MaxMeteredAutoFetchBytes : _options.MaxAutoFetchBytes;
             if (!force && a.Size > limit) { deferred = true; continue; }
 
