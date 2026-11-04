@@ -188,6 +188,9 @@ public partial class ScreenViewControl : UserControl
             Waiting.IsVisible = true;
             ConnectionLost?.Invoke();
         }
+        // A small figure over the picture: how many pictures a second are really drawn.
+        FpsBadge.IsVisible = _shown > 0 && !_connectionLost;
+        FpsText.Text = $"{shownFps:0} fps";
         Info.Text = $"{_name}  -  {_shown} pictures, {_view.FramesLost} lost, {st.Recovered} packets recovered, {Interlocked.Read(ref _late)} late"
             + $"\nArriving {arriveFps:0.0}/s at {kbps:0} kbit/s, drawn {shownFps:0.0}/s, decoder queue {_viewer?.DecodeQueue ?? 0}, playout delay {delayMs} ms"
             + (st.Attached ? "" : "  -  connecting to the sharer...");

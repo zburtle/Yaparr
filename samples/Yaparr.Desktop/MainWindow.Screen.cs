@@ -11,7 +11,7 @@ public partial class MainWindow
 {
     private ScreenSharer? _sharer;
     private ConversationVm? _sharerConv;
-    private SharerStatsWindow? _sharerStats;
+    private SharerStatsView? _sharerStats;
 
     // A screen being watched. Its picture is either in the main window over the chat (only one at a time) or in a window of its
     // own; moving it does not restart the stream.
@@ -99,8 +99,11 @@ public partial class MainWindow
             });
             _sharer = sharer;
             _sharerConv = conv;
-            _sharerStats = new SharerStatsWindow(sharer, dialog.Result.Fps, room);
-            _sharerStats.Show(this);
+            _sharerStats = new SharerStatsView(sharer, dialog.Result.Fps, room);
+            _sharerStats.StopRequested += StopSharingCore;
+            _sharerStats.ChangeRequested += () => _ = ChangeSharedAsync(sharer, conv);
+            SharerPanel.Child = _sharerStats;
+            UpdateSharerPanel();
             conv.IsSharing = true;
             conv.Add(MessageVm.System($"You are sharing your {what}. Everyone in the room can watch it."));
             if (dialog.Result.ShareSound)
@@ -123,8 +126,9 @@ public partial class MainWindow
         var conv = _sharerConv;
         _sharer = null;
         _sharerConv = null;
-        _sharerStats?.Close();
         _sharerStats = null;
+        SharerPanel.Child = null;
+        SharerPanel.IsVisible = false;
         if (conv != null)
         {
             conv.IsSharing = false;
@@ -240,6 +244,28 @@ public partial class MainWindow
 
     // The picture over the chat shows while you are looking at the room it belongs to; it keeps playing when you look elsewhere.
     private void UpdateInlineScreen() => ScreenOverlay.IsVisible = _inlineWatch is { } watch && _selected == watch.Conv;
+
+    // Moves a running share to another monitor or window; watchers stay connected.
+    private async Task ChangeSharedAsync(ScreenSharer sharer, ConversationVm conv)
+    {
+        var dialog = new ShareDialog(sharer.Options);
+        if (!await dialog.ShowDialog<bool>(this) || dialog.Result == null || _sharer != sharer) return;
+        try
+        {
+            sharer.Change(dialog.Result);
+            var what = dialog.Result.WindowHandle != null ? "a window" : "a monitor";
+            _log.Write($"screen sharing changed to {what}");
+            conv.Add(MessageVm.System($"You are now sharing {what}."));
+        }
+        catch (Exception ex)
+        {
+            _log.Write("could not change what is shared: " + ex.Message);
+            StatusText.Text = "Could not change what is shared: " + ex.Message;
+        }
+    }
+
+    // The readout of your own share shows in the room you share to.
+    private void UpdateSharerPanel() => SharerPanel.IsVisible = _sharerStats != null && _selected == _sharerConv;
 
     private void CloseScreens()
     {

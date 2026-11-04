@@ -11,7 +11,8 @@ namespace Yaparr.Screen;
 public sealed class ScreenSharer : IDisposable
 {
     private readonly MediaSource _source;
-    private readonly ScreenOptions _options;
+    private volatile ScreenOptions _options;
+    private volatile bool _switch;
     private readonly string _ffmpeg;
     private readonly CancellationTokenSource _cts = new();
     private readonly object _gate = new();
@@ -67,19 +68,9 @@ public sealed class ScreenSharer : IDisposable
     {
         try
         {
-            if (!ProcessLoopback.IsSupported) throw new PlatformNotSupportedException("Sharing sound needs Windows 10 version 2004 or newer.");
-            // A window's own program, or for a monitor everything except Yaparr, so what others say in the voice chat is not sent back to them.
-            int pid = _options.WindowHandle is { } handle ? ShareWindows.ProcessId(handle) : Environment.ProcessId;
-            bool exclude = _options.WindowHandle == null;
-            if (pid == 0) throw new InvalidOperationException("That window is not open any more.");
             _soundSource = node.StartMedia(room, SoundKind, SoundNameFor(_source.Info.Id), signed: true, upstream: false, kbps: 96, channel: _source.Info.Channel);
             _soundSender = new StreamAudioSender(_soundSource);
-            var sender = _soundSender;
-            _soundCapture = ProcessLoopback.Start(pid, exclude, (samples, count) => sender.Push(samples.AsSpan(0, count)), ex =>
-            {
-                SoundProblem = ex.Message;
-                SoundFailed?.Invoke(ex);
-            });
+            StartSoundCapture();
         }
         catch (Exception ex)
         {
@@ -87,6 +78,49 @@ public sealed class ScreenSharer : IDisposable
             StopSound();
         }
     }
+
+    // A window's own program, or for a monitor everything except Yaparr, so what others say in the voice chat is not sent back to them.
+    private void StartSoundCapture()
+    {
+        if (!ProcessLoopback.IsSupported) throw new PlatformNotSupportedException("Sharing sound needs Windows 10 version 2004 or newer.");
+        var options = _options;
+        int pid = options.WindowHandle is { } handle ? ShareWindows.ProcessId(handle) : Environment.ProcessId;
+        if (pid == 0) throw new InvalidOperationException("That window is not open any more.");
+        var sender = _soundSender ?? throw new InvalidOperationException("The sound is not being shared.");
+        _soundCapture = ProcessLoopback.Start(pid, options.WindowHandle == null, (samples, count) => sender.Push(samples.AsSpan(0, count)), ex =>
+        {
+            SoundProblem = ex.Message;
+            SoundFailed?.Invoke(ex);
+        });
+    }
+
+    /// <summary>
+    /// Shares another monitor or window from now on, in the same stream: watchers keep watching and see the new picture at the
+    /// next key frame (the sound follows too). Throws, and changes nothing, if the new window is not open.
+    /// </summary>
+    public void Change(ScreenOptions next)
+    {
+        FfmpegArgs.Capture(next);
+        if (next.WindowHandle is { } handle && !ShareWindows.Exists(handle)) throw new InvalidOperationException("That window is not open any more.");
+        _options = next;
+        _switch = true;
+        Interlocked.Exchange(ref _lastFrameTick, 0);
+        KillProcess();   // the pump starts FFmpeg again for the new target
+        if (_soundSender != null)
+        {
+            var old = _soundCapture; _soundCapture = null;
+            old?.Dispose();
+            try { StartSoundCapture(); SoundProblem = null; }
+            catch (Exception ex) { SoundProblem = ex.Message; }
+        }
+        Changed?.Invoke();
+    }
+
+    /// <summary>The monitor or window being shared was changed with <see cref="Change"/>.</summary>
+    public event Action? Changed;
+
+    /// <summary>Whether a monitor or a window is being shared, and which.</summary>
+    public ScreenOptions Options => _options;
 
     private void StopSound()
     {
@@ -132,24 +166,30 @@ public sealed class ScreenSharer : IDisposable
             // driver, all the encoder sessions in use) it stops before the first picture, and the next one is tried, VP8 in
             // software last.
             // With GpuScale, an NVIDIA attempt first tries scaling on the graphics card, and the processor path if FFmpeg cannot start that.
-            var attempts = new List<(ScreenCodec Codec, HardwareEncoder? Encoder, bool GpuScale)>();
-            foreach (var (codec, encoder) in Plan(_options))
+            do
             {
-                if (_options.GpuScale && codec == ScreenCodec.H264 && encoder == HardwareEncoder.Nvenc) attempts.Add((codec, encoder, true));
-                attempts.Add((codec, encoder, false));
-            }
-            var reasons = new List<string>();
-            for (int i = 0; i < attempts.Count; i++)
-            {
-                var (attempt, card, onCard) = attempts[i];
-                try { await RunAsync(attempt, card, onCard, ct).ConfigureAwait(false); break; }
-                catch (Exception ex) when (!ct.IsCancellationRequested && i < attempts.Count - 1 && Interlocked.Read(ref _frames) == 0 && !WindowGone)
+                _switch = false;
+                long before = Interlocked.Read(ref _frames);
+                var attempts = new List<(ScreenCodec Codec, HardwareEncoder? Encoder, bool GpuScale)>();
+                foreach (var (codec, encoder) in Plan(_options))
                 {
-                    string? who = card is { } known ? HardwareEncoders.Maker(known) + (onCard ? " (scaling on the card)" : "") : null;
-                    reasons.Add(who != null ? $"{who}: {ex.Message}" : ex.Message);
-                    _fallback = string.Join("; ", reasons);
+                    if (_options.GpuScale && codec == ScreenCodec.H264 && encoder == HardwareEncoder.Nvenc) attempts.Add((codec, encoder, true));
+                    attempts.Add((codec, encoder, false));
                 }
-            }
+                var reasons = new List<string>();
+                for (int i = 0; i < attempts.Count; i++)
+                {
+                    var (attempt, card, onCard) = attempts[i];
+                    try { await RunAsync(attempt, card, onCard, ct).ConfigureAwait(false); break; }
+                    catch (Exception) when (_switch) { break; }   // stopped on purpose to share something else
+                    catch (Exception ex) when (!ct.IsCancellationRequested && i < attempts.Count - 1 && Interlocked.Read(ref _frames) == before && !WindowGone)
+                    {
+                        string? who = card is { } known ? HardwareEncoders.Maker(known) + (onCard ? " (scaling on the card)" : "") : null;
+                        reasons.Add(who != null ? $"{who}: {ex.Message}" : ex.Message);
+                        _fallback = string.Join("; ", reasons);
+                    }
+                }
+            } while (_switch && !ct.IsCancellationRequested);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
         catch (Exception ex) { failure = ex; }
@@ -179,6 +219,7 @@ public sealed class ScreenSharer : IDisposable
         foreach (var a in FfmpegArgs.Capture(_options, codec, encoder ?? HardwareEncoder.Nvenc, gpuScale)) psi.ArgumentList.Add(a);
         var process = Process.Start(psi) ?? throw new InvalidOperationException("FFmpeg did not start.");
         lock (_gate) _process = process;
+        if (_switch) KillProcess();   // asked to share something else while this one was starting
         process.ErrorDataReceived += (_, e) =>
         {
             if (e.Data is not { Length: > 0 }) return;
@@ -217,7 +258,7 @@ public sealed class ScreenSharer : IDisposable
                 Interlocked.Add(ref _bytes, frame.Length);
                 if (isKey) Interlocked.Increment(ref _keys);
             }
-            if (!ct.IsCancellationRequested) throw Stopped(process);
+            if (!ct.IsCancellationRequested && !_switch) throw Stopped(process);
         }
         finally { KillProcess(); }
     }

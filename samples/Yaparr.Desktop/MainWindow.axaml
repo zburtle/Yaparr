@@ -566,6 +566,7 @@
                         <TextBlock x:Name="PeopleHeader" Text="People" FontWeight="SemiBold" FontSize="15" />
                         <TextBlock x:Name="PeopleCount" Grid.Column="1" Classes="muted small" VerticalAlignment="Center" />
                     </Grid>
+                    <Border x:Name="SharerPanel" DockPanel.Dock="Bottom" IsVisible="False" />
                     <!-- Connection state as icons; colour says how it is going and the details are in each one's tooltip. -->
                     <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="16" Margin="16,6,12,12">
                         <TextBlock x:Name="PeersIcon" FontSize="15" Text="👥 0" Foreground="{DynamicResource Muted}" />
