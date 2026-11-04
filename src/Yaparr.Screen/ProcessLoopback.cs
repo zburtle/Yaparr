@@ -22,17 +22,19 @@ public sealed class ProcessLoopback : IDisposable
     private IntPtr _event;
     private Thread? _thread;
     private volatile bool _stop;
+    private Action<Exception>? _onFailed;
 
     private ProcessLoopback(Action<float[], int> onSamples) => _onSamples = onSamples;
 
     /// <summary>
     /// Starts recording. <paramref name="processId"/> is the program to record, or with <paramref name="exclude"/> the one to leave out.
     /// <paramref name="onSamples"/> gets interleaved stereo samples and how many values are valid; it runs on the recording thread.
+    /// <paramref name="onFailed"/> is told, on that thread, if the recording ends on its own.
     /// </summary>
-    public static ProcessLoopback Start(int processId, bool exclude, Action<float[], int> onSamples)
+    public static ProcessLoopback Start(int processId, bool exclude, Action<float[], int> onSamples, Action<Exception>? onFailed = null)
     {
         if (!IsSupported) throw new PlatformNotSupportedException("Sharing sound needs Windows 10 version 2004 or newer.");
-        var loopback = new ProcessLoopback(onSamples);
+        var loopback = new ProcessLoopback(onSamples) { _onFailed = onFailed };
         // Everything is opened and used on the recording thread: Windows' audio objects belong to the thread (apartment) that made
         // them, and another thread asking for their interfaces gets "no such interface".
         using var ready = new ManualResetEventSlim();
@@ -134,7 +136,7 @@ public sealed class ProcessLoopback : IDisposable
             }
         }
         catch (Exception) when (_stop) { }
-        catch (Exception ex) { Failure = ex; } // the device went away or Windows refused: the sound ends, the program does not
+        catch (Exception ex) { Failure = ex; try { _onFailed?.Invoke(ex); } catch (Exception) { } } // the device went away or Windows refused: the sound ends, the program does not
     }
 
     private static void Check(int hr, string what)

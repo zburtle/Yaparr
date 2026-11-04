@@ -59,6 +59,9 @@ public sealed class ScreenSharer : IDisposable
     /// <summary>When sound was asked for but could not be shared: why. The picture is shared anyway.</summary>
     public string? SoundProblem { get; private set; }
 
+    /// <summary>The sound stopped on its own while sharing (the device went away, say); the picture goes on. Raised on another thread.</summary>
+    public event Action<Exception>? SoundFailed;
+
     // The sound is a stream of its own beside the picture, so a stalled picture never holds the sound back.
     private void StartSound(ChatNode node, ChatRoom room)
     {
@@ -72,7 +75,11 @@ public sealed class ScreenSharer : IDisposable
             _soundSource = node.StartMedia(room, SoundKind, SoundNameFor(_source.Info.Id), signed: true, upstream: false, kbps: 96, channel: _source.Info.Channel);
             _soundSender = new StreamAudioSender(_soundSource);
             var sender = _soundSender;
-            _soundCapture = ProcessLoopback.Start(pid, exclude, (samples, count) => sender.Push(samples.AsSpan(0, count)));
+            _soundCapture = ProcessLoopback.Start(pid, exclude, (samples, count) => sender.Push(samples.AsSpan(0, count)), ex =>
+            {
+                SoundProblem = ex.Message;
+                SoundFailed?.Invoke(ex);
+            });
         }
         catch (Exception ex)
         {
