@@ -50,7 +50,7 @@ cd src
   --enable-indev=lavfi \
   --enable-bsf=h264_mp4toannexb \
   --enable-protocol=pipe,file \
-  --enable-filter=gfxcapture,hwdownload,format,scale,color,testsrc2 \
+  --enable-filter=gfxcapture,hwdownload,format,scale,scale_d3d11,color,testsrc2 \
   || { tail -n 80 ffbuild/config.log; exit 1; }
 
 make -j"$(nproc)"
