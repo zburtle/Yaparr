@@ -167,15 +167,15 @@ public static class FfmpegArgs
         // Even sizes only: the encoder works on pairs of pixels. A window that is resized keeps its shape inside the first size.
         var capture = $"gfxcapture={source}:max_framerate={o.Fps.ToString(CultureInfo.InvariantCulture)}:capture_cursor={(o.ShowCursor ? 1 : 0)}:resize_mode=scale_aspect:dup_frames=1";
         string filter;
-        if (gpuScale && codec == ScreenCodec.H264 && encoder == HardwareEncoder.Nvenc)
+        if (gpuScale && codec == ScreenCodec.H264 && encoder == HardwareEncoder.Nvenc && o.WindowHandle == null && o.Display is { Handle: not 0, Width: > 0, Height: > 0 } shown)
         {
-            // The frames stay on the graphics card: scaled and converted to NV12 there, then handed straight to NVENC.
-            // Not yet run on hardware: see issue #100. scale_d3d11 has no force_original_aspect_ratio, so the size that keeps the
-            // shape inside the box is worked out here, in even numbers, and never goes above the source.
-            const string fit = "min({0},iw,{1}*iw/ih)";
-            var w = string.Format(CultureInfo.InvariantCulture, fit, o.MaxWidth, o.MaxHeight);
-            filter = capture + ","
-                + $"scale_d3d11=width='2*trunc({w}/2)':height='2*trunc(ih*{w}/iw/2)':format=nv12";
+            // The frames stay on the graphics card: gfxcapture scales them to the size asked for there (the filter after it,
+            // scale_d3d11, cannot take its frames) and NVENC converts them itself. Measured in issue #100. The shape is kept
+            // by working the size out here, in even numbers and never above the source, since gfxcapture would add bars
+            // instead. Only for a monitor, whose size is known; a window is resized while shared, so it takes the processor path.
+            double factor = Math.Min(1.0, Math.Min((double)o.MaxWidth / shown.Width, (double)o.MaxHeight / shown.Height));
+            int w = Math.Max(2, (int)(shown.Width * factor) / 2 * 2), h = Math.Max(2, (int)(shown.Height * factor) / 2 * 2);
+            filter = w == shown.Width && h == shown.Height ? capture : capture + $":width={w}:height={h}";
         }
         else
         {
