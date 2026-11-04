@@ -1,0 +1,52 @@
+name: Publish package
+
+# Publishes the Yaparr library to GitHub Packages (https://nuget.pkg.github.com/zburtle/index.json). The release workflow runs it after
+# it has tagged a release; running it by hand publishes the package for an existing release (the tag vX.Y.Z), for example the first time.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: The release version, without the v (for example 1.30.0)
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      version:
+        description: The release version to publish, without the v (for example 1.30.0); its tag must exist
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: v${{ inputs.version }}
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Pack
+        env:
+          VERSION: ${{ inputs.version }}
+        run: dotnet pack src/Yaparr -c Release -p:Version="$VERSION" -o nupkg
+
+      # A version that is already in the feed is left alone, so running this twice does no harm.
+      - name: Push
+        env:
+          TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+        run: >
+          dotnet nuget push "nupkg/*.nupkg"
+          --source "https://nuget.pkg.github.com/${OWNER}/index.json"
+          --api-key "$TOKEN"
+          --skip-duplicate

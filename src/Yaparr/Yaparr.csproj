@@ -6,6 +6,22 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <!-- The package published to GitHub Packages by .github/workflows/nuget.yml; the version comes from the release. -->
+  <PropertyGroup>
+    <PackageId>Yaparr</PackageId>
+    <Authors>Zach Burtle</Authors>
+    <Description>Serverless peer-to-peer chat and voice calls for .NET: peers find each other on the BitTorrent mainline DHT and connect directly over encrypted UDP.</Description>
+    <PackageTags>p2p;chat;dht;udp;voice;hole-punching</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/zburtle/Yaparr</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/zburtle/Yaparr</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="Yaparr.Tests" />
     <InternalsVisibleTo Include="Yaparr.NetAgent" />
