@@ -114,7 +114,7 @@ public partial class MainWindow
             {
                 if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
                 Activate();
-                ConversationList.SelectedItem = conv;
+                SelectConversation(conv);
             }));
     }
 
@@ -133,7 +133,7 @@ public partial class MainWindow
         }
         if (first is not { } target) { StatusText.Text = "Nothing unread names you or answers you."; return; }
 
-        ConversationList.SelectedItem = target.Conv;
+        SelectConversation(target.Conv);
         if (target.Message.Channel is { } channel && channel != target.Conv.CurrentChannel && RoomFor(target.Conv) is { } room2)
         {
             target.Conv.SelectChannel(channel);
