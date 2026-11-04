@@ -4,6 +4,7 @@
 //   Yaparr.ScreenDemo [--seconds 20] [--fps 10] [--kbps 800] [--width 1280] [--height 720] [--monitor N | --window N] [--codec auto|vp8|h264] [--encoder nvenc|amf|qsv] [--save picture.bmp]
 //   Yaparr.ScreenDemo --list     shows the monitors and windows and their numbers
 //   Yaparr.ScreenDemo --install-ffmpeg <folder>     downloads the pinned FFmpeg into the folder (the installer build bundles it)
+//   --gpu-scale scales and converts on the graphics card (H.264 on NVIDIA; falls back to the processor if FFmpeg cannot).
 //   Without --monitor or --window the primary monitor is shared.
 //
 // FFmpeg is found through YAPARR_FFMPEG, an 'ffmpeg' folder next to this program, or the PATH.
@@ -57,7 +58,7 @@ else
     Console.WriteLine($"Sharing monitor {display.Index}: {display.Width}x{display.Height}");
 }
 var codec = (Opt("--codec") ?? "auto").ToLowerInvariant() switch { "vp8" => ScreenCodec.Vp8, "h264" => ScreenCodec.H264, _ => ScreenCodec.Auto };
-var screen = new ScreenOptions { Fps = Int("--fps", 10), Kbps = Int("--kbps", 800), MaxWidth = Int("--width", 1280), MaxHeight = Int("--height", 720), Display = display, WindowHandle = windowHandle, Codec = codec, Encoder = HardwareEncoders.TryParse(Opt("--encoder"), out var card) ? card : null };
+var screen = new ScreenOptions { Fps = Int("--fps", 10), Kbps = Int("--kbps", 800), MaxWidth = Int("--width", 1280), MaxHeight = Int("--height", 720), Display = display, WindowHandle = windowHandle, Codec = codec, Encoder = HardwareEncoders.TryParse(Opt("--encoder"), out var card) ? card : null, GpuScale = args.Contains("--gpu-scale") };
 string? savePath = Opt("--save");
 
 ChatNode Make(string name) => new(new ChatNodeOptions

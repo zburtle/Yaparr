@@ -122,6 +122,12 @@ public sealed class ScreenOptions
     /// </summary>
     public bool ShareSound { get; init; }
 
+    /// <summary>
+    /// Scale and convert the picture on the graphics card rather than the processor, so the frames never come down to system
+    /// memory. Only for H.264 on NVIDIA's encoder so far. The sharer falls back to the processor path if FFmpeg cannot start it.
+    /// </summary>
+    public bool GpuScale { get; init; }
+
     /// <summary>Whether to draw the mouse pointer into the picture.</summary>
     public bool ShowCursor { get; init; } = true;
 }
@@ -147,7 +153,7 @@ public static class FfmpegArgs
     /// anything else VP8 in IVF; <see cref="ScreenCodec.Auto"/> is for the sharer to resolve and here means VP8, which needs no
     /// particular hardware. For H.264 the encoder says which graphics card makes it.
     /// </summary>
-    public static List<string> Capture(ScreenOptions o, ScreenCodec codec, HardwareEncoder encoder = HardwareEncoder.Nvenc)
+    public static List<string> Capture(ScreenOptions o, ScreenCodec codec, HardwareEncoder encoder = HardwareEncoder.Nvenc, bool gpuScale = false)
     {
         if (o.Fps is < 1 or > 60) throw new ArgumentOutOfRangeException(nameof(o), "Frames per second must be between 1 and 60.");
         if (o.Kbps is < 50 or > 20_000) throw new ArgumentOutOfRangeException(nameof(o), "The bitrate must be between 50 and 20000 kbit/s.");
@@ -159,10 +165,25 @@ public static class FfmpegArgs
         else throw new ArgumentException("Choose a monitor or a window to share.", nameof(o));
 
         // Even sizes only: the encoder works on pairs of pixels. A window that is resized keeps its shape inside the first size.
-        var filter = $"gfxcapture={source}:max_framerate={o.Fps.ToString(CultureInfo.InvariantCulture)}:capture_cursor={(o.ShowCursor ? 1 : 0)}:resize_mode=scale_aspect:dup_frames=1,"
-            + "hwdownload,format=bgra,"
-            // Intel's encoder takes NV12 and not planar YUV; the others take either.
-            + $"scale='min({o.MaxWidth},iw)':'min({o.MaxHeight},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,format={(codec == ScreenCodec.H264 && encoder == HardwareEncoder.Qsv ? "nv12" : "yuv420p")}";
+        var capture = $"gfxcapture={source}:max_framerate={o.Fps.ToString(CultureInfo.InvariantCulture)}:capture_cursor={(o.ShowCursor ? 1 : 0)}:resize_mode=scale_aspect:dup_frames=1";
+        string filter;
+        if (gpuScale && codec == ScreenCodec.H264 && encoder == HardwareEncoder.Nvenc)
+        {
+            // The frames stay on the graphics card: scaled and converted to NV12 there, then handed straight to NVENC.
+            // Not yet run on hardware: see issue #100. scale_d3d11 has no force_original_aspect_ratio, so the size that keeps the
+            // shape inside the box is worked out here, in even numbers, and never goes above the source.
+            const string fit = "min({0},iw,{1}*iw/ih)";
+            var w = string.Format(CultureInfo.InvariantCulture, fit, o.MaxWidth, o.MaxHeight);
+            filter = capture + ","
+                + $"scale_d3d11=width='2*trunc({w}/2)':height='2*trunc(ih*{w}/iw/2)':format=nv12";
+        }
+        else
+        {
+            filter = capture + ","
+                + "hwdownload,format=bgra,"
+                // Intel's encoder takes NV12 and not planar YUV; the others take either.
+                + $"scale='min({o.MaxWidth},iw)':'min({o.MaxHeight},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,format={(codec == ScreenCodec.H264 && encoder == HardwareEncoder.Qsv ? "nv12" : "yuv420p")}";
+        }
         var args = new List<string> { "-hide_banner", "-loglevel", "error", "-nostdin", "-filter_complex", filter };
         var rate = new[]
         {
