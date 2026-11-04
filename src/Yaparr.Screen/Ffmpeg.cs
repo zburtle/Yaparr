@@ -130,6 +130,13 @@ public sealed class ScreenOptions
 
     /// <summary>Whether to draw the mouse pointer into the picture.</summary>
     public bool ShowCursor { get; init; } = true;
+
+    /// <summary>The same options for another monitor or window: everything else (quality, codec, sound) stays.</summary>
+    public ScreenOptions Retarget(Display? display, long? windowHandle) => new()
+    {
+        Display = display, WindowHandle = windowHandle, Fps = Fps, MaxWidth = MaxWidth, MaxHeight = MaxHeight, Kbps = Kbps,
+        KeyFrameSeconds = KeyFrameSeconds, Codec = Codec, Encoder = Encoder, ShareSound = ShareSound, GpuScale = GpuScale, ShowCursor = ShowCursor,
+    };
 }
 
 /// <summary>The command lines for FFmpeg. Kept apart from running it so that they can be checked without FFmpeg.</summary>

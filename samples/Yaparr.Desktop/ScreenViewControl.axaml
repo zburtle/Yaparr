@@ -5,6 +5,10 @@
         <Image x:Name="Picture" Stretch="Uniform" />
         <TextBlock x:Name="Waiting" Text="Waiting for the first picture..." Foreground="#bbbbbb"
                    HorizontalAlignment="Center" VerticalAlignment="Center" />
+        <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="8" Padding="6,2" CornerRadius="4"
+                Background="#55000000" IsHitTestVisible="False" IsVisible="False" x:Name="FpsBadge">
+            <TextBlock x:Name="FpsText" Foreground="#AAFFFFFF" FontSize="11" />
+        </Border>
         <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto">
             <TextBlock x:Name="Info" Foreground="#999999" FontSize="11" Margin="8,4" VerticalAlignment="Center" />
             <StackPanel x:Name="SoundPanel" Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="8,4" IsVisible="False">

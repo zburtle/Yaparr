@@ -19,9 +19,19 @@ public partial class ShareDialog : Window
     private readonly IReadOnlyList<Display> _displays = Displays.List();
     private IReadOnlyList<ShareWindow> _windows = Array.Empty<ShareWindow>();
 
-    public ShareDialog()
+    private readonly ScreenOptions? _current;
+
+    /// <summary>With <paramref name="current"/>, picks another monitor or window for a share that is running: quality and sound stay as they are.</summary>
+    public ShareDialog(ScreenOptions? current = null)
     {
         InitializeComponent();
+        _current = current;
+        if (current != null)
+        {
+            Title = "Change what is shared";
+            QualityLabel.IsVisible = QualityBox.IsVisible = SoundNote.IsVisible = Note.IsVisible = false;
+            ShareButton.Content = "Switch";
+        }
         FillChoices(selectFirst: true);
         foreach (var q in Qualities) QualityBox.Items.Add(q.Label);
         QualityBox.SelectedIndex = 0;
@@ -45,10 +55,16 @@ public partial class ShareDialog : Window
 
     private void Share_Click(object? sender, RoutedEventArgs e)
     {
-        var q = Qualities[Math.Max(0, QualityBox.SelectedIndex)];
         int what = WhatBox.SelectedIndex;
         int windowAt = what - _displays.Count;
         var window = windowAt >= 0 && windowAt < _windows.Count ? _windows[windowAt] : null;
+        if (_current != null)
+        {
+            Result = _current.Retarget(what >= 0 && what < _displays.Count ? _displays[what] : null, window?.Handle);
+            Close(true);
+            return;
+        }
+        var q = Qualities[Math.Max(0, QualityBox.SelectedIndex)];
         Result = new ScreenOptions
         {
             Display = what >= 0 && what < _displays.Count ? _displays[what] : null,

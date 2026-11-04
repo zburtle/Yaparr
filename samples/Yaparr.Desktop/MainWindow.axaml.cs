@@ -1110,6 +1110,7 @@ public partial class MainWindow : Window
         _selected = ConversationList.SelectedItem as ConversationVm;
         ResetComposerExtras();
         UpdateInlineScreen();
+        UpdateSharerPanel();
         bool has = _selected != null;
         InputBox.IsEnabled = SendButton.IsEnabled = AttachButton.IsEnabled = has;
         MessageList.ItemsSource = _selected?.Messages;
