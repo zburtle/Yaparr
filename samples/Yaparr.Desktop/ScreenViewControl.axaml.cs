@@ -29,7 +29,11 @@ public partial class ScreenViewControl : UserControl
         _view = view;
         _viewer = new ScreenViewer(view, ffmpeg);
         _viewer.PictureReceived += OnPicture;
-        _viewer.Failed += ex => Dispatcher.UIThread.Post(() => { Waiting.IsVisible = true; Waiting.Text = "The picture stopped: " + ex.Message; });
+        _viewer.Failed += ex =>
+        {
+            DecoderFailed?.Invoke(ex.Message);
+            Dispatcher.UIThread.Post(() => { Waiting.IsVisible = true; Waiting.Text = "The picture stopped: " + ex.Message; });
+        };
         _draw.Tick += (_, _) => DrawTick();
         _timer.Tick += (_, _) => UpdateInfo();
         _timer.Start();
@@ -43,6 +47,9 @@ public partial class ScreenViewControl : UserControl
 
     /// <summary>The button asks for the picture to be moved between the main window and a window of its own.</summary>
     public event Action? DockToggleRequested, StopRequested;
+
+    /// <summary>The decoder stopped for a reason other than being closed; the text is what FFmpeg said.</summary>
+    public event Action<string>? DecoderFailed;
 
     /// <summary>Whether the picture is inside the main window (otherwise it is in a window of its own); sets what the button says.</summary>
     public bool Docked

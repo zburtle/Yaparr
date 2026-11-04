@@ -53,17 +53,20 @@ public sealed class FileLog
     /// <summary>The folder holding the log files.</summary>
     public string Folder => _directory;
 
-    public void Write(string line)
+    public void Write(string line) => Write(line, important: false);
+
+    /// <param name="important">Written even when the day's file has reached its limit, for what must not be lost, such as a crash.</param>
+    public void Write(string line, bool important)
     {
         Trace.WriteLine("[yaparr] " + line);
         lock (_gate)
         {
             Roll();
-            if (_full) return;
+            if (_full && !important) return;
             var text = $"{_now():yyyy-MM-dd HH:mm:ss.fff} {line}{Environment.NewLine}";
             try
             {
-                if (_size + text.Length > MaxBytesPerDay)
+                if (!important && _size + text.Length > MaxBytesPerDay)
                 {
                     _full = true;
                     text = $"{_now():yyyy-MM-dd HH:mm:ss.fff} (this day's log reached {MaxBytesPerDay / 1_000_000} MB; nothing more is written today){Environment.NewLine}";

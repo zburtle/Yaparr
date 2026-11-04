@@ -283,6 +283,7 @@ public partial class MainWindow : Window
         _settings = _data.LoadSettings();
         _vpn = new VpnController(_data, _settings, () => _node);
         _log = new FileLog(Path.Combine(_data.Directory, "logs"), legacyFile: Path.Combine(_data.Directory, "yaparr.log"));
+        CrashLog.Attach(_log, _log.Folder);
         _log.Write($"Yaparr {Updater.CurrentVersion} starting");
         Updater.Log = _log.Write;
         SetUpNotifications();
