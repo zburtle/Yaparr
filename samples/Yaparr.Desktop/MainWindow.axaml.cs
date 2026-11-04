@@ -48,7 +48,9 @@ public partial class MainWindow : Window
         AddHandler(PointerReleasedEvent, OnPushToTalkPointer, RoutingStrategies.Tunnel);
         // A key held while this window loses the focus would never be seen coming up.
         Deactivated += (_, _) => { if (_voice != null && _pushToTalkHook == null) _voice.PushToTalkHeld = false; };
-        ConversationList.ItemsSource = _conversations;
+        RoomList.ItemsSource = _roomItems;
+        ChatList.ItemsSource = _chatItems;
+        _conversations.CollectionChanged += SyncConversationLists;
         ToolTip.SetTip(InfoIcon, "Yaparr v" + Updater.CurrentVersion);
         ToolTip.SetTip(PeersIcon, "Starting…");
         ToolTip.SetTip(NetworkIcon, "Checking the network…");
@@ -65,7 +67,8 @@ public partial class MainWindow : Window
             alertTimer.Stop();
             if (has) alertTimer.Start();
         };
-        SelectOnRightClick(ConversationList);
+        SelectOnRightClick(RoomList);
+        SelectOnRightClick(ChatList);
         SelectOnRightClick(MessageList);
         SelectOnRightClick(PeopleList);
         Opened += async (_, _) =>
@@ -76,6 +79,30 @@ public partial class MainWindow : Window
             await StartAsync();
         };
         Closing += (_, _) => Shutdown();
+    }
+
+    // The sidebar shows the rooms and the direct chats in lists of their own, kept in step with the one list of all conversations.
+    private readonly ObservableCollection<ConversationVm> _roomItems = new(), _chatItems = new();
+    private bool _selecting;
+
+    private void SyncConversationLists(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset) { _roomItems.Clear(); _chatItems.Clear(); return; }
+        foreach (var gone in e.OldItems?.OfType<ConversationVm>() ?? Enumerable.Empty<ConversationVm>()) (gone.IsRoom ? _roomItems : _chatItems).Remove(gone);
+        foreach (var added in e.NewItems?.OfType<ConversationVm>() ?? Enumerable.Empty<ConversationVm>()) (added.IsRoom ? _roomItems : _chatItems).Add(added);
+    }
+
+    // One conversation is open at a time, in whichever of the two lists it is; picking in one list clears the other.
+    private void SelectConversation(ConversationVm? conv)
+    {
+        _selecting = true;
+        try
+        {
+            if (conv == null || conv.IsRoom) ChatList.SelectedItem = null;
+            if (conv == null || !conv.IsRoom) RoomList.SelectedItem = null;
+        }
+        finally { _selecting = false; }
+        (conv?.IsRoom == false ? ChatList : RoomList).SelectedItem = conv;
     }
 
     private static void SelectOnRightClick(ListBox list) =>
@@ -566,7 +593,7 @@ public partial class MainWindow : Window
 
     private ConversationVm AddRoom(ChatRoom room, string title, string? invite)
     {
-        if (_roomConversations.TryGetValue(room, out var existing)) { ConversationList.SelectedItem = existing; return existing; }
+        if (_roomConversations.TryGetValue(room, out var existing)) { SelectConversation(existing); return existing; }
 
         ConversationVm conv = null!;
         // A message goes to the text channel on show; the first one needs no channel named.
@@ -602,7 +629,7 @@ public partial class MainWindow : Window
             CountIfUnread(conv, room, vm);
         }
         _conversations.Add(conv);
-        ConversationList.SelectedItem = conv;
+        SelectConversation(conv);
         RefreshPeers();
         return conv;
     }
@@ -739,7 +766,7 @@ public partial class MainWindow : Window
         {
             if (_directConversations.TryGetValue(chat.PeerId, out var existing))
             {
-                UI(() => { ConversationList.SelectedItem = existing; tcs.SetResult(); });
+                UI(() => { SelectConversation(existing); tcs.SetResult(); });
                 return tcs.Task;
             }
             var title = chat.DisplayName + " (direct)";
@@ -758,7 +785,7 @@ public partial class MainWindow : Window
             if (chat.Peer != null) Remember(chat.Peer);
             _conversations.Add(conv);
             RefreshPeers();
-            if (_selected == null) ConversationList.SelectedItem = conv;
+            if (_selected == null) SelectConversation(conv);
             tcs.SetResult();
         });
         return tcs.Task;
@@ -1107,7 +1134,18 @@ public partial class MainWindow : Window
 
     private void ConversationList_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        _selected = ConversationList.SelectedItem as ConversationVm;
+        if (_selecting) return;
+        var list = (ListBox)sender!;
+        var other = list == RoomList ? ChatList : RoomList;
+        var picked = list.SelectedItem as ConversationVm;
+        if (picked == null && other.SelectedItem != null) return;   // the other list has taken over
+        if (picked != null)
+        {
+            _selecting = true;
+            try { other.SelectedItem = null; }
+            finally { _selecting = false; }
+        }
+        _selected = picked;
         ResetComposerExtras();
         UpdateInlineScreen();
         UpdateSharerPanel();

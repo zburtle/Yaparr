@@ -64,7 +64,7 @@ public partial class MainWindow
     private void Channel_Click(object? sender, RoutedEventArgs e)
     {
         if (sender is not Button { DataContext: ChannelVm channel } || RoomOf(channel) is not var (conv, room)) return;
-        if (_selected != conv) ConversationList.SelectedItem = conv;
+        if (_selected != conv) SelectConversation(conv);
         if (channel.IsVoice)
         {
             JoinVoiceIn(conv, room, channel.Id);

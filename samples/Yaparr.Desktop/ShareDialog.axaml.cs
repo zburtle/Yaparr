@@ -22,7 +22,9 @@ public partial class ShareDialog : Window
     private readonly ScreenOptions? _current;
 
     /// <summary>With <paramref name="current"/>, picks another monitor or window for a share that is running: quality and sound stay as they are.</summary>
-    public ShareDialog(ScreenOptions? current = null)
+    public ShareDialog() : this(null) { }
+
+    public ShareDialog(ScreenOptions? current)
     {
         InitializeComponent();
         _current = current;

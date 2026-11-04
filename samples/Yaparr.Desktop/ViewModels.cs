@@ -506,7 +506,7 @@ public sealed class ConversationVm : Observable
     }
 
     public bool ShowChannelList => _showChannels && _channelsOpen;
-    public string OpenGlyph => _channelsOpen ? "▾" : "▸";
+    public string OpenGlyph => _channelsOpen ? "▲" : "▼";
 
     /// <summary>Rooms made with an owner have channels beyond the first; older rooms show none.</summary>
     public bool ShowChannels
