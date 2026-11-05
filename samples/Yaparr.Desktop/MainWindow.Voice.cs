@@ -112,6 +112,8 @@ public partial class MainWindow
         session.Activation = PushToTalk != null ? VoiceActivation.PushToTalk : _settings.VoiceAlwaysOn ? VoiceActivation.Open : VoiceActivation.VoiceActivity;
         session.Sensitivity = _settings.VoiceSensitivity / 1000f;
         session.OutputGain = Math.Clamp(_settings.VoiceOutputVolume, 0, 300) / 100f;
+        session.AutomaticVolume = _settings.VoiceAutomaticVolume;
+        session.LevelSpeakers = _settings.VoiceLevelSpeakers;
     }
 
     // ---- push to talk ---------------------------------------------------------------------------

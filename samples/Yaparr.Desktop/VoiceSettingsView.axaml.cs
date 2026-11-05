@@ -37,6 +37,8 @@ public partial class VoiceSettingsView : UserControl
         SensitivityBox.PropertyChanged += (_, e) => { if (e.Property == RangeBase.ValueProperty) Commit(); };
         NoiseBox.SelectionChanged += (_, _) => Commit();
         EchoBox.IsCheckedChanged += (_, _) => Commit();
+        LevelSpeakersBox.IsCheckedChanged += (_, _) => Commit();
+        AutomaticVolumeBox.IsCheckedChanged += (_, _) => Commit();
         AlwaysBox.IsCheckedChanged += (_, _) => Commit();
         PushToTalkBox.IsCheckedChanged += (_, _) => PushToTalkToggled();
         PushToTalkSoundBox.IsCheckedChanged += (_, _) => Commit();
@@ -79,6 +81,8 @@ public partial class VoiceSettingsView : UserControl
             PushToTalkSoundBox.IsChecked = _settings.VoicePushToTalkSound;
             NoiseBox.SelectedItem = Enum.TryParse<NoiseSuppression>(_settings.VoiceNoiseSuppression, out var noise) ? noise.ToString() : nameof(NoiseSuppression.Moderate);
             EchoBox.IsChecked = _settings.VoiceEchoCancellation;
+            LevelSpeakersBox.IsChecked = _settings.VoiceLevelSpeakers;
+            AutomaticVolumeBox.IsChecked = _settings.VoiceAutomaticVolume;
             SensitivityBox.Value = _settings.VoiceSensitivity;
             _choosingKey = false;
             ShowKey();
@@ -102,6 +106,8 @@ public partial class VoiceSettingsView : UserControl
         _settings.VoiceAlwaysOn = AlwaysBox.IsChecked == true;
         _settings.VoicePushToTalkSound = PushToTalkSoundBox.IsChecked == true;
         _settings.VoiceEchoCancellation = EchoBox.IsChecked == true;
+        _settings.VoiceLevelSpeakers = LevelSpeakersBox.IsChecked == true;
+        _settings.VoiceAutomaticVolume = AutomaticVolumeBox.IsChecked == true;
         _settings.VoiceNoiseSuppression = NoiseBox.SelectedItem as string ?? nameof(NoiseSuppression.Moderate);
         _settings.VoiceSensitivity = (int)SensitivityBox.Value;
         _changed?.Invoke(devices);
