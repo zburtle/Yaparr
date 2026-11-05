@@ -113,7 +113,7 @@ public class H264Tests
     public void The_graphics_card_command_makes_a_low_latency_stream_of_whole_pictures()
     {
         var display = new Display(0, "x", 0, 0, 1920, 1080, true, Handle: 0x1A2B);
-        string line = string.Join(' ', FfmpegArgs.Capture(new ScreenOptions { Fps = 20, Kbps = 1000, KeyFrameSeconds = 2, Display = display }, ScreenCodec.H264));
+        string line = string.Join(' ', FfmpegArgs.Capture(new ScreenOptions { X11Display = null, Fps = 20, Kbps = 1000, KeyFrameSeconds = 2, Display = display }, ScreenCodec.H264));
         Assert.Contains("gfxcapture=hmonitor=0x1A2B:max_framerate=20", line);
         Assert.Contains("-c:v h264_nvenc", line);
         Assert.Contains("-bf 0", line);          // no reordering: a picture can be shown as soon as it arrives
@@ -130,7 +130,7 @@ public class H264Tests
     public void Amds_and_Intels_encoders_get_the_same_low_latency_stream_with_their_own_options()
     {
         var display = new Display(0, "x", 0, 0, 1920, 1080, true, Handle: 0x1A2B);
-        var options = new ScreenOptions { Fps = 20, Kbps = 1000, KeyFrameSeconds = 2, Display = display };
+        var options = new ScreenOptions { X11Display = null, Fps = 20, Kbps = 1000, KeyFrameSeconds = 2, Display = display };
 
         string amd = string.Join(' ', FfmpegArgs.Capture(options, ScreenCodec.H264, HardwareEncoder.Amf));
         Assert.Contains("-c:v h264_amf", amd);
@@ -156,7 +156,7 @@ public class H264Tests
         Assert.Equal(FfmpegArgs.Capture(options, ScreenCodec.H264), FfmpegArgs.Capture(options, ScreenCodec.H264, HardwareEncoder.Nvenc));
         Assert.Contains("-c:v h264_nvenc", string.Join(' ', FfmpegArgs.Capture(options, ScreenCodec.H264)));
         // The encoder chosen in the options is what the plain command uses.
-        Assert.Contains("-c:v h264_qsv", string.Join(' ', FfmpegArgs.Capture(new ScreenOptions { Display = display, Codec = ScreenCodec.H264, Encoder = HardwareEncoder.Qsv })));
+        Assert.Contains("-c:v h264_qsv", string.Join(' ', FfmpegArgs.Capture(new ScreenOptions { X11Display = null, Display = display, Codec = ScreenCodec.H264, Encoder = HardwareEncoder.Qsv })));
         // VP8 never changes with the card.
         Assert.Equal(FfmpegArgs.Capture(options, ScreenCodec.Vp8), FfmpegArgs.Capture(options, ScreenCodec.Vp8, HardwareEncoder.Qsv));
     }
@@ -165,17 +165,16 @@ public class H264Tests
     public void Auto_tries_the_graphics_cards_in_turn_and_software_last()
     {
         var display = new Display(0, "x", 0, 0, 1920, 1080, true, Handle: 0x1A2B);
-        var auto = ScreenSharer.Plan(new ScreenOptions { Display = display });
-        Assert.Equal(new (ScreenCodec, HardwareEncoder?)[]
-        {
-            (ScreenCodec.H264, HardwareEncoder.Nvenc), (ScreenCodec.H264, HardwareEncoder.Amf), (ScreenCodec.H264, HardwareEncoder.Qsv), (ScreenCodec.Vp8, null),
-        }, auto);
+        var auto = ScreenSharer.Plan(new ScreenOptions { X11Display = null, Display = display });
+        // The cards tried depend on the system: NVIDIA, AMD and Intel on Windows; NVIDIA and VA-API on Linux.
+        Assert.Equal(HardwareEncoders.InOrder.Select(card => (ScreenCodec.H264, (HardwareEncoder?)card)).Append((ScreenCodec.Vp8, (HardwareEncoder?)null)), auto);
+        Assert.Equal(OperatingSystem.IsLinux() ? 3 : 4, auto.Count);
 
         // Asking for H.264 never falls back to VP8; asking for VP8 never tries a card; naming a card tries only that one.
-        Assert.DoesNotContain(ScreenSharer.Plan(new ScreenOptions { Display = display, Codec = ScreenCodec.H264 }), p => p.Codec == ScreenCodec.Vp8);
-        Assert.Equal(new (ScreenCodec, HardwareEncoder?)[] { (ScreenCodec.Vp8, null) }, ScreenSharer.Plan(new ScreenOptions { Display = display, Codec = ScreenCodec.Vp8 }));
+        Assert.DoesNotContain(ScreenSharer.Plan(new ScreenOptions { X11Display = null, Display = display, Codec = ScreenCodec.H264 }), p => p.Codec == ScreenCodec.Vp8);
+        Assert.Equal(new (ScreenCodec, HardwareEncoder?)[] { (ScreenCodec.Vp8, null) }, ScreenSharer.Plan(new ScreenOptions { X11Display = null, Display = display, Codec = ScreenCodec.Vp8 }));
         Assert.Equal(new (ScreenCodec, HardwareEncoder?)[] { (ScreenCodec.H264, HardwareEncoder.Amf), (ScreenCodec.Vp8, null) },
-            ScreenSharer.Plan(new ScreenOptions { Display = display, Encoder = HardwareEncoder.Amf }));
+            ScreenSharer.Plan(new ScreenOptions { X11Display = null, Display = display, Encoder = HardwareEncoder.Amf }));
 
         Assert.True(HardwareEncoders.TryParse("QSV", out var card) && card == HardwareEncoder.Qsv);
         Assert.True(HardwareEncoders.TryParse("amd", out card) && card == HardwareEncoder.Amf);
@@ -237,7 +236,7 @@ public class H264Tests
     public void Unless_the_graphics_card_is_asked_for_the_picture_is_encoded_in_software()
     {
         var display = new Display(0, "x", 0, 0, 1920, 1080, true, Handle: 0x1A2B);
-        var options = new ScreenOptions { Display = display };
+        var options = new ScreenOptions { X11Display = null, Display = display };
         Assert.Equal(ScreenCodec.Auto, options.Codec);
         foreach (var codec in new[] { ScreenCodec.Auto, ScreenCodec.Vp8 })
         {

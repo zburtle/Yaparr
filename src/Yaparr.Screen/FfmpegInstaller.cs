@@ -1,4 +1,5 @@
 ﻿using System.IO.Compression;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 
 namespace Yaparr.Screen;
@@ -6,7 +7,7 @@ namespace Yaparr.Screen;
 /// <summary>A build of FFmpeg that can be downloaded: where from, and what it must look like when it has arrived.</summary>
 /// <param name="Version">Names the folder it is installed in, so a newer build can sit next to an older one.</param>
 /// <param name="Sha256">The SHA-256 of the downloaded file in hex. A file that does not match is thrown away.</param>
-/// <param name="ExePathInZip">Where ffmpeg.exe is inside the zip.</param>
+/// <param name="ExePathInZip">Where the program (ffmpeg.exe, or ffmpeg on Linux) is inside the zip.</param>
 /// <param name="LicensePathInZip">The licence file, which is kept next to the program.</param>
 /// <param name="NoticesRoot">
 /// The folder in the zip that holds the program's own notices (LICENSE.txt, SOURCE.txt, BUILD-INFO.txt and a licenses folder,
@@ -31,6 +32,35 @@ public sealed record FfmpegPackage(string Version, Uri Url, string Sha256, long 
         "ffmpeg-yaparr-g17a4a474f4-win64/bin/ffmpeg.exe",
         "ffmpeg-yaparr-g17a4a474f4-win64/LICENSE.txt",
         "ffmpeg-yaparr-g17a4a474f4-win64");
+
+    /// <summary>
+    /// Yaparr's own Linux x86-64 build, the asset of the Yaparr.FFmpeg release ffmpeg-5 (the same FFmpeg commit as the Windows
+    /// one; see https://github.com/zburtle/Yaparr.FFmpeg). It runs on glibc 2.35 or newer and needs the computer's own libva.
+    /// </summary>
+    public static FfmpegPackage LinuxX64 { get; } = new(
+        "g17a4a474f4-yaparr-5-linux-x64",
+        new Uri("https://github.com/zburtle/Yaparr.FFmpeg/releases/download/ffmpeg-5/ffmpeg-yaparr-g17a4a474f4-linux-x64.zip"),
+        "075f1d4adc17fcaeda0ac11f004291105bdfab28dc0f74c49be309c3997e6fae",
+        2_065_460,
+        "ffmpeg-yaparr-g17a4a474f4-linux-x64/bin/ffmpeg",
+        "ffmpeg-yaparr-g17a4a474f4-linux-x64/LICENSE.txt",
+        "ffmpeg-yaparr-g17a4a474f4-linux-x64");
+
+    /// <summary>Yaparr's own Linux arm64 build, from the same release as <see cref="LinuxX64"/>.</summary>
+    public static FfmpegPackage LinuxArm64 { get; } = new(
+        "g17a4a474f4-yaparr-5-linux-arm64",
+        new Uri("https://github.com/zburtle/Yaparr.FFmpeg/releases/download/ffmpeg-5/ffmpeg-yaparr-g17a4a474f4-linux-arm64.zip"),
+        "f85116f9ac0bb90683c010c6a28529555053c6428d461f32f6c74a2bed402421",
+        2_059_921,
+        "ffmpeg-yaparr-g17a4a474f4-linux-arm64/bin/ffmpeg",
+        "ffmpeg-yaparr-g17a4a474f4-linux-arm64/LICENSE.txt",
+        "ffmpeg-yaparr-g17a4a474f4-linux-arm64");
+
+    /// <summary>The build to download for the system this runs on, or null if there is none (another system, or a processor there is no build for).</summary>
+    public static FfmpegPackage? ForThisSystem =>
+        OperatingSystem.IsWindows() ? Default
+        : OperatingSystem.IsLinux() ? RuntimeInformation.OSArchitecture switch { Architecture.X64 => LinuxX64, Architecture.Arm64 => LinuxArm64, _ => null }
+        : null;
 }
 
 /// <summary>Downloads FFmpeg once into the user's own application data, checks it, and keeps it there.</summary>
@@ -111,6 +141,10 @@ public static class FfmpegInstaller
                 if (package.LicensePathInZip != null) Extract(archive, package.LicensePathInZip, Path.Combine(staging, "LICENSE.txt"), required: false);
                 if (package.NoticesRoot != null) ExtractNotices(archive, package.NoticesRoot, staging);
             }
+            // A zip does not always carry the permission to run the program.
+            if (!OperatingSystem.IsWindows())
+                File.SetUnixFileMode(Path.Combine(staging, ExeName),
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute | UnixFileMode.GroupRead | UnixFileMode.GroupExecute | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
             // A build that brings its own note about where the source is keeps it; otherwise one is written.
             if (!File.Exists(Path.Combine(staging, "SOURCE.txt")))
                 File.WriteAllText(Path.Combine(staging, "SOURCE.txt"),

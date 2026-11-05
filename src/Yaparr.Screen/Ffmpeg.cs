@@ -56,18 +56,24 @@ public static class FfmpegLocator
 public enum ScreenCodec { Auto, Vp8, H264 }
 
 /// <summary>The graphics card encoders FFmpeg can drive for H.264.</summary>
-public enum HardwareEncoder { Nvenc, Amf, Qsv }
+public enum HardwareEncoder { Nvenc, Amf, Qsv, Vaapi }
 
 public static class HardwareEncoders
 {
-    /// <summary>The order Auto tries them in: the first one that starts is used. A computer with an NVIDIA card and Intel graphics uses the NVIDIA card.</summary>
-    public static IReadOnlyList<HardwareEncoder> InOrder { get; } = new[] { HardwareEncoder.Nvenc, HardwareEncoder.Amf, HardwareEncoder.Qsv };
+    /// <summary>
+    /// The order Auto tries them in: the first one that starts is used. A computer with an NVIDIA card and Intel graphics uses the
+    /// NVIDIA card. On Linux Intel and AMD graphics are both driven through VA-API; AMF and Quick Sync are the Windows ways.
+    /// </summary>
+    public static IReadOnlyList<HardwareEncoder> InOrder { get; } = OperatingSystem.IsLinux()
+        ? new[] { HardwareEncoder.Nvenc, HardwareEncoder.Vaapi }
+        : new[] { HardwareEncoder.Nvenc, HardwareEncoder.Amf, HardwareEncoder.Qsv };
 
     /// <summary>FFmpeg's name for the encoder.</summary>
     public static string Name(HardwareEncoder encoder) => encoder switch
     {
         HardwareEncoder.Nvenc => "h264_nvenc",
         HardwareEncoder.Amf => "h264_amf",
+        HardwareEncoder.Vaapi => "h264_vaapi",
         _ => "h264_qsv",
     };
 
@@ -76,8 +82,28 @@ public static class HardwareEncoders
     {
         HardwareEncoder.Nvenc => "NVIDIA",
         HardwareEncoder.Amf => "AMD",
+        HardwareEncoder.Vaapi => "Intel or AMD",
         _ => "Intel",
     };
+
+    /// <summary>
+    /// The render device VA-API encodes on: the path in YAPARR_VAAPI_DEVICE, else the first /dev/dri/renderD* there is, else the
+    /// usual first one.
+    /// </summary>
+    public static string VaapiDevice()
+    {
+        if (Environment.GetEnvironmentVariable("YAPARR_VAAPI_DEVICE") is { Length: > 0 } chosen) return chosen;
+        try
+        {
+            if (Directory.Exists("/dev/dri") && Directory.GetFiles("/dev/dri", "renderD*").OrderBy(p => p, StringComparer.Ordinal).FirstOrDefault() is { } found) return found;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        return "/dev/dri/renderD128";
+    }
+
+    /// <summary>The pixel format (and for VA-API the upload to the card) that ends the filter chain for this encoder.</summary>
+    internal static string PixelFormat(ScreenCodec codec, HardwareEncoder encoder) =>
+        codec != ScreenCodec.H264 ? "yuv420p" : encoder switch { HardwareEncoder.Qsv => "nv12", HardwareEncoder.Vaapi => "nv12,hwupload", _ => "yuv420p" };
 
     public static bool TryParse(string? text, out HardwareEncoder encoder)
     {
@@ -86,6 +112,7 @@ public static class HardwareEncoders
             case "nvenc" or "nvidia": encoder = HardwareEncoder.Nvenc; return true;
             case "amf" or "amd": encoder = HardwareEncoder.Amf; return true;
             case "qsv" or "intel": encoder = HardwareEncoder.Qsv; return true;
+            case "vaapi" or "va-api": encoder = HardwareEncoder.Vaapi; return true;
             default: encoder = default; return false;
         }
     }
@@ -123,6 +150,12 @@ public sealed class ScreenOptions
     public bool ShareSound { get; init; }
 
     /// <summary>
+    /// Linux, Wayland: the program (by its name) whose sound is shared. Wayland does not say which program a shared window belongs to,
+    /// so without this the sound is everything except Yaparr's own.
+    /// </summary>
+    public string? SoundProgram { get; init; }
+
+    /// <summary>
     /// Scale and convert the picture on the graphics card rather than the processor, so the frames never come down to system
     /// memory. Only for H.264 on NVIDIA's encoder so far. The sharer falls back to the processor path if FFmpeg cannot start it.
     /// </summary>
@@ -131,11 +164,31 @@ public sealed class ScreenOptions
     /// <summary>Whether to draw the mouse pointer into the picture.</summary>
     public bool ShowCursor { get; init; } = true;
 
+    /// <summary>
+    /// On Wayland: the screen or window the desktop's portal handed over (see <see cref="PortalScreenCast"/>), which is what is
+    /// shared instead of a monitor or window of this list. The sharer owns it from the moment sharing starts and ends it with the share.
+    /// </summary>
+    public PortalScreenCast? Portal { get; init; }
+
+    /// <summary>
+    /// The X11 display to copy (like ":0"), which makes the capture FFmpeg's x11grab instead of Windows Graphics Capture. On Linux
+    /// it is the DISPLAY variable; elsewhere null.
+    /// </summary>
+    public string? X11Display { get; init; } = OperatingSystem.IsLinux() ? Environment.GetEnvironmentVariable("DISPLAY") : null;
+
     /// <summary>The same options for another monitor or window: everything else (quality, codec, sound) stays.</summary>
     public ScreenOptions Retarget(Display? display, long? windowHandle) => new()
     {
         Display = display, WindowHandle = windowHandle, Fps = Fps, MaxWidth = MaxWidth, MaxHeight = MaxHeight, Kbps = Kbps,
-        KeyFrameSeconds = KeyFrameSeconds, Codec = Codec, Encoder = Encoder, ShareSound = ShareSound, GpuScale = GpuScale, ShowCursor = ShowCursor,
+        KeyFrameSeconds = KeyFrameSeconds, Codec = Codec, Encoder = Encoder, ShareSound = ShareSound, SoundProgram = SoundProgram, GpuScale = GpuScale, ShowCursor = ShowCursor,
+        X11Display = X11Display,
+    };
+
+    /// <summary>The same options for another stream from the portal (the desktop asked again what to share).</summary>
+    public ScreenOptions Retarget(PortalScreenCast portal) => new()
+    {
+        Portal = portal, Fps = Fps, MaxWidth = MaxWidth, MaxHeight = MaxHeight, Kbps = Kbps, KeyFrameSeconds = KeyFrameSeconds, Codec = Codec,
+        Encoder = Encoder, ShareSound = ShareSound, SoundProgram = SoundProgram, GpuScale = false, ShowCursor = ShowCursor, X11Display = X11Display,
     };
 }
 
@@ -166,6 +219,12 @@ public static class FfmpegArgs
         if (o.Kbps is < 50 or > 20_000) throw new ArgumentOutOfRangeException(nameof(o), "The bitrate must be between 50 and 20000 kbit/s.");
         if (o.MaxWidth < 16 || o.MaxHeight < 16) throw new ArgumentOutOfRangeException(nameof(o), "The picture box is too small.");
 
+        if (o.Portal is { } portal) return CapturePortal(o, portal.Stream, codec, encoder);
+
+        // On X11 the input is x11grab, which polls the screen at the frame rate (so a still screen still gives a steady stream) and
+        // delivers plain pixels; there is nothing on a graphics card to keep them on.
+        if (o.X11Display is { Length: > 0 } x11) return CaptureX11(o, x11, codec, encoder);
+
         string source;
         if (o.WindowHandle is { } window) source = "hwnd=" + Hex(window);
         else if (o.Display is { Handle: not 0 } display) source = "hmonitor=" + Hex(display.Handle);
@@ -189,9 +248,55 @@ public static class FfmpegArgs
             filter = capture + ","
                 + "hwdownload,format=bgra,"
                 // Intel's encoder takes NV12 and not planar YUV; the others take either.
-                + $"scale='min({o.MaxWidth},iw)':'min({o.MaxHeight},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,format={(codec == ScreenCodec.H264 && encoder == HardwareEncoder.Qsv ? "nv12" : "yuv420p")}";
+                + $"scale='min({o.MaxWidth},iw)':'min({o.MaxHeight},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,format={HardwareEncoders.PixelFormat(codec, encoder)}";
         }
         var args = new List<string> { "-hide_banner", "-loglevel", "error", "-nostdin", "-filter_complex", filter };
+        return AddEncoder(args, o, codec, encoder);
+    }
+
+    /// <summary>
+    /// FFmpeg's side of a Wayland share: raw planar pictures at the size <see cref="PortalPipeline.FrameSize"/> says come in on
+    /// standard input (from GStreamer, see <see cref="PortalPipeline"/>), and are encoded like any other capture.
+    /// </summary>
+    public static List<string> CapturePortal(ScreenOptions o, PortalStream stream, ScreenCodec codec, HardwareEncoder encoder = HardwareEncoder.Nvenc)
+    {
+        if (o.Fps is < 1 or > 60) throw new ArgumentOutOfRangeException(nameof(o), "Frames per second must be between 1 and 60.");
+        if (o.Kbps is < 50 or > 20_000) throw new ArgumentOutOfRangeException(nameof(o), "The bitrate must be between 50 and 20000 kbit/s.");
+        if (o.MaxWidth < 16 || o.MaxHeight < 16) throw new ArgumentOutOfRangeException(nameof(o), "The picture box is too small.");
+        var (width, height) = PortalPipeline.FrameSize(stream, o);
+        // No -nostdin: the pictures arrive on standard input.
+        var args = new List<string> { "-hide_banner", "-loglevel", "error" };
+        if (codec == ScreenCodec.H264 && encoder == HardwareEncoder.Vaapi) args.AddRange(new[] { "-vaapi_device", HardwareEncoders.VaapiDevice() });
+        args.AddRange(new[] { "-f", "rawvideo", "-pixel_format", "yuv420p", "-video_size", $"{width}x{height}", "-framerate", o.Fps.ToString(CultureInfo.InvariantCulture), "-i", "pipe:0" });
+        args.AddRange(new[] { "-vf", "format=" + HardwareEncoders.PixelFormat(codec, encoder) });
+        return AddEncoder(args, o, codec, encoder);
+    }
+
+    // The monitor is copied with x11grab: its rectangle (when xrandr gave one) is picked out of the display with the offset in the
+    // input name, then scaled down and converted like the Windows path. A window is grabbed by its id.
+    private static List<string> CaptureX11(ScreenOptions o, string x11, ScreenCodec codec, HardwareEncoder encoder)
+    {
+        if (o.WindowHandle == null && o.Display == null) throw new ArgumentException("Choose a monitor or a window to share.", nameof(o));
+        var args = new List<string> { "-hide_banner", "-loglevel", "error", "-nostdin" };
+        // VA-API encodes on a render device that is named up front; the frames are uploaded to it at the end of the filter chain.
+        if (codec == ScreenCodec.H264 && encoder == HardwareEncoder.Vaapi) args.AddRange(new[] { "-vaapi_device", HardwareEncoders.VaapiDevice() });
+        args.AddRange(new[] { "-f", "x11grab", "-framerate", o.Fps.ToString(CultureInfo.InvariantCulture), "-draw_mouse", o.ShowCursor ? "1" : "0" });
+        if (o.WindowHandle is { } window)
+            args.AddRange(new[] { "-window_id", Hex(window), "-i", x11 });   // the window keeps the size it had when sharing began
+        else
+        {
+            var shown = o.Display!;
+            if (shown.Width > 0 && shown.Height > 0) args.AddRange(new[] { "-video_size", $"{shown.Width}x{shown.Height}" });
+            args.AddRange(new[] { "-i", $"{x11}+{shown.X.ToString(CultureInfo.InvariantCulture)},{shown.Y.ToString(CultureInfo.InvariantCulture)}" });
+        }
+        args.AddRange(new[] { "-vf",
+            $"scale='min({o.MaxWidth},iw)':'min({o.MaxHeight},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,format={HardwareEncoders.PixelFormat(codec, encoder)}" });
+        return AddEncoder(args, o, codec, encoder);
+    }
+
+    // What the two capture paths share: the codec, its options and the rate, writing to standard output.
+    private static List<string> AddEncoder(List<string> args, ScreenOptions o, ScreenCodec codec, HardwareEncoder encoder)
+    {
         var rate = new[]
         {
             "-b:v", o.Kbps + "k", "-maxrate", Num(o.Kbps * 1.5) + "k", "-bufsize", Num(o.Kbps * 1.5) + "k",
@@ -209,6 +314,7 @@ public static class FfmpegArgs
             {
                 HardwareEncoder.Amf => new[] { "-c:v", "h264_amf", "-usage", "ultralowlatency", "-quality", "speed", "-rc", "vbr_latency", "-bf", "0",
                     "-profile:v", "high", "-forced_idr", "1", "-aud", "1", "-async_depth", "1" },
+                HardwareEncoder.Vaapi => new[] { "-c:v", "h264_vaapi", "-profile:v", "high", "-bf", "0", "-aud", "1", "-async_depth", "1" },
                 HardwareEncoder.Qsv => new[] { "-c:v", "h264_qsv", "-preset", "veryfast", "-scenario", "displayremoting", "-async_depth", "1", "-bf", "0",
                     "-profile:v", "high", "-forced_idr", "1", "-aud", "1" },
                 _ => new[] { "-c:v", "h264_nvenc", "-preset", "p4", "-tune", "ll", "-rc", "vbr", "-rc-lookahead", "0", "-bf", "0",

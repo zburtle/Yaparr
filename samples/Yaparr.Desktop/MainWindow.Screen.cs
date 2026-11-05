@@ -48,7 +48,14 @@ public partial class MainWindow
     {
         if (FfmpegLocator.Find() is { } found) return found;
 
-        var package = FfmpegPackage.Default;
+        var package = FfmpegPackage.ForThisSystem;
+        if (package == null)
+        {
+            _log.Write("FFmpeg was not found and there is no download for this system");
+            await Dialogs.MessageAsync(this, "FFmpeg is needed",
+                "Sharing and watching a screen needs FFmpeg, a free video program. Install the ffmpeg package with your system's package manager (for example \"sudo apt install ffmpeg\"), then try again.");
+            return null;
+        }
         bool yes = await Dialogs.ConfirmAsync(this, "FFmpeg is needed",
             $"Sharing and watching a screen needs FFmpeg, a free video program. Yaparr can download it once ({package.SizeBytes / 1_048_576} MB) from {package.Url.Host} and keep it in its own folder.\n\nDownload it now?",
             "Download", "Not now");
@@ -74,12 +81,21 @@ public partial class MainWindow
 
         var dialog = new ShareDialog();
         if (!await dialog.ShowDialog<bool>(this) || dialog.Result == null) return;
+        var options = dialog.Result;
+
+        // Under Wayland the desktop's own picker decides what is shared.
+        if (ScreenCapture.UsesPortal)
+        {
+            var portal = await AskDesktopWhatToShareAsync(dialog.PortalWindow);
+            if (portal == null) return;
+            options = options.Retarget(portal);
+        }
 
         try
         {
-            var what = dialog.Result.WindowHandle != null ? "window" : "screen";
-            var sharer = ScreenSharer.Start(_node, room, $"{_settings.DisplayName}'s {what}", dialog.Result, ffmpeg);
-            _log.Write($"sharing your {what}: {dialog.Result.Fps} fps, {dialog.Result.Kbps} kbit/s, up to {dialog.Result.MaxWidth}x{dialog.Result.MaxHeight}, FFmpeg {ffmpeg}");
+            var what = options.Portal?.IsWindow ?? options.WindowHandle != null ? "window" : "screen";
+            var sharer = ScreenSharer.Start(_node, room, $"{_settings.DisplayName}'s {what}", options, ffmpeg);
+            _log.Write($"sharing your {what}: {options.Fps} fps, {options.Kbps} kbit/s, up to {options.MaxWidth}x{options.MaxHeight}, FFmpeg {ffmpeg}");
             sharer.Ended += ex => UI(() =>
             {
                 if (_sharer != sharer) return;
@@ -99,22 +115,50 @@ public partial class MainWindow
             });
             _sharer = sharer;
             _sharerConv = conv;
-            _sharerStats = new SharerStatsView(sharer, dialog.Result.Fps, room);
+            _sharerStats = new SharerStatsView(sharer, options.Fps, room);
             _sharerStats.StopRequested += StopSharingCore;
             _sharerStats.ChangeRequested += () => _ = ChangeSharedAsync(sharer, conv);
             SharerPanel.Child = _sharerStats;
             UpdateSharerPanel();
             conv.IsSharing = true;
             conv.Add(MessageVm.System($"You are sharing your {what}. Everyone in the room can watch it."));
-            if (dialog.Result.ShareSound)
+            if (options.ShareSound)
                 conv.Add(MessageVm.System(sharer.SharingSound
-                    ? (dialog.Result.WindowHandle != null ? "The sound of that window is shared too." : "The sound of your computer is shared too, except Yaparr's own, so the voice chat does not go round.")
+                    ? (options.WindowHandle != null && options.Portal == null ? "The sound of that window is shared too." : "The sound of your computer is shared too, except Yaparr's own, so the voice chat does not go round.")
                     : "The sound could not be shared, so only the picture is: " + sharer.SoundProblem));
         }
         catch (Exception ex)
         {
+            options.Portal?.Dispose();
             _log.Write("could not start screen sharing: " + ex.Message);
             StatusText.Text = "Could not share the screen: " + ex.Message;
+        }
+    }
+
+    // Asks the desktop's ScreenCast portal (Wayland), which shows its own picker. Null if the user cancels or it cannot be done;
+    // the reason goes to the status line.
+    private async Task<PortalScreenCast?> AskDesktopWhatToShareAsync(bool window)
+    {
+        try
+        {
+            // Better to say so before the desktop asks the user to choose than after.
+            if (await Task.Run(PortalPipeline.Missing) is { } missing)
+            {
+                _log.Write("screen sharing on Wayland is not possible: " + missing);
+                StatusText.Text = "Could not share the screen: " + missing;
+                return null;
+            }
+            StatusText.Text = "Choose what to share in the window the desktop shows...";
+            var portal = await PortalScreenCast.StartAsync(window, showCursor: true);
+            StatusText.Text = "";
+            return portal;
+        }
+        catch (OperationCanceledException) { StatusText.Text = ""; return null; }
+        catch (Exception ex)
+        {
+            _log.Write("the desktop would not share the screen: " + ex.Message);
+            StatusText.Text = "Could not share the screen: " + ex.Message;
+            return null;
         }
     }
 
@@ -250,10 +294,17 @@ public partial class MainWindow
     {
         var dialog = new ShareDialog(sharer.Options);
         if (!await dialog.ShowDialog<bool>(this) || dialog.Result == null || _sharer != sharer) return;
+        var next = dialog.Result;
+        if (ScreenCapture.UsesPortal)
+        {
+            var portal = await AskDesktopWhatToShareAsync(dialog.PortalWindow);
+            if (portal == null || _sharer != sharer) { portal?.Dispose(); return; }
+            next = next.Retarget(portal);
+        }
         try
         {
-            sharer.Change(dialog.Result);
-            var what = dialog.Result.WindowHandle != null ? "a window" : "a monitor";
+            sharer.Change(next);
+            var what = next.Portal?.IsWindow ?? next.WindowHandle != null ? "a window" : "a monitor";
             _log.Write($"screen sharing changed to {what}");
             conv.Add(MessageVm.System($"You are now sharing {what}."));
         }

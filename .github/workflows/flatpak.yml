@@ -55,6 +55,13 @@ jobs:
           set -ex
           run="flatpak run --no-a11y-bus --no-documents-portal"
           $run --command=ffmpeg com.yaparr.Yaparr -hide_banner -decoders | grep -E ' (vp8|h264) '
+          # Sharing a screen: the encoders and the screen grabber, the programs that list monitors, windows and sound, and GStreamer's
+          # PipeWire source (Wayland).
+          $run --command=ffmpeg com.yaparr.Yaparr -hide_banner -encoders | grep -E ' (libvpx|h264_nvenc|h264_vaapi) '
+          $run --command=ffmpeg com.yaparr.Yaparr -hide_banner -devices | grep x11grab
+          $run --command=sh com.yaparr.Yaparr -c 'for p in xrandr xprop xwininfo pactl parec gst-launch-1.0 gst-inspect-1.0; do command -v $p; done; gst-inspect-1.0 pipewiresrc > /dev/null'
+          # A real capture of the virtual screen, encoded as VP8, with the sandbox's own programs.
+          xvfb-run -a $run --command=sh com.yaparr.Yaparr -c 'xrandr --listmonitors && ffmpeg -hide_banner -loglevel error -nostdin -f x11grab -framerate 5 -video_size 320x240 -i "$DISPLAY" -vf format=yuv420p -c:v libvpx -deadline realtime -t 2 -f ivf pipe:1 | wc -c | grep -vx 0'
           $run --command=sh com.yaparr.Yaparr -c 'ls /app/lib/yaparr | grep -E "libwebrtc-apm|libSkiaSharp|libminiaudio"'
           status=0
           xvfb-run -a timeout 20 $run com.yaparr.Yaparr --name check || status=$?

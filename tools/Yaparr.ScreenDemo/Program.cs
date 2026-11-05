@@ -1,8 +1,9 @@
 ﻿// Shares this computer's screen to a second Yaparr node in the same process and reports what it cost: how many pictures
-// arrived, the bitrate, and the processor time used by FFmpeg and by this program. Windows only (screen capture).
+// arrived, the bitrate, and the processor time used by FFmpeg and by this program. Windows, and Linux under X11 (monitors only).
 //
 //   Yaparr.ScreenDemo [--seconds 20] [--fps 10] [--kbps 800] [--width 1280] [--height 720] [--monitor N | --window N] [--codec auto|vp8|h264] [--encoder nvenc|amf|qsv] [--save picture.bmp]
 //   Yaparr.ScreenDemo --list     shows the monitors and windows and their numbers
+//   On Wayland the desktop asks what to share; --portal-window offers windows instead of monitors.
 //   Yaparr.ScreenDemo --install-ffmpeg <folder>     downloads the pinned FFmpeg into the folder (the installer build bundles it)
 //   --gpu-scale scales on the graphics card before encoding (H.264 on NVIDIA, a monitor; falls back to the processor if FFmpeg cannot).
 //   --gpu-decode makes the viewer decode H.264 on the graphics card (Direct3D 11) where it can; by default it decodes on the processor.
@@ -21,19 +22,24 @@ int Int(string name, int fallback) => int.TryParse(Opt(name), out var v) ? v : f
 // Used by the installer build: fetches the pinned FFmpeg (hash checked) into the folder, as <folder>\<version>\ffmpeg.exe.
 if (Opt("--install-ffmpeg") is { } installDirectory)
 {
-    var installed = await FfmpegInstaller.InstallAsync(FfmpegPackage.Default, directory: installDirectory);
+    var installed = await FfmpegInstaller.InstallAsync(FfmpegPackage.ForThisSystem ?? throw new PlatformNotSupportedException("There is no FFmpeg download for this system."), directory: installDirectory);
     Console.WriteLine("Installed " + installed);
     return 0;
 }
 
-if (!OperatingSystem.IsWindows()) { Console.Error.WriteLine("Sharing a screen works on Windows only for now."); return 2; }
+if (ScreenCapture.WhyNotSupported is { } unsupported) { Console.Error.WriteLine(unsupported); return 2; }
 var ffmpeg = FfmpegLocator.Find();
-if (ffmpeg == null) { Console.Error.WriteLine("FFmpeg was not found. Set YAPARR_FFMPEG to ffmpeg.exe, or put it in an 'ffmpeg' folder next to this program."); return 2; }
+if (ffmpeg == null) { Console.Error.WriteLine("FFmpeg was not found. Set YAPARR_FFMPEG to the ffmpeg program, put it in an 'ffmpeg' folder next to this program, or install it with your package manager."); return 2; }
 Console.WriteLine($"FFmpeg: {ffmpeg}");
 
 int seconds = Int("--seconds", 20);
 var displays = Displays.List();
 var windows = ShareWindows.List(Environment.ProcessId);
+if (args.Contains("--list") && ScreenCapture.UsesPortal)
+{
+    Console.WriteLine("On Wayland the desktop shows its own picker, so there is no list here. Share a monitor with no option, or a window with --portal-window.");
+    return 0;
+}
 if (args.Contains("--list"))
 {
     Console.WriteLine("Monitors:");
@@ -45,7 +51,15 @@ if (args.Contains("--list"))
 
 Display? display = null;
 long? windowHandle = null;
-if (Opt("--window") is { } wi)
+PortalScreenCast? portal = null;
+if (ScreenCapture.UsesPortal)
+{
+    // Wayland: the desktop asks what to share (a monitor, or a window with --portal-window) and hands the picture over.
+    Console.WriteLine("Asking the desktop what to share...");
+    portal = await PortalScreenCast.StartAsync(window: args.Contains("--portal-window"), showCursor: true);
+    Console.WriteLine($"Sharing {(portal.IsWindow ? "a window" : "a monitor")} from the desktop: {portal.Width}x{portal.Height}");
+}
+else if (Opt("--window") is { } wi)
 {
     var w = int.TryParse(wi, out int windowIndex) ? windows.ElementAtOrDefault(windowIndex) : null;
     if (w == null) { Console.Error.WriteLine("No such window; use --list."); return 2; }
@@ -59,7 +73,7 @@ else
     Console.WriteLine($"Sharing monitor {display.Index}: {display.Width}x{display.Height}");
 }
 var codec = (Opt("--codec") ?? "auto").ToLowerInvariant() switch { "vp8" => ScreenCodec.Vp8, "h264" => ScreenCodec.H264, _ => ScreenCodec.Auto };
-var screen = new ScreenOptions { Fps = Int("--fps", 10), Kbps = Int("--kbps", 800), MaxWidth = Int("--width", 1280), MaxHeight = Int("--height", 720), Display = display, WindowHandle = windowHandle, Codec = codec, Encoder = HardwareEncoders.TryParse(Opt("--encoder"), out var card) ? card : null, GpuScale = args.Contains("--gpu-scale") };
+var screen = new ScreenOptions { Fps = Int("--fps", 10), Kbps = Int("--kbps", 800), MaxWidth = Int("--width", 1280), MaxHeight = Int("--height", 720), Display = display, WindowHandle = windowHandle, Portal = portal, Codec = codec, Encoder = HardwareEncoders.TryParse(Opt("--encoder"), out var card) ? card : null, GpuScale = args.Contains("--gpu-scale") };
 string? savePath = Opt("--save");
 
 ChatNode Make(string name) => new(new ChatNodeOptions

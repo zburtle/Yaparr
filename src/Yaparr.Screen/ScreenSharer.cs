@@ -6,7 +6,7 @@ namespace Yaparr.Screen;
 
 /// <summary>
 /// Shares the screen or one window with a room: FFmpeg captures and encodes, and every encoded frame goes out through the
-/// stream tree. Windows only, because capture uses the Windows screen sources.
+/// stream tree. Capture is Windows Graphics Capture on Windows and x11grab on Linux under X11 (see <see cref="ScreenCapture"/>).
 /// </summary>
 public sealed class ScreenSharer : IDisposable
 {
@@ -34,15 +34,31 @@ public sealed class ScreenSharer : IDisposable
     /// <summary>Announces a screen share in the room and starts sending it.</summary>
     public static ScreenSharer Start(ChatNode node, ChatRoom room, string name, ScreenOptions options, string? ffmpegPath = null)
     {
-        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Sharing a screen works on Windows only for now.");
-        ffmpegPath ??= FfmpegLocator.Find() ?? throw new FileNotFoundException("FFmpeg was not found. Put ffmpeg.exe in an 'ffmpeg' folder next to the app, or set YAPARR_FFMPEG.");
+        if (ScreenCapture.WhyNotSupported is { } why) throw new PlatformNotSupportedException(why);
+        ffmpegPath ??= FfmpegLocator.Find() ?? throw new FileNotFoundException("FFmpeg was not found. Put ffmpeg in an 'ffmpeg' folder next to the app, install it with your system's package manager, or set YAPARR_FFMPEG.");
         FfmpegArgs.Capture(options); // checks the numbers before anything is announced
-        if (options.WindowHandle is { } handle && !ShareWindows.Exists(handle)) throw new InvalidOperationException("That window is not open any more.");
+        if (options.Portal != null) { if (PortalPipeline.Missing() is { } missing) throw new PlatformNotSupportedException(missing); }
+        else if (options.WindowHandle is { } handle && !ShareWindows.Exists(handle)) throw new InvalidOperationException("That window is not open any more.");
         var source = node.StartMedia(room, "screen", name, signed: true, upstream: false, kbps: options.Kbps, channel: room.CurrentVoice?.ChannelId);
         var sharer = new ScreenSharer(source, options, ffmpegPath);
         if (options.ShareSound) sharer.StartSound(node, room);
+        sharer.WatchPortal(options.Portal);
         sharer._run = Task.Run(() => sharer.PumpAsync(sharer._cts.Token));
         return sharer;
+    }
+
+    // A share from the desktop's portal can be stopped from the desktop's own indicator, which ends the stream under FFmpeg.
+    private volatile bool _portalGone;
+
+    private void WatchPortal(PortalScreenCast? portal)
+    {
+        if (portal == null) return;
+        portal.Closed += () =>
+        {
+            if (_options.Portal != portal) return;
+            _portalGone = true;
+            KillProcess();
+        };
     }
 
     /// <summary>The kind of the stream that carries a share's sound; its name says which share it belongs to (see <see cref="SoundNameFor"/>).</summary>
@@ -52,7 +68,7 @@ public sealed class ScreenSharer : IDisposable
 
     private MediaSource? _soundSource;
     private StreamAudioSender? _soundSender;
-    private ProcessLoopback? _soundCapture;
+    private IDisposable? _soundCapture;
 
     /// <summary>Whether the sound is being shared along with the picture.</summary>
     public bool SharingSound => _soundCapture != null;
@@ -80,8 +96,32 @@ public sealed class ScreenSharer : IDisposable
     }
 
     // A window's own program, or for a monitor everything except Yaparr, so what others say in the voice chat is not sent back to them.
+    // On Linux (see PulseAppCapture) a window of an X11 session is its own program (all its streams, found by process and by the
+    // window's class names); a monitor is every program except Yaparr. On Wayland the portal does not say which program a window
+    // belongs to, so the sound is every program except Yaparr unless one was picked by name (ScreenOptions.SoundProgram).
     private void StartSoundCapture()
     {
+        if (OperatingSystem.IsLinux())
+        {
+            var linux = _options;
+            var linuxSender = _soundSender ?? throw new InvalidOperationException("The sound is not being shared.");
+            Action<float[], int> push = (samples, count) => linuxSender.Push(samples.AsSpan(0, count));
+            Action<Exception> failed = ex =>
+            {
+                SoundProblem = ex.Message;
+                SoundFailed?.Invoke(ex);
+            };
+            if (linux.Portal == null && linux.WindowHandle is { } window)
+            {
+                int owner = ShareWindows.ProcessId(window);
+                if (owner == 0) throw new InvalidOperationException("That window is not open any more.");
+                _soundCapture = PulseAppCapture.Start(owner, push, failed, ShareWindows.Classes(window));
+            }
+            else if (linux.Portal != null && !string.IsNullOrWhiteSpace(linux.SoundProgram))
+                _soundCapture = PulseAppCapture.StartProgram(linux.SoundProgram, push, failed);
+            else _soundCapture = PulseAppCapture.StartAllExceptThisProgram(push, failed);
+            return;
+        }
         if (!ProcessLoopback.IsSupported) throw new PlatformNotSupportedException("Sharing sound needs Windows 10 version 2004 or newer.");
         var options = _options;
         int pid = options.WindowHandle is { } handle ? ShareWindows.ProcessId(handle) : Environment.ProcessId;
@@ -101,11 +141,16 @@ public sealed class ScreenSharer : IDisposable
     public void Change(ScreenOptions next)
     {
         FfmpegArgs.Capture(next);
-        if (next.WindowHandle is { } handle && !ShareWindows.Exists(handle)) throw new InvalidOperationException("That window is not open any more.");
+        if (next.Portal != null) { if (PortalPipeline.Missing() is { } missing) throw new PlatformNotSupportedException(missing); }
+        else if (next.WindowHandle is { } handle && !ShareWindows.Exists(handle)) throw new InvalidOperationException("That window is not open any more.");
+        var previous = _options.Portal;
         _options = next;
+        _portalGone = false;
+        WatchPortal(next.Portal);
         _switch = true;
         Interlocked.Exchange(ref _lastFrameTick, 0);
         KillProcess();   // the pump starts FFmpeg again for the new target
+        if (previous != null && previous != next.Portal) previous.Dispose();
         if (_soundSender != null)
         {
             var old = _soundCapture; _soundCapture = null;
@@ -207,7 +252,7 @@ public sealed class ScreenSharer : IDisposable
         return plan;
     }
 
-    private bool WindowGone => _options.WindowHandle is { } handle && !ShareWindows.Exists(handle);
+    private bool WindowGone => _portalGone || (_options.WindowHandle is { } handle && !ShareWindows.Exists(handle));
 
     // One run of FFmpeg with one codec: returns when stopped on purpose, throws when FFmpeg stops by itself.
     private async Task RunAsync(ScreenCodec codec, HardwareEncoder? encoder, bool gpuScale, CancellationToken ct)
@@ -215,10 +260,12 @@ public sealed class ScreenSharer : IDisposable
         _codec = codec;
         _hardware = encoder;
         lock (_gate) _errors.Clear();
-        var psi = new ProcessStartInfo(_ffmpeg) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
+        var portal = _options.Portal;
+        var psi = new ProcessStartInfo(_ffmpeg) { RedirectStandardOutput = true, RedirectStandardError = true, RedirectStandardInput = portal != null, UseShellExecute = false, CreateNoWindow = true };
         foreach (var a in FfmpegArgs.Capture(_options, codec, encoder ?? HardwareEncoder.Nvenc, gpuScale)) psi.ArgumentList.Add(a);
         var process = Process.Start(psi) ?? throw new InvalidOperationException("FFmpeg did not start.");
         lock (_gate) _process = process;
+        if (portal != null) StartPortalSource(portal, process);
         if (_switch) KillProcess();   // asked to share something else while this one was starting
         process.ErrorDataReceived += (_, e) =>
         {
@@ -238,6 +285,7 @@ public sealed class ScreenSharer : IDisposable
         }
 
         bool started = false;
+        long startedAt = Environment.TickCount64;
         try
         {
             while (await next(ct).ConfigureAwait(false) is { } frame)
@@ -258,9 +306,47 @@ public sealed class ScreenSharer : IDisposable
                 Interlocked.Add(ref _bytes, frame.Length);
                 if (isKey) Interlocked.Increment(ref _keys);
             }
-            if (!ct.IsCancellationRequested && !_switch) throw Stopped(process);
+            if (!ct.IsCancellationRequested && !_switch)
+            {
+                // x11grab cannot follow a window that changes size: it stops, and FFmpeg starts again at the new size (viewers pick the
+                // new size up at the next key frame, as when another window is chosen). Only if pictures were flowing for a while and
+                // the window is still open; otherwise this is a real failure and ends the share.
+                if (OperatingSystem.IsLinux() && started && _options.Portal == null && _options.WindowHandle is { } window
+                    && Environment.TickCount64 - startedAt > 1000 && ShareWindows.Exists(window))
+                {
+                    await Task.Delay(300, ct).ConfigureAwait(false);
+                    _switch = true;
+                    return;
+                }
+                throw Stopped(process);
+            }
         }
         finally { KillProcess(); }
+    }
+
+    // The picture of a Wayland share: GStreamer reads the portal's PipeWire stream (it inherits the connection) and its raw
+    // pictures are copied into FFmpeg's standard input, which ends when GStreamer does.
+    private Process? _gstreamer;
+
+    private void StartPortalSource(PortalScreenCast portal, Process ffmpeg)
+    {
+        int fd = PortalPipeline.AllowInherit(portal.PipeWireFd);
+        var psi = new ProcessStartInfo("gst-launch-1.0") { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
+        foreach (var a in PortalPipeline.GstArguments(portal.Stream, fd, _options)) psi.ArgumentList.Add(a);
+        var gst = Process.Start(psi) ?? throw new InvalidOperationException("GStreamer did not start.");
+        lock (_gate) _gstreamer = gst;
+        gst.ErrorDataReceived += (_, e) =>
+        {
+            if (e.Data is not { Length: > 0 }) return;
+            lock (_gate) { _errors.Enqueue("GStreamer: " + e.Data); while (_errors.Count > 5) _errors.Dequeue(); }
+        };
+        gst.BeginErrorReadLine();
+        _ = Task.Run(async () =>
+        {
+            try { await gst.StandardOutput.BaseStream.CopyToAsync(ffmpeg.StandardInput.BaseStream).ConfigureAwait(false); }
+            catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException) { }
+            finally { try { ffmpeg.StandardInput.Close(); } catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException) { } }
+        });
     }
 
     // Why FFmpeg is not producing frames any more, as plainly as it can be said.
@@ -268,6 +354,7 @@ public sealed class ScreenSharer : IDisposable
     {
         try { process.WaitForExit(2000); } catch (InvalidOperationException) { }
         var errors = LastErrors;
+        if (_portalGone) return new InvalidOperationException("The screen share was stopped from the desktop.");
         if (_options.WindowHandle is { } handle && !ShareWindows.Exists(handle))
             return new InvalidOperationException("The window you were sharing was closed.");
         if ((errors.Contains("gfxcapture", StringComparison.OrdinalIgnoreCase) && errors.Contains("No such filter", StringComparison.OrdinalIgnoreCase))
@@ -278,11 +365,14 @@ public sealed class ScreenSharer : IDisposable
 
     private void KillProcess()
     {
-        Process? p;
-        lock (_gate) { p = _process; _process = null; }
-        if (p == null) return;
-        try { if (!p.HasExited) p.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
-        p.Dispose();
+        Process? p, gst;
+        lock (_gate) { p = _process; _process = null; gst = _gstreamer; _gstreamer = null; }
+        foreach (var each in new[] { gst, p })
+        {
+            if (each == null) continue;
+            try { if (!each.HasExited) each.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
+            each.Dispose();
+        }
     }
 
     public void Dispose()
@@ -291,6 +381,7 @@ public sealed class ScreenSharer : IDisposable
         KillProcess();
         try { _run?.Wait(TimeSpan.FromSeconds(2)); } catch (AggregateException) { }
         StopSound();
+        _options.Portal?.Dispose();
         _source.Dispose();
         _cts.Dispose();
     }
