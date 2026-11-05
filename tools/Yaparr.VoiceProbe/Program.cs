@@ -53,15 +53,17 @@ int Record(int seconds, string? device, string path)
     using var capture = engine.InitializeCaptureDevice(info, format, new MiniAudioDeviceConfig());
     capture.OnAudioProcessed += (block, _) => { lock (gate) { foreach (var v in block) samples.Add(v); } };
     capture.Start();
-    Console.WriteLine($"Recording {seconds} seconds from {info?.Name ?? "the default microphone"}. Talk as you do in a call: some sentences with pauses, some louder and quieter,");
-    Console.WriteLine("and keep quiet for the last few seconds. Starting in 3 seconds.");
-    Thread.Sleep(3000);
+    Console.WriteLine($"Recording {seconds} seconds from {info?.Name ?? "the default microphone"}. The line below tells you what to do and when:");
+    Console.WriteLine("talk normally, pause, talk quietly, talk louder, then stay silent. Starting in 5 seconds.");
+    Thread.Sleep(5000);
     Console.WriteLine("GO");
     for (int i = seconds; i > 0; i--)
     {
         int n; double rms = 0;
         lock (gate) { n = samples.Count; int from = Math.Max(0, n - Rate / 4); double e = 0; for (int k = from; k < n; k++) e += samples[k] * (double)samples[k]; rms = Math.Sqrt(e / Math.Max(1, n - from)); }
-        Console.Write($"\r{i,3} s left   level {Db(rms),6:0.0} dBFS   {new string('#', (int)Math.Clamp((Db(rms) + 70) / 2, 0, 35))}".PadRight(70));
+        double done = (seconds - i) / (double)seconds;
+        string cue = done < 0.25 ? "TALK normally, as in a call" : done < 0.4 ? "PAUSE: say nothing" : done < 0.62 ? "TALK QUIETLY, like a late-night call" : done < 0.82 ? "TALK LOUDER, excited or laughing" : "SILENCE: say nothing";
+        Console.Write($"\r{i,3} s  {Db(rms),6:0.0} dBFS {new string('#', (int)Math.Clamp((Db(rms) + 70) / 2, 0, 35)),-35} {cue}".PadRight(110));
         Thread.Sleep(1000);
     }
     capture.Stop();
