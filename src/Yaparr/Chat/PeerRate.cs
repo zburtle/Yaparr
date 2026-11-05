@@ -56,7 +56,11 @@ internal sealed class TokenBucket
         _last = Environment.TickCount64;
     }
 
-    public bool TryTake(double cost = 1, long? now = null)
+    /// <summary>The most the bucket holds.</summary>
+    public double Capacity => _capacity;
+
+    /// <summary>Takes <paramref name="cost"/> if the bucket has it, and, for something that may only use what is spare, leaves at least <paramref name="keep"/> in it.</summary>
+    public bool TryTake(double cost = 1, long? now = null, double keep = 0)
     {
         lock (_gate)
         {
@@ -65,7 +69,7 @@ internal sealed class TokenBucket
             _last = t;
             // A request bigger than the bucket could never be allowed, so it takes the whole bucket instead.
             cost = Math.Min(cost, _capacity);
-            if (_tokens < cost) return false;
+            if (_tokens < cost + keep) return false;
             _tokens -= cost;
             return true;
         }
