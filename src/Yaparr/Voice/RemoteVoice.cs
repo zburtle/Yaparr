@@ -50,6 +50,13 @@ internal static class VoicePacket
         return (byte)((speech ? 0x80 : 0) | (steps << 1) | 1);
     }
 
+    /// <summary>
+    /// True when the sender says the frame in a voice packet is not speech (a pause or noise). A packet from an older version, or one that
+    /// does not parse, says nothing and is not taken for silence. A node that passes voice on can let these go first when it is short of room.
+    /// </summary>
+    public static bool SaysSilence(ReadOnlySpan<byte> packet) =>
+        TryParse(packet, out _, out _, out _, out uint timestamp, out _) && TryDecodeLevel(timestamp, out _, out bool speech) && !speech;
+
     /// <summary>Reads the level from a timestamp; false if the sender did not put one there.</summary>
     public static bool TryDecodeLevel(uint timestamp, out float dbfs, out bool speech)
     {
