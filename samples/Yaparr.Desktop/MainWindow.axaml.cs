@@ -147,7 +147,7 @@ public partial class MainWindow : Window
     private void RestartApp()
     {
         _restarting = true;
-        var args = Environment.GetCommandLineArgs().Skip(1).Select(a => $"\"{a}\"");
+        var args = Environment.GetCommandLineArgs().Skip(1).Where(a => !a.StartsWith(DeepLink.Scheme, StringComparison.OrdinalIgnoreCase)).Select(a => $"\"{a}\"");
         if (Environment.ProcessPath is { } exe)
             Process.Start(new ProcessStartInfo(exe, string.Join(' ', args)) { UseShellExecute = false });
         (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
@@ -377,6 +377,7 @@ public partial class MainWindow : Window
         ProfileIdText.Text = _node.AccountId.Value;
         ReconcileFromAccount();
         _node.Start();
+        StartLinks();
         UpdateStatus();
         RefreshPeers();
         foreach (var stored in _node.StoredDirectChats) _ = AddDirect(stored);
@@ -396,6 +397,8 @@ public partial class MainWindow : Window
         _selected?.Opened();
         MarkShownRead(_selected);
         if (!_settings.ConnectionGuideShown) await ShowConnectionGuideAsync();
+        _linksReady = true;
+        await HandleWaitingLinksAsync();
     }
 
     private void Shutdown()
@@ -407,6 +410,7 @@ public partial class MainWindow : Window
         LeaveVoiceCore();
         CloseScreens();
         _cts.Cancel();
+        _links?.Dispose();
         var node = _node;
         _node = null;
         node?.Dispose();
@@ -479,7 +483,7 @@ public partial class MainWindow : Window
         {
             var invite = await PromptDialog.AskAsync(this, "Paste the invite you were sent:", initial);
             if (string.IsNullOrWhiteSpace(invite)) return;
-            try { key = RoomKey.Parse(invite); break; }
+            try { key = ParseInvite(invite); break; }
             catch (FormatException)
             {
                 await Dialogs.MessageAsync(this, "Yaparr", "That doesn't look like a valid invite. Check that you copied all of it.");
@@ -487,22 +491,7 @@ public partial class MainWindow : Window
             }
         }
 
-        if (_settings.PrivateRooms.FirstOrDefault(r => r.Key == key.ToString() || RoomIdOf(r.Key) == key.RoomId) is { } have)
-        {
-            // The same room under a newer key (the owner replaced it): take the new key.
-            if (key.Epoch > EpochOf(have.Key) && _node != null)
-            {
-                await _node.JoinRoomAsync(key, have.Label);
-                StatusText.Text = "Your key for that room is now the new one.";
-                return;
-            }
-            await Dialogs.MessageAsync(this, "Yaparr", "You are already in that room.");
-            return;
-        }
-
-        var label = await PromptDialog.AskAsync(this, "A name for this room (only you see it):", "Room");
-        if (string.IsNullOrWhiteSpace(label)) return;
-        await JoinKeyedRoomAsync(label, key, persist: true);
+        await JoinWithKeyAsync(key, fromLink: false);
     }
 
     private const string PrivatePrefix = "";
@@ -567,7 +556,7 @@ public partial class MainWindow : Window
         if (string.IsNullOrEmpty(text)) return null;
         try
         {
-            RoomKey.Parse(text);
+            ParseInvite(text);
             return text;
         }
         catch (FormatException)
@@ -586,7 +575,7 @@ public partial class MainWindow : Window
             _data.SaveSettings(_settings);
         }
         var conv = AddRoom(room, PrivatePrefix + label, invite: key.ToString());
-        if (persist) conv.Add(MessageVm.System("Share the invite (button above) with people you want in this room. Anyone who has it can join."));
+        if (persist) conv.Add(MessageVm.System("Share the invite with people you want in this room: click the room key in the room details to copy it, or use Copy link for a link that opens Yaparr. Anyone who has it can join."));
         if (persist && key.Owner != null && key.Owner == _node.AccountId)
             conv.Add(MessageVm.System("You own this room, and that cannot be handed over or taken back. If a computer or phone you use Yaparr on is lost or stolen, whoever has it can act as you here, including appointing admins. If that happens, make a new room."));
     }
@@ -732,7 +721,8 @@ public partial class MainWindow : Window
         if (_node == null) return;
         var text = await PromptDialog.AskAsync(this, "Peer ID of the person to chat with (64 characters; they can copy it from their app):");
         if (string.IsNullOrWhiteSpace(text)) return;
-        text = text.ToLowerInvariant();
+        if (DeepLink.Parse(text) is { Kind: DeepLinkKind.Chat } link) text = link.Value;
+        text = text.Trim().ToLowerInvariant();
         if (text.Length != 64 || !text.All(Uri.IsHexDigit)) { await Dialogs.MessageAsync(this, "Yaparr", "A peer ID is 64 hex characters."); return; }
         if (text == _node.AccountId.Value || text == _node.Id.Value) { await Dialogs.MessageAsync(this, "Yaparr", "That's your own ID."); return; }
 

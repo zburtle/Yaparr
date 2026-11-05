@@ -415,16 +415,23 @@
                                 IsVisible="{Binding #RoomToggle.IsChecked}">
                             <StackPanel Spacing="6">
                                 <TextBlock Classes="label" Text="ROOM KEY (INVITE)" IsVisible="{Binding HasInvite}" />
-                                <SelectableTextBlock Classes="mono" Text="{Binding Invite}" IsVisible="{Binding HasInvite}" />
-                                <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasInvite}">
-                                    <Button Content="Copy invite" Click="CopyInvite_Click" />
-                                    <TextBlock Classes="muted small" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="320"
-                                               Text="Anyone who has this can join the room. Share it carefully." />
-                                </StackPanel>
+                                <!-- Clicking the key copies it, like the peer ID at the top left; the button next to it copies a link that opens Yaparr. -->
+                                <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasInvite}">
+                                    <Border Background="Transparent" Cursor="Hand" ToolTip.Tip="Click to copy the room key" PointerReleased="RoomKey_PointerReleased">
+                                        <TextBlock Classes="mono" Text="{Binding Invite}" TextWrapping="Wrap" />
+                                    </Border>
+                                    <Button Grid.Column="1" Content="Copy link" Margin="8,0,0,0" VerticalAlignment="Top"
+                                            ToolTip.Tip="Copy a link that opens Yaparr and joins this room" Click="CopyInviteLink_Click" />
+                                </Grid>
+                                <TextBlock Classes="muted small" TextWrapping="Wrap" IsVisible="{Binding HasInvite}"
+                                           Text="Anyone who has the key or the link can join the room. Share it carefully." />
 
                                 <TextBlock Classes="label" Text="PEER ID" IsVisible="{Binding HasPeerId}" />
                                 <SelectableTextBlock Classes="mono" Text="{Binding PeerId}" IsVisible="{Binding HasPeerId}" />
-                                <Button Content="Copy peer ID" HorizontalAlignment="Left" Click="CopyPeerId_Click" IsVisible="{Binding HasPeerId}" />
+                                <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasPeerId}">
+                                    <Button Content="Copy peer ID" Click="CopyPeerId_Click" />
+                                    <Button Content="Copy chat link" ToolTip.Tip="Copy a link that opens Yaparr and starts a chat with them" Click="CopyChatLink_Click" />
+                                </StackPanel>
 
                                 <TextBlock Classes="label" Text="PEOPLE" Margin="0,4,0,0" IsVisible="{Binding IsRoom}" />
                                 <TextBlock Classes="small" Text="{Binding MembersText}" IsVisible="{Binding IsRoom}" />

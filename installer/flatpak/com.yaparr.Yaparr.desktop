@@ -2,8 +2,9 @@
 Type=Application
 Name=Yaparr
 Comment=Serverless peer-to-peer chat
-Exec=yaparr
+Exec=yaparr %u
 Icon=com.yaparr.Yaparr
 Terminal=false
 Categories=Network;Chat;InstantMessaging;
 StartupNotify=true
+MimeType=x-scheme-handler/yaparr;
