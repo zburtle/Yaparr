@@ -131,7 +131,7 @@ public sealed class VoiceSession : IDisposable
 
     /// <summary>
     /// Automatic volume for your microphone: a quiet one is raised and a loud one lowered towards a normal speaking level (see
-    /// <see cref="SpeechLeveler"/>). It moves only while you talk, so the noise of the room is not turned up in pauses. Off by default.
+    /// <see cref="SpeechLeveler"/>). The gain changes only while you talk and is held in pauses, so it is never raised on the noise of the room. Off by default.
     /// </summary>
     public bool AutomaticVolume
     {

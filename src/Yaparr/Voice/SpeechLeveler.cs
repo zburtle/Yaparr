@@ -6,7 +6,7 @@
 /// It is made for open microphones, where an automatic volume tends to make the room's noise swell between words, so:
 /// <list type="bullet">
 /// <item>the gain moves only while someone is talking (a frame counts as talking when it is well above the noise floor, which is
-/// followed from the quietest frames) and is held through pauses, so noise is never turned up in them;</item>
+/// followed from the quietest frames) and is held through pauses, so the gain is never raised on noise (the gain it holds still applies to the noise, as it does to the voice);</item>
 /// <item>it rises slowly and falls fast (12 dB a second up, 40 down, like TeamTalk's defaults), and is limited to a few dB of
 /// boost and cut, so it cannot be driven far by one odd stretch;</item>
 /// <item>a soft limiter catches peaks the gain brings past full scale.</item>

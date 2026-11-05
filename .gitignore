@@ -488,3 +488,5 @@ results/
 
 # The tools the release workflow installs (the "release/" rule above would hide them).
 !/.github/release/
+
+voice-probe*.wav

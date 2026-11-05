@@ -21,12 +21,14 @@ The speaker button next to a person in the voice list opens a 0 to 200% slider; 
 
 ## Even loudness
 
-Two settings in the voice settings, both off by default, use `SpeechLeveler`: a slow gain that follows how loud a person talks (the RMS of the frames that have speech in them) towards -24 dBFS. It moves only while someone is talking, found by a frame being 10 dB or more above the noise floor (followed from the quietest frames, and never below -55 dBFS), and is held through pauses, so room noise is never turned up. It rises at 12 dB a second and falls at 40 (TeamTalk's defaults), is limited to 15 dB of boost and 15 dB of cut, and a soft limiter bends peaks past 0.9 towards full scale.
+Two settings in the voice settings, both off by default, use `SpeechLeveler`: a slow gain that follows how loud a person talks (the RMS of the frames that have speech in them) towards -24 dBFS. It moves only while someone is talking, found by a frame being 10 dB or more above the noise floor (followed from the quietest frames, and never below -55 dBFS), and is held through pauses, so the gain is never raised on room noise (the gain it holds still applies to the noise in pauses, as it does to the voice, so a quiet microphone boosted by 10 dB has its hiss 10 dB louder too; noise suppression runs first to keep that low). It rises at 12 dB a second and falls at 40 (TeamTalk's defaults), is limited to 15 dB of boost and 15 dB of cut, and a soft limiter bends peaks past 0.9 towards full scale.
 
 - **Automatic volume for my microphone** (`VoiceSession.AutomaticVolume`) levels your own voice after echo cancellation and noise suppression, before it is sent, so everyone hears a quiet microphone raised.
 - **Even out how loud people are** (`VoiceSession.LevelSpeakers`) levels each person you hear separately, before their own slider (0 to 200%) is applied, and bends the mix of several people softly instead of clipping it. It also works for people on older versions or with a bad microphone, since it needs nothing from the sender. `SpeakerLevelGainDb` says how much a person is being turned up or down.
 
 The sound of a shared screen and the soundboard are not leveled (the soundboard is matched to one level when a sound is added). The tests run the leveller on made-up speech at different loudness: voices 25 dB apart end up within 3 dB, noise alone is never boosted, and the gain holds through silence. What is not measured yet is how it sounds with real voices and rooms; see issue 115.
+
+`tools/Yaparr.VoiceProbe` is for choosing the settings from real voices: `record` listens to your microphone for 40 seconds and saves a file on your computer (nothing is sent anywhere), and `analyze` runs a recording through the app's noise suppression and the leveller with several settings, printing the loudness of your speech and pauses, how far the gain moves, how much the noise in pauses is lifted, and how a quieter or louder microphone would come out.
 
 ## Large calls
 

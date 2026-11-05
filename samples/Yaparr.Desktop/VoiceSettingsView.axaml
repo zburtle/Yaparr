@@ -15,7 +15,7 @@
                    Text="Turns up people with a quiet microphone and down people who are loud, as they talk. Your slider for each person still applies on top." />
         <CheckBox x:Name="AutomaticVolumeBox" Margin="0,6,0,0" Content="Automatic volume for my microphone" />
         <TextBlock Classes="muted small" TextWrapping="Wrap"
-                   Text="Raises a quiet microphone and lowers a loud one before it is sent. It only changes while you talk, so noise is not turned up in pauses." />
+                   Text="Raises a quiet microphone and lowers a loud one before it is sent. The volume changes only while you talk and is held in pauses." />
         <CheckBox x:Name="EchoBox" Margin="0,10,0,0" Content="Echo cancellation (others do not hear themselves through your speakers)" />
         <TextBlock Text="Noise suppression" FontWeight="SemiBold" Margin="0,8,0,0" />
         <ComboBox x:Name="NoiseBox" HorizontalAlignment="Stretch" />
