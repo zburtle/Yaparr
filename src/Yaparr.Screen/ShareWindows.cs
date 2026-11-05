@@ -10,7 +10,7 @@ public sealed record ShareWindow(long Handle, string Title, string Program, int 
     public string Label => $"{Title}  -  {Program} ({Width} x {Height})";
 }
 
-/// <summary>Lists the windows on the desktop that make sense to share. Windows only.</summary>
+/// <summary>Lists the windows on the desktop that make sense to share. Windows, and Linux under X11 (see <see cref="X11Windows"/>).</summary>
 public static class ShareWindows
 {
     [StructLayout(LayoutKind.Sequential)]
@@ -34,13 +34,17 @@ public static class ShareWindows
     /// <summary>The program that owns the window, or 0 if it is gone.</summary>
     public static int ProcessId(long handle)
     {
+        if (OperatingSystem.IsLinux()) return X11Windows.ProcessId(handle);
         if (!OperatingSystem.IsWindows()) return 0;
         GetWindowThreadProcessId((IntPtr)handle, out uint pid);
         return (int)pid;
     }
 
     /// <summary>Whether the window is still open.</summary>
-    public static bool Exists(long handle) => OperatingSystem.IsWindows() && IsWindow((IntPtr)handle);
+    /// <summary>On Linux, the window's class names (see <see cref="X11Windows.Classes"/>); empty elsewhere.</summary>
+    public static IReadOnlyList<string> Classes(long handle) => OperatingSystem.IsLinux() ? X11Windows.Classes(handle) : Array.Empty<string>();
+
+    public static bool Exists(long handle) => OperatingSystem.IsLinux() ? X11Windows.Exists(handle) : OperatingSystem.IsWindows() && IsWindow((IntPtr)handle);
 
     /// <summary>
     /// The windows you could share: visible, not minimised, with a title, and not hidden helper windows (tool windows, and
@@ -48,6 +52,7 @@ public static class ShareWindows
     /// </summary>
     public static IReadOnlyList<ShareWindow> List(int? exceptProcessId = null)
     {
+        if (OperatingSystem.IsLinux()) return X11Windows.List(exceptProcessId);
         if (!OperatingSystem.IsWindows()) return Array.Empty<ShareWindow>();
         var found = new List<ShareWindow>();
         EnumWindows((hwnd, _) =>

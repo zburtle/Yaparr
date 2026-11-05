@@ -13,12 +13,39 @@ finish-args:
   - --share=ipc
   - --socket=x11
   - --device=dri
-  # Microphone and speakers for voice, through PulseAudio or PipeWire's PulseAudio service.
+  # Microphone and speakers for voice, through PulseAudio or PipeWire's PulseAudio service. The same connection lists and records
+  # the sound of the programs a share carries (pactl and parec, from the runtime).
   - --socket=pulseaudio
+  # Sharing on Wayland goes through the desktop's ScreenCast portal over D-Bus, which an app in the sandbox may always use; the
+  # portal hands over the PipeWire connection, which GStreamer (gst-launch-1.0, in the runtime, with its pipewire plugin) reads.
+  # On X11 FFmpeg copies the screen itself, through the X11 socket above, and the X11 tools below list monitors and windows.
+
+# What the build leaves out of the finished app: the headers and build files of the libraries below.
+cleanup:
+  - /include
+  - /lib/pkgconfig
+  - /share/pkgconfig
+  - /share/man
+  - /share/doc
+  - '*.la'
+  - '*.a'
 
 modules:
-  # Watching a screen needs an ffmpeg program to decode the pictures. This one decodes VP8 and H.264 from a pipe and writes raw
-  # pictures, and nothing else (no GPL parts, no network, no encoders). It is LGPL 2.1 and a separate program, as on Windows.
+  # The header files FFmpeg needs to talk to NVIDIA's encoder (MIT). The encoder itself is a library of the graphics driver, which
+  # FFmpeg opens when it runs, so on a computer without an NVIDIA card it is simply not there and the next encoder is tried.
+  - name: nv-codec-headers
+    buildsystem: simple
+    sources:
+      - type: archive
+        url: https://github.com/FFmpeg/nv-codec-headers/archive/refs/tags/n13.0.19.0.tar.gz
+        sha256: 86d15d1a7c0ac73a0eafdfc57bebfeba7da8264595bf531cf4d8db1c22940116
+    build-commands:
+      - make PREFIX=/app LIBDIR=lib install
+
+  # Sharing a screen needs an ffmpeg program: it copies an X11 screen (x11grab) or reads the pictures GStreamer writes (Wayland),
+  # encodes them (H.264 on an NVIDIA card or through VA-API on an Intel or AMD one, VP8 in software), and on the watching side
+  # decodes VP8 and H.264 from a pipe and writes raw pictures. It has nothing else (no GPL parts, no network). It is LGPL 2.1 and a
+  # separate program, as on Windows. The libraries it uses (libvpx, libva, libxcb) are the runtime's own.
   - name: ffmpeg
     buildsystem: simple
     sources:
@@ -29,7 +56,9 @@ modules:
         dest-filename: ffmpeg-SOURCE.txt
         contents: |
           This ffmpeg is FFmpeg n8.1.3, built for Yaparr (https://github.com/zburtle/Yaparr) with only the parts Yaparr uses to
-          show a screen: the VP8 and H.264 decoders, the IVF and H.264 readers, raw picture output and the pipe protocol.
+          share and show a screen: the X11 screen grabber, raw picture input, the filters that scale and convert pictures, the
+          VP8 (libvpx), NVIDIA H.264 and VA-API H.264 encoders, the VP8 and H.264 decoders, the IVF and H.264 readers and writers,
+          raw picture output and the pipe protocol.
           FFmpeg is licensed under the GNU Lesser General Public License, version 2.1 or later (ffmpeg-LICENSE.txt). It is
           built without any GPL or nonfree part. Yaparr runs it as a separate program.
           The source is https://github.com/FFmpeg/FFmpeg/tree/n8.1.3 and the way it is built is in the "ffmpeg" module of
@@ -40,17 +69,60 @@ modules:
         ./configure --prefix=/app
         --disable-everything --disable-autodetect --disable-doc --disable-debug --disable-network
         --disable-ffplay --disable-ffprobe --disable-shared --enable-static
-        --enable-decoder=vp8,h264
+        --enable-libxcb --enable-libxcb-shm --enable-libxcb-xfixes --enable-libxcb-shape
+        --enable-libvpx --enable-vaapi --enable-ffnvcodec --enable-nvenc
+        --enable-indev=xcbgrab
+        --enable-encoder=libvpx_vp8,h264_nvenc,h264_vaapi,rawvideo
+        --enable-decoder=vp8,h264,rawvideo
         --enable-parser=h264,vp8
-        --enable-demuxer=ivf,h264
-        --enable-muxer=rawvideo
-        --enable-encoder=rawvideo
+        --enable-demuxer=ivf,h264,rawvideo
+        --enable-muxer=rawvideo,ivf,h264
         --enable-protocol=pipe
-        --enable-filter=scale,format,null
+        --enable-filter=scale,format,null,hwupload
       - make -j"$FLATPAK_BUILDER_N_JOBS" ffmpeg
       - install -Dm755 ffmpeg /app/bin/ffmpeg
       - install -Dm644 COPYING.LGPLv2.1 /app/share/licenses/com.yaparr.Yaparr/ffmpeg-LICENSE.txt
       - install -Dm644 ffmpeg-SOURCE.txt /app/share/licenses/com.yaparr.Yaparr/ffmpeg-SOURCE.txt
+
+  # The small X11 programs the app runs to list the monitors (xrandr) and the windows (xprop, xwininfo) it can share. libXmu is
+  # not in the runtime. All are MIT-licensed X.Org programs, run as separate programs.
+  - name: libXmu
+    buildsystem: autotools
+    config-opts:
+      - --disable-static
+    sources:
+      - type: archive
+        url: https://www.x.org/releases/individual/lib/libXmu-1.2.1.tar.xz
+        sha256: fcb27793248a39e5fcc5b9c4aec40cc0734b3ca76aac3d7d1c264e7f7e14e8b2
+    post-install:
+      - install -Dm644 COPYING /app/share/licenses/com.yaparr.Yaparr/libXmu-LICENSE.txt
+
+  - name: xrandr
+    buildsystem: autotools
+    sources:
+      - type: archive
+        url: https://www.x.org/releases/individual/app/xrandr-1.5.3.tar.xz
+        sha256: f8dd7566adb74147fab9964680b6bbadee87cf406a7fcff51718a5e6949b841c
+    post-install:
+      - install -Dm644 COPYING /app/share/licenses/com.yaparr.Yaparr/xrandr-LICENSE.txt
+
+  - name: xprop
+    buildsystem: autotools
+    sources:
+      - type: archive
+        url: https://www.x.org/releases/individual/app/xprop-1.2.8.tar.xz
+        sha256: d689e2adb7ef7b439f6469b51cda8a7daefc83243854c2a3b8f84d0f029d67ee
+    post-install:
+      - install -Dm644 COPYING /app/share/licenses/com.yaparr.Yaparr/xprop-LICENSE.txt
+
+  - name: xwininfo
+    buildsystem: autotools
+    sources:
+      - type: archive
+        url: https://www.x.org/releases/individual/app/xwininfo-1.1.6.tar.xz
+        sha256: 3518897c17448df9ba99ad6d9bb1ca0f17bc0ed7c0fd61281b34ceed29a9253f
+    post-install:
+      - install -Dm644 COPYING /app/share/licenses/com.yaparr.Yaparr/xwininfo-LICENSE.txt
 
   - name: yaparr
     buildsystem: simple

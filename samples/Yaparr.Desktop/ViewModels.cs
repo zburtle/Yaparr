@@ -365,7 +365,7 @@ public sealed class ConversationVm : Observable
     }
 
     /// <summary>Sharing a screen needs being in the room's voice channel, and works on Windows only for now; watching works everywhere.</summary>
-    public bool CanShare => IsRoom && _inVoice && !_sharing && OperatingSystem.IsWindows();
+    public bool CanShare => IsRoom && _inVoice && !_sharing && Yaparr.Screen.ScreenCapture.Supported;
     public bool CanStopSharing => _sharing;
 
     public string MuteGlyph => _muted ? "🔇" : "🎤";

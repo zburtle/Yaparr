@@ -137,6 +137,51 @@ public class FfmpegInstallerTests
     }
 
     [Fact]
+    public async Task On_linux_the_installed_program_can_be_run()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var dir = Temp();
+        try
+        {
+            var zip = Zip(("ff/bin/ffmpeg", "program"), ("ff/LICENSE.txt", "lgpl"));
+            var package = Package(zip) with { ExePathInZip = "ff/bin/ffmpeg" };
+            var path = await FfmpegInstaller.InstallAsync(package, null, dir, new Serve(zip));
+            Assert.Equal("ffmpeg", Path.GetFileName(path));
+            Assert.True(File.GetUnixFileMode(path).HasFlag(UnixFileMode.UserExecute));
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void The_download_is_chosen_for_the_system()
+    {
+        var p = FfmpegPackage.ForThisSystem;
+        if (OperatingSystem.IsWindows()) Assert.Same(FfmpegPackage.Default, p);
+        else if (OperatingSystem.IsLinux() && System.Runtime.InteropServices.RuntimeInformation.OSArchitecture is System.Runtime.InteropServices.Architecture.X64 or System.Runtime.InteropServices.Architecture.Arm64)
+        {
+            // Never the Windows build: a Linux program, from the Yaparr.FFmpeg release, with a hash.
+            Assert.NotNull(p);
+            Assert.DoesNotContain("win64", p!.Url.AbsoluteUri);
+            Assert.Contains("linux", p.Url.AbsoluteUri);
+            Assert.EndsWith("/bin/ffmpeg", p.ExePathInZip);
+        }
+    }
+
+    [Fact]
+    public void The_linux_packages_point_at_a_yaparr_release_and_have_hashes()
+    {
+        foreach (var p in new[] { FfmpegPackage.LinuxX64, FfmpegPackage.LinuxArm64 })
+        {
+            Assert.Equal("https", p.Url.Scheme);
+            Assert.Contains("zburtle/Yaparr.FFmpeg/releases", p.Url.AbsoluteUri);
+            Assert.Equal(64, p.Sha256.Length);
+            Assert.StartsWith(p.NoticesRoot + "/bin/", p.ExePathInZip);
+            Assert.Equal(p.NoticesRoot + "/LICENSE.txt", p.LicensePathInZip);
+        }
+        Assert.NotEqual(FfmpegPackage.LinuxX64.Sha256, FfmpegPackage.LinuxArm64.Sha256);
+    }
+
+    [Fact]
     public void The_built_in_package_points_at_a_yaparr_release_and_has_a_hash()
     {
         var p = FfmpegPackage.Default;
