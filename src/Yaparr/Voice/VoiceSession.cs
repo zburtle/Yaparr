@@ -35,13 +35,18 @@ public sealed class VoiceSession : IDisposable
     /// <summary>When this session started, on the tick clock; two of your devices that join at the same moment use it to settle which one stays.</summary>
     internal long JoinedAt { get; } = Environment.TickCount64;
     private readonly CancellationTokenSource _cts = new();
-    private readonly Channel<float[]> _capture = Channel.CreateBounded<float[]>(new BoundedChannelOptions(10) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
+    private readonly Channel<CapturedFrame> _capture = Channel.CreateBounded<CapturedFrame>(new BoundedChannelOptions(10) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
     private readonly IOpusEncoder _encoder;
     private readonly ConcurrentDictionary<PeerId, RemoteVoice> _remotes = new();
     private readonly ConcurrentDictionary<PeerId, CancellationTokenSource> _dials = new();
     private readonly float[] _frame = new float[FrameSamples];
     private int _frameFill;
-    private readonly Queue<float[]> _preRoll = new();
+    private readonly Queue<CapturedFrame> _preRoll = new();
+    private readonly SpeechDetector _speechDetector = new();
+    private byte _levelByte;
+
+    // A microphone frame with what the packet will say about it (see VoicePacket).
+    private readonly record struct CapturedFrame(float[] Samples, byte Level);
     private int _hangover;
     private ushort _seq;
     private uint _timestamp;
@@ -149,6 +154,9 @@ public sealed class VoiceSession : IDisposable
         set { _levelSpeakers = value; if (!value) foreach (var r in _remotes.Values) r.ResetLevel(); }
     }
 
+    /// <summary>What a person's packets say about how loud they are and whether they are talking; null for someone on an older version, who does not say.</summary>
+    public SenderSignal? SpeakerSignal(PeerId peer) => _remotes.TryGetValue(peer, out var r) ? r.Signal : null;
+
     /// <summary>How much the leveller is turning a person up (or down, negative), in dB; 0 when it is off.</summary>
     public float SpeakerLevelGainDb(PeerId peer) => _remotes.TryGetValue(peer, out var r) ? r.LevelGainDb : 0f;
 
@@ -226,7 +234,7 @@ public sealed class VoiceSession : IDisposable
             if (_frameFill == FrameSamples)
             {
                 CleanCapture(_frame);
-                _capture.Writer.TryWrite((float[])_frame.Clone());
+                _capture.Writer.TryWrite(new CapturedFrame((float[])_frame.Clone(), _levelByte));
                 _frameFill = 0;
             }
         }
@@ -242,6 +250,8 @@ public sealed class VoiceSession : IDisposable
         }
         // After the cleaning, so that the noise that was taken out is not what the level is judged by.
         if (_automaticVolume) _micLeveler.Process(frame);
+        // What goes in the packet: how loud this frame is and whether it is speech, judged on every frame in order (also those that are not sent).
+        _levelByte = VoicePacket.EncodeLevel(_speechDetector.Update(frame, out bool speech), speech);
     }
 
     private void Fail(IVoiceProcessor processor, Exception ex)
@@ -256,8 +266,9 @@ public sealed class VoiceSession : IDisposable
         var opus = new byte[400];
         try
         {
-            await foreach (var frame in _capture.Reader.ReadAllAsync(_cts.Token).ConfigureAwait(false))
+            await foreach (var captured in _capture.Reader.ReadAllAsync(_cts.Token).ConfigureAwait(false))
             {
+                var frame = captured.Samples;
                 float level = Rms(frame);
                 _level = Math.Max(level, _level * 0.9f);
 
@@ -274,7 +285,7 @@ public sealed class VoiceSession : IDisposable
                 if (!transmit)
                 {
                     if (_sending) { _sending = false; SpeakingChanged?.Invoke(_node.Id, false); }
-                    _preRoll.Enqueue(frame);
+                    _preRoll.Enqueue(captured);
                     while (_preRoll.Count > PreRollFrames) _preRoll.Dequeue();
                     continue;
                 }
@@ -285,18 +296,18 @@ public sealed class VoiceSession : IDisposable
                     SpeakingChanged?.Invoke(_node.Id, true);
                     bool first = true;
                     while (_preRoll.Count > 0) { Send(_preRoll.Dequeue(), first, buffer, opus); first = false; }
-                    Send(frame, first, buffer, opus);
+                    Send(captured, first, buffer, opus);
                 }
-                else Send(frame, false, buffer, opus);
+                else Send(captured, false, buffer, opus);
             }
         }
         catch (OperationCanceledException) { }
     }
 
-    private void Send(float[] frame, bool marker, byte[] buffer, byte[] opus)
+    private void Send(CapturedFrame captured, bool marker, byte[] buffer, byte[] opus)
     {
-        int length = _encoder.Encode(frame, FrameSamples, opus, opus.Length);
-        int total = VoicePacket.Write(buffer, _tag, _seq++, _timestamp, marker, opus.AsSpan(0, length));
+        int length = _encoder.Encode(captured.Samples, FrameSamples, opus, opus.Length);
+        int total = VoicePacket.Write(buffer, _tag, _seq++, _timestamp, marker, opus.AsSpan(0, length), captured.Level);
         _timestamp += FrameSamples;
         _node.SendVoicePacket(_room, buffer.AsSpan(0, total));
     }
@@ -312,8 +323,9 @@ public sealed class VoiceSession : IDisposable
 
     internal void OnPacket(PeerId from, ReadOnlySpan<byte> packet)
     {
-        if (_disposed || !VoicePacket.TryParse(packet, out var tag, out var seq, out _, out var opus) || tag != _tag) return;
-        Remote(from).Enqueue(seq, opus);
+        if (_disposed || !VoicePacket.TryParse(packet, out var tag, out var seq, out _, out var timestamp, out var opus) || tag != _tag) return;
+        bool signal = VoicePacket.TryDecodeLevel(timestamp, out float dbfs, out bool speech);
+        Remote(from).Enqueue(seq, opus, signal, dbfs, speech);
     }
 
     /// <summary>Fills <paramref name="output"/> with what everyone else is saying (mono, 48 kHz). Silence when nobody is.</summary>

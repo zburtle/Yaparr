@@ -30,9 +30,15 @@ The sound of a shared screen and the soundboard are not leveled (the soundboard 
 
 `tools/Yaparr.VoiceProbe` is for choosing the settings from real voices: `record` listens to your microphone for 40 seconds and saves a file on your computer (nothing is sent anywhere), and `analyze` runs a recording through the app's noise suppression and the leveller with several settings, printing the loudness of your speech and pauses, how far the gain moves, how much the noise in pauses is lifted, and how a quieter or louder microphone would come out.
 
+## What a packet says about the audio
+
+A voice packet is a header (version and marker, 1 byte; room tag, 4; sequence, 2; timestamp, 4) and an Opus frame. Receivers never used the timestamp, and senders always counted it in steps of 960 from 0, so its low six bits were always zero. The low byte now holds what RFC 6464 calls the client-to-mixer audio level: bit 0 set (so a packet from an older version has none), bits 1 to 6 the loudness of the frame (RMS) in steps of 2 dB below full scale, bit 7 set when the sender takes the frame for speech (`SpeechDetector`: well above the followed noise floor). It is judged on the audio that is sent, after echo cancellation, noise suppression and automatic volume, and on every frame, including those the voice activation holds back. Older versions ignore it, so there is no new packet version and both directions keep working in a mixed call.
+
+A receiver (`RemoteVoice`, `VoiceSession.SpeakerSignal`) keeps a short average of it for each sender. Where there are more than 8 talkers, those who say they are talking come before everyone else, the louder first, and those who say they are not come last, so a noisy microphone with big packets no longer takes a place from someone speaking quietly; a sender that says nothing is ranked by packet size as before (so in a call mixing old and new versions, people on a new version who are talking come first). Anyone who passes a packet on could read the same byte without decoding it. The level is not signed, as the packet is not, so a sender can claim to be talking; the worst that does is take one of the 8 places.
+
 ## Large calls
 
-From nine people the audio travels along a tree, see [Streams and large rooms](streams-and-large-rooms.md). Nothing is sent directly to someone who is deafened (a tree still reaches them, since they may pass audio on), and in a call with more than 8 people only the 8 who are saying the most are decoded and mixed (judged by the size of their packets); someone muted, or everyone when you are deafened, is not decoded at all.
+From nine people the audio travels along a tree, see [Streams and large rooms](streams-and-large-rooms.md). Nothing is sent directly to someone who is deafened (a tree still reaches them, since they may pass audio on), and in a call with more than 8 people only the 8 who are saying the most are decoded and mixed (judged by what their own packets say about being speech, and how loud, when they say it, otherwise by the size of their packets); someone muted, or everyone when you are deafened, is not decoded at all.
 
 ## When the connection is lost
 
