@@ -60,6 +60,8 @@ public sealed class AppSettings
     public bool SoundboardsMuted { get; set; }
     /// <summary>How loud soundboard sounds are against voices, in percent (100 is as loud as a voice).</summary>
     public int SoundboardVolume { get; set; } = 80;
+    /// <summary>Where the soundboard opens: over the main window (false) or in a window of its own (true). Follows the last choice made with the Pop out / Show in the app button.</summary>
+    public bool SoundboardInWindow { get; set; }
 
     /// <summary>Where a shared screen opens: in a window of its own (true) or inside the main window over the chat (false). Follows the last choice made with the Pop out / Show in the app button.</summary>
     public bool WatchScreensInWindow { get; set; } = true;
