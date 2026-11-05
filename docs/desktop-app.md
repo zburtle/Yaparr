@@ -3,7 +3,7 @@
 [Documentation](README.md)
 
 `samples/Yaparr.Desktop` is the chat app, built with Avalonia so it runs on Windows and Linux: a list of rooms and direct chats,
-messages with delivery marks, the people in the room, and buttons to create or join a room (the room key and copy-invite button are under the room title) or
+messages with delivery marks, the people in the room, and buttons to create or join a room (the room key is under the room title: click it to copy it, or use Copy link to copy a link that opens Yaparr; see [Links](#links)) or
 open a direct chat by peer ID. Under each connected person in the People list it says how you reach them: *direct*, *via server* (through the TURN relay you set up or imported, whose bandwidth is limited) or *via member* (another member forwards your traffic; they cannot read it). Your name, identity key, joined rooms and message history are kept in
 `%LOCALAPPDATA%\Yaparr` so you keep the same peer ID and rejoin your rooms on the next start. To run two copies on
 one machine, give each its own folder: `Yaparr.Desktop.exe --name alice --data C:\temp\alice` (the launch profiles
@@ -46,3 +46,7 @@ Help > "Report a problem…" does that and then opens the bug report form on Git
 ## Logs
 
 One file per day (`logs/yaparr-2026-10-31.log`), seven days kept, a day stops at 20 MB.
+
+## Links
+
+A room or a person can be shared as a link: **Copy link** next to the room key copies `https://yaparr.com/join#<invite>`, and **Copy chat link** in a direct chat copies `https://yaparr.com/chat#<peer id>`. Opening one in a browser opens Yaparr (installed from the installer, the `.deb` or the Flatpak, which register the `yaparr://` address). Yaparr asks before it joins the room or starts the chat, and if you are already in it, it just shows it. A link pasted into "Join a room" or "New direct chat" works too. The secret part is after the `#`, so it never goes to yaparr.com; see [Security](security.md).

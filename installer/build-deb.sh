@@ -39,10 +39,11 @@ cat > "$stage/usr/share/applications/yaparr.desktop" <<EOF
 Type=Application
 Name=Yaparr
 Comment=Serverless peer-to-peer chat
-Exec=/opt/yaparr/Yaparr.Desktop
+Exec=/opt/yaparr/Yaparr.Desktop %u
 Icon=yaparr
 Terminal=false
 Categories=Network;Chat;InstantMessaging;
+MimeType=x-scheme-handler/yaparr;
 EOF
 
 size_kb=$(du -sk "$stage/opt" | cut -f1)

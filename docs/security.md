@@ -13,6 +13,13 @@ Peers without the key never become members, receive introductions or see message
 band. Anyone holding the key is in, and removing one person means making a new key. There are no open rooms that
 anyone can join by name; versions before 1.4 had them, and those rooms are not found by this version.
 
+**Links.** The desktop app shares rooms and people as `https://yaparr.com/join#<invite>` and `https://yaparr.com/chat#<peer id>`.
+The secret is in the fragment, which a browser never sends to a server, so the web site and its host never see a room key. The
+page only hands it on to `yaparr://join/<invite>` or `yaparr://chat/<peer id>`, which the operating system opens in the app. The app
+parses a link strictly (a room key must parse as one, a peer id must be 64 hex characters, anything else is ignored) and never acts
+on one without asking first, because joining a room or starting a chat shows your IP address to the other side. A copy of the app
+that is already running receives the link over a pipe only the same user can use.
+
 ## Connections and replays
 
 A hello is a signed statement that a temporary key belongs to its author. It proves who the key is for, not that the sender holds it, and anyone who ever connected to the author has a copy that can be repeated. So a hello only makes a candidate session. The connection counts as made, or the session is replaced (a peer that restarted), once a frame arrives that is sealed with that candidate's keys, which only the holder of the temporary key can make. Candidates that are not confirmed disappear after eight seconds, connections started by someone else wait in a room of 64 (at most 4, and 30 new ones in ten seconds, per address), and a repeated hello does not count as having heard from the other end.
