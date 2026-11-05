@@ -24,13 +24,9 @@ public sealed class SpeechLeveler
     public float RiseDbPerSecond { get; }
     public float FallDbPerSecond { get; }
 
-    private const float FloorDb = -80f, SilenceDb = -100f;
-    private const float MinSpeechDb = -55f, SpeechAboveFloorDb = 10f;
-    private const float FloorRiseDbPerSecond = 1.5f;
-
+    private readonly SpeechDetector _detector = new();
     private float _gainDb;
     private float _levelDb = float.NaN;     // how loud they talk, smoothed over the frames with speech in them
-    private float _floorDb = float.NaN;     // how loud the quietest stretches are; the first frame is the first guess, which errs on the side of not boosting
 
     public SpeechLeveler(float targetDbfs = -26f, float maxBoostDb = 12f, float maxCutDb = 15f, float riseDbPerSecond = 12f, float fallDbPerSecond = 40f)
     {
@@ -52,7 +48,7 @@ public sealed class SpeechLeveler
     {
         _gainDb = 0;
         _levelDb = float.NaN;
-        _floorDb = float.NaN;
+        _detector.Reset();
         Talking = false;
     }
 
@@ -62,17 +58,7 @@ public sealed class SpeechLeveler
         if (frame.IsEmpty) return;
         double dt = (double)frame.Length / SampleRate;
 
-        double sum = 0;
-        foreach (var s in frame) sum += s * (double)s;
-        float rmsDb = sum <= 0 ? SilenceDb : (float)(10 * Math.Log10(sum / frame.Length + 1e-12));
-        if (float.IsNaN(rmsDb)) rmsDb = SilenceDb;
-
-        // The noise floor: down at once to a quieter frame, up only slowly, so a long stretch of talking does not become the floor.
-        if (float.IsNaN(_floorDb)) _floorDb = Math.Max(FloorDb, rmsDb);
-        if (rmsDb < _floorDb) _floorDb = Math.Max(FloorDb, rmsDb);
-        else _floorDb = Math.Min(_floorDb + (float)(FloorRiseDbPerSecond * dt), rmsDb);
-
-        bool talking = rmsDb > Math.Max(MinSpeechDb, _floorDb + SpeechAboveFloorDb);
+        float rmsDb = _detector.Update(frame, out bool talking);
         Talking = talking;
         float before = _gainDb;
 

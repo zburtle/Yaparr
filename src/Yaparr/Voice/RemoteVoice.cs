@@ -3,33 +3,67 @@ using Yaparr.Identity;
 
 namespace Yaparr.Voice;
 
+/// <summary>
+/// The header of a voice packet: version and marker (1 byte), room tag (4), sequence (2) and a timestamp (4), then the Opus frame.
+/// Receivers do not use the timestamp, and senders have always counted it in steps of 960 from 0, so its low six bits are always
+/// zero. The low byte now carries what RFC 6464 calls the client-to-mixer audio level, so that whoever passes a packet on, or has to
+/// choose whose voices to decode, can tell who is talking and how loudly without decoding: bit 0 set (never so in the old
+/// timestamps), bits 1 to 6 the level in steps of 2 dB below full scale (0 to 126 dB), bit 7 set when the sender takes the frame for
+/// speech. Older versions ignore it, and packets from older versions simply have none.
+/// </summary>
 internal static class VoicePacket
 {
     public const int HeaderSize = 11;
     public const byte Version = 1;
     private const byte MarkerFlag = 0x80;
 
-    public static int Write(Span<byte> dst, uint roomTag, ushort seq, uint timestamp, bool marker, ReadOnlySpan<byte> opus)
+    /// <param name="level">The byte made by <see cref="EncodeLevel"/>, or 0 for none.</param>
+    public static int Write(Span<byte> dst, uint roomTag, ushort seq, uint timestamp, bool marker, ReadOnlySpan<byte> opus, byte level = 0)
     {
         dst[0] = (byte)(Version | (marker ? MarkerFlag : 0));
         System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(dst[1..], roomTag);
         System.Buffers.Binary.BinaryPrimitives.WriteUInt16BigEndian(dst[5..], seq);
-        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(dst[7..], timestamp);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(dst[7..], level != 0 ? (timestamp & ~0xFFu) | level : timestamp);
         opus.CopyTo(dst[HeaderSize..]);
         return HeaderSize + opus.Length;
     }
 
-    public static bool TryParse(ReadOnlySpan<byte> src, out uint roomTag, out ushort seq, out bool marker, out ReadOnlySpan<byte> opus)
+    public static bool TryParse(ReadOnlySpan<byte> src, out uint roomTag, out ushort seq, out bool marker, out ReadOnlySpan<byte> opus) =>
+        TryParse(src, out roomTag, out seq, out marker, out _, out opus);
+
+    public static bool TryParse(ReadOnlySpan<byte> src, out uint roomTag, out ushort seq, out bool marker, out uint timestamp, out ReadOnlySpan<byte> opus)
     {
-        roomTag = 0; seq = 0; marker = false; opus = default;
+        roomTag = 0; seq = 0; marker = false; timestamp = 0; opus = default;
         if (src.Length <= HeaderSize || (src[0] & 0x7F) != Version) return false;
         marker = (src[0] & MarkerFlag) != 0;
         roomTag = System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(src[1..]);
         seq = System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(src[5..]);
+        timestamp = System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(src[7..]);
         opus = src[HeaderSize..];
         return true;
     }
+
+    /// <summary>The level byte for a frame: its loudness (RMS, dB relative to full scale, 0 or below) and whether it is speech.</summary>
+    public static byte EncodeLevel(float dbfs, bool speech)
+    {
+        int steps = float.IsNaN(dbfs) ? 63 : Math.Clamp((int)MathF.Round(-dbfs / 2f), 0, 63);
+        return (byte)((speech ? 0x80 : 0) | (steps << 1) | 1);
+    }
+
+    /// <summary>Reads the level from a timestamp; false if the sender did not put one there.</summary>
+    public static bool TryDecodeLevel(uint timestamp, out float dbfs, out bool speech)
+    {
+        byte b = (byte)timestamp;
+        dbfs = 0; speech = false;
+        if ((b & 1) == 0) return false;
+        dbfs = -((b >> 1) & 0x3F) * 2f;
+        speech = (b & 0x80) != 0;
+        return true;
+    }
 }
+
+/// <summary>What a sender says about their own audio in their packets: how loud it is and whether they take it for speech.</summary>
+public readonly record struct SenderSignal(float Dbfs, bool Speech);
 
 /// <summary>
 /// What we hear from one person: reorders their packets, waits a few frames to smooth out delivery,
@@ -54,6 +88,8 @@ internal sealed class RemoteVoice : IDisposable
     private long _lastPacketAt;
     private bool _decoderStale;
     private readonly SpeechLeveler? _leveler;
+    private bool _hasSignal;
+    private double _speechShare, _senderDbfs;
 
     /// <param name="channels">1 for a voice; 2 for the sound of a shared screen, whose frames then hold <see cref="FrameSamples"/> x 2 interleaved samples.</param>
     /// <param name="minTarget">How many 20 ms packets to hold back before playing, which is also the least delay.</param>
@@ -91,11 +127,21 @@ internal sealed class RemoteVoice : IDisposable
     // Signed distance from b to a in sequence space, so 0 follows 65535.
     private static int Diff(ushort a, ushort b) => (short)(a - b);
 
-    public void Enqueue(ushort seq, ReadOnlySpan<byte> opus)
+    public void Enqueue(ushort seq, ReadOnlySpan<byte> opus, bool hasSignal = false, float senderDbfs = 0, bool senderSpeech = false)
     {
         lock (_gate)
         {
             Received++;
+            if (hasSignal)
+            {
+                // A sender that tells us: how much of the time they say they are talking, and how loud they are then.
+                if (!_hasSignal) { _hasSignal = true; _speechShare = senderSpeech ? 1 : 0; _senderDbfs = senderDbfs; }
+                else
+                {
+                    _speechShare = _speechShare * 0.8 + (senderSpeech ? 0.2 : 0);
+                    if (senderSpeech) _senderDbfs += (senderDbfs - _senderDbfs) * 0.2;
+                }
+            }
             // Opus spends few bytes on silence and background noise and many on speech, so the size of a packet says how much is being said.
             _loudness = _loudness * 0.9 + opus.Length * 0.1;
             _lastPacketAt = Environment.TickCount64;
@@ -112,7 +158,20 @@ internal sealed class RemoteVoice : IDisposable
     /// <summary>How much this person has been saying lately (the smoothed size of their packets), or 0 once they have gone quiet.</summary>
     public double LoudnessAt(long nowMs)
     {
-        lock (_gate) return nowMs - _lastPacketAt > 200 ? 0 : _loudness;
+        lock (_gate)
+        {
+            if (nowMs - _lastPacketAt > 200) return 0;
+            if (!_hasSignal) return _loudness;
+            // Someone who says they are talking beats everyone who does not say so (the size of a packet is no judge of that when a
+            // microphone is noisy), and the louder of those comes first; someone who says they are not talking comes last.
+            return _speechShare > 0.5 ? 1000 + Math.Max(0, 100 + _senderDbfs) * 10 : _loudness * 0.1;
+        }
+    }
+
+    /// <summary>What this person's own packets say about how loud they are and whether they are talking; null for a sender that does not say (an older version).</summary>
+    public SenderSignal? Signal
+    {
+        get { lock (_gate) return _hasSignal ? new SenderSignal((float)_senderDbfs, _speechShare > 0.5) : null; }
     }
 
     /// <summary>
