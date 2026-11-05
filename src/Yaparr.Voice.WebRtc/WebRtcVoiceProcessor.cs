@@ -90,7 +90,9 @@ public sealed class WebRtcVoiceProcessor : IVoiceProcessor
             NoiseSuppression.High => NoiseSuppressionLevel.High,
             _ => NoiseSuppressionLevel.Moderate,
         });
-        // Automatic volume is left off: with open microphones it makes quiet breathing swell between words.
+        // Automatic volume is not done here: the old gain controller made quiet breathing swell between words with open microphones,
+        // and the newer one, switched on through this wrapper, was measured to change nothing at all (the wrapper offers no settings
+        // for it). The library's own SpeechLeveler does it instead, for the microphone and for each person heard.
         config.SetGainController1(false, GainControlMode.AdaptiveDigital, 3, 9, true);
         config.SetGainController2(false);
         config.SetHighPassFilter(true);

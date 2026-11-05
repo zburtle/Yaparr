@@ -53,6 +53,7 @@ internal sealed class RemoteVoice : IDisposable
     private double _loudness;
     private long _lastPacketAt;
     private bool _decoderStale;
+    private readonly SpeechLeveler? _leveler;
 
     /// <param name="channels">1 for a voice; 2 for the sound of a shared screen, whose frames then hold <see cref="FrameSamples"/> x 2 interleaved samples.</param>
     /// <param name="minTarget">How many 20 ms packets to hold back before playing, which is also the least delay.</param>
@@ -60,6 +61,7 @@ internal sealed class RemoteVoice : IDisposable
     {
         Id = id;
         _decoder = OpusCodecFactory.CreateDecoder(48000, channels);
+        if (channels == 1) _leveler = new SpeechLeveler();
         _minTarget = minTarget;
         _maxTarget = Math.Max(8, minTarget + 6);
         _target = minTarget;
@@ -68,6 +70,14 @@ internal sealed class RemoteVoice : IDisposable
     public PeerId Id { get; }
     public float Gain { get; set; } = 1f;
     public bool LocalMute { get; set; }
+
+    /// <summary>Brings the frame just read to the loudness of a normal voice (see <see cref="SpeechLeveler"/>); on the mixing thread only. Nothing for the sound of a screen.</summary>
+    public void Level(Span<float> frame) => _leveler?.Process(frame);
+
+    public void ResetLevel() => _leveler?.Reset();
+
+    /// <summary>How much the leveller is turning this person up (or down, negative) now, in dB.</summary>
+    public float LevelGainDb => _leveler?.GainDb ?? 0f;
     public bool Speaking { get; private set; }
     public int Lost { get; private set; }
     public int Underruns { get; private set; }

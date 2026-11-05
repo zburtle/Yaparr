@@ -126,6 +126,32 @@ public sealed class VoiceSession : IDisposable
 
     public IReadOnlyCollection<PeerId> Speaking => _remotes.Values.Where(r => r.Speaking).Select(r => r.Id).ToList();
 
+    private volatile bool _automaticVolume, _levelSpeakers;
+    private readonly SpeechLeveler _micLeveler = new();
+
+    /// <summary>
+    /// Automatic volume for your microphone: a quiet one is raised and a loud one lowered towards a normal speaking level (see
+    /// <see cref="SpeechLeveler"/>). The gain changes only while you talk and is held in pauses, so it is never raised on the noise of the room. Off by default.
+    /// </summary>
+    public bool AutomaticVolume
+    {
+        get => _automaticVolume;
+        set { if (!value) _micLeveler.Reset(); _automaticVolume = value; }
+    }
+
+    /// <summary>
+    /// Brings everyone you hear to a similar loudness, on top of each person's own volume, and keeps the mix of several people
+    /// talking from clipping. Off by default.
+    /// </summary>
+    public bool LevelSpeakers
+    {
+        get => _levelSpeakers;
+        set { _levelSpeakers = value; if (!value) foreach (var r in _remotes.Values) r.ResetLevel(); }
+    }
+
+    /// <summary>How much the leveller is turning a person up (or down, negative), in dB; 0 when it is off.</summary>
+    public float SpeakerLevelGainDb(PeerId peer) => _remotes.TryGetValue(peer, out var r) ? r.LevelGainDb : 0f;
+
     private volatile float _outputGain = 1f;
 
     /// <summary>How loud everything you hear is, 0 to 4 (1 is as received). Loud peaks are rounded off rather than cut.</summary>
@@ -209,9 +235,13 @@ public sealed class VoiceSession : IDisposable
     // A processor that breaks must not stop the microphone: switch it off and carry on.
     private void CleanCapture(float[] frame)
     {
-        if (_processor is not { } processor) return;
-        try { processor.ProcessCapture(frame); }
-        catch (Exception ex) { Fail(processor, ex); }
+        if (_processor is { } processor)
+        {
+            try { processor.ProcessCapture(frame); }
+            catch (Exception ex) { Fail(processor, ex); }
+        }
+        // After the cleaning, so that the noise that was taken out is not what the level is judged by.
+        if (_automaticVolume) _micLeveler.Process(frame);
     }
 
     private void Fail(IVoiceProcessor processor, Exception ex)
@@ -325,6 +355,7 @@ public sealed class VoiceSession : IDisposable
             // Not heard, so not worth decoding.
             if (_deafened || remote.LocalMute || (loudest != null && !loudest.Contains(remote))) { remote.Skip(now); continue; }
             if (!remote.ReadFrame(_tmp, now)) continue;
+            if (_levelSpeakers) remote.Level(_tmp);
             float gain = remote.Gain;
             for (int i = 0; i < FrameSamples; i++) _mix[i] += _tmp[i] * gain;
         }
@@ -337,11 +368,13 @@ public sealed class VoiceSession : IDisposable
             if (sound.Finished) _sounds.RemoveAt(k);
         }
         float master = OutputGain;
+        bool levelled = _levelSpeakers;
         for (int i = 0; i < FrameSamples; i++)
         {
             float s = _mix[i] * master;
-            // A boosted voice that goes past full scale is bent smoothly into the last 0.25, which sounds less harsh than a hard cut.
-            if (master > 1f)
+            // A boosted voice that goes past full scale is bent smoothly into the last 0.25, which sounds less harsh than a hard cut;
+            // so are several leveled voices that add up past it.
+            if (master > 1f || levelled)
             {
                 if (s > 0.75f) s = 0.75f + 0.25f * MathF.Tanh((s - 0.75f) / 0.25f);
                 else if (s < -0.75f) s = -0.75f - 0.25f * MathF.Tanh((-s - 0.75f) / 0.25f);
