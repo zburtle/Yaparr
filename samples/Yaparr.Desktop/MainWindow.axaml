@@ -771,6 +771,14 @@
         </Border>
     </Border>
 
+    <!-- The soundboard over the window, like the settings. Escape, the cross or a click outside puts it away; Pop out moves it to a window of its own. -->
+    <Border x:Name="SoundboardOverlay" IsVisible="False" Background="#D8000000" Padding="24" Focusable="True"
+            AutomationProperties.Name="Soundboard"
+            PointerPressed="SoundboardOverlay_PointerPressed" KeyDown="SoundboardOverlay_KeyDown">
+        <Border Classes="card" x:Name="SoundboardHost" HorizontalAlignment="Stretch" VerticalAlignment="Center" MaxWidth="760" MaxHeight="760"
+                ClipToBounds="True" KeyboardNavigation.TabNavigation="Cycle" />
+    </Border>
+
     <!-- A picture from the chat shown large over everything else. A click or Escape closes it. -->
     <Border x:Name="PictureOverlay" IsVisible="False" Background="#D8000000" Padding="32" Focusable="True"
             PointerReleased="PictureOverlay_PointerReleased" KeyDown="PictureOverlay_KeyDown">

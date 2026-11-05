@@ -1,0 +1,114 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="using:Yaparr.Desktop"
+             x:Class="Yaparr.Desktop.SoundboardView">
+    <UserControl.Styles>
+        <!-- A sound: a coloured badge with its first letter, the name, and who added it and how long it is. -->
+        <Style Selector="Button.tile">
+            <Setter Property="Width" Value="160" />
+            <Setter Property="Height" Value="76" />
+            <Setter Property="Margin" Value="0,0,10,10" />
+            <Setter Property="Padding" Value="12,10" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Button.tile:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource Selected}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
+        </Style>
+        <Style Selector="Button.tile:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource Selected}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
+            <Setter Property="RenderTransform" Value="scale(0.97)" />
+        </Style>
+        <Style Selector="Button.tile.playing /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource Selected}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
+            <Setter Property="BorderThickness" Value="2" />
+        </Style>
+        <Style Selector="Button.tile:disabled">
+            <Setter Property="Opacity" Value="0.55" />
+        </Style>
+        <Style Selector="Button.tile TextBlock.name">
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="MaxLines" Value="2" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+    </UserControl.Styles>
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="20,16,20,14">
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                <Border Width="38" Height="38" CornerRadius="11" Background="{DynamicResource Selected}" VerticalAlignment="Center">
+                    <TextBlock Text="♪" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource Accent}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="Soundboard" FontSize="17" FontWeight="SemiBold" />
+                    <TextBlock x:Name="RoomText" Classes="muted small" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <Button Content="＋ Add a sound" Classes="primary" Click="Add_Click" />
+                <Button x:Name="DockButton" Classes="ghost" Content="⧉ Pop out" Click="Dock_Click" />
+                <Button x:Name="CloseButton" Classes="ghost" Content="✕" AutomationProperties.Name="Close the soundboard" ToolTip.Tip="Close (Esc)" Click="Close_Click" />
+            </StackPanel>
+        </Grid>
+
+        <TextBox x:Name="SearchBox" Grid.Row="1" PlaceholderText="Search sounds" Margin="0,0,0,12" IsVisible="False"
+                 AutomationProperties.Name="Search sounds" TextChanged="Search_Changed" />
+
+        <Grid Grid.Row="2" MinHeight="150">
+            <ScrollViewer x:Name="TileScroll" VerticalScrollBarVisibility="Auto">
+                <ItemsControl x:Name="Tiles">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="local:SoundVm">
+                            <Button Classes="tile" Classes.playing="{Binding Playing}" IsEnabled="{Binding Available}"
+                                    Click="Tile_Click" ContextRequested="Tile_ContextRequested"
+                                    AutomationProperties.Name="{Binding Name}"
+                                    ToolTip.Tip="Click to play it for everyone in voice. Right-click for more.">
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <Border Width="36" Height="36" CornerRadius="10" Margin="0,0,10,0" VerticalAlignment="Center" Background="{Binding TintBack}">
+                                        <TextBlock Text="{Binding Initial}" Foreground="{Binding Tint}" FontSize="17" FontWeight="Bold"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
+                                        <TextBlock Classes="name" Text="{Binding Name}" />
+                                        <TextBlock Text="{Binding Caption}" Classes="muted small" TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                </Grid>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+            <StackPanel x:Name="EmptyPanel" Spacing="6" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="360">
+                <Border Width="64" Height="64" CornerRadius="18" Background="{DynamicResource Selected}" HorizontalAlignment="Center" Margin="0,0,0,6">
+                    <TextBlock x:Name="EmptyGlyph" Text="♪" FontSize="32" FontWeight="Bold" Foreground="{DynamicResource Accent}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+                <TextBlock x:Name="EmptyTitle" Text="No sounds yet" FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                <TextBlock x:Name="EmptyText" Classes="muted" TextWrapping="Wrap" TextAlignment="Center"
+                           Text="Add one and everyone in the room can play it while they are in voice." />
+            </StackPanel>
+        </Grid>
+
+        <Border Grid.Row="3" Background="{DynamicResource AppBg}" CornerRadius="10" Padding="12,8" Margin="0,8,0,0">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock x:Name="Footer" Classes="muted small" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,12,0" />
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                    <CheckBox x:Name="MuteAllBox" Content="Mute all soundboards" IsCheckedChanged="MuteAll_Changed" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <TextBlock Text="Volume" Classes="muted small" VerticalAlignment="Center" />
+                        <Slider x:Name="VolumeBox" Minimum="0" Maximum="200" Width="120" VerticalAlignment="Center"
+                                AutomationProperties.Name="Soundboard volume" ValueChanged="Volume_Changed" />
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>
