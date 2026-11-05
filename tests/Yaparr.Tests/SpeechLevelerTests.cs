@@ -143,9 +143,9 @@ public class SpeechLevelerTests
     [Fact]
     public void A_voice_already_at_the_target_is_left_alone()
     {
-        // A level that gives about -24 dBFS: the gain should stay within a couple of dB of nothing.
+        // A level that gives about -26 dBFS: the gain should stay within a couple of dB of nothing.
         var probe = Active(Speech(30, 0.3), 20);
-        double level = 0.3 * Math.Pow(10, (-24 - probe) / 20);
+        double level = 0.3 * Math.Pow(10, (-26 - probe) / 20);
         var leveler = new SpeechLeveler();
         Run(leveler, Speech(30, level));
         Assert.InRange(leveler.GainDb, -2.0f, 2.0f);

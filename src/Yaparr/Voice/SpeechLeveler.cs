@@ -32,7 +32,7 @@ public sealed class SpeechLeveler
     private float _levelDb = float.NaN;     // how loud they talk, smoothed over the frames with speech in them
     private float _floorDb = float.NaN;     // how loud the quietest stretches are; the first frame is the first guess, which errs on the side of not boosting
 
-    public SpeechLeveler(float targetDbfs = -24f, float maxBoostDb = 15f, float maxCutDb = 15f, float riseDbPerSecond = 12f, float fallDbPerSecond = 40f)
+    public SpeechLeveler(float targetDbfs = -26f, float maxBoostDb = 12f, float maxCutDb = 15f, float riseDbPerSecond = 12f, float fallDbPerSecond = 40f)
     {
         TargetDbfs = targetDbfs;
         MaxBoostDb = maxBoostDb;
