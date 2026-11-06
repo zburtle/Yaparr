@@ -81,7 +81,8 @@ public class MainActivity : AvaloniaMainActivity
         return request.Task;
     }
 
-    private const int MicrophoneRequest = 0x6d69, PickRequest = 0x7069, SaveRequest = 0x7376;
+    private const int MicrophoneRequest = 0x6d69, PickRequest = 0x7069, SaveRequest = 0x7376, PickFileRequest = 0x7066;
+    private static TaskCompletionSource<string?>? s_pickFile;
     private static TaskCompletionSource<(byte[] Bytes, string Name)?>? s_pick;
     private static TaskCompletionSource<bool>? s_save;
     private static byte[]? s_saving;
@@ -107,6 +108,51 @@ public class MainActivity : AvaloniaMainActivity
         try { StartActivityForResult(intent, SaveRequest); }
         catch (ActivityNotFoundException) { request.TrySetResult(false); }
         return request.Task;
+    }
+
+    /// <summary>Opens the system's file chooser and copies what is chosen into the app's cache, returning the path; null if the person backs out or it cannot be read.</summary>
+    public Task<string?> PickFileAsync(string mime)
+    {
+        s_pickFile?.TrySetResult(null);
+        var request = s_pickFile = new TaskCompletionSource<string?>();
+        var intent = new Intent(Intent.ActionOpenDocument).SetType(mime).AddCategory(Intent.CategoryOpenable);
+        try { StartActivityForResult(intent, PickFileRequest); }
+        catch (ActivityNotFoundException) { request.TrySetResult(null); }
+        return request.Task;
+    }
+
+    private void FinishPickFile(Result resultCode, Intent? data)
+    {
+        var request = s_pickFile;
+        if (request == null) return;
+        if (resultCode != Result.Ok || data?.Data is not { } uri) { request.TrySetResult(null); return; }
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                var path = System.IO.Path.Combine(CacheDir?.AbsolutePath ?? System.IO.Path.GetTempPath(), "restore-" + Guid.NewGuid().ToString("N") + ".zip");
+                using (var input = ContentResolver?.OpenInputStream(uri))
+                {
+                    if (input == null) { request.TrySetResult(null); return; }
+                    using var output = File.Create(path);
+                    input.CopyTo(output);
+                }
+                request.TrySetResult(path);
+            }
+            catch (Exception ex) when (ex is Java.IO.IOException or IOException or Java.Lang.SecurityException) { request.TrySetResult(null); }
+        });
+    }
+
+    /// <summary>Starts the app again from the beginning (after a restore, so it comes up with the restored account).</summary>
+    public void RestartApp()
+    {
+        var intent = PackageManager?.GetLaunchIntentForPackage(PackageName ?? "");
+        if (intent != null)
+        {
+            intent.AddFlags(ActivityFlags.ClearTop | ActivityFlags.NewTask | ActivityFlags.ClearTask);
+            StartActivity(intent);
+        }
+        Process.KillProcess(Process.MyPid());
     }
 
     private const int MaxPictureBytes = 40 * 1024 * 1024;
@@ -196,6 +242,7 @@ public class MainActivity : AvaloniaMainActivity
         base.OnActivityResult(requestCode, resultCode, data);
         if (requestCode == PickRequest) { FinishPick(resultCode, data); return; }
         if (requestCode == SaveRequest) { FinishSave(resultCode, data); return; }
+        if (requestCode == PickFileRequest) { FinishPickFile(resultCode, data); return; }
         App.Scanner?.OnActivityResult(requestCode, resultCode, data);
     }
 }
