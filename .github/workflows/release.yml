@@ -145,7 +145,7 @@ jobs:
       - name: Build the package
         if: steps.key.outputs.signed == 'true'
         run: |
-          echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/yaparr-release.keystore"
+          echo "$KEYSTORE" | tr -d '\r\n ' | base64 -d > "$RUNNER_TEMP/yaparr-release.keystore"
           version='${{ needs.version.outputs.version }}'
           IFS=. read -r major minor patch <<< "${version%%-*}"
           dotnet build apps/Yaparr.Android -c Release \
