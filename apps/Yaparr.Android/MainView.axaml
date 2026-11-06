@@ -1,0 +1,174 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="using:Yaparr.AndroidApp"
+             x:Class="Yaparr.AndroidApp.MainView"
+             x:DataType="local:MainView">
+    <Grid x:Name="Root" Background="{DynamicResource AppBg}">
+
+        <!-- First start: who you are. -->
+        <ScrollViewer x:Name="StartPanel">
+            <StackPanel Margin="20,56,20,24" Spacing="12" MaxWidth="480">
+                <TextBlock Text="Yaparr" FontSize="30" FontWeight="Bold" Foreground="{DynamicResource Ink}" />
+                <TextBlock Text="Chat with no server. Make a room and send its invite to the people you want in it."
+                           TextWrapping="Wrap" Foreground="{DynamicResource Muted}" />
+                <TextBlock Text="Your name" Margin="0,12,0,0" Foreground="{DynamicResource Muted}" />
+                <TextBox x:Name="NameBox" MaxLength="40" />
+                <Button x:Name="StartButton" Classes="primary" HorizontalAlignment="Stretch" Margin="0,8,0,0" Click="StartClicked" Content="Continue" />
+                <TextBlock x:Name="StartStatus" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" />
+                <Button x:Name="LinkStartButton" Content="Already have Yaparr on a computer? Link with it" HorizontalAlignment="Stretch"
+                        Margin="0,16,0,0" Click="LinkStartClicked" />
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Taking an account over from a computer: scan its QR code, or paste the code and passphrase. -->
+        <ScrollViewer x:Name="LinkPanel" IsVisible="False">
+            <StackPanel Margin="20,56,20,24" Spacing="12" MaxWidth="480">
+                <TextBlock Text="Link with a computer" FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Ink}" />
+                <TextBlock Text="On the computer, open Settings, Devices, Link another device, and choose Show a QR code. Then scan it here."
+                           TextWrapping="Wrap" Foreground="{DynamicResource Muted}" />
+                <Button x:Name="ScanButton" Classes="primary" HorizontalAlignment="Stretch" Content="Scan the QR code" Click="ScanClicked" />
+                <TextBlock Text="Or paste the code and its passphrase" Margin="0,12,0,0" Foreground="{DynamicResource Muted}" />
+                <TextBox x:Name="CodeBox" PlaceholderText="Link code" TextWrapping="Wrap" MaxHeight="120" />
+                <TextBox x:Name="PassphraseBox" PlaceholderText="Passphrase, like K7QD-M3XF-9PLR-2WTE-HV8N" />
+                <Button x:Name="LinkButton" HorizontalAlignment="Stretch" Content="Link" Click="LinkClicked" />
+                <TextBlock x:Name="LinkStatus" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" />
+                <Button Content="Back" HorizontalAlignment="Stretch" Click="LinkBackClicked" />
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- The rooms and direct chats, the one with the newest message first. -->
+        <Grid x:Name="ListPanel" IsVisible="False" RowDefinitions="Auto,Auto,*">
+            <Border Grid.Row="0" Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="16,44,8,10">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Text="Yaparr" FontSize="22" FontWeight="Bold" VerticalAlignment="Center" Foreground="{DynamicResource Ink}" />
+                    <Button Grid.Column="1" Content="+" FontSize="22" Padding="16,2" Background="Transparent" Foreground="{DynamicResource Accent}"
+                            Click="AddClicked" />
+                </Grid>
+            </Border>
+            <TextBlock x:Name="ListStatus" Grid.Row="1" Margin="16,8" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" FontSize="12" />
+            <Grid Grid.Row="2">
+                <ListBox x:Name="ChatList" Background="Transparent" SelectionChanged="ChatSelected">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="local:Chat">
+                            <Grid ColumnDefinitions="Auto,*,Auto" Margin="4,6">
+                                <Border Width="46" Height="46" CornerRadius="23" Background="{Binding Tint}">
+                                    <TextBlock Text="{Binding Initial}" Foreground="White" FontWeight="SemiBold" FontSize="18"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource Ink}" />
+                                    <TextBlock Text="{Binding Preview}" FontSize="13" MaxLines="1" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource Muted}" />
+                                </StackPanel>
+                                <Border Grid.Column="2" IsVisible="{Binding HasUnread}" Background="{DynamicResource Accent}" CornerRadius="12"
+                                        MinWidth="24" Padding="7,2" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding UnreadText}" Foreground="White" FontSize="12" HorizontalAlignment="Center" />
+                                </Border>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+                <TextBlock x:Name="EmptyHint" Text="No rooms yet. Tap + to make one, or to join one with an invite."
+                           TextWrapping="Wrap" TextAlignment="Center" Margin="32" VerticalAlignment="Center"
+                           Foreground="{DynamicResource Muted}" IsVisible="False" />
+            </Grid>
+        </Grid>
+
+        <!-- One room or direct chat: the messages, and a box to write in. -->
+        <Grid x:Name="ChatPanel" x:DataType="local:Chat" IsVisible="False" RowDefinitions="Auto,Auto,*,Auto">
+            <Border Grid.Row="0" Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="4,44,4,8">
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                    <Button Content="‹" FontSize="26" Padding="14,0" Background="Transparent" Foreground="{DynamicResource Accent}" Click="BackClicked" />
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="17" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource Ink}" />
+                        <TextBlock Text="{Binding Status}" FontSize="12" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource Muted}" />
+                    </StackPanel>
+                    <Button x:Name="MenuButton" Grid.Column="2" Content="⋮" FontSize="22" Padding="16,0" Background="Transparent" Foreground="{DynamicResource Ink}" />
+                </Grid>
+            </Border>
+
+            <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled" IsVisible="{Binding ShowChannels}">
+                <ItemsControl ItemsSource="{Binding Channels}" Margin="8,6">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="6" /></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="local:ChannelChip">
+                            <Button Content="{Binding Label}" Background="{Binding Fill}" Foreground="{Binding Ink}" Padding="14,6" CornerRadius="16"
+                                    Click="ChannelClicked" />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
+            <ListBox x:Name="Messages" Grid.Row="2" Background="Transparent" Padding="8,8" ItemsSource="{Binding Shown}">
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="local:Line">
+                        <Border HorizontalAlignment="{Binding Align}" MaxWidth="320" Padding="12,8" CornerRadius="16" Background="{Binding Fill}">
+                            <StackPanel Spacing="2">
+                                <TextBlock Text="{Binding Who}" FontSize="11" FontWeight="SemiBold" Opacity="0.75"
+                                           Foreground="{Binding Ink}" IsVisible="{Binding !Mine}" />
+                                <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Foreground="{Binding Ink}" />
+                                <TextBlock Text="{Binding Time}" FontSize="10" Opacity="0.6" HorizontalAlignment="Right" Foreground="{Binding Ink}" />
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+
+            <Border Grid.Row="3" Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="10">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                    <TextBox x:Name="InputBox" PlaceholderText="Message" AcceptsReturn="False" KeyDown="InputKeyDown" />
+                    <Button Grid.Column="1" Classes="primary" Content="Send" Click="SendClicked" />
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- Make or join a room, or write to a person. -->
+        <Border x:Name="AddPanel" IsVisible="False" Background="#99000000" PointerPressed="OverlayBackdropPressed">
+            <ScrollViewer VerticalAlignment="Center">
+                <Border Background="{DynamicResource Surface}" CornerRadius="16" Margin="20" Padding="16" MaxWidth="440">
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="Rooms" FontWeight="Bold" FontSize="20" Foreground="{DynamicResource Ink}" />
+                        <TextBox x:Name="RoomNameBox" PlaceholderText="Room name" MaxLength="40" />
+                        <TextBox x:Name="RoomInviteBox" PlaceholderText="Invite (empty makes a new room)" />
+                        <Button Classes="primary" HorizontalAlignment="Stretch" Content="Make or join the room" Click="RoomGoClicked" />
+                        <Border Height="1" Background="{DynamicResource Line}" Margin="0,6" />
+                        <TextBlock Text="Message a person" FontWeight="SemiBold" Foreground="{DynamicResource Ink}" />
+                        <TextBox x:Name="PersonBox" PlaceholderText="Their ID (64 characters)" />
+                        <Button HorizontalAlignment="Stretch" Content="Open the chat" Click="PersonGoClicked" />
+                        <TextBlock x:Name="AddStatus" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" />
+                        <Button HorizontalAlignment="Stretch" Content="Close" Click="AddCloseClicked" />
+                    </StackPanel>
+                </Border>
+            </ScrollViewer>
+        </Border>
+
+        <!-- The people of the open room: tap one to write to them. -->
+        <Border x:Name="PeoplePanel" IsVisible="False" Background="#99000000" PointerPressed="OverlayBackdropPressed">
+            <Border Background="{DynamicResource Surface}" CornerRadius="16" Margin="20" Padding="16" MaxWidth="440" VerticalAlignment="Center" MaxHeight="520">
+                <Grid RowDefinitions="Auto,*,Auto" RowSpacing="10">
+                    <TextBlock Text="People" FontWeight="Bold" FontSize="20" Foreground="{DynamicResource Ink}" />
+                    <ListBox x:Name="PeopleList" Grid.Row="1" Background="Transparent" SelectionChanged="PersonSelected">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="local:Person">
+                                <TextBlock Text="{Binding Name}" Padding="6,10" FontSize="16" Foreground="{DynamicResource Ink}" />
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <Button Grid.Row="2" HorizontalAlignment="Stretch" Content="Close" Click="PeopleCloseClicked" />
+                </Grid>
+            </Border>
+        </Border>
+
+        <!-- A question with two answers. -->
+        <Border x:Name="ConfirmPanel" IsVisible="False" Background="#99000000">
+            <Border Background="{DynamicResource Surface}" CornerRadius="16" Margin="20" Padding="16" MaxWidth="440" VerticalAlignment="Center">
+                <StackPanel Spacing="12">
+                    <TextBlock x:Name="ConfirmText" TextWrapping="Wrap" Foreground="{DynamicResource Ink}" />
+                    <Button x:Name="ConfirmYes" Classes="primary" HorizontalAlignment="Stretch" Click="ConfirmYesClicked" />
+                    <Button HorizontalAlignment="Stretch" Content="Cancel" Click="ConfirmNoClicked" />
+                </StackPanel>
+            </Border>
+        </Border>
+    </Grid>
+</UserControl>

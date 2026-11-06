@@ -24,6 +24,9 @@ connections, relays, voice and delivery work per device; what is shared is the p
   the new device choose **Link this device** at first start, open the link file (or paste the code) and type the passphrase. The code
   holds your account key, so send it and the passphrase by different routes and delete it afterwards. It stops working
   after a day. In the library: `DeviceLink.Create` and `DeviceLink.Open`.
+  For a phone there is a third way: **Show a QR code** shows the code and its passphrase together as one QR code for two minutes, and the
+  Android app scans it (**Link with a computer**). The QR code leaves your list of rooms out, because it would not fit; the rooms follow from
+  the computer once the phone has connected to it. Show it only to someone next to you.
 - **Backup and restore.** **Settings > Backup > Back up profile…** saves a zip of everything Yaparr keeps for you: your identity key, rooms, message history, pictures and settings. To restore it, choose **Restore a backup** on the first-start screen of a computer that has no account yet. There is no restore for a computer that already has an account, so nothing is replaced by accident. A backup is for losing or replacing a computer: two computers running the same backup would clash, so to use your account on a second computer at the same time, link it.
 - **Sharing your id.** Give people your account id (**Copy my ID**), which is the same on every device. A direct chat
   with a person reaches all of their devices, and counts as delivered when every connected device confirmed it.

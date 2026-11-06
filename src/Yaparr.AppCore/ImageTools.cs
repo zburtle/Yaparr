@@ -1,7 +1,7 @@
 using SkiaSharp;
 using Yaparr.Chat;
 
-namespace Yaparr.Desktop;
+namespace Yaparr.AppCore;
 
 /// <summary>Gets a picture ready to send: still pictures are shrunk and re-encoded, which also drops camera and location metadata.</summary>
 internal static class ImageTools

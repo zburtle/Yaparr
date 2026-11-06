@@ -120,19 +120,31 @@ public partial class MainWindow
         }
         var go = await Dialogs.ConfirmAsync(this, "Link another device",
             "This makes a code for a new device. It holds your account key, so anyone who gets both the code and its passphrase can act as you. " +
-            "Send them by different routes, and delete the code afterwards. It stops working in a day.",
+            "Send them by different routes, and delete the code afterwards. It stops working in a day. (A QR code carries both: show it only to someone next to you.)",
             yes: "Make a code", no: "Cancel");
         if (!go) return;
 
         var node = _node;
         var identity = _identity;
         var passphrase = DeviceLink.GeneratePassphrase();
-        var entries = node.AccountEntries;
         var name = node.DisplayName;
-        var code = await Task.Run(() => DeviceLink.Create(identity, name, entries, passphrase));
 
         var choice = await Dialogs.ChoiceAsync(this, "Link another device",
-            "Your code is ready. How do you want to move it to the new device?", "Save to a file…", "Copy to clipboard", "Cancel");
+            "How do you want to move it to the new device? A QR code is quickest for a phone: the phone scans it and your rooms follow once it is connected. " +
+            "A file or a code to paste carries your rooms along with it.",
+            "Show a QR code", "Save to a file…", "Copy to clipboard", "Cancel");
+        if (choice == "Show a QR code")
+        {
+            // The code for a QR leaves the room list out: it would not fit. The rooms come from this device once the phone is connected.
+            var qrCode = await Task.Run(() => DeviceLink.Create(identity, name, Array.Empty<AccountEntry>(), passphrase));
+            await LinkQrDialog.ShowAsync(this, LinkQr.Payload(qrCode, passphrase));
+            return;
+        }
+        if (choice is not ("Save to a file…" or "Copy to clipboard")) return;
+
+        var entries = node.AccountEntries;
+        var code = await Task.Run(() => DeviceLink.Create(identity, name, entries, passphrase));
+
         string where, step;
         if (choice == "Save to a file…")
         {

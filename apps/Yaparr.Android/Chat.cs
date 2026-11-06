@@ -1,0 +1,178 @@
+using System.Collections.ObjectModel;
+using Avalonia.Media;
+using Yaparr.Chat;
+
+namespace Yaparr.AndroidApp;
+
+/// <summary>A text channel of a room, as a button over the messages.</summary>
+public sealed class ChannelChip : Observable
+{
+    private bool _selected, _unread;
+
+    public ChannelChip(string id, string name)
+    {
+        Id = id;
+        Name = name;
+    }
+
+    public string Id { get; }
+    public string Name { get; }
+
+    public bool Selected
+    {
+        get => _selected;
+        set { if (_selected == value) return; _selected = value; Raise(); Raise(nameof(Fill)); Raise(nameof(Ink)); }
+    }
+
+    public bool Unread
+    {
+        get => _unread;
+        set { if (_unread == value) return; _unread = value; Raise(); Raise(nameof(Label)); }
+    }
+
+    /// <summary>The name, with a dot after it when something in the channel has not been read.</summary>
+    public string Label => _unread ? "# " + Name + " •" : "# " + Name;
+
+    public IBrush Fill => Selected ? Theme.Brush("Accent") : Theme.Brush("BubbleOther");
+    public IBrush Ink => Selected ? Brushes.White : Theme.Brush("Ink");
+}
+
+/// <summary>One room or direct chat in the list, and the messages of the one on show.</summary>
+public sealed class Chat : Observable
+{
+    private readonly List<Line> _all = new();
+    private readonly HashSet<string> _ids = new();
+    private readonly Dictionary<string, int> _unread = new();
+    private string _title, _preview = "", _status = "";
+    private string _channel = RoomChannels.DefaultText;
+
+    public Chat(string title, ChatRoom? room, DirectChat? direct, string? invite)
+    {
+        _title = title;
+        Room = room;
+        Direct = direct;
+        Invite = invite;
+    }
+
+    public ChatRoom? Room { get; }
+    public DirectChat? Direct { get; }
+
+    /// <summary>The key that lets someone join the room; null for a direct chat.</summary>
+    public string? Invite { get; }
+
+    public bool IsRoom => Room != null;
+
+    /// <summary>The messages of the channel on show (all of them in a direct chat).</summary>
+    public ObservableCollection<Line> Shown { get; } = new();
+
+    public ObservableCollection<ChannelChip> Channels { get; } = new();
+
+    /// <summary>More than one text channel: the buttons are worth showing.</summary>
+    public bool ShowChannels => Channels.Count > 1;
+
+    public string CurrentChannel => _channel;
+
+    public string Title
+    {
+        get => _title;
+        set { if (_title == value) return; _title = value; Raise(); Raise(nameof(Initial)); Raise(nameof(Tint)); }
+    }
+
+    public string Initial => Title.Length == 0 ? "?" : new System.Globalization.StringInfo(Title).SubstringByTextElements(0, 1).ToUpperInvariant();
+
+    public IBrush Tint => Theme.TintFor(Title);
+
+    /// <summary>The last message, for the list.</summary>
+    public string Preview
+    {
+        get => _preview;
+        private set { if (_preview == value) return; _preview = value; Raise(); }
+    }
+
+    /// <summary>Who is here, or what is happening, under the title.</summary>
+    public string Status
+    {
+        get => _status;
+        set { if (_status == value) return; _status = value; Raise(); }
+    }
+
+    public DateTimeOffset LastActivity { get; private set; } = DateTimeOffset.MinValue;
+
+    public int Unread => _unread.Values.Sum();
+    public bool HasUnread => Unread > 0;
+    public string UnreadText => Unread > 99 ? "99+" : Unread.ToString();
+
+    private void RaiseUnread()
+    {
+        Raise(nameof(Unread));
+        Raise(nameof(HasUnread));
+        Raise(nameof(UnreadText));
+        foreach (var chip in Channels) chip.Unread = _unread.GetValueOrDefault(chip.Id) > 0;
+    }
+
+    /// <summary>The text channels of the room, in order. The one on show stays on show if it still exists.</summary>
+    public void SetChannels(IEnumerable<ChannelInfo> channels)
+    {
+        var text = channels.Where(c => c.Kind == ChannelKind.Text).OrderBy(c => c.Order).ToList();
+        Channels.Clear();
+        foreach (var c in text) Channels.Add(new ChannelChip(c.Id, c.Name) { Selected = c.Id == _channel, Unread = _unread.GetValueOrDefault(c.Id) > 0 });
+        if (text.Count > 0 && text.All(c => c.Id != _channel)) SelectChannel(text[0].Id);
+        Raise(nameof(ShowChannels));
+    }
+
+    /// <summary>Shows another text channel of the room.</summary>
+    public void SelectChannel(string id)
+    {
+        _channel = id;
+        foreach (var chip in Channels) chip.Selected = chip.Id == id;
+        Shown.Clear();
+        foreach (var line in _all.Where(Belongs)) Shown.Add(line);
+        Raise(nameof(CurrentChannel));
+    }
+
+    private bool Belongs(Line line) => !IsRoom || (line.Channel ?? RoomChannels.DefaultText) == _channel;
+
+    /// <summary>Adds a message. False if it is already here (the same message from the history and then live).</summary>
+    public bool Add(Line line)
+    {
+        if (!_ids.Add(line.Id)) return false;
+        // Messages come in order, except a late one from the history, which goes where its time says.
+        int at = _all.Count;
+        while (at > 0 && _all[at - 1].When > line.When) at--;
+        _all.Insert(at, line);
+        if (Belongs(line))
+        {
+            int shown = Shown.Count;
+            while (shown > 0 && Shown[shown - 1].When > line.When) shown--;
+            Shown.Insert(shown, line);
+        }
+        if (line.When >= LastActivity)
+        {
+            LastActivity = line.When;
+            Preview = (line.Mine ? "You: " : IsRoom ? line.Who + ": " : "") + line.Text;
+        }
+        return true;
+    }
+
+    /// <summary>Counts a message as unread in its channel.</summary>
+    public void NoteUnread(string? channel)
+    {
+        var key = channel ?? RoomChannels.DefaultText;
+        _unread[key] = _unread.GetValueOrDefault(key) + 1;
+        RaiseUnread();
+    }
+
+    /// <summary>The channel on show has been read.</summary>
+    public void ClearUnread(string? channel = null)
+    {
+        var key = channel ?? (IsRoom ? _channel : RoomChannels.DefaultText);
+        if (_unread.Remove(key)) RaiseUnread();
+    }
+
+    public void ClearAllUnread()
+    {
+        if (_unread.Count == 0) return;
+        _unread.Clear();
+        RaiseUnread();
+    }
+}

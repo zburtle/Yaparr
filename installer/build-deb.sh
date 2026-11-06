@@ -22,7 +22,7 @@ mkdir -p "$stage/opt/yaparr" "$stage/usr/bin" "$stage/usr/share/applications" "$
 
 echo "Building Yaparr $version ($rid)"
 # Invariant globalization removes the dependency on libicu, whose package name differs between releases.
-dotnet publish "$root/samples/Yaparr.Desktop/Yaparr.Desktop.csproj" -c Release -r "$rid" --self-contained true \
+dotnet publish "$root/apps/Yaparr.Desktop/Yaparr.Desktop.csproj" -c Release -r "$rid" --self-contained true \
   -p:Version="$version" -p:UpdateRepository="$repo" -p:InvariantGlobalization=true -p:DebugType=None \
   -o "$stage/opt/yaparr"
 

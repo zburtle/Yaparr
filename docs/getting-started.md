@@ -22,7 +22,7 @@ await dm.SendAsync("hi");
 
 ## Try the command line
 
-Try it: `dotnet run --project samples/Yaparr.Cli -- alice room` prints an invite; `dotnet run --project samples/Yaparr.Cli -- bob room <invite>` joins it, in two terminals or on two machines.
+Try it: `dotnet run --project apps/Yaparr.Cli -- alice room` prints an invite; `dotnet run --project apps/Yaparr.Cli -- bob room <invite>` joins it, in two terminals or on two machines.
 Run tests: `dotnet test`.
 
 To debug the command line, see [Development](development.md).

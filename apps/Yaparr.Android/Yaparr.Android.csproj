@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <SupportedOSPlatformVersion>24.0</SupportedOSPlatformVersion>
+    <OutputType>Exe</OutputType>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- Not Yaparr.Android: inside that namespace, "Android.App" would stop meaning the platform's. -->
+    <RootNamespace>Yaparr.AndroidApp</RootNamespace>
+    <AssemblyName>Yaparr.Android</AssemblyName>
+    <ApplicationId>org.yaparr.android</ApplicationId>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>0.1.0</ApplicationDisplayVersion>
+    <AndroidPackageFormat>apk</AndroidPackageFormat>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <Product>Yaparr</Product>
+    <Company>Yaparr</Company>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Yaparr\Yaparr.csproj" />
+    <ProjectReference Include="..\..\src\Yaparr.AppCore\Yaparr.AppCore.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.5" />
+    <PackageReference Include="Avalonia.Android" Version="12.1.5" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.4" />
+    <!-- Scanning the QR code: the phone's camera through CameraX (AndroidX, not Google Play services) and ZXing to read it. -->
+    <PackageReference Include="Xamarin.AndroidX.Camera.Core" Version="1.6.2" />
+    <PackageReference Include="Xamarin.AndroidX.Camera.Camera2" Version="1.6.2" />
+    <PackageReference Include="Xamarin.AndroidX.Camera.Lifecycle" Version="1.6.2" />
+    <PackageReference Include="Xamarin.AndroidX.Camera.View" Version="1.6.2" />
+    <PackageReference Include="ZXing.Net" Version="0.16.10" />
+  </ItemGroup>
+
+</Project>

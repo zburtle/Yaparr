@@ -35,7 +35,7 @@ var dm = await node.OpenDirectChatAsync(new PeerId("…"));   // one-to-one by p
 await dm.SendAsync("hi");
 ```
 
-Try the command line: `dotnet run --project samples/Yaparr.Cli -- alice room` prints an invite; `dotnet run --project samples/Yaparr.Cli -- bob room <invite>` joins it, in two terminals or on two machines. Run the desktop app with `dotnet run --project samples/Yaparr.Desktop`, or install it from the [releases](https://github.com/zburtle/Yaparr/releases). Run the tests with `dotnet test`.
+Try the command line: `dotnet run --project apps/Yaparr.Cli -- alice room` prints an invite; `dotnet run --project apps/Yaparr.Cli -- bob room <invite>` joins it, in two terminals or on two machines. Run the desktop app with `dotnet run --project apps/Yaparr.Desktop`, or install it from the [releases](https://github.com/zburtle/Yaparr/releases). Run the tests with `dotnet test`.
 
 ## Documentation
 
