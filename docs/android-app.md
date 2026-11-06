@@ -23,6 +23,12 @@ On a new phone, "Already have Yaparr on a computer? Link with it" takes the acco
 
 The QR code leaves out your list of rooms, because a code with many rooms is too big for a QR code. Rooms follow from the computer once the phone has connected to it, as they do for any linked device. Scanning uses the phone's camera through CameraX (part of Android's own support libraries) and ZXing to read the code, all on the phone: nothing goes through Google Play services, so it works on any Android phone with a camera. Yaparr asks for the camera permission the first time you scan, and only for this; if you refuse, paste the code instead.
 
+## Updating
+
+Every build is signed with the same key, `apps/Yaparr.Android/yaparr-debug.keystore`, so a new build installs over the old one (`adb install -r`, or opening the file on the phone) and keeps your chats and account. The version number is the CI run number, so each build from CI is newer than the last. A build from before this key was added was signed with a key of its own, so it has to be uninstalled once; after that, updates work.
+
+The key is only for builds that are tried on a phone. It is in the repository, so it proves nothing about who made a package. A release for other people has to be signed with a key kept secret (pass its path and passwords as `AndroidSigningKeyStore` and so on, which win over the project's), and Google Play needs its own signing setup.
+
 ## What is stored
 
 In the app's private storage (`files/Yaparr`): the identity key, the name, the last invite, the message history and the peer cache. Android keeps this away from other apps.
