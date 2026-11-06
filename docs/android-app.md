@@ -1,4 +1,4 @@
-# Android app
+﻿# Android app
 
 `apps/Yaparr.Android` is the Android app, built with Avalonia. It uses the same library as the desktop app. It opens onto the list of your rooms and direct chats (the one with the newest message first, with a count of what is unread); tap one to read and send text messages. The + button makes a room, joins one from an invite, or opens a chat with a person from their ID. In a room the menu has the people (tap one to write to them), Copy invite and Leave; a room with several text channels shows them as buttons above the messages. The phone's back button goes back from a chat to the list. Rooms are kept in the settings the same way as on the desktop, so a room you join on one of your devices turns up on the others.
 
@@ -22,6 +22,16 @@ The project is not in `Yaparr.slnx`, so `dotnet build` and `dotnet test` at the 
 On a new phone, "Already have Yaparr on a computer? Link with it" takes the account over from a computer: your name, and the account, so people see you as one person. On the computer open Settings, Devices, Link another device and choose Show a QR code (it closes by itself after two minutes); on the phone choose Scan the QR code. If scanning does not work, paste the link code and passphrase instead.
 
 The QR code leaves out your list of rooms, because a code with many rooms is too big for a QR code. Rooms follow from the computer once the phone has connected to it, as they do for any linked device. Scanning uses the phone's camera through CameraX (part of Android's own support libraries) and ZXing to read the code, all on the phone: nothing goes through Google Play services, so it works on any Android phone with a camera. Yaparr asks for the camera permission the first time you scan, and only for this; if you refuse, paste the code instead.
+
+## Links
+
+Yaparr links open in the app: `yaparr://join/<invite>` and `yaparr://chat/<peer id>`, and the forms people share, `https://yaparr.com/join#<invite>` and `https://yaparr.com/chat#<peer id>`. A link never acts on its own: for a room the join sheet opens with the invite filled in, asking you to name the room and to confirm (joining lets the other members see your IP address); for a person a question asks first. If you are in the room or already chat with them, the link just shows it. In a room the menu has Copy invite link, and in a direct chat Copy chat link; the join sheet also takes a link instead of an invite.
+
+The https links are claimed for the app only once yaparr.com vouches for it (an asset links file there, naming the certificate that signed the package); until then they open the web page, whose **Open Yaparr** button hands the link to the app. The page's button uses an `intent:` address that names the package, so no other app can pick the link up, which matters because an invite is a secret.
+
+## Releases
+
+The release workflow builds a signed package, `Yaparr-<version>.apk`, and attaches it to the release; the website offers it to visitors on an Android phone. It needs four secrets in the repository: `ANDROID_KEYSTORE_BASE64` (the keystore file, base64), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`. Without them no package is built, because a package signed with the key in the repository (which is public) could be replaced by anyone. Keep a copy of the keystore: a package signed with another key cannot update the installed ones, so losing it means everyone has to uninstall once. The version code is made from the version (1.36.2 is 1036002).
 
 ## Updating
 

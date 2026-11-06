@@ -25,6 +25,7 @@ public partial class MainView : UserControl
     private Chat? _current;
     private Func<Task>? _confirmed;
     private IReadOnlyList<AccountEntry> _linkedEntries = Array.Empty<AccountEntry>();
+    private bool _linksReady, _handlingLinks;
 
     public MainView()
     {
@@ -35,6 +36,7 @@ public partial class MainView : UserControl
         // Linking is for a phone that has no account yet.
         LinkStartButton.IsVisible = !_data.HasIdentity;
         AttachedToVisualTree += (_, _) => OnAttached();
+        LinkInbox.Arrived += () => _ = HandleLinksAsync();
         // A phone that has been used before opens straight onto its rooms.
         if (_data.HasIdentity && !string.IsNullOrWhiteSpace(_settings.DisplayName)) _ = BeginAsync(_settings.DisplayName);
     }
@@ -91,6 +93,8 @@ public partial class MainView : UserControl
         {
             await session.StartAsync(name, _linkedEntries);
             EmptyHint.IsVisible = session.Chats.Count == 0;
+            _linksReady = true;
+            await HandleLinksAsync();
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -160,6 +164,63 @@ public partial class MainView : UserControl
         finally { LinkButton.IsEnabled = ScanButton.IsEnabled = true; }
     }
 
+    // ---- links ----
+
+    // The links that were opened in the app, one at a time: the next waits until the question the last one asked is answered. A link
+    // only asks, and the person decides.
+    private async Task HandleLinksAsync()
+    {
+        if (!_linksReady || _handlingLinks || _session is not { Started: true } session) return;
+        _handlingLinks = true;
+        try
+        {
+            while (!AnyOverlay && LinkInbox.Take() is { } link)
+            {
+                if (link.Kind == DeepLinkKind.Join) HandleJoinLink(session, link.Value);
+                else HandleChatLink(session, link.Value);
+            }
+        }
+        finally { _handlingLinks = false; }
+        await Task.CompletedTask;
+    }
+
+    private void HandleJoinLink(Session session, string invite)
+    {
+        RoomKey key;
+        try { key = RoomKey.Parse(invite); }
+        catch (FormatException) { return; }
+        // Already in the room: just show it.
+        if (session.FindRoom(key) is { } have) { OpenChat(have); return; }
+        // Not yet: the room is named and confirmed on the sheet that joins rooms.
+        if (_current != null) BackToList();
+        RoomNameBox.Text = "";
+        RoomInviteBox.Text = invite;
+        AddStatus.Text = "A link is asking you to join a room. Once you join, the other members can see your IP address, and anyone with the link can join too. " +
+                         "Only join if you trust whoever sent it. Name the room (only you see the name), then tap Make or join the room.";
+        AddPanel.IsVisible = true;
+        RoomNameBox.Focus();
+    }
+
+    private void HandleChatLink(Session session, string id)
+    {
+        if (id == session.AccountId) { ListStatus.Text = "That link is for your own ID."; return; }
+        var person = new PeerId(id);
+        if (session.FindDirect(person) is { } existing) { OpenChat(existing); return; }
+        if (_current != null) BackToList();
+        Ask($"A link is asking you to start a direct chat with {person.Short}... They will be able to see your IP address. Only continue if you trust whoever sent it.", "Start the chat", async () =>
+        {
+            try
+            {
+                ListStatus.Text = "Looking for them. This can take a minute if they just came online...";
+                OpenChat(await session.OpenDirectAsync(person));
+            }
+            catch (Exception ex) when (ex is OperationCanceledException or InvalidOperationException or TimeoutException)
+            {
+                ListStatus.Text = "Could not reach them: " + ex.Message;
+            }
+        });
+    }
+
     // ---- the list ----
 
     private void ChatSelected(object? sender, SelectionChangedEventArgs e)
@@ -183,7 +244,11 @@ public partial class MainView : UserControl
         RoomNameBox.Focus();
     }
 
-    private void AddCloseClicked(object? sender, RoutedEventArgs e) => AddPanel.IsVisible = false;
+    private void AddCloseClicked(object? sender, RoutedEventArgs e)
+    {
+        AddPanel.IsVisible = false;
+        _ = HandleLinksAsync();
+    }
 
     private void OverlayBackdropPressed(object? sender, PointerPressedEventArgs e)
     {
@@ -196,6 +261,8 @@ public partial class MainView : UserControl
         if (_session is not { Started: true } session) { AddStatus.Text = "Still connecting. Try again in a moment."; return; }
         var label = (RoomNameBox.Text ?? "").Trim();
         var invite = (RoomInviteBox.Text ?? "").Trim();
+        // A link that carries the invite works as well as the bare key.
+        if (DeepLink.Parse(invite) is { Kind: DeepLinkKind.Join } pasted) invite = pasted.Value;
         if (label.Length == 0) { AddStatus.Text = "Give the room a name."; return; }
         AddStatus.Text = invite.Length > 0 ? "Joining..." : "Making the room...";
         try
@@ -271,10 +338,15 @@ public partial class MainView : UserControl
         if (chat.IsRoom)
         {
             Add("People", PeopleClicked);
+            Add("Copy invite link", CopyInviteLinkClicked);
             Add("Copy invite", CopyInviteClicked);
             Add("Leave the room", LeaveClicked);
         }
-        else Add("Copy their ID", CopyIdClicked);
+        else
+        {
+            Add("Copy chat link", CopyChatLinkClicked);
+            Add("Copy their ID", CopyIdClicked);
+        }
         return menu;
     }
 
@@ -317,6 +389,16 @@ public partial class MainView : UserControl
     private async void CopyInviteClicked(object? sender, RoutedEventArgs e)
     {
         if (_current?.Invite is { } invite) await CopyAsync(invite, "Invite copied. Share it only with people you want in the room.");
+    }
+
+    private async void CopyInviteLinkClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_current?.Invite is { } invite) await CopyAsync(DeepLink.RoomLink(invite), "Invite link copied. Anyone who has it can join the room, so share it carefully.");
+    }
+
+    private async void CopyChatLinkClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_current?.Direct is { } direct) await CopyAsync(DeepLink.ChatLink(direct.PeerId.Value), "A link to chat with them was copied.");
     }
 
     private async void CopyIdClicked(object? sender, RoutedEventArgs e)
@@ -380,7 +462,12 @@ public partial class MainView : UserControl
         var action = _confirmed;
         _confirmed = null;
         if (action != null) await action();
+        _ = HandleLinksAsync();
     }
 
-    private void ConfirmNoClicked(object? sender, RoutedEventArgs e) => ConfirmPanel.IsVisible = false;
+    private void ConfirmNoClicked(object? sender, RoutedEventArgs e)
+    {
+        ConfirmPanel.IsVisible = false;
+        _ = HandleLinksAsync();
+    }
 }
