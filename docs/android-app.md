@@ -23,6 +23,12 @@ On a new phone, "Already have Yaparr on a computer? Link with it" takes the acco
 
 The QR code leaves out your list of rooms, because a code with many rooms is too big for a QR code. Rooms follow from the computer once the phone has connected to it, as they do for any linked device. Scanning uses the phone's camera through CameraX (part of Android's own support libraries) and ZXing to read the code, all on the phone: nothing goes through Google Play services, so it works on any Android phone with a camera. Yaparr asks for the camera permission the first time you scan, and only for this; if you refuse, paste the code instead.
 
+## Pictures
+
+The **+** next to the message box sends a picture or GIF. It opens Android's own picture chooser, which hands Yaparr only the one you pick, so the app needs no permission for your photos. What you have typed in the box goes along as the caption. The picture is shrunk (up to 1600 pixels a side) and re-saved, which also drops the camera and location details; a GIF is sent as it is if it is within 8 MB. Pictures show in the chat and a tap opens one big. A picture someone sent you is fetched by itself as on the computer, and one that is too big to fetch on its own, or that nobody who is online has, says so and waits for a tap. **Save** in the big view asks Android where to put the file (the system's "save as"), again without a permission. Pictures are kept on the phone with the history, in the app's private storage.
+
+Not there yet: taking a picture with the camera from the app (the chooser can still offer a camera app on some phones), and several pictures at once.
+
 ## Voice
 
 A room has a voice bar under its title: who is in the voice channel, and **Join voice**. The first time, Android asks to allow the microphone (only for this; text chat never needs it). In a call there are four buttons: **Mute**, **Deafen**, **Speaker** (the loudspeaker, or the phone's earpiece, or a headset when one is connected; the button shows which one is on) and **Leave**, and everyone in the channel is shown, lit up while they talk. The call runs through the same library as on the computer (Opus over the existing connections), with speech levelling on so quiet voices are raised and a crowd does not clip. While you are in a call Android treats the phone as being in a call: other apps' audio gives way, and if a phone call or another app takes the audio your microphone is muted until you unmute it.

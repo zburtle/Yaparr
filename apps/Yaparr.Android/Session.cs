@@ -129,6 +129,7 @@ public sealed class Session : IDisposable
             AccountEntries = linked,
             HistoryStore = new FileHistoryStore(_data.HistoryDirectory, historyCipher),
             DirectHistoryDirectory = Path.Combine(_data.Directory, "direct"),
+            AttachmentDirectory = Path.Combine(_data.Directory, "attachments"),
             Traversal = traversal,
             RolesDirectory = Path.Combine(_data.Directory, "roles"),
             EnableLocalDiscovery = traversal.LocalDiscovery,
@@ -137,6 +138,7 @@ public sealed class Session : IDisposable
             Dht = new Yaparr.Discovery.Dht.DhtOptions { NodeCachePath = Path.Combine(_data.Directory, "dht-nodes.txt") },
             Log = Log,
         });
+        node.AttachmentChanged += update => UI(() => OnAttachmentChanged(update));
         node.SyncedRoomChanged += OnSyncedRoomChanged;
         node.DisplayNameChanged += OnDisplayNameChanged;
         node.IncomingDirectChat += chat => UI(() => AddDirect(chat));
@@ -445,16 +447,17 @@ public sealed class Session : IDisposable
     private Line ToLine(ChatMessage m)
     {
         bool mine = _node != null && _node.IsMyDevice(m.From.Id);
-        var body = m.Body;
-        if (m.Attachment != null && body.Length == 0) body = "[picture]";
-        return new Line(m.Key, m.From.DisplayName, body, m.Timestamp, mine, m.Channel);
+        var parts = m.Parts;
+        return new Line(m.Key, m.From.DisplayName, m.Attachment != null ? parts.Body : m.Body, m.Timestamp, mine, m.Channel, m);
     }
 
     // A message of the history that came while the app was shut: unread when it is newer than what was seen in its channel.
     private void AddHistoryLine(Chat chat, ChatMessage m, string roomId, bool counted = true)
     {
         var line = ToLine(m);
-        if (!chat.Add(line) || !counted || line.Mine || m.Channel is not { } channel) return;
+        if (!chat.Add(line)) return;
+        TrackPicture(line);
+        if (!counted || line.Mine || m.Channel is not { } channel) return;
         if (_marks.IsUnread(roomId, channel, m.Timestamp.ToUnixTimeMilliseconds())) chat.NoteUnread(channel);
     }
 
@@ -462,9 +465,125 @@ public sealed class Session : IDisposable
     {
         var line = ToLine(m);
         if (!chat.Add(line)) return;
+        TrackPicture(line);
         bool shown = _open == chat && (!chat.IsRoom || (m.Channel ?? RoomChannels.DefaultText) == chat.CurrentChannel);
         if (shown) MarkRead(chat);
         else if (!line.Mine) chat.NoteUnread(m.Channel);
+        Resort(chat);
+    }
+
+    // ---- pictures ----
+
+    private readonly Dictionary<string, List<Line>> _pictureLines = new();
+
+    // A picture is shown as soon as it is on the phone; one that is not is fetched from whoever has it (or waits for a tap when it is big).
+    private void TrackPicture(Line line)
+    {
+        if (line.Attachment is not { } a) return;
+        if (!_pictureLines.TryGetValue(a.Hash, out var list)) _pictureLines[a.Hash] = list = new List<Line>();
+        list.Add(line);
+        line.PictureStatus = "Loading picture\u2026";
+        _ = LoadPictureAsync(line, force: false);
+    }
+
+    private async Task LoadPictureAsync(Line line, bool force)
+    {
+        if (_node is not { } node || line.Source == null || line.Attachment is not { } a) return;
+        try
+        {
+            if (!node.HasAttachment(a.Hash))
+            {
+                var state = await node.FetchAttachmentAsync(line.Source, force);
+                if (state != AttachmentState.Ready) { UI(() => ApplyState(line, new AttachmentUpdate(a.Hash, state, 0, a.Size))); return; }
+            }
+            await ShowPictureAsync(line, a.Hash);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            Log("picture: " + ex.Message);
+            UI(() => line.PictureStatus = "Couldn't load the picture. Tap to try again.");
+        }
+    }
+
+    // The picture is decoded at about the width the list shows it, so a screenful of pictures stays small.
+    private async Task ShowPictureAsync(Line line, string hash)
+    {
+        var node = _node;
+        var image = await Task.Run(() =>
+        {
+            var bytes = node?.ReadAttachment(hash);
+            if (bytes == null) return null;
+            try
+            {
+                using var ms = new MemoryStream(bytes);
+                return (Avalonia.Media.Imaging.Bitmap?)Avalonia.Media.Imaging.Bitmap.DecodeToWidth(ms, 720);
+            }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IOException) { return null; }
+        });
+        UI(() =>
+        {
+            if (image != null) line.Picture = image;
+            else line.PictureStatus = "Couldn't show the picture.";
+        });
+    }
+
+    private void OnAttachmentChanged(AttachmentUpdate update)
+    {
+        if (!_pictureLines.TryGetValue(update.Hash, out var list)) return;
+        foreach (var line in list.ToList())
+        {
+            if (update.State == AttachmentState.Ready) _ = ShowPictureAsync(line, update.Hash);
+            else ApplyState(line, update);
+        }
+    }
+
+    private static void ApplyState(Line line, AttachmentUpdate update)
+    {
+        if (line.HasPicture) return;
+        line.PictureStatus = update.State switch
+        {
+            AttachmentState.Fetching => update.Total > 0 && update.Received > 0 ? $"Downloading {update.Received * 100 / update.Total}%" : "Downloading\u2026",
+            AttachmentState.NeedsConfirmation => $"Tap to download ({Size(line.Attachment?.Size ?? update.Total)})",
+            AttachmentState.Unavailable => "Not available right now. Tap to try again.",
+            _ => "Loading picture\u2026",
+        };
+    }
+
+    private static string Size(long bytes) => bytes >= 1024 * 1024 ? $"{bytes / (1024.0 * 1024):0.#} MB" : $"{Math.Max(1, bytes / 1024)} KB";
+
+    /// <summary>A picture that is not here: fetch it now, whatever its size (a tap on it).</summary>
+    public void DownloadPicture(Line line)
+    {
+        if (line.HasPicture || line.Attachment == null) return;
+        line.PictureStatus = "Downloading\u2026";
+        _ = LoadPictureAsync(line, force: true);
+    }
+
+    /// <summary>The picture as it was sent, for showing big or saving; null if it is not on the phone.</summary>
+    public byte[]? PictureBytes(Line line) => line.Attachment is { } a ? _node?.ReadAttachment(a.Hash) : null;
+
+    /// <summary>Shrinks a picture for sending (also dropping camera and location details), sends it with <paramref name="caption"/> to the chat, and shows it.</summary>
+    public async Task SendPictureAsync(Chat chat, byte[] original, string fileName, string caption)
+    {
+        if (_node is not { } node) return;
+        var prepared = await Task.Run(() => ImageTools.Prepare(original, fileName));
+        var attachment = node.PrepareAttachment(prepared.Bytes, prepared.FileName, prepared.Thumbnail);
+        var text = attachment.ToText(caption);
+        string id;
+        string? channel = null;
+        if (chat.Room is { } room)
+        {
+            channel = chat.CurrentChannel;
+            id = channel == RoomChannels.DefaultText ? await room.SendAsync(text) : await room.SendAsync(text, channel);
+        }
+        else id = await chat.Direct!.SendAsync(text);
+        var line = new Line(ChatMessage.KeyOf(node.Id, id), node.DisplayName, caption, DateTimeOffset.Now, mine: true, channel) { Attachment = attachment };
+        if (chat.Add(line))
+        {
+            if (!_pictureLines.TryGetValue(attachment.Hash, out var list)) _pictureLines[attachment.Hash] = list = new List<Line>();
+            list.Add(line);
+            await ShowPictureAsync(line, attachment.Hash);
+        }
         Resort(chat);
     }
 

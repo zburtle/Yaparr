@@ -81,7 +81,83 @@ public class MainActivity : AvaloniaMainActivity
         return request.Task;
     }
 
-    private const int MicrophoneRequest = 0x6d69;
+    private const int MicrophoneRequest = 0x6d69, PickRequest = 0x7069, SaveRequest = 0x7376;
+    private static TaskCompletionSource<(byte[] Bytes, string Name)?>? s_pick;
+    private static TaskCompletionSource<bool>? s_save;
+    private static byte[]? s_saving;
+
+    /// <summary>Opens the system's chooser for a picture and returns it; null if the person backs out or the file cannot be read. The chooser needs no permission: the person hands over the one file.</summary>
+    public Task<(byte[] Bytes, string Name)?> PickPictureAsync()
+    {
+        s_pick?.TrySetResult(null);
+        var request = s_pick = new TaskCompletionSource<(byte[] Bytes, string Name)?>();
+        var intent = new Intent(Intent.ActionGetContent).SetType("image/*").AddCategory(Intent.CategoryOpenable);
+        try { StartActivityForResult(intent, PickRequest); }
+        catch (ActivityNotFoundException) { request.TrySetResult(null); }
+        return request.Task;
+    }
+
+    /// <summary>Asks where to save a file (the system's "save as") and writes it there. False if the person backs out.</summary>
+    public Task<bool> SaveFileAsync(byte[] bytes, string fileName, string mime)
+    {
+        s_save?.TrySetResult(false);
+        var request = s_save = new TaskCompletionSource<bool>();
+        s_saving = bytes;
+        var intent = new Intent(Intent.ActionCreateDocument).SetType(mime).AddCategory(Intent.CategoryOpenable).PutExtra(Intent.ExtraTitle, fileName);
+        try { StartActivityForResult(intent, SaveRequest); }
+        catch (ActivityNotFoundException) { request.TrySetResult(false); }
+        return request.Task;
+    }
+
+    private const int MaxPictureBytes = 40 * 1024 * 1024;
+
+    private void FinishPick(Result resultCode, Intent? data)
+    {
+        var request = s_pick;
+        if (request == null) return;
+        if (resultCode != Result.Ok || data?.Data is not { } uri) { request.TrySetResult(null); return; }
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                string name = "picture";
+                using (var cursor = ContentResolver?.Query(uri, new[] { "_display_name" }, null, null, null))
+                    if (cursor != null && cursor.MoveToFirst() && cursor.GetString(0) is { Length: > 0 } shown) name = shown;
+                using var input = ContentResolver?.OpenInputStream(uri);
+                if (input == null) { request.TrySetResult(null); return; }
+                using var ms = new MemoryStream();
+                var buffer = new byte[81920];
+                int n;
+                while ((n = input.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    if (ms.Length + n > MaxPictureBytes) { request.TrySetResult(null); return; }
+                    ms.Write(buffer, 0, n);
+                }
+                request.TrySetResult((ms.ToArray(), name));
+            }
+            catch (Exception ex) when (ex is Java.IO.IOException or IOException or Java.Lang.SecurityException) { request.TrySetResult(null); }
+        });
+    }
+
+    private void FinishSave(Result resultCode, Intent? data)
+    {
+        var request = s_save;
+        var bytes = s_saving;
+        s_saving = null;
+        if (request == null) return;
+        if (resultCode != Result.Ok || data?.Data is not { } uri || bytes == null) { request.TrySetResult(false); return; }
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                using var output = ContentResolver?.OpenOutputStream(uri);
+                if (output == null) { request.TrySetResult(false); return; }
+                output.Write(bytes, 0, bytes.Length);
+                request.TrySetResult(true);
+            }
+            catch (Exception ex) when (ex is Java.IO.IOException or IOException or Java.Lang.SecurityException) { request.TrySetResult(false); }
+        });
+    }
 
     public override void OnRequestPermissionsResult(int requestCode, string[] permissions, Permission[] grantResults)
     {
@@ -118,6 +194,8 @@ public class MainActivity : AvaloniaMainActivity
     protected override void OnActivityResult(int requestCode, Result resultCode, Intent? data)
     {
         base.OnActivityResult(requestCode, resultCode, data);
+        if (requestCode == PickRequest) { FinishPick(resultCode, data); return; }
+        if (requestCode == SaveRequest) { FinishSave(resultCode, data); return; }
         App.Scanner?.OnActivityResult(requestCode, resultCode, data);
     }
 }

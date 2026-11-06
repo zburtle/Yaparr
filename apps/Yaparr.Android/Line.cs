@@ -1,12 +1,17 @@
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Yaparr.Chat;
 
 namespace Yaparr.AndroidApp;
 
 /// <summary>One message as the list shows it.</summary>
-public sealed class Line
+public sealed class Line : Observable
 {
-    public Line(string id, string who, string text, DateTimeOffset when, bool mine, string? channel = null)
+    private IImage? _picture;
+    private string _pictureStatus = "";
+
+    public Line(string id, string who, string text, DateTimeOffset when, bool mine, string? channel = null, ChatMessage? source = null)
     {
         Id = id;
         Who = who;
@@ -15,6 +20,8 @@ public sealed class Line
         Time = when.LocalDateTime.ToString("HH:mm");
         Mine = mine;
         Channel = channel;
+        Source = source;
+        Attachment = source?.Attachment;
     }
 
     public string Id { get; }
@@ -26,6 +33,54 @@ public sealed class Line
 
     /// <summary>The text channel of a room message; null for a direct message.</summary>
     public string? Channel { get; }
+
+    /// <summary>The message as the library has it; null for one just sent from this phone.</summary>
+    public ChatMessage? Source { get; set; }
+
+    /// <summary>The picture this message carries, if it carries one.</summary>
+    public Attachment? Attachment { get; set; }
+
+    public bool HasAttachment => Attachment != null;
+
+    /// <summary>Text under the picture is its caption; a message that is only a picture has none.</summary>
+    public bool HasText => Text.Length > 0;
+
+    /// <summary>The picture itself, once it is on the phone.</summary>
+    public IImage? Picture
+    {
+        get => _picture;
+        set { _picture = value; Raise(); Raise(nameof(HasPicture)); Raise(nameof(HasPictureStatus)); }
+    }
+
+    public bool HasPicture => _picture != null;
+
+    /// <summary>What is happening to a picture that is not here yet ("Loading…", "Tap to download (3 MB)").</summary>
+    public string PictureStatus
+    {
+        get => _pictureStatus;
+        set { if (_pictureStatus == value) return; _pictureStatus = value; Raise(); Raise(nameof(HasPictureStatus)); }
+    }
+
+    public bool HasPictureStatus => _picture == null && Attachment != null;
+
+    /// <summary>The picture's tiny preview from the message, shown until the picture arrives.</summary>
+    public IImage? Thumbnail
+    {
+        get
+        {
+            if (_thumbnailTried || Attachment?.Thumbnail is not { Length: > 0 } bytes) return _thumbnail;
+            _thumbnailTried = true;
+            try { using var ms = new MemoryStream(bytes); _thumbnail = new Bitmap(ms); }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IOException) { }
+            return _thumbnail;
+        }
+    }
+
+    private IImage? _thumbnail;
+    private bool _thumbnailTried;
+
+    /// <summary>The line for the chat list: the words, or that it is a picture.</summary>
+    public string PreviewText => Attachment == null ? Text : Text.Length == 0 ? "Picture" : "Picture: " + Text;
 
     public HorizontalAlignment Align => Mine ? HorizontalAlignment.Right : HorizontalAlignment.Left;
     public IBrush Fill => Resource(Mine ? "BubbleMine" : "BubbleOther");
