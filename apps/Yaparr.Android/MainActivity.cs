@@ -19,8 +19,8 @@ using Avalonia.Android;
 
 namespace Yaparr.AndroidApp;
 
-/// <summary>Starts Avalonia when the process starts, before any screen.</summary>
-[Application]
+/// <summary>Starts Avalonia when the process starts, before any screen. Its label and icon are what the installer, the settings and the app list show.</summary>
+[Application(Label = "Yaparr", Icon = "@drawable/icon")]
 public class AndroidApp : AvaloniaAndroidApplication<App>
 {
     public AndroidApp(nint javaReference, JniHandleOwnership transfer) : base(javaReference, transfer) { }

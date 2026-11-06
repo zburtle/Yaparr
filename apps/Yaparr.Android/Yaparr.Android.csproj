@@ -10,12 +10,27 @@
     <RootNamespace>Yaparr.AndroidApp</RootNamespace>
     <AssemblyName>Yaparr.Android</AssemblyName>
     <ApplicationId>org.yaparr.android</ApplicationId>
-    <ApplicationVersion>1</ApplicationVersion>
+    <!-- Each build needs a higher number than the one installed, or Android will not update over it. CI passes the run number. -->
+    <ApplicationVersion Condition="'$(ApplicationVersion)' == ''">1</ApplicationVersion>
     <ApplicationDisplayVersion>0.1.0</ApplicationDisplayVersion>
     <AndroidPackageFormat>apk</AndroidPackageFormat>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <Product>Yaparr</Product>
     <Company>Yaparr</Company>
+  </PropertyGroup>
+
+  <!--
+    Every build is signed with the same key, so one build installs over the last instead of having to be uninstalled first (Android
+    refuses an update signed with a different key, and without this each machine makes a key of its own). This key is only for builds
+    that are tried on a phone: it is in the repository, so it proves nothing about who made a package. A release has to be signed with a
+    key kept secret, passed on the command line (those properties win over these).
+  -->
+  <PropertyGroup>
+    <AndroidKeyStore>true</AndroidKeyStore>
+    <AndroidSigningKeyStore>yaparr-debug.keystore</AndroidSigningKeyStore>
+    <AndroidSigningStorePass>android</AndroidSigningStorePass>
+    <AndroidSigningKeyAlias>yaparr-debug</AndroidSigningKeyAlias>
+    <AndroidSigningKeyPass>android</AndroidSigningKeyPass>
   </PropertyGroup>
 
   <ItemGroup>

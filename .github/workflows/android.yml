@@ -42,12 +42,14 @@ jobs:
           -p:AndroidSdkDirectory="$ANDROID_HOME"
           -p:AcceptAndroidSDKLicenses=true
 
-      # A debug build, signed with the debug key, so the file can be installed on a phone as it is. Its assemblies are inside the
+      # A debug build, signed with the repository's debug key (the same for every build, so each installs over the last; the version
+      # number is the run number, which only goes up), so the file can be installed on a phone as it is. Its assemblies are inside the
       # package, so it runs without the development tools.
       - name: Build the Android app
         run: >
           dotnet build apps/Yaparr.Android -c Debug
           -p:EmbedAssembliesIntoApk=true
+          -p:ApplicationVersion=${{ github.run_number }}
           -p:JavaSdkDirectory="$JAVA_HOME_21_X64"
           -p:AndroidSdkDirectory="$ANDROID_HOME"
 
