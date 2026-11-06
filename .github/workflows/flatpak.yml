@@ -23,6 +23,7 @@ jobs:
           - arch: arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -30,10 +31,33 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      # A package mirror that stops answering used to hold this step for as long as the job's limit, with nothing to show for it. Now a
+      # request gives up after 30 seconds and is tried three times, and the step has a limit of its own.
       - name: Install Flatpak
+        timeout-minutes: 5
         run: |
+          sudo tee /etc/apt/apt.conf.d/80-ci > /dev/null <<'EOF'
+          Acquire::Retries "3";
+          Acquire::http::Timeout "30";
+          Acquire::https::Timeout "30";
+          EOF
           sudo apt-get update
           sudo apt-get install -y flatpak flatpak-builder appstream
+
+      # The packages the app restores are kept between runs, keyed by the project files that name them.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('apps/Yaparr.Desktop/*.csproj', 'src/**/*.csproj', 'Directory.Build.props') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      # flatpak-builder keeps the stages it has built, and FFmpeg alone takes a minute and a half to compile. With the same manifest on
+      # the same architecture those stages are reused, so only the app itself is put together again.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .flatpak-builder
+          key: flatpak-builder-${{ matrix.arch }}-${{ hashFiles('installer/flatpak/com.yaparr.Yaparr.yml') }}
+          restore-keys: flatpak-builder-${{ matrix.arch }}-
 
       - name: Check the AppStream file
         run: |
