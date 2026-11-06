@@ -102,10 +102,20 @@
             <!-- Voice: join the room's voice channel; in it, who is there, and mute, deafen, speaker and leave. -->
             <Border IsVisible="{Binding IsRoom}" Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="12,8">
                 <StackPanel Spacing="8">
-                    <Grid ColumnDefinitions="*,Auto">
-                        <TextBlock Text="{Binding VoiceText}" VerticalAlignment="Center" FontSize="13" Foreground="{DynamicResource Muted}" />
-                        <Button Grid.Column="1" Classes="primary" Content="Join voice" Padding="14,6" IsVisible="{Binding CanJoinVoice}" Click="JoinVoiceClicked" />
-                    </Grid>
+                    <ItemsControl ItemsSource="{Binding VoiceChannels}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="local:VoiceChannelVm">
+                                <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,6">
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="14" Foreground="{DynamicResource Ink}" />
+                                        <TextBlock Text="{Binding MembersText}" FontSize="12" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource Muted}" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Classes="primary" Content="Join voice" Padding="14,6" IsVisible="{Binding CanJoin}" Click="JoinVoiceClicked" />
+                                    <TextBlock Grid.Column="1" Text="You're here" IsVisible="{Binding InCall}" FontSize="13" VerticalAlignment="Center" Foreground="{DynamicResource Accent}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
                     <ItemsControl ItemsSource="{Binding VoiceMembers}" IsVisible="{Binding HasVoiceMembers}">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
@@ -276,6 +286,18 @@
                     </ListBox>
                     <Button Grid.Row="2" HorizontalAlignment="Stretch" Content="Close" Click="PeopleCloseClicked" />
                 </Grid>
+            </Border>
+        </Border>
+
+        <!-- A line of text to answer. -->
+        <Border x:Name="PromptPanel" IsVisible="False" Background="#99000000" PointerPressed="OverlayBackdropPressed">
+            <Border Background="{DynamicResource Surface}" CornerRadius="16" Margin="20" Padding="16" MaxWidth="440" VerticalAlignment="Center">
+                <StackPanel Spacing="12">
+                    <TextBlock x:Name="PromptTitle" TextWrapping="Wrap" FontWeight="SemiBold" Foreground="{DynamicResource Ink}" />
+                    <TextBox x:Name="PromptBox" MaxLength="40" />
+                    <Button Classes="primary" HorizontalAlignment="Stretch" Content="Save" Click="PromptOkClicked" />
+                    <Button HorizontalAlignment="Stretch" Content="Cancel" Click="PromptCancelClicked" />
+                </StackPanel>
             </Border>
         </Border>
 

@@ -234,9 +234,12 @@ public sealed class Session : IDisposable
         room.MemberRenamed += _ => UI(() => ShowMembers(chat, room));
         room.ModerationChanged += () => UI(() => Reload(chat, room));
         room.VoiceChanged += () => UI(() => RefreshVoice(chat));
+        room.ChannelsChanged += () => UI(() => RefreshVoice(chat));
+        room.VoiceChannelRemoved += id => UI(() => { if (_callChat == chat && chat.VoiceChannelId == id) LeaveVoice(); });
 
         foreach (var m in room.GetHistory()) AddHistoryLine(chat, m, room.RoomId);
         RefreshChannels(chat, room);
+        RefreshVoice(chat);
         if (_settings.RoomChannels.TryGetValue(room.RoomId, out var wanted) && chat.Channels.Any(c => c.Id == wanted)) chat.SelectChannel(wanted);
         ShowMembers(chat, room);
         Chats.Add(chat);
@@ -256,12 +259,12 @@ public sealed class Session : IDisposable
     public Chat? VoiceChat => _callChat;
 
     /// <summary>Joins the room's voice channel on this phone, leaving the one you are in. Throws if the microphone cannot be opened.</summary>
-    public void JoinVoice(Chat chat, Android.Content.Context context)
+    public void JoinVoice(Chat chat, Android.Content.Context context, string channelId = RoomChannels.DefaultVoice)
     {
         if (chat.Room is not { } room || _node == null) return;
-        if (_callChat == chat) return;
+        if (_callChat == chat && chat.VoiceChannelId == channelId) return;
         LeaveVoice();
-        var call = new VoiceCall(context, room, RoomChannels.DefaultVoice);
+        var call = new VoiceCall(context, room, channelId);
         call.Interrupted += () => UI(() =>
         {
             if (_callChat is { } c) { c.Muted = true; Notice?.Invoke("Another app is using the audio, so your microphone is muted."); }
@@ -269,6 +272,7 @@ public sealed class Session : IDisposable
         call.Session.SpeakingChanged += (id, speaking) => UI(() => OnSpeaking(id.Value, speaking));
         _call = call;
         _callChat = chat;
+        chat.VoiceChannelId = channelId;
         chat.InVoice = true;
         chat.Muted = chat.Deafened = false;
         chat.RouteLabel = AudioRoutes.Label(call.Route);
@@ -329,10 +333,20 @@ public sealed class Session : IDisposable
     private void RefreshVoice(Chat chat)
     {
         if (chat.Room is not { } room) return;
-        var members = new List<VoiceMember>();
-        foreach (var p in room.VoiceParticipants.Where(p => p.Channel == RoomChannels.DefaultVoice))
-            members.Add(new VoiceMember(p.Peer.Id.Value, p.Peer.DisplayName, p.IsSelf) { Muted = p.Muted, Deafened = p.Deafened, Speaking = _speaking.Contains(p.Peer.Id.Value) });
-        chat.SetVoiceMembers(members);
+        var participants = room.VoiceParticipants;
+        bool inCall = _callChat == chat;
+        // The people in the channel you are in are shown as buttons that light up when they talk; the other channels just name who is there.
+        var mine = new List<VoiceMember>();
+        if (inCall)
+            foreach (var p in participants.Where(p => p.Channel == chat.VoiceChannelId))
+                mine.Add(new VoiceMember(p.Peer.Id.Value, p.Peer.DisplayName, p.IsSelf) { Muted = p.Muted, Deafened = p.Deafened, Speaking = _speaking.Contains(p.Peer.Id.Value) });
+        var channels = new List<VoiceChannelVm>();
+        foreach (var c in room.Channels.Where(c => c.Kind == ChannelKind.Voice).OrderBy(c => c.Order))
+        {
+            var names = participants.Where(p => p.Channel == c.Id).Select(p => p.IsSelf ? "You" : p.Peer.DisplayName).ToList();
+            channels.Add(new VoiceChannelVm(c.Id, c.Name) { MembersText = names.Count == 0 ? "No one" : string.Join(", ", names), InCall = inCall && chat.VoiceChannelId == c.Id });
+        }
+        chat.SetVoice(channels, mine);
     }
 
     /// <summary>Puts the line under the title back to who is here, after something else was said there.</summary>
@@ -433,6 +447,19 @@ public sealed class Session : IDisposable
 
     /// <summary>The people who can be named in the chat: everyone in the room but you.</summary>
     public IReadOnlyList<Person> Mentionable(Chat chat) => PeopleOf(chat);
+
+    /// <summary>A new name for the room, for you only: others see the name they gave it. Kept with the room.</summary>
+    public void RenameRoom(Chat chat, string label)
+    {
+        label = label.Trim();
+        if (label.Length == 0 || chat.Room == null) return;
+        chat.Title = label;
+        if (_settings.PrivateRooms.FirstOrDefault(r => r.Key == chat.Invite) is { } saved)
+        {
+            saved.Label = label;
+            _data.SaveSettings(_settings);
+        }
+    }
 
     /// <summary>Leaves the room here and on your other devices.</summary>
     public async Task LeaveAsync(Chat chat)
