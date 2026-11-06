@@ -18,21 +18,6 @@ on:
       - 'COPYING'
       - 'THIRD-PARTY-NOTICES*.txt'
       - '.github/workflows/test.yml'
-  push:
-    branches: [master]
-    paths:
-      - 'src/**'
-      - 'apps/**'
-      - 'tests/**'
-      - 'tools/**'
-      - 'installer/**'
-      - 'Yaparr.slnx'
-      - 'Directory.Build.props'
-      - 'dotnet-tools.json'
-      - 'LICENSE.txt'
-      - 'COPYING'
-      - 'THIRD-PARTY-NOTICES*.txt'
-      - '.github/workflows/test.yml'
 
 permissions:
   contents: read
