@@ -1,14 +1,18 @@
 name: Android
 
-# Builds the Android app and keeps the package as a download (the run's artifact, 14 days) so it can be tried on a phone. It has its own workflow because it needs the Android workload, a JDK and the Android SDK, which the other
+# Builds the Android app the way a release does (Release configuration) and keeps the package as a download (the run's artifact, 14 days) so it can
+# be tried on a phone. It has its own workflow because it needs the Android workload, a JDK and the Android SDK, which the other
 # jobs do not: a change that cannot affect it does not run it, and a problem with it does not hold up the tests.
 # Nothing here is a required check for merging. It runs for pull requests only: after a merge the release workflow builds the package again (signed),
 # so a run on master would be the same build a third time.
 on:
   pull_request:
     paths:
+      # What the app is made of: it uses the library and the shared layer, and nothing else under src (screen sharing, the WebRTC voice library
+      # and the like are for the computer).
       - 'apps/Yaparr.Android/**'
-      - 'src/**'
+      - 'src/Yaparr/**'
+      - 'src/Yaparr.AppCore/**'
       - 'Directory.Build.props'
       - '.github/workflows/android.yml'
 
@@ -41,20 +45,11 @@ jobs:
           -p:AndroidSdkDirectory="$ANDROID_HOME"
           -p:AcceptAndroidSDKLicenses=true
 
-      # A debug build, signed with the repository's debug key (the same for every build, so each installs over the last; the version
-      # number is the run number, which only goes up), so the file can be installed on a phone as it is. Its assemblies are inside the
-      # package, so it runs without the development tools.
+      # The release build (trimmed, shortened) is what a release ships, so it is the one built here: a problem is found before a merge starts a release.
+      # It is signed with the repository's debug key (the same for every build, so each installs over the last; the version number is the run number,
+      # which only goes up), so the file can be installed on a phone as it is. The package for a release is signed with the release key, in the release
+      # workflow. The build log is kept if it fails.
       - name: Build the Android app
-        run: >
-          dotnet build apps/Yaparr.Android -c Debug
-          -p:EmbedAssembliesIntoApk=true
-          -p:ApplicationVersion=${{ github.run_number }}
-          -p:JavaSdkDirectory="$JAVA_HOME_21_X64"
-          -p:AndroidSdkDirectory="$ANDROID_HOME"
-
-      # The release build (trimmed, shortened) is what a release ships, so it is built here too, to find a problem before a merge starts a
-      # release. It is not kept: the package for a release is signed with the release key, in the release workflow. The build log is kept if it fails.
-      - name: Build the release configuration
         run: >
           dotnet build apps/Yaparr.Android -c Release -bl:release.binlog
           -p:ApplicationVersion=${{ github.run_number }}
@@ -70,7 +65,7 @@ jobs:
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: yaparr-android-debug
-          path: apps/Yaparr.Android/bin/Debug/net10.0-android/*-Signed.apk
+          name: yaparr-android
+          path: apps/Yaparr.Android/bin/Release/net10.0-android/*-Signed.apk
           if-no-files-found: error
           retention-days: 14
