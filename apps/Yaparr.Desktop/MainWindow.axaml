@@ -2,7 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="using:Yaparr.Desktop"
         x:Class="Yaparr.Desktop.MainWindow"
-        Title="Yaparr" Icon="avares://Yaparr.Desktop/Assets/yaparr.png" Width="1080" Height="680" MinWidth="720" MinHeight="440"
+        Title="Yaparr" Icon="avares://Yaparr.Desktop/Assets/yaparr.png" Width="1080" Height="680" MinWidth="800" MinHeight="440"
         Background="{DynamicResource AppBg}">
     <Window.Styles>
         <!-- Expandable headers: a flat toggle with a chevron that turns when open. -->
@@ -248,7 +248,7 @@
             <TextBlock x:Name="StatusText" Classes="muted small" TextTrimming="CharacterEllipsis" />
         </Border>
 
-        <Grid ColumnDefinitions="272,*,Auto" Margin="8,4,8,0">
+        <Grid ColumnDefinitions="354,*,Auto" Margin="8,4,8,0">
             <!-- Conversations -->
             <Border Grid.Column="0" Classes="card" Margin="0,0,8,8">
                 <DockPanel>
