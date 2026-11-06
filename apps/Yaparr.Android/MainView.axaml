@@ -17,6 +17,7 @@
                 <TextBlock x:Name="StartStatus" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" />
                 <Button x:Name="LinkStartButton" Content="Already have Yaparr on a computer? Link with it" HorizontalAlignment="Stretch"
                         Margin="0,16,0,0" Click="LinkStartClicked" />
+                <Button x:Name="RestoreStartButton" Content="Restore a backup" HorizontalAlignment="Stretch" Click="RestoreClicked" />
             </StackPanel>
         </ScrollViewer>
 
@@ -122,6 +123,10 @@
                     </StackPanel>
                     <CheckBox x:Name="AutoVolumeCheck" Content="Even out my microphone (raise a quiet one, lower a loud one)" Click="VoiceSettingChanged" />
                     <TextBlock Text="Echo and noise are taken out by Android itself, as in a phone call." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
+
+                    <TextBlock Text="Backup" FontWeight="SemiBold" Margin="0,14,0,0" Foreground="{DynamicResource Muted}" />
+                    <TextBlock Text="A backup is a copy of your account, room keys and message history, to bring back on a new phone if you lose this one." TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />
+                    <Button HorizontalAlignment="Stretch" Content="Back up this phone's account" Click="BackupClicked" />
 
                     <TextBlock Text="About" FontWeight="SemiBold" Margin="0,14,0,0" Foreground="{DynamicResource Muted}" />
                     <TextBlock x:Name="VersionText" FontSize="13" Foreground="{DynamicResource Ink}" />

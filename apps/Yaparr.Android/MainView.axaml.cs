@@ -35,7 +35,7 @@ public partial class MainView : UserControl
         NameBox.Text = _settings.DisplayName ?? "";
         ApplyTheme();
         // Linking is for a phone that has no account yet.
-        LinkStartButton.IsVisible = !_data.HasIdentity;
+        LinkStartButton.IsVisible = RestoreStartButton.IsVisible = !_data.HasIdentity;
         AttachedToVisualTree += (_, _) => OnAttached();
         LinkInbox.Arrived += () => _ = HandleLinksAsync();
         // Messages are not picked from the list: a press does something (a long press opens the actions), and nothing stays highlighted.
@@ -168,7 +168,7 @@ public partial class MainView : UserControl
             _linkedEntries = linked.Entries;
             NameBox.Text = linked.DisplayName;
             CodeBox.Text = PassphraseBox.Text = "";
-            LinkStartButton.IsVisible = false;
+            LinkStartButton.IsVisible = RestoreStartButton.IsVisible = false;
             // The rooms of the account come from the computer once this phone has connected to it.
             await BeginAsync(linked.DisplayName);
             _session?.BeginDeviceSearch();
@@ -339,6 +339,61 @@ public partial class MainView : UserControl
     }
 
     private void VoiceSliderReleased(object? sender, PointerCaptureLostEventArgs e) => _data.SaveSettings(_settings);
+
+    // ---- backup and restore ----
+
+    // A backup is a copy of everything Yaparr keeps for you; Android's "save as" asks where to put it.
+    private void BackupClicked(object? sender, RoutedEventArgs e)
+    {
+        if (MainActivity.Instance is not { } activity) return;
+        Ask("A backup holds your private identity key, your room keys and your message history. Anyone with the file can pretend to be you and read your rooms, so keep it somewhere safe.\n\n" +
+            "To bring it back, choose Restore a backup on the first screen of a phone with no account. To use your account on a second device at the same time, link it instead: two devices running the same backup would clash.",
+            "Back up", async () =>
+            {
+                string temp = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "yaparr-backup-" + Guid.NewGuid().ToString("N") + ".zip");
+                try
+                {
+                    _data.SaveSettings(_settings);
+                    await Task.Run(() => _data.ExportProfile(temp));
+                    var bytes = await Task.Run(() => File.ReadAllBytes(temp));
+                    var name = $"Yaparr-backup-{_settings.DisplayName}-{DateTime.Now:yyyyMMdd}.zip";
+                    SettingsNote.Text = await activity.SaveFileAsync(bytes, name, "application/zip") ? "Backup saved." : "Backup not saved.";
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OutOfMemoryException)
+                {
+                    SettingsNote.Text = "Backup failed: " + ex.Message;
+                }
+                finally { try { File.Delete(temp); } catch (IOException) { } }
+            });
+    }
+
+    // On the first screen only, where there is no account yet, so nothing is replaced.
+    private async void RestoreClicked(object? sender, RoutedEventArgs e)
+    {
+        if (MainActivity.Instance is not { } activity || _data.HasIdentity) return;
+        var path = await activity.PickFileAsync("application/zip");
+        if (path == null) { StartStatus.Text = "No backup chosen."; return; }
+        try
+        {
+            string staging;
+            try { staging = await Task.Run(() => _data.StageProfile(path)); }
+            catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+            {
+                StartStatus.Text = ex.Message;
+                return;
+            }
+            try { await Task.Run(() => _data.ApplyStagedProfile(staging)); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                StartStatus.Text = "Restoring failed: " + ex.Message;
+                return;
+            }
+            StartStatus.Text = "Your account is back. Yaparr is starting again.";
+            await Task.Delay(1200);
+            activity.RestartApp();
+        }
+        finally { try { File.Delete(path); } catch (IOException) { } }
+    }
 
     private async void DiagnosticsClicked(object? sender, RoutedEventArgs e)
     {
