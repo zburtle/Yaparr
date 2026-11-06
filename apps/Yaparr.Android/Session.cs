@@ -7,7 +7,7 @@ using Yaparr.Identity;
 namespace Yaparr.AndroidApp;
 
 /// <summary>A person of a room, for the list of people.</summary>
-public sealed record Person(string Name, string Id);
+public sealed record Person(string Name, string Id, string Role = "");
 
 /// <summary>
 /// The running app behind the screens: the chat node, and a <see cref="Chat"/> for each room and direct chat. It keeps the rooms
@@ -139,6 +139,7 @@ public sealed class Session : IDisposable
             Log = Log,
         });
         node.AttachmentChanged += update => UI(() => OnAttachmentChanged(update));
+        node.BlockChanged += (id, blocked) => UI(() => OnBlockChanged(id, blocked));
         node.SyncedRoomChanged += OnSyncedRoomChanged;
         node.DisplayNameChanged += OnDisplayNameChanged;
         node.IncomingDirectChat += chat => UI(() => AddDirect(chat));
@@ -378,9 +379,61 @@ public sealed class Session : IDisposable
         foreach (var p in chat.Room.Members)
         {
             if (_node.IsMyDevice(p.Id)) continue;
-            people.TryAdd(p.Account.Value, new Person(p.DisplayName, p.Account.Value));
+            people.TryAdd(p.Account.Value, new Person(p.DisplayName, p.Account.Value, RoleText(chat.Room.RoleOf(p.Account))));
         }
         return people.Values.OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+    }
+
+    // ---- roles, bans and blocks ----
+
+    private static string RoleText(RoomRole role) => role switch { RoomRole.Owner => "Owner", RoomRole.Admin => "Admin", _ => "" };
+
+    /// <summary>The person who wrote a message, with their role in the room.</summary>
+    public Person SenderOf(Chat chat, ChatMessage m) =>
+        new(m.From.DisplayName, m.From.Account.Value, chat.Room is { } room ? RoleText(room.RoleOf(m.From.Account)) : "");
+
+    private static bool IsAdminRole(string role) => role == "Admin";
+
+    /// <summary>Only the owner can appoint and remove admins (not another owner, and not themselves).</summary>
+    public bool CanSetAdmin(Chat chat, Person person) =>
+        chat.Room is { MyRole: RoomRole.Owner } && _node != null && person.Id != _node.AccountId.Value && person.Role != "Owner";
+
+    public void SetAdmin(Chat chat, Person person, bool admin) => chat.Room?.SetAdmin(new PeerId(person.Id), admin);
+
+    public bool IsAdmin(Person person) => IsAdminRole(person.Role);
+
+    /// <summary>An owner or admin can ban an ordinary member (not an admin or the owner, and not themselves).</summary>
+    public bool CanBan(Chat chat, Person person) =>
+        chat.Room is { MyRole: >= RoomRole.Admin } && _node != null && person.Id != _node.AccountId.Value && person.Role.Length == 0;
+
+    public void Ban(Chat chat, Person person) => chat.Room?.Ban(new PeerId(person.Id), person.Name);
+
+    public void Unban(Chat chat, string accountId) => chat.Room?.Unban(new PeerId(accountId));
+
+    /// <summary>The people banned from the room (anyone can see them, an admin can lift the ban).</summary>
+    public IReadOnlyList<Person> BannedPeople(Chat chat) =>
+        chat.Room?.Banned.Select(b => new Person(b.Name, b.Account.Value)).OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase).ToList() ?? new List<Person>();
+
+    /// <summary>A block is yours alone: you stop seeing and hearing them, in every room, on all your devices.</summary>
+    public void Block(string accountId, string name)
+    {
+        if (_node == null) return;
+        if (_settings.BlockedPeers.All(b => b.Id != accountId))
+            _settings.BlockedPeers.Add(new KnownPeer { Id = accountId, Name = name, LastSeen = DateTimeOffset.Now });
+        _data.SaveSettings(_settings);
+        _node.Block(new PeerId(accountId));
+    }
+
+    public void Unblock(string accountId) => _node?.Unblock(new PeerId(accountId));
+
+    public IReadOnlyList<Person> BlockedPeople() =>
+        _node?.BlockedPeers.Select(p => new Person(_settings.BlockedPeers.FirstOrDefault(b => b.Id == p.Value)?.Name is { Length: > 0 } n ? n : "Unknown name", p.Value))
+            .OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase).ToList() ?? new List<Person>();
+
+    // The node reports every change, so the saved list follows it.
+    private void OnBlockChanged(PeerId id, bool blocked)
+    {
+        if (!blocked && _settings.BlockedPeers.RemoveAll(b => b.Id == id.Value) > 0) _data.SaveSettings(_settings);
     }
 
     /// <summary>Whether you can delete this message for everyone: an owner or admin, in a room.</summary>

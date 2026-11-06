@@ -277,7 +277,10 @@
                     <ListBox x:Name="PeopleList" Grid.Row="1" Background="Transparent" SelectionChanged="PersonSelected">
                         <ListBox.ItemTemplate>
                             <DataTemplate x:DataType="local:Person">
-                                <TextBlock Text="{Binding Name}" Padding="6,10" FontSize="16" Foreground="{DynamicResource Ink}" />
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="{Binding Name}" Padding="6,10" FontSize="16" Foreground="{DynamicResource Ink}" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Role}" Padding="6,10" FontSize="13" Foreground="{DynamicResource Accent}" />
+                                </Grid>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
@@ -295,6 +298,17 @@
                     <Button Classes="primary" HorizontalAlignment="Stretch" Content="Save" Click="PromptOkClicked" />
                     <Button HorizontalAlignment="Stretch" Content="Cancel" Click="PromptCancelClicked" />
                 </StackPanel>
+            </Border>
+        </Border>
+
+        <!-- Who you have blocked, and who is banned from this room. -->
+        <Border x:Name="BlockedPanel" IsVisible="False" Background="#99000000" PointerPressed="OverlayBackdropPressed">
+            <Border Background="{DynamicResource Surface}" CornerRadius="16" Margin="20" Padding="16" MaxWidth="440" VerticalAlignment="Center" MaxHeight="560">
+                <Grid RowDefinitions="Auto,*,Auto" RowSpacing="10">
+                    <TextBlock Text="Blocked and banned" FontWeight="Bold" FontSize="20" Foreground="{DynamicResource Ink}" />
+                    <ScrollViewer Grid.Row="1"><StackPanel x:Name="BlockedList" Spacing="2" /></ScrollViewer>
+                    <Button Grid.Row="2" HorizontalAlignment="Stretch" Content="Close" Click="BlockedCloseClicked" />
+                </Grid>
             </Border>
         </Border>
 

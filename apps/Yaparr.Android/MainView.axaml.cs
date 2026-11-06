@@ -58,12 +58,13 @@ public partial class MainView : UserControl
         foreach (var s in _screens) s.IsVisible = s == screen;
     }
 
-    private bool AnyOverlay => AddPanel.IsVisible || PeoplePanel.IsVisible || ConfirmPanel.IsVisible || RoutePanel.IsVisible || PicturePanel.IsVisible || ActionPanel.IsVisible || PromptPanel.IsVisible;
+    private bool AnyOverlay => AddPanel.IsVisible || PeoplePanel.IsVisible || ConfirmPanel.IsVisible || RoutePanel.IsVisible || PicturePanel.IsVisible || ActionPanel.IsVisible || PromptPanel.IsVisible || BlockedPanel.IsVisible;
 
     // One step back; false when there is nothing to go back to and the phone may leave the app.
     private bool GoBack()
     {
         if (PromptPanel.IsVisible) { PromptPanel.IsVisible = false; return true; }
+        if (BlockedPanel.IsVisible) { BlockedPanel.IsVisible = false; return true; }
         if (ActionPanel.IsVisible) { ActionPanel.IsVisible = false; return true; }
         if (PicturePanel.IsVisible) { PicturePanel.IsVisible = false; return true; }
         if (RoutePanel.IsVisible) { RoutePanel.IsVisible = false; return true; }
@@ -356,6 +357,7 @@ public partial class MainView : UserControl
         {
             Add("People", PeopleClicked);
             Add("Rename the room", RenameClicked);
+            Add("Blocked and banned", BlockedClicked);
             Add("Copy invite link", CopyInviteLinkClicked);
             Add("Copy invite", CopyInviteClicked);
             Add("Leave the room", LeaveClicked);
@@ -364,6 +366,8 @@ public partial class MainView : UserControl
         {
             Add("Copy chat link", CopyChatLinkClicked);
             Add("Copy their ID", CopyIdClicked);
+            Add("Block this person", BlockDirectClicked);
+            Add("Blocked and banned", BlockedClicked);
         }
         return menu;
     }
@@ -469,6 +473,18 @@ public partial class MainView : UserControl
                 _session?.DeleteMessage(chat, line);
                 return Task.CompletedTask;
             }), danger: true);
+        if (!line.Mine && line.Source is { } source)
+        {
+            var who = _session.SenderOf(chat, source);
+            if (chat.IsRoom && _session.CanBan(chat, who))
+                AddAction("Ban sender", () => Ask($"Ban {who.Name} from this room? Everyone's Yaparr stops showing their messages and voice.", "Ban", () =>
+                {
+                    try { _session.Ban(chat, who); ShowChatNote(chat, who.Name + " is banned"); }
+                    catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { ShowChatNote(chat, ex.Message); }
+                    return Task.CompletedTask;
+                }), danger: true);
+            AddAction("Block sender", () => AskBlock(who.Id, who.Name), danger: true);
+        }
         ActionPanel.IsVisible = true;
     }
 
@@ -655,11 +671,38 @@ public partial class MainView : UserControl
 
     private void PeopleCloseClicked(object? sender, RoutedEventArgs e) => PeoplePanel.IsVisible = false;
 
-    private async void PersonSelected(object? sender, SelectionChangedEventArgs e)
+    // A tap on a person in the list: write to them, and what an owner or admin can do about them.
+    private void PersonSelected(object? sender, SelectionChangedEventArgs e)
     {
-        if (PeopleList.SelectedItem is not Person person || _session == null) return;
+        if (PeopleList.SelectedItem is not Person person || _session == null || _current is not { } chat) return;
         PeopleList.SelectedItem = null;
         PeoplePanel.IsVisible = false;
+        ActionTitle.Text = person.Role.Length > 0 ? person.Name + " (" + person.Role.ToLowerInvariant() + ")" : person.Name;
+        ActionList.Children.Clear();
+        AddAction("Message", () => _ = OpenPersonAsync(person));
+        if (_session.CanSetAdmin(chat, person))
+        {
+            bool admin = _session.IsAdmin(person);
+            AddAction(admin ? "Remove as admin" : "Make admin", () =>
+            {
+                try { _session.SetAdmin(chat, person, !admin); ShowChatNote(chat, admin ? person.Name + " is no longer an admin" : person.Name + " is now an admin"); }
+                catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { ShowChatNote(chat, ex.Message); }
+            });
+        }
+        if (_session.CanBan(chat, person))
+            AddAction("Ban from this room", () => Ask($"Ban {person.Name} from this room? Everyone's Yaparr stops showing their messages and voice. They still hold the invite, so they can come back under a new identity. You can unban them from Blocked and banned.", "Ban", () =>
+            {
+                try { _session.Ban(chat, person); ShowChatNote(chat, person.Name + " is banned"); }
+                catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { ShowChatNote(chat, ex.Message); }
+                return Task.CompletedTask;
+            }), danger: true);
+        AddAction("Block", () => AskBlock(person.Id, person.Name), danger: true);
+        ActionPanel.IsVisible = true;
+    }
+
+    private async Task OpenPersonAsync(Person person)
+    {
+        if (_session == null) return;
         var from = _current;
         if (from != null) from.Status = $"Looking for {person.Name}. This can take a minute if they just came online...";
         try
@@ -709,6 +752,63 @@ public partial class MainView : UserControl
         if (_current is not { IsRoom: true } chat || _session == null) return;
         AskText("A new name for this room (only you see it):", chat.Title, label => _session?.RenameRoom(chat, label));
     }
+
+    // ---- blocking ----
+
+    private void AskBlock(string accountId, string name) =>
+        Ask($"Block {name}? You will no longer see their messages or hear them, they disappear from your lists, and your connection to them is closed. They are not told, and everyone else still sees them. You can unblock them from Blocked and banned.", "Block", () =>
+        {
+            try
+            {
+                _session?.Block(accountId, name);
+                if (_current != null) ShowChatNote(_current, name + " is blocked");
+            }
+            catch (ArgumentException ex) { if (_current != null) ShowChatNote(_current, ex.Message); }
+            return Task.CompletedTask;
+        });
+
+    private void BlockDirectClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_current?.Direct is { } direct) AskBlock(direct.PeerId.Value, _current.Title);
+    }
+
+    // Who is blocked (by you) and who is banned from this room, each with a button to lift it.
+    private void BlockedClicked(object? sender, RoutedEventArgs e) => ShowBlocked();
+
+    private void ShowBlocked()
+    {
+        if (_session == null) return;
+        BlockedList.Children.Clear();
+        void Header(string text) => BlockedList.Children.Add(new TextBlock { Text = text, FontWeight = Avalonia.Media.FontWeight.SemiBold, Margin = new Avalonia.Thickness(4, 10, 4, 4), Foreground = Yaparr.AndroidApp.Theme.Brush("Muted") });
+        void Row(Person person, string button, Action lift)
+        {
+            var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+            grid.Children.Add(new TextBlock { Text = person.Name, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, Margin = new Avalonia.Thickness(4, 0), Foreground = Yaparr.AndroidApp.Theme.Brush("Ink") });
+            var lifter = new Avalonia.Controls.Button { Content = button, Padding = new Avalonia.Thickness(14, 8) };
+            Grid.SetColumn(lifter, 1);
+            lifter.Click += (_, _) => { lift(); ShowBlocked(); };
+            grid.Children.Add(lifter);
+            BlockedList.Children.Add(grid);
+        }
+        Header("Blocked by you");
+        var blocked = _session.BlockedPeople();
+        if (blocked.Count == 0) BlockedList.Children.Add(new TextBlock { Text = "No one.", Margin = new Avalonia.Thickness(4), Foreground = Yaparr.AndroidApp.Theme.Brush("Muted") });
+        foreach (var person in blocked) Row(person, "Unblock", () => _session.Unblock(person.Id));
+        if (_current is { IsRoom: true } chat)
+        {
+            Header("Banned from this room");
+            var banned = _session.BannedPeople(chat);
+            if (banned.Count == 0) BlockedList.Children.Add(new TextBlock { Text = "No one.", Margin = new Avalonia.Thickness(4), Foreground = Yaparr.AndroidApp.Theme.Brush("Muted") });
+            foreach (var person in banned)
+            {
+                if (chat.Room is { MyRole: >= RoomRole.Admin }) Row(person, "Unban", () => { try { _session.Unban(chat, person.Id); } catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { ShowChatNote(chat, ex.Message); } });
+                else BlockedList.Children.Add(new TextBlock { Text = person.Name, Margin = new Avalonia.Thickness(4, 4), Foreground = Yaparr.AndroidApp.Theme.Brush("Ink") });
+            }
+        }
+        BlockedPanel.IsVisible = true;
+    }
+
+    private void BlockedCloseClicked(object? sender, RoutedEventArgs e) => BlockedPanel.IsVisible = false;
 
     // ---- leaving a room ----
 

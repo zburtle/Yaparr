@@ -41,6 +41,12 @@ Not there yet: @everyone, and asking the other members for an original message t
 
 **Rename the room** in a room's menu gives it a name of your own, for you only: the others keep the name they gave it, and a name you choose is kept with the room across restarts.
 
+## Roles, banning and blocking
+
+**People** in a room's menu lists the people there, with **Owner** and **Admin** next to those who are. A tap on a person opens a small window: **Message** (a direct chat), and, depending on who you are, **Make admin** or **Remove as admin** (only the room's owner, who made the room), **Ban from this room** (an owner or admin, for an ordinary member) and **Block**. A long press on someone's message has **Ban sender** and **Block sender** as well.
+
+A ban is for the room: every member's Yaparr stops showing the person's messages and voice. It does not lock them out, since they still hold the invite and can come back under a new identity. A block is yours alone: you stop seeing and hearing the person in every room, on all your devices, they disappear from your lists and your connection to them is closed; they are not told. **Blocked and banned** in the room menu (and in a direct chat's menu) lists who you have blocked and who is banned from the room, each with a button to lift it. A direct chat also has **Block this person**.
+
 ## Voice
 
 A room has a voice bar under its title: one row for each voice channel of the room with the people in it and a **Join voice** button (a room has at least one; more can be made on the computer); joining another channel leaves the first. The first time, Android asks to allow the microphone (only for this; text chat never needs it). In a call there are four buttons: **Mute**, **Deafen**, **Speaker** (the loudspeaker, or the phone's earpiece, or a headset when one is connected; the button shows which one is on) and **Leave**, and everyone in the channel is shown, lit up while they talk. The call runs through the same library as on the computer (Opus over the existing connections), with speech levelling on so quiet voices are raised and a crowd does not clip. While you are in a call Android treats the phone as being in a call: other apps' audio gives way, and if a phone call or another app takes the audio your microphone is muted until you unmute it.
