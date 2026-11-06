@@ -1,0 +1,7 @@
+[Flatpak Repo]
+Title=Yaparr
+Url=https://flatpak.yaparr.com/repo/
+Homepage=https://github.com/zburtle/Yaparr
+Comment=Serverless peer-to-peer chat
+DefaultBranch=stable
+GPGKey=mDMEaujNFBYJKwYBBAHaRw8BAQdAXP3zQu8PziHrRN7ux/j1lpbXpQhK5TxgiuyJO+wnmF+0LllhcGFyciBGbGF0cGFrIHJlcG9zaXRvcnkgPGZsYXRwYWtAeWFwYXJyLmNvbT6IkwQTFgoAOxYhBHcVl+4ak8l9v5tSvTY1+24L0wLCBQJq6M0UAhsDBQsJCAcCAiICBhUKCQgLAgQWAgMBAh4HAheAAAoJEDY1+24L0wLCBE4A/3jXQ+3BgWrAB73yaoyaZha6R0O04QLbNluRDp1NuDhHAQD5FaQwQQNoqOGyNZbNrgcjYDVujTeQ/iRvDVCVax1dAg==
