@@ -17,6 +17,11 @@ on:
   schedule:
     - cron: '35 0 * * 0'
 
+# A newer push to the same pull request replaces the run that is still going: its result would be out of date.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})

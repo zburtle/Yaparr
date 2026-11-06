@@ -8,6 +8,8 @@ on:
     paths:
       - 'src/**'
       - 'apps/**'
+      # The tests do not use the Android app, which has its own workflow (android.yml).
+      - '!apps/Yaparr.Android/**'
       - 'tests/**'
       - 'tools/**'
       - 'installer/**'
@@ -18,6 +20,11 @@ on:
       - 'COPYING'
       - 'THIRD-PARTY-NOTICES*.txt'
       - '.github/workflows/test.yml'
+
+# A newer push to the same pull request replaces the run that is still going: its result would be out of date.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
