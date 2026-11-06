@@ -59,12 +59,13 @@ public partial class MainView : UserControl
         foreach (var s in _screens) s.IsVisible = s == screen;
     }
 
-    private bool AnyOverlay => AddPanel.IsVisible || PeoplePanel.IsVisible || ConfirmPanel.IsVisible || RoutePanel.IsVisible || PicturePanel.IsVisible || ActionPanel.IsVisible || BlockedPanel.IsVisible;
+    private bool AnyOverlay => AddPanel.IsVisible || PeoplePanel.IsVisible || ConfirmPanel.IsVisible || RoutePanel.IsVisible || PicturePanel.IsVisible || ActionPanel.IsVisible || BlockedPanel.IsVisible || NetworkPanel.IsVisible;
 
     // One step back; false when there is nothing to go back to and the phone may leave the app.
     private bool GoBack()
     {
         if (BlockedPanel.IsVisible) { BlockedPanel.IsVisible = false; return true; }
+        if (NetworkPanel.IsVisible) { NetworkPanel.IsVisible = false; return true; }
         if (ActionPanel.IsVisible) { ActionPanel.IsVisible = false; return true; }
         if (PicturePanel.IsVisible) { PicturePanel.IsVisible = false; return true; }
         if (RoutePanel.IsVisible) { RoutePanel.IsVisible = false; return true; }
@@ -393,6 +394,73 @@ public partial class MainView : UserControl
         }
         finally { try { File.Delete(path); } catch (IOException) { } }
     }
+
+    // ---- the connection check ----
+
+    private NetworkCheckReport? _networkReport;
+    private bool _checkingNetwork;
+
+    private async void NetworkClicked(object? sender, RoutedEventArgs e)
+    {
+        NetworkPanel.IsVisible = true;
+        await RunNetworkCheckAsync();
+    }
+
+    private async void NetworkAgainClicked(object? sender, RoutedEventArgs e) => await RunNetworkCheckAsync();
+
+    private async Task RunNetworkCheckAsync()
+    {
+        if (_checkingNetwork) return;
+        _checkingNetwork = true;
+        NetworkAgain.IsEnabled = NetworkCopy.IsEnabled = false;
+        NetworkSummary.Text = "Checking\u2026";
+        NetworkList.Children.Clear();
+        try
+        {
+            if (_session == null) throw new InvalidOperationException("Yaparr has not started yet.");
+            _networkReport = await _session.CheckNetworkAsync();
+        }
+        catch (Exception ex) when (ex is System.Net.Sockets.SocketException or InvalidOperationException or OperationCanceledException)
+        {
+            _networkReport = null;
+            NetworkSummary.Text = "The check could not finish: " + ex.Message;
+            NetworkAgain.IsEnabled = true;
+            _checkingNetwork = false;
+            return;
+        }
+        NetworkSummary.Text = _networkReport.Summary;
+        foreach (var item in _networkReport.Items)
+        {
+            var color = item.Level switch
+            {
+                CheckLevel.Ok => Avalonia.Media.Brushes.SeaGreen,
+                CheckLevel.Info => Avalonia.Media.Brushes.Gray,
+                CheckLevel.Warning => Avalonia.Media.Brushes.DarkOrange,
+                _ => Avalonia.Media.Brushes.Firebrick,
+            };
+            var glyph = item.Level switch { CheckLevel.Ok => "\u2713", CheckLevel.Info => "\u2022", CheckLevel.Warning => "!", _ => "\u2715" };
+            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), ColumnSpacing = 10 };
+            row.Children.Add(new TextBlock { Text = glyph, Foreground = color, FontWeight = Avalonia.Media.FontWeight.Bold, FontSize = 16, Width = 18, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top });
+            var text = new StackPanel();
+            text.Children.Add(new TextBlock { Text = item.Title, FontWeight = Avalonia.Media.FontWeight.SemiBold, TextWrapping = Avalonia.Media.TextWrapping.Wrap, Foreground = Yaparr.AndroidApp.Theme.Brush("Ink") });
+            text.Children.Add(new TextBlock { Text = item.Detail, FontSize = 13, TextWrapping = Avalonia.Media.TextWrapping.Wrap, Foreground = Yaparr.AndroidApp.Theme.Brush("Muted") });
+            Grid.SetColumn(text, 1);
+            row.Children.Add(text);
+            NetworkList.Children.Add(row);
+        }
+        NetworkAgain.IsEnabled = NetworkCopy.IsEnabled = true;
+        _checkingNetwork = false;
+    }
+
+    private async void NetworkCopyClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_networkReport == null || TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard) return;
+        var lines = _networkReport.Items.Select(i => $"[{i.Level}] {i.Title}: {i.Detail}");
+        await clipboard.SetTextAsync(_networkReport.Summary + Environment.NewLine + string.Join(Environment.NewLine, lines));
+        NetworkSummary.Text = _networkReport.Summary + "  (copied)";
+    }
+
+    private void NetworkCloseClicked(object? sender, RoutedEventArgs e) => NetworkPanel.IsVisible = false;
 
     private async void DiagnosticsClicked(object? sender, RoutedEventArgs e)
     {

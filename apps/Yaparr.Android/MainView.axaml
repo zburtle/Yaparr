@@ -124,6 +124,10 @@
                     <CheckBox x:Name="AutoVolumeCheck" Content="Even out my microphone (raise a quiet one, lower a loud one)" Click="VoiceSettingChanged" />
                     <TextBlock Text="Echo and noise are taken out by Android itself, as in a phone call." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
 
+                    <TextBlock Text="Network" FontWeight="SemiBold" Margin="0,14,0,0" Foreground="{DynamicResource Muted}" />
+                    <TextBlock Text="Looks at how this phone can be reached and why connecting to someone may fail." TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />
+                    <Button HorizontalAlignment="Stretch" Content="Check the connection" Click="NetworkClicked" />
+
                     <TextBlock Text="Backup" FontWeight="SemiBold" Margin="0,14,0,0" Foreground="{DynamicResource Muted}" />
                     <TextBlock Text="A backup is a copy of your account, room keys and message history, to bring back on a new phone if you lose this one." TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />
                     <Button HorizontalAlignment="Stretch" Content="Back up this phone's account" Click="BackupClicked" />
@@ -337,6 +341,22 @@
                     <TextBlock Text="Blocked and banned" FontWeight="Bold" FontSize="20" Foreground="{DynamicResource Ink}" />
                     <ScrollViewer Grid.Row="1"><StackPanel x:Name="BlockedList" Spacing="2" /></ScrollViewer>
                     <Button Grid.Row="2" HorizontalAlignment="Stretch" Content="Close" Click="BlockedCloseClicked" />
+                </Grid>
+            </Border>
+        </Border>
+
+        <!-- The connection check. -->
+        <Border x:Name="NetworkPanel" IsVisible="False" Background="#99000000" PointerPressed="OverlayBackdropPressed">
+            <Border Background="{DynamicResource Surface}" CornerRadius="16" Margin="20" Padding="16" MaxWidth="440" VerticalAlignment="Center" MaxHeight="640">
+                <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="10">
+                    <TextBlock Text="Connection check" FontWeight="Bold" FontSize="20" Foreground="{DynamicResource Ink}" />
+                    <TextBlock x:Name="NetworkSummary" Grid.Row="1" TextWrapping="Wrap" Foreground="{DynamicResource Ink}" />
+                    <ScrollViewer Grid.Row="2"><StackPanel x:Name="NetworkList" Spacing="10" /></ScrollViewer>
+                    <Grid Grid.Row="3" ColumnDefinitions="*,*,*" ColumnSpacing="6">
+                        <Button x:Name="NetworkAgain" Content="Again" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="NetworkAgainClicked" />
+                        <Button x:Name="NetworkCopy" Grid.Column="1" Content="Copy" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="NetworkCopyClicked" />
+                        <Button Grid.Column="2" Content="Close" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="NetworkCloseClicked" />
+                    </Grid>
                 </Grid>
             </Border>
         </Border>
