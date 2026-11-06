@@ -59,6 +59,21 @@ In a voice call, **Soundboard** opens a window with the room's sounds. **Play** 
 
 Not there yet: choosing which part of a long file to keep, renaming a sound, previewing a sound before sending it, and muting one person's sounds only.
 
+## Settings
+
+**Settings** at the top of the room list holds:
+
+- **You:** your name, as people see it. Saving it changes it on your other devices too.
+- **Appearance:** System (follows the phone), Light or Dark; it applies at once and is kept. Messages already on screen keep the colours they had until the chat is opened again.
+- **Voice:** whether the microphone sends all the time or only when you talk, how loud you have to be to be heard (sensitivity), how loud everyone sounds, and evening out your own microphone. A call that is going takes the change at once. Echo and noise are handled by Android itself, so there is nothing to set for them.
+- **Network:** **Check the connection** runs the same check as on the computer and says in plain words what works and what does not: whether the phone can reach the internet, whether finding people works, whether others can relay for it, and whether people who were found could be connected to. It takes up to a few seconds; **Again** runs it once more and **Copy** puts the report on the clipboard for a report of a problem.
+- **Backup:** saves a copy of your account, room keys and message history as a zip file; Android asks where to put it (the system's "save as", so the app needs no permission for your files). Keep the file private: anyone who has it can pretend to be you and read your rooms.
+- **About:** the version, and a button that copies who the phone is connected to and what it has been doing, for a report of a problem.
+
+**Restore a backup** is on the first screen of a phone that has no account yet (so nothing is replaced): choose the zip file and Yaparr brings the account, the rooms and the history back and starts again. To use your account on a second device at the same time, link it instead of restoring; two devices running the same backup would clash.
+
+Not there yet: choosing the microphone or speakers (the route button in a call picks where the sound goes), and the network options (the check is there, the settings are not).
+
 ## Links
 
 Yaparr links open in the app: `yaparr://join/<invite>` and `yaparr://chat/<peer id>`, and the forms people share, `https://yaparr.com/join#<invite>` and `https://yaparr.com/chat#<peer id>`. A link never acts on its own: for a room the join sheet opens with the invite filled in, asking you to name the room and to confirm (joining lets the other members see your IP address); for a person a question asks first. If you are in the room or already chat with them, the link just shows it. In a room the menu has Copy invite link, and in a direct chat Copy chat link; the join sheet also takes a link instead of an invite.

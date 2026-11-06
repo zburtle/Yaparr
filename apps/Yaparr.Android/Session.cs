@@ -265,7 +265,7 @@ public sealed class Session : IDisposable
         if (chat.Room is not { } room || _node == null) return;
         if (_callChat == chat && chat.VoiceChannelId == channelId) return;
         LeaveVoice();
-        var call = new VoiceCall(context, room, channelId);
+        var call = new VoiceCall(context, room, channelId, _settings);
         call.Interrupted += () => UI(() =>
         {
             if (_callChat is { } c) { c.Muted = true; Notice?.Invoke("Another app is using the audio, so your microphone is muted."); }
@@ -319,6 +319,24 @@ public sealed class Session : IDisposable
         _settings.SoundboardsMuted = silenced;
         _data.SaveSettings(_settings);
         if (_call != null) _call.Session.SoundboardsMuted = silenced;
+    }
+
+    /// <summary>Looks at the network again and explains in plain words what works and what does not (the same check as on the computer).</summary>
+    public Task<NetworkCheckReport> CheckNetworkAsync() =>
+        _node?.CheckNetworkAsync() ?? throw new InvalidOperationException("Yaparr has not finished starting yet.");
+
+    /// <summary>A voice setting changed: the call that is going takes it at once.</summary>
+    public void ApplyVoiceSettings()
+    {
+        if (_call != null) VoiceCall.Apply(_call.Session, _settings);
+    }
+
+    /// <summary>A new name for you, on this phone and your other devices. Throws if it is empty.</summary>
+    public void Rename(string name)
+    {
+        _node?.Rename(name);
+        _settings.DisplayName = name.Trim();
+        _data.SaveSettings(_settings);
     }
 
     public void LeaveVoice()

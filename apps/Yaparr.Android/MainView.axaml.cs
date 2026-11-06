@@ -30,11 +30,12 @@ public partial class MainView : UserControl
     public MainView()
     {
         InitializeComponent();
-        _screens = new Control[] { StartPanel, LinkPanel, ListPanel, ChatPanel };
+        _screens = new Control[] { StartPanel, LinkPanel, ListPanel, ChatPanel, SettingsPanel };
         _settings = _data.LoadSettings();
         NameBox.Text = _settings.DisplayName ?? "";
+        ApplyTheme();
         // Linking is for a phone that has no account yet.
-        LinkStartButton.IsVisible = !_data.HasIdentity;
+        LinkStartButton.IsVisible = RestoreStartButton.IsVisible = !_data.HasIdentity;
         AttachedToVisualTree += (_, _) => OnAttached();
         LinkInbox.Arrived += () => _ = HandleLinksAsync();
         // Messages are not picked from the list: a press does something (a long press opens the actions), and nothing stays highlighted.
@@ -58,7 +59,7 @@ public partial class MainView : UserControl
         foreach (var s in _screens) s.IsVisible = s == screen;
     }
 
-    private bool AnyOverlay => AddPanel.IsVisible || PeoplePanel.IsVisible || ConfirmPanel.IsVisible || RoutePanel.IsVisible || PicturePanel.IsVisible || ActionPanel.IsVisible || PromptPanel.IsVisible || BlockedPanel.IsVisible || SoundPanel.IsVisible;
+    private bool AnyOverlay => AddPanel.IsVisible || PeoplePanel.IsVisible || ConfirmPanel.IsVisible || RoutePanel.IsVisible || PicturePanel.IsVisible || ActionPanel.IsVisible || PromptPanel.IsVisible || BlockedPanel.IsVisible || NetworkPanel.IsVisible || SoundPanel.IsVisible;
 
     // One step back; false when there is nothing to go back to and the phone may leave the app.
     private bool GoBack()
@@ -66,12 +67,14 @@ public partial class MainView : UserControl
         if (PromptPanel.IsVisible) { PromptPanel.IsVisible = false; return true; }
         if (BlockedPanel.IsVisible) { BlockedPanel.IsVisible = false; return true; }
         if (SoundPanel.IsVisible) { SoundPanel.IsVisible = false; return true; }
+        if (NetworkPanel.IsVisible) { NetworkPanel.IsVisible = false; return true; }
         if (ActionPanel.IsVisible) { ActionPanel.IsVisible = false; return true; }
         if (PicturePanel.IsVisible) { PicturePanel.IsVisible = false; return true; }
         if (RoutePanel.IsVisible) { RoutePanel.IsVisible = false; return true; }
         if (ConfirmPanel.IsVisible) { ConfirmPanel.IsVisible = false; return true; }
         if (PeoplePanel.IsVisible) { PeoplePanel.IsVisible = false; return true; }
         if (AddPanel.IsVisible) { AddPanel.IsVisible = false; return true; }
+        if (SettingsPanel.IsVisible) { SettingsBackClicked(null, new RoutedEventArgs()); return true; }
         if (ChatPanel.IsVisible) { BackToList(); return true; }
         if (LinkPanel.IsVisible) { LinkBackClicked(null, new RoutedEventArgs()); return true; }
         return false;
@@ -168,7 +171,7 @@ public partial class MainView : UserControl
             _linkedEntries = linked.Entries;
             NameBox.Text = linked.DisplayName;
             CodeBox.Text = PassphraseBox.Text = "";
-            LinkStartButton.IsVisible = false;
+            LinkStartButton.IsVisible = RestoreStartButton.IsVisible = false;
             // The rooms of the account come from the computer once this phone has connected to it.
             await BeginAsync(linked.DisplayName);
             _session?.BeginDeviceSearch();
@@ -318,11 +321,228 @@ public partial class MainView : UserControl
         });
     }
 
+    // ---- settings ----
+
+    private bool _loadingSettings;
+
+    private void ApplyTheme()
+    {
+        if (Avalonia.Application.Current is { } app)
+            app.RequestedThemeVariant = _settings.Theme switch { "Light" => Avalonia.Styling.ThemeVariant.Light, "Dark" => Avalonia.Styling.ThemeVariant.Dark, _ => Avalonia.Styling.ThemeVariant.Default };
+    }
+
+    private void ShowTheme()
+    {
+        foreach (var button in new[] { ThemeSystem, ThemeLight, ThemeDark })
+        {
+            bool on = (string?)button.Tag == _settings.Theme;
+            button.Background = on ? Yaparr.AndroidApp.Theme.Brush("Accent") : Avalonia.Media.Brushes.Transparent;
+            button.Foreground = on ? Avalonia.Media.Brushes.White : Yaparr.AndroidApp.Theme.Brush("Ink");
+        }
+    }
+
+    private void SettingsClicked(object? sender, RoutedEventArgs e)
+    {
+        _loadingSettings = true;
+        SettingsName.Text = _settings.DisplayName ?? "";
+        SettingsNote.Text = "";
+        AlwaysOnCheck.IsChecked = _settings.VoiceAlwaysOn;
+        SensitivitySlider.Value = _settings.VoiceSensitivity;
+        VolumeSlider.Value = _settings.VoiceOutputVolume;
+        AutoVolumeCheck.IsChecked = _settings.VoiceAutomaticVolume;
+        VersionText.Text = "Yaparr " + AppVersion();
+        _loadingSettings = false;
+        ShowTheme();
+        ShowOnly(SettingsPanel);
+    }
+
+    private static string AppVersion()
+    {
+        try
+        {
+            var context = Android.App.Application.Context;
+            return context.PackageManager?.GetPackageInfo(context.PackageName ?? "", 0)?.VersionName ?? "";
+        }
+        catch (Exception ex) when (ex is Android.Content.PM.PackageManager.NameNotFoundException or Java.Lang.RuntimeException) { return ""; }
+    }
+
+    private void SettingsBackClicked(object? sender, RoutedEventArgs e)
+    {
+        _data.SaveSettings(_settings);
+        ShowOnly(ListPanel);
+    }
+
+    private void SaveNameClicked(object? sender, RoutedEventArgs e)
+    {
+        var name = (SettingsName.Text ?? "").Trim();
+        if (name.Length == 0) { SettingsNote.Text = "Enter a name."; return; }
+        try
+        {
+            if (_session != null) _session.Rename(name);
+            else { _settings.DisplayName = name; _data.SaveSettings(_settings); }
+            SettingsNote.Text = "Saved.";
+        }
+        catch (ArgumentException ex) { SettingsNote.Text = ex.Message; }
+    }
+
+    private void ThemeClicked(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Avalonia.Controls.Button { Tag: string theme }) return;
+        _settings.Theme = theme;
+        _data.SaveSettings(_settings);
+        ApplyTheme();
+        ShowTheme();
+    }
+
+    private void VoiceSettingChanged(object? sender, RoutedEventArgs e)
+    {
+        if (_loadingSettings) return;
+        _settings.VoiceAlwaysOn = AlwaysOnCheck.IsChecked == true;
+        _settings.VoiceAutomaticVolume = AutoVolumeCheck.IsChecked == true;
+        _data.SaveSettings(_settings);
+        _session?.ApplyVoiceSettings();
+    }
+
+    // A slider makes many changes a second: they are kept in memory and a call hears them at once; the file is written when the finger lifts.
+    private void VoiceSliderChanged(object? sender, Avalonia.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+    {
+        if (_loadingSettings) return;
+        _settings.VoiceSensitivity = (int)Math.Round(SensitivitySlider.Value);
+        _settings.VoiceOutputVolume = (int)Math.Round(VolumeSlider.Value);
+        _session?.ApplyVoiceSettings();
+    }
+
+    private void VoiceSliderReleased(object? sender, PointerCaptureLostEventArgs e) => _data.SaveSettings(_settings);
+
+    // ---- backup and restore ----
+
+    // A backup is a copy of everything Yaparr keeps for you; Android's "save as" asks where to put it.
+    private void BackupClicked(object? sender, RoutedEventArgs e)
+    {
+        if (MainActivity.Instance is not { } activity) return;
+        Ask("A backup holds your private identity key, your room keys and your message history. Anyone with the file can pretend to be you and read your rooms, so keep it somewhere safe.\n\n" +
+            "To bring it back, choose Restore a backup on the first screen of a phone with no account. To use your account on a second device at the same time, link it instead: two devices running the same backup would clash.",
+            "Back up", async () =>
+            {
+                string temp = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "yaparr-backup-" + Guid.NewGuid().ToString("N") + ".zip");
+                try
+                {
+                    _data.SaveSettings(_settings);
+                    await Task.Run(() => _data.ExportProfile(temp));
+                    var bytes = await Task.Run(() => File.ReadAllBytes(temp));
+                    var name = $"Yaparr-backup-{_settings.DisplayName}-{DateTime.Now:yyyyMMdd}.zip";
+                    SettingsNote.Text = await activity.SaveFileAsync(bytes, name, "application/zip") ? "Backup saved." : "Backup not saved.";
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OutOfMemoryException)
+                {
+                    SettingsNote.Text = "Backup failed: " + ex.Message;
+                }
+                finally { try { File.Delete(temp); } catch (IOException) { } }
+            });
+    }
+
+    // On the first screen only, where there is no account yet, so nothing is replaced.
+    private async void RestoreClicked(object? sender, RoutedEventArgs e)
+    {
+        if (MainActivity.Instance is not { } activity || _data.HasIdentity) return;
+        var path = await activity.PickFileAsync("application/zip");
+        if (path == null) { StartStatus.Text = "No backup chosen."; return; }
+        try
+        {
+            string staging;
+            try { staging = await Task.Run(() => _data.StageProfile(path)); }
+            catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+            {
+                StartStatus.Text = ex.Message;
+                return;
+            }
+            try { await Task.Run(() => _data.ApplyStagedProfile(staging)); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                StartStatus.Text = "Restoring failed: " + ex.Message;
+                return;
+            }
+            StartStatus.Text = "Your account is back. Yaparr is starting again.";
+            await Task.Delay(1200);
+            activity.RestartApp();
+        }
+        finally { try { File.Delete(path); } catch (IOException) { } }
+    }
+
+    // ---- the connection check ----
+
+    private NetworkCheckReport? _networkReport;
+    private bool _checkingNetwork;
+
+    private async void NetworkClicked(object? sender, RoutedEventArgs e)
+    {
+        NetworkPanel.IsVisible = true;
+        await RunNetworkCheckAsync();
+    }
+
+    private async void NetworkAgainClicked(object? sender, RoutedEventArgs e) => await RunNetworkCheckAsync();
+
+    private async Task RunNetworkCheckAsync()
+    {
+        if (_checkingNetwork) return;
+        _checkingNetwork = true;
+        NetworkAgain.IsEnabled = NetworkCopy.IsEnabled = false;
+        NetworkSummary.Text = "Checking\u2026";
+        NetworkList.Children.Clear();
+        try
+        {
+            if (_session == null) throw new InvalidOperationException("Yaparr has not started yet.");
+            _networkReport = await _session.CheckNetworkAsync();
+        }
+        catch (Exception ex) when (ex is System.Net.Sockets.SocketException or InvalidOperationException or OperationCanceledException)
+        {
+            _networkReport = null;
+            NetworkSummary.Text = "The check could not finish: " + ex.Message;
+            NetworkAgain.IsEnabled = true;
+            _checkingNetwork = false;
+            return;
+        }
+        NetworkSummary.Text = _networkReport.Summary;
+        foreach (var item in _networkReport.Items)
+        {
+            var color = item.Level switch
+            {
+                CheckLevel.Ok => Avalonia.Media.Brushes.SeaGreen,
+                CheckLevel.Info => Avalonia.Media.Brushes.Gray,
+                CheckLevel.Warning => Avalonia.Media.Brushes.DarkOrange,
+                _ => Avalonia.Media.Brushes.Firebrick,
+            };
+            var glyph = item.Level switch { CheckLevel.Ok => "\u2713", CheckLevel.Info => "\u2022", CheckLevel.Warning => "!", _ => "\u2715" };
+            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), ColumnSpacing = 10 };
+            row.Children.Add(new TextBlock { Text = glyph, Foreground = color, FontWeight = Avalonia.Media.FontWeight.Bold, FontSize = 16, Width = 18, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top });
+            var text = new StackPanel();
+            text.Children.Add(new TextBlock { Text = item.Title, FontWeight = Avalonia.Media.FontWeight.SemiBold, TextWrapping = Avalonia.Media.TextWrapping.Wrap, Foreground = Yaparr.AndroidApp.Theme.Brush("Ink") });
+            text.Children.Add(new TextBlock { Text = item.Detail, FontSize = 13, TextWrapping = Avalonia.Media.TextWrapping.Wrap, Foreground = Yaparr.AndroidApp.Theme.Brush("Muted") });
+            Grid.SetColumn(text, 1);
+            row.Children.Add(text);
+            NetworkList.Children.Add(row);
+        }
+        NetworkAgain.IsEnabled = NetworkCopy.IsEnabled = true;
+        _checkingNetwork = false;
+    }
+
+    private async void NetworkCopyClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_networkReport == null || TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard) return;
+        var lines = _networkReport.Items.Select(i => $"[{i.Level}] {i.Title}: {i.Detail}");
+        await clipboard.SetTextAsync(_networkReport.Summary + Environment.NewLine + string.Join(Environment.NewLine, lines));
+        NetworkSummary.Text = _networkReport.Summary + "  (copied)";
+    }
+
+    private void NetworkCloseClicked(object? sender, RoutedEventArgs e) => NetworkPanel.IsVisible = false;
+
     private async void DiagnosticsClicked(object? sender, RoutedEventArgs e)
     {
         if (_session == null || TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard) return;
         await clipboard.SetTextAsync(_session.Diagnostics());
-        ListStatus.Text = "Copied who this phone is connected to and what it has been doing. Paste it where you are reporting the problem.";
+        var note = "Copied who this phone is connected to and what it has been doing. Paste it where you are reporting the problem.";
+        ListStatus.Text = note;
+        SettingsNote.Text = note;
     }
 
     private void AddClicked(object? sender, RoutedEventArgs e)
