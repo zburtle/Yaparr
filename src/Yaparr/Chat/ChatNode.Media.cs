@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using Yaparr.Identity;
 using Yaparr.Transport;
+using Yaparr.Voice;
 
 namespace Yaparr.Chat;
 
@@ -281,7 +282,7 @@ public sealed partial class ChatNode
             var budget = _mediaBudget;
             if (budget == null || _mediaBudgetRate != rate)
             {
-                budget = new TokenBucket(rate, Environment.TickCount64);
+                budget = new TokenBucket(rate, rate);   // holds a second's worth and refills at the rate
                 _mediaBudget = budget;
                 _mediaBudgetRate = rate;
             }
@@ -1107,6 +1108,16 @@ public sealed partial class ChatNode
         SendToNeighbours(g, packet, except: null, charge: false);
     }
 
+    // Passing a packet on costs some of what this device forwards for others. When that runs short, voice frames that their senders call
+    // silence (a pause, or noise) are the first to go: they may only use the budget while half of it is left, so the people who are talking
+    // get through. Voice that says nothing about itself (an older version) is treated as speech.
+    private bool TakeForwardBudget(MediaGroup g, byte[] packet)
+    {
+        var budget = MediaBudget;
+        bool silence = g.Kind == "voice" && VoicePacket.SaysSilence(packet.AsSpan(MediaWire.HeaderSize));
+        return budget.TryTake(packet.Length, Environment.TickCount64, silence ? budget.Capacity / 2 : 0);
+    }
+
     private void SendToNeighbours(MediaGroup g, byte[] packet, PeerId? except, bool charge)
     {
         List<PeerId> targets;
@@ -1114,7 +1125,7 @@ public sealed partial class ChatNode
         foreach (var id in targets)
         {
             if (id == except || !TryPeer(id, out var state)) continue;
-            if (charge && !MediaBudget.TryTake(packet.Length, Environment.TickCount64))
+            if (charge && !TakeForwardBudget(g, packet))
             {
                 lock (g.Gate) g.Dropped++;
                 continue;
