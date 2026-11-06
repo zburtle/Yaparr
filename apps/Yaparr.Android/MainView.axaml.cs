@@ -58,11 +58,12 @@ public partial class MainView : UserControl
         foreach (var s in _screens) s.IsVisible = s == screen;
     }
 
-    private bool AnyOverlay => AddPanel.IsVisible || PeoplePanel.IsVisible || ConfirmPanel.IsVisible || RoutePanel.IsVisible || PicturePanel.IsVisible || ActionPanel.IsVisible;
+    private bool AnyOverlay => AddPanel.IsVisible || PeoplePanel.IsVisible || ConfirmPanel.IsVisible || RoutePanel.IsVisible || PicturePanel.IsVisible || ActionPanel.IsVisible || PromptPanel.IsVisible;
 
     // One step back; false when there is nothing to go back to and the phone may leave the app.
     private bool GoBack()
     {
+        if (PromptPanel.IsVisible) { PromptPanel.IsVisible = false; return true; }
         if (ActionPanel.IsVisible) { ActionPanel.IsVisible = false; return true; }
         if (PicturePanel.IsVisible) { PicturePanel.IsVisible = false; return true; }
         if (RoutePanel.IsVisible) { RoutePanel.IsVisible = false; return true; }
@@ -354,6 +355,7 @@ public partial class MainView : UserControl
         if (chat.IsRoom)
         {
             Add("People", PeopleClicked);
+            Add("Rename the room", RenameClicked);
             Add("Copy invite link", CopyInviteLinkClicked);
             Add("Copy invite", CopyInviteClicked);
             Add("Leave the room", LeaveClicked);
@@ -377,6 +379,7 @@ public partial class MainView : UserControl
 
     private async void JoinVoiceClicked(object? sender, RoutedEventArgs e)
     {
+        string channel = (sender as Control)?.DataContext is VoiceChannelVm vm ? vm.Id : RoomChannels.DefaultVoice;
         if (_current == null || _session == null || MainActivity.Instance is not { } activity) return;
         var chat = _current;
         // The microphone is asked for the first time someone joins; without it there is no call.
@@ -386,7 +389,7 @@ public partial class MainView : UserControl
             chat.Status = "Microphone not allowed";
             return;
         }
-        try { _session.JoinVoice(chat, activity); }
+        try { _session.JoinVoice(chat, activity, channel); }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             chat.Status = "Couldn't open the microphone or speaker";
@@ -669,6 +672,42 @@ public partial class MainView : UserControl
             if (from != null) from.Status = "Could not reach them: " + ex.Message;
         }
         finally { if (from != null && from != _current) _session.RefreshStatus(from); }
+    }
+
+    // ---- a line of text to answer, and renaming a room ----
+
+    private Action<string>? _prompted;
+
+    private void AskText(string title, string initial, Action<string> done)
+    {
+        PromptTitle.Text = title;
+        PromptBox.Text = initial;
+        _prompted = done;
+        PromptPanel.IsVisible = true;
+        PromptBox.Focus();
+        PromptBox.SelectAll();
+    }
+
+    private void PromptOkClicked(object? sender, RoutedEventArgs e)
+    {
+        PromptPanel.IsVisible = false;
+        var done = _prompted;
+        _prompted = null;
+        var text = (PromptBox.Text ?? "").Trim();
+        if (text.Length > 0) done?.Invoke(text);
+    }
+
+    private void PromptCancelClicked(object? sender, RoutedEventArgs e)
+    {
+        PromptPanel.IsVisible = false;
+        _prompted = null;
+    }
+
+    // A new name for the room, for you only; the others keep the name they gave it.
+    private void RenameClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_current is not { IsRoom: true } chat || _session == null) return;
+        AskText("A new name for this room (only you see it):", chat.Title, label => _session?.RenameRoom(chat, label));
     }
 
     // ---- leaving a room ----

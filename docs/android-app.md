@@ -37,9 +37,13 @@ Typing an **@** and the start of a name in a room offers the people there, as bu
 
 Not there yet: @everyone, and asking the other members for an original message the phone does not have.
 
+## Renaming a room
+
+**Rename the room** in a room's menu gives it a name of your own, for you only: the others keep the name they gave it, and a name you choose is kept with the room across restarts.
+
 ## Voice
 
-A room has a voice bar under its title: who is in the voice channel, and **Join voice**. The first time, Android asks to allow the microphone (only for this; text chat never needs it). In a call there are four buttons: **Mute**, **Deafen**, **Speaker** (the loudspeaker, or the phone's earpiece, or a headset when one is connected; the button shows which one is on) and **Leave**, and everyone in the channel is shown, lit up while they talk. The call runs through the same library as on the computer (Opus over the existing connections), with speech levelling on so quiet voices are raised and a crowd does not clip. While you are in a call Android treats the phone as being in a call: other apps' audio gives way, and if a phone call or another app takes the audio your microphone is muted until you unmute it.
+A room has a voice bar under its title: one row for each voice channel of the room with the people in it and a **Join voice** button (a room has at least one; more can be made on the computer); joining another channel leaves the first. The first time, Android asks to allow the microphone (only for this; text chat never needs it). In a call there are four buttons: **Mute**, **Deafen**, **Speaker** (the loudspeaker, or the phone's earpiece, or a headset when one is connected; the button shows which one is on) and **Leave**, and everyone in the channel is shown, lit up while they talk. The call runs through the same library as on the computer (Opus over the existing connections), with speech levelling on so quiet voices are raised and a crowd does not clip. While you are in a call Android treats the phone as being in a call: other apps' audio gives way, and if a phone call or another app takes the audio your microphone is muted until you unmute it.
 
 For now the call ends when Yaparr leaves the screen, because there is no foreground service yet. Echo and noise are handled by Android itself: Yaparr opens the microphone and speakers as a call's, which switches on the phone's own echo cancellation and noise suppression, the same ones phone calls and other calling apps use. How good they are depends on the phone, and unlike on the computer there are no settings for them. If you hear your own echo, use the phone (earpiece) or a headset instead of the loudspeaker. The default voice channel only; other voice channels come later.
 

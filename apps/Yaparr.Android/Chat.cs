@@ -104,7 +104,7 @@ public sealed class Chat : Observable
     public bool InVoice
     {
         get => _inVoice;
-        set { if (_inVoice == value) return; _inVoice = value; Raise(); Raise(nameof(CanJoinVoice)); Raise(nameof(VoiceText)); }
+        set { if (_inVoice == value) return; _inVoice = value; Raise(); Raise(nameof(CanJoinVoice)); }
     }
 
     public bool Muted
@@ -134,15 +134,33 @@ public sealed class Chat : Observable
 
     public bool HasVoiceMembers => VoiceMembers.Count > 0;
 
-    public string VoiceText => _inVoice ? "You're in voice" : VoiceMembers.Count == 0 ? "No one in voice" : VoiceMembers.Count + " in voice";
+    /// <summary>The room's voice channels, each with who is in it.</summary>
+    public ObservableCollection<VoiceChannelVm> VoiceChannels { get; } = new();
 
-    /// <summary>Puts the voice bar in line with who is in the channel now.</summary>
-    public void SetVoiceMembers(IReadOnlyList<VoiceMember> members)
+    /// <summary>The voice channel you are in on this phone.</summary>
+    public string VoiceChannelId { get; set; } = RoomChannels.DefaultVoice;
+
+    /// <summary>Puts the voice bar in line with who is in the room's voice channels now.</summary>
+    public void SetVoice(IReadOnlyList<VoiceChannelVm> channels, IReadOnlyList<VoiceMember> mine)
     {
+        // The rows are kept when only who is in them changed, so a button is not rebuilt under a finger.
+        if (channels.Count == VoiceChannels.Count && channels.Select(c => c.Id).SequenceEqual(VoiceChannels.Select(c => c.Id)))
+        {
+            for (int i = 0; i < channels.Count; i++)
+            {
+                VoiceChannels[i].Name = channels[i].Name;
+                VoiceChannels[i].MembersText = channels[i].MembersText;
+                VoiceChannels[i].InCall = channels[i].InCall;
+            }
+        }
+        else
+        {
+            VoiceChannels.Clear();
+            foreach (var c in channels) VoiceChannels.Add(c);
+        }
         VoiceMembers.Clear();
-        foreach (var m in members) VoiceMembers.Add(m);
+        foreach (var m in mine) VoiceMembers.Add(m);
         Raise(nameof(HasVoiceMembers));
-        Raise(nameof(VoiceText));
     }
 
     /// <summary>What a room is doing to get going ("Finding members..."), empty when it is ready.</summary>
