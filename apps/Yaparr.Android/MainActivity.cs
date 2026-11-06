@@ -12,6 +12,11 @@ using Avalonia.Android;
 [assembly: UsesPermission(Android.Manifest.Permission.AccessNetworkState)]
 [assembly: UsesPermission(Android.Manifest.Permission.ChangeWifiMulticastState)]
 
+// The microphone is for voice channels, asked for the first time you join one.
+[assembly: UsesPermission(Android.Manifest.Permission.RecordAudio)]
+[assembly: UsesPermission(Android.Manifest.Permission.ModifyAudioSettings)]
+[assembly: UsesFeature("android.hardware.microphone", Required = false)]
+
 // The camera is only for reading a link QR code, and the app works without one.
 [assembly: UsesPermission(Android.Manifest.Permission.Camera)]
 [assembly: UsesFeature("android.hardware.camera", Required = false)]
@@ -47,6 +52,7 @@ public class MainActivity : AvaloniaMainActivity
 {
     protected override void OnCreate(Bundle? savedInstanceState)
     {
+        Instance = this;
         App.Scanner = new QrScanner(this);
         base.OnCreate(savedInstanceState);
         // Opened by a link; not again when the activity is made anew after a turn of the screen.
@@ -58,6 +64,29 @@ public class MainActivity : AvaloniaMainActivity
     {
         base.OnNewIntent(intent);
         LinkInbox.Offer(intent?.DataString);
+    }
+
+    /// <summary>The screen that is open, for what needs an activity (asking for the microphone, the audio service).</summary>
+    public static MainActivity? Instance { get; private set; }
+
+    private static TaskCompletionSource<bool>? s_micRequest;
+
+    /// <summary>Asks for the microphone if it has not been allowed yet. False if the person says no.</summary>
+    public Task<bool> RequestMicrophoneAsync()
+    {
+        if (CheckSelfPermission(Android.Manifest.Permission.RecordAudio) == Permission.Granted) return Task.FromResult(true);
+        s_micRequest?.TrySetResult(false);
+        var request = s_micRequest = new TaskCompletionSource<bool>();
+        RequestPermissions(new[] { Android.Manifest.Permission.RecordAudio }, MicrophoneRequest);
+        return request.Task;
+    }
+
+    private const int MicrophoneRequest = 0x6d69;
+
+    public override void OnRequestPermissionsResult(int requestCode, string[] permissions, Permission[] grantResults)
+    {
+        base.OnRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == MicrophoneRequest) s_micRequest?.TrySetResult(grantResults.Length > 0 && grantResults[0] == Permission.Granted);
     }
 
     private Android.Net.Wifi.WifiManager.MulticastLock? _multicast;

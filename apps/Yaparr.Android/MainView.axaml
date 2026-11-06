@@ -87,7 +87,8 @@
 
         <!-- One room or direct chat: the messages, and a box to write in. -->
         <Grid x:Name="ChatPanel" x:DataType="local:Chat" IsVisible="False" RowDefinitions="Auto,Auto,*,Auto">
-            <Border Grid.Row="0" Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="4,44,4,8">
+            <StackPanel Grid.Row="0">
+            <Border Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="4,44,4,8">
                 <Grid ColumnDefinitions="Auto,*,Auto">
                     <Button Content="‹" FontSize="26" Padding="14,0" Background="Transparent" Foreground="{DynamicResource Accent}" Click="BackClicked" />
                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
@@ -97,6 +98,38 @@
                     <Button x:Name="MenuButton" Grid.Column="2" Content="⋮" FontSize="22" Padding="16,0" Background="Transparent" Foreground="{DynamicResource Ink}" />
                 </Grid>
             </Border>
+
+            <!-- Voice: join the room's voice channel; in it, who is there, and mute, deafen, speaker and leave. -->
+            <Border IsVisible="{Binding IsRoom}" Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="12,8">
+                <StackPanel Spacing="8">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Text="{Binding VoiceText}" VerticalAlignment="Center" FontSize="13" Foreground="{DynamicResource Muted}" />
+                        <Button Grid.Column="1" Classes="primary" Content="Join voice" Padding="14,6" IsVisible="{Binding CanJoinVoice}" Click="JoinVoiceClicked" />
+                    </Grid>
+                    <ItemsControl ItemsSource="{Binding VoiceMembers}" IsVisible="{Binding HasVoiceMembers}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="local:VoiceMember">
+                                <Border Background="{Binding Fill}" CornerRadius="14" Padding="10,4" Margin="0,0,6,6">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <TextBlock Text="{Binding Label}" FontSize="13" Foreground="{Binding Ink}" />
+                                        <TextBlock Text="{Binding State}" FontSize="11" Foreground="{Binding Ink}" Opacity="0.7" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="6" IsVisible="{Binding InVoice}">
+                        <Button Content="{Binding MuteLabel}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="4,8" Click="MuteClicked" />
+                        <Button Grid.Column="1" Content="{Binding DeafenLabel}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="4,8" Click="DeafenClicked" />
+                        <Button Grid.Column="2" Content="{Binding RouteLabel}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="4,8" Click="RouteClicked" />
+                        <Button Grid.Column="3" Content="Leave" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="4,8" Foreground="{DynamicResource Bad}" Click="LeaveVoiceClicked" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+            </StackPanel>
 
             <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled" IsVisible="{Binding ShowChannels}">
                 <ItemsControl ItemsSource="{Binding Channels}" Margin="8,6">
@@ -156,6 +189,17 @@
         </Border>
 
         <!-- The people of the open room: tap one to write to them. -->
+        <!-- Where the sound of a call goes: a small window in the middle, one line for each place it can go. -->
+        <Border x:Name="RoutePanel" IsVisible="False" Background="#99000000" PointerPressed="OverlayBackdropPressed">
+            <Border Background="{DynamicResource Surface}" CornerRadius="16" Margin="40" Padding="8" MaxWidth="320"
+                    VerticalAlignment="Center" HorizontalAlignment="Stretch">
+                <StackPanel Spacing="2">
+                    <TextBlock Text="Play the call on" FontWeight="SemiBold" FontSize="16" Margin="12,8,12,6" Foreground="{DynamicResource Ink}" />
+                    <StackPanel x:Name="RouteList" />
+                </StackPanel>
+            </Border>
+        </Border>
+
         <Border x:Name="PeoplePanel" IsVisible="False" Background="#99000000" PointerPressed="OverlayBackdropPressed">
             <Border Background="{DynamicResource Surface}" CornerRadius="16" Margin="20" Padding="16" MaxWidth="440" VerticalAlignment="Center" MaxHeight="520">
                 <Grid RowDefinitions="Auto,*,Auto" RowSpacing="10">
