@@ -87,11 +87,17 @@ public class MainActivity : AvaloniaMainActivity
     private static byte[]? s_saving;
 
     /// <summary>Opens the system's chooser for a picture and returns it; null if the person backs out or the file cannot be read. The chooser needs no permission: the person hands over the one file.</summary>
-    public Task<(byte[] Bytes, string Name)?> PickPictureAsync()
+    public Task<(byte[] Bytes, string Name)?> PickPictureAsync() => PickBytesAsync("image/*", 40 * 1024 * 1024);
+
+    private static int s_pickLimit = 40 * 1024 * 1024;
+
+    /// <summary>The same for a file of any kind (<paramref name="mime"/> narrows what is offered), up to <paramref name="maxBytes"/>.</summary>
+    public Task<(byte[] Bytes, string Name)?> PickBytesAsync(string mime, int maxBytes)
     {
+        s_pickLimit = maxBytes;
         s_pick?.TrySetResult(null);
         var request = s_pick = new TaskCompletionSource<(byte[] Bytes, string Name)?>();
-        var intent = new Intent(Intent.ActionGetContent).SetType("image/*").AddCategory(Intent.CategoryOpenable);
+        var intent = new Intent(Intent.ActionGetContent).SetType(mime).AddCategory(Intent.CategoryOpenable);
         try { StartActivityForResult(intent, PickRequest); }
         catch (ActivityNotFoundException) { request.TrySetResult(null); }
         return request.Task;
@@ -108,8 +114,6 @@ public class MainActivity : AvaloniaMainActivity
         catch (ActivityNotFoundException) { request.TrySetResult(false); }
         return request.Task;
     }
-
-    private const int MaxPictureBytes = 40 * 1024 * 1024;
 
     private void FinishPick(Result resultCode, Intent? data)
     {
@@ -130,7 +134,7 @@ public class MainActivity : AvaloniaMainActivity
                 int n;
                 while ((n = input.Read(buffer, 0, buffer.Length)) > 0)
                 {
-                    if (ms.Length + n > MaxPictureBytes) { request.TrySetResult(null); return; }
+                    if (ms.Length + n > s_pickLimit) { request.TrySetResult(null); return; }
                     ms.Write(buffer, 0, n);
                 }
                 request.TrySetResult((ms.ToArray(), name));

@@ -53,6 +53,12 @@ A room has a voice bar under its title: one row for each voice channel of the ro
 
 For now the call ends when Yaparr leaves the screen, because there is no foreground service yet. Echo and noise are handled by Android itself: Yaparr opens the microphone and speakers as a call's, which switches on the phone's own echo cancellation and noise suppression, the same ones phone calls and other calling apps use. How good they are depends on the phone, and unlike on the computer there are no settings for them. If you hear your own echo, use the phone (earpiece) or a headset instead of the loudspeaker. The default voice channel only; other voice channels come later.
 
+## Soundboard
+
+In a voice call, **Soundboard** opens a window with the room's sounds. **Play** sends a sound into the call so everyone in the channel hears it (not while you are deafened, and not before it has finished arriving). **Add a sound** takes an audio file (WAV, MP3 or OGG) with Android's file chooser, keeps the first 20 seconds, makes it as loud as the other sounds so one loud file does not blast everyone, and asks for a name. A sound can be removed by whoever added it, and by the owner or an admin of the room. "Silence everybody's sounds for me" turns the sounds of other people off for you (their voices are not affected) and is kept.
+
+Not there yet: choosing which part of a long file to keep, renaming a sound, previewing a sound before sending it, and muting one person's sounds only.
+
 ## Links
 
 Yaparr links open in the app: `yaparr://join/<invite>` and `yaparr://chat/<peer id>`, and the forms people share, `https://yaparr.com/join#<invite>` and `https://yaparr.com/chat#<peer id>`. A link never acts on its own: for a room the join sheet opens with the invite filled in, asking you to name the room and to confirm (joining lets the other members see your IP address); for a person a question asks first. If you are in the room or already chat with them, the link just shows it. In a room the menu has Copy invite link, and in a direct chat Copy chat link; the join sheet also takes a link instead of an invite.

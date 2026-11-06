@@ -58,13 +58,14 @@ public partial class MainView : UserControl
         foreach (var s in _screens) s.IsVisible = s == screen;
     }
 
-    private bool AnyOverlay => AddPanel.IsVisible || PeoplePanel.IsVisible || ConfirmPanel.IsVisible || RoutePanel.IsVisible || PicturePanel.IsVisible || ActionPanel.IsVisible || PromptPanel.IsVisible || BlockedPanel.IsVisible;
+    private bool AnyOverlay => AddPanel.IsVisible || PeoplePanel.IsVisible || ConfirmPanel.IsVisible || RoutePanel.IsVisible || PicturePanel.IsVisible || ActionPanel.IsVisible || PromptPanel.IsVisible || BlockedPanel.IsVisible || SoundPanel.IsVisible;
 
     // One step back; false when there is nothing to go back to and the phone may leave the app.
     private bool GoBack()
     {
         if (PromptPanel.IsVisible) { PromptPanel.IsVisible = false; return true; }
         if (BlockedPanel.IsVisible) { BlockedPanel.IsVisible = false; return true; }
+        if (SoundPanel.IsVisible) { SoundPanel.IsVisible = false; return true; }
         if (ActionPanel.IsVisible) { ActionPanel.IsVisible = false; return true; }
         if (PicturePanel.IsVisible) { PicturePanel.IsVisible = false; return true; }
         if (RoutePanel.IsVisible) { RoutePanel.IsVisible = false; return true; }
@@ -94,6 +95,7 @@ public partial class MainView : UserControl
         ChatList.ItemsSource = session.Chats;
         session.Chats.CollectionChanged += (_, _) => EmptyHint.IsVisible = session.Started && session.Chats.Count == 0;
         session.Notice += text => ListStatus.Text = text;
+        session.SoundsChanged += c => { if (SoundPanel.IsVisible && c == _current) ShowSounds(); };
         session.ConnectionChanged += text => ListStatus.Text = text;
         session.SyncChanged += (text, progress) =>
         {
@@ -243,6 +245,77 @@ public partial class MainView : UserControl
         if (ChatList.SelectedItem is not Chat chat) return;
         ChatList.SelectedItem = null;
         OpenChat(chat);
+    }
+
+    // ---- the soundboard ----
+
+    private void SoundboardClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_session == null || _current == null) return;
+        SilenceCheck.IsChecked = _session.SoundsSilenced;
+        ShowSounds();
+        SoundPanel.IsVisible = true;
+    }
+
+    private void ShowSounds()
+    {
+        if (_session == null || _current is not { } chat) return;
+        SoundList.Children.Clear();
+        var sounds = _session.SoundsOf(chat);
+        if (sounds.Count == 0)
+            SoundList.Children.Add(new TextBlock { Text = "No sounds yet. Add one from an audio file (WAV, MP3 or OGG): the first 20 seconds are kept.", TextWrapping = Avalonia.Media.TextWrapping.Wrap, Foreground = Yaparr.AndroidApp.Theme.Brush("Muted") });
+        foreach (var sound in sounds.OrderBy(s => s.Name, StringComparer.CurrentCultureIgnoreCase))
+        {
+            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), ColumnSpacing = 6 };
+            var text = new StackPanel { VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
+            text.Children.Add(new TextBlock { Text = sound.Name, FontWeight = Avalonia.Media.FontWeight.SemiBold, TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis, Foreground = Yaparr.AndroidApp.Theme.Brush("Ink") });
+            text.Children.Add(new TextBlock { Text = (sound.Available ? "" : "downloading\u2026 ") + $"{(_session.IsMine(sound) ? "You" : sound.OwnerName)} \u00B7 {sound.Duration.TotalSeconds:0.#} s", FontSize = 12, Foreground = Yaparr.AndroidApp.Theme.Brush("Muted") });
+            row.Children.Add(text);
+            var play = new Avalonia.Controls.Button { Content = "Play", Padding = new Avalonia.Thickness(14, 8), IsEnabled = sound.Available };
+            play.Classes.Add("primary");
+            play.Click += (_, _) =>
+            {
+                if (!_session.PlaySound(chat, sound.Id)) chat.Status = "Join voice (and don't be deafened) to play sounds";
+            };
+            Grid.SetColumn(play, 1);
+            row.Children.Add(play);
+            if (_session.CanRemoveSound(chat, sound))
+            {
+                var remove = new Avalonia.Controls.Button { Content = "Remove", Padding = new Avalonia.Thickness(10, 8), Foreground = Yaparr.AndroidApp.Theme.Brush("Bad") };
+                remove.Click += (_, _) => Ask($"Remove \"{sound.Name}\" from the soundboard for everyone?", "Remove", () =>
+                {
+                    try { _session?.RemoveSound(chat, sound); }
+                    catch (InvalidOperationException ex) { chat.Status = ex.Message; }
+                    return Task.CompletedTask;
+                });
+                Grid.SetColumn(remove, 2);
+                row.Children.Add(remove);
+            }
+            SoundList.Children.Add(row);
+        }
+    }
+
+    private void SilenceClicked(object? sender, RoutedEventArgs e) => _session?.SilenceSounds(SilenceCheck.IsChecked == true);
+
+    private void SoundCloseClicked(object? sender, RoutedEventArgs e) => SoundPanel.IsVisible = false;
+
+    private async void AddSoundClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_current == null || _session == null || MainActivity.Instance is not { } activity) return;
+        var chat = _current;
+        var picked = await activity.PickBytesAsync("audio/*", 30 * 1024 * 1024);
+        if (picked is not { } file) return;
+        var name = System.IO.Path.GetFileNameWithoutExtension(file.Name).Trim();
+        if (name.Length > 30) name = name[..30];
+        AskText("A name for the sound:", name.Length == 0 ? "Sound" : name, async label =>
+        {
+            try
+            {
+                await _session!.AddSoundAsync(chat, file.Bytes, label);
+                ShowSounds();
+            }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { chat.Status = ex.Message; }
+        });
     }
 
     private async void DiagnosticsClicked(object? sender, RoutedEventArgs e)

@@ -234,6 +234,7 @@ public sealed class Session : IDisposable
         room.MemberRenamed += _ => UI(() => ShowMembers(chat, room));
         room.ModerationChanged += () => UI(() => Reload(chat, room));
         room.VoiceChanged += () => UI(() => RefreshVoice(chat));
+        room.SoundsChanged += () => UI(() => SoundsChanged?.Invoke(chat));
         room.ChannelsChanged += () => UI(() => RefreshVoice(chat));
         room.VoiceChannelRemoved += id => UI(() => { if (_callChat == chat && chat.VoiceChannelId == id) LeaveVoice(); });
 
@@ -270,6 +271,8 @@ public sealed class Session : IDisposable
             if (_callChat is { } c) { c.Muted = true; Notice?.Invoke("Another app is using the audio, so your microphone is muted."); }
         });
         call.Session.SpeakingChanged += (id, speaking) => UI(() => OnSpeaking(id.Value, speaking));
+        call.Session.SoundboardsMuted = _settings.SoundboardsMuted;
+        call.Session.SoundboardVolume = Math.Clamp(_settings.SoundboardVolume, 0, 200) / 100f;
         _call = call;
         _callChat = chat;
         chat.VoiceChannelId = channelId;
@@ -277,6 +280,45 @@ public sealed class Session : IDisposable
         chat.Muted = chat.Deafened = false;
         chat.RouteLabel = AudioRoutes.Label(call.Route);
         RefreshVoice(chat);
+    }
+
+    // ---- soundboard ----
+
+    /// <summary>The room's soundboard changed (a sound was added, removed or finished arriving).</summary>
+    public event Action<Chat>? SoundsChanged;
+
+    public IReadOnlyList<SoundInfo> SoundsOf(Chat chat) => chat.Room?.Sounds ?? Array.Empty<SoundInfo>();
+
+    public bool IsMine(SoundInfo sound) => _node != null && sound.Owner == _node.AccountId;
+
+    /// <summary>You can remove a sound you added; an owner or admin can remove any.</summary>
+    public bool CanRemoveSound(Chat chat, SoundInfo sound) => IsMine(sound) || chat.Room is { MyRole: >= RoomRole.Admin };
+
+    /// <summary>Plays the sound into the voice channel, for everyone in it. False if you are not in voice, are deafened, or the sound has not finished arriving.</summary>
+    public bool PlaySound(Chat chat, string id) => _callChat == chat && _call != null && !_call.Session.Deafened && chat.Room is { } room && room.PlaySound(id);
+
+    /// <summary>Makes a sound from the first 20 seconds of an audio file (WAV, MP3 or OGG) and adds it to the soundboard. Throws <see cref="ArgumentException"/> with a message for the person.</summary>
+    public async Task AddSoundAsync(Chat chat, byte[] file, string name)
+    {
+        if (chat.Room is not { } room) return;
+        var clip = await Task.Run(() => AudioFiles.ToClip(file));
+        room.AddSound(name, clip);
+    }
+
+    public void RemoveSound(Chat chat, SoundInfo sound)
+    {
+        if (chat.Room is not { } room) return;
+        if (IsMine(sound)) room.RemoveSound(sound.Id); else room.DeleteSound(sound.Id);
+    }
+
+    /// <summary>Whether everybody's soundboard sounds are silenced for you.</summary>
+    public bool SoundsSilenced => _settings.SoundboardsMuted;
+
+    public void SilenceSounds(bool silenced)
+    {
+        _settings.SoundboardsMuted = silenced;
+        _data.SaveSettings(_settings);
+        if (_call != null) _call.Session.SoundboardsMuted = silenced;
     }
 
     public void LeaveVoice()

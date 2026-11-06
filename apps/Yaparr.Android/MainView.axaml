@@ -137,6 +137,7 @@
                         <Button Grid.Column="2" Content="{Binding RouteLabel}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="4,8" Click="RouteClicked" />
                         <Button Grid.Column="3" Content="Leave" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="4,8" Foreground="{DynamicResource Bad}" Click="LeaveVoiceClicked" />
                     </Grid>
+                    <Button Content="Soundboard" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="4,8" IsVisible="{Binding InVoice}" Click="SoundboardClicked" />
                 </StackPanel>
             </Border>
             </StackPanel>
@@ -285,6 +286,21 @@
                         </ListBox.ItemTemplate>
                     </ListBox>
                     <Button Grid.Row="2" HorizontalAlignment="Stretch" Content="Close" Click="PeopleCloseClicked" />
+                </Grid>
+            </Border>
+        </Border>
+
+        <!-- The room's soundboard: play a sound into the call, add one, remove one. -->
+        <Border x:Name="SoundPanel" IsVisible="False" Background="#99000000" PointerPressed="OverlayBackdropPressed">
+            <Border Background="{DynamicResource Surface}" CornerRadius="16" Margin="20" Padding="16" MaxWidth="440" VerticalAlignment="Center" MaxHeight="620">
+                <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="10">
+                    <TextBlock Text="Soundboard" FontWeight="Bold" FontSize="20" Foreground="{DynamicResource Ink}" />
+                    <CheckBox x:Name="SilenceCheck" Grid.Row="1" Content="Silence everybody's sounds for me" Click="SilenceClicked" />
+                    <ScrollViewer Grid.Row="2"><StackPanel x:Name="SoundList" Spacing="6" /></ScrollViewer>
+                    <Grid Grid.Row="3" ColumnDefinitions="*,*" ColumnSpacing="8">
+                        <Button Content="Add a sound" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="AddSoundClicked" />
+                        <Button Grid.Column="1" Content="Close" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="SoundCloseClicked" />
+                    </Grid>
                 </Grid>
             </Border>
         </Border>
