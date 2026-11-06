@@ -28,11 +28,19 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
     protected override AppBuilder CustomizeAppBuilder(AppBuilder builder) => base.CustomizeAppBuilder(builder).WithInterFont();
 }
 
+// Yaparr links open in this app: yaparr://join/<invite> and yaparr://chat/<peer id>, and the https://yaparr.com/join#<invite> and /chat#<peer id> forms
+// that people share. The https ones are claimed for the app only once yaparr.com vouches for it (a digital asset links file there); until then they open
+// in the browser, whose page hands them to the app.
+[IntentFilter(new[] { Intent.ActionView }, Categories = new[] { Intent.CategoryDefault, Intent.CategoryBrowsable }, DataScheme = "yaparr", DataHost = "join")]
+[IntentFilter(new[] { Intent.ActionView }, Categories = new[] { Intent.CategoryDefault, Intent.CategoryBrowsable }, DataScheme = "yaparr", DataHost = "chat")]
+[IntentFilter(new[] { Intent.ActionView }, Categories = new[] { Intent.CategoryDefault, Intent.CategoryBrowsable }, DataScheme = "https", DataHost = "yaparr.com", DataPathPrefix = "/join", AutoVerify = true)]
+[IntentFilter(new[] { Intent.ActionView }, Categories = new[] { Intent.CategoryDefault, Intent.CategoryBrowsable }, DataScheme = "https", DataHost = "yaparr.com", DataPathPrefix = "/chat", AutoVerify = true)]
 [Activity(
     Label = "Yaparr",
     Icon = "@drawable/icon",
     Theme = "@style/YaparrTheme",
     MainLauncher = true,
+    LaunchMode = LaunchMode.SingleTask,
     WindowSoftInputMode = SoftInput.AdjustResize,
     ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.ScreenLayout | ConfigChanges.UiMode | ConfigChanges.KeyboardHidden)]
 public class MainActivity : AvaloniaMainActivity
@@ -41,6 +49,15 @@ public class MainActivity : AvaloniaMainActivity
     {
         App.Scanner = new QrScanner(this);
         base.OnCreate(savedInstanceState);
+        // Opened by a link; not again when the activity is made anew after a turn of the screen.
+        if (savedInstanceState == null) LinkInbox.Offer(Intent?.DataString);
+    }
+
+    // Already open when a link is tapped: the same activity gets it.
+    protected override void OnNewIntent(Intent? intent)
+    {
+        base.OnNewIntent(intent);
+        LinkInbox.Offer(intent?.DataString);
     }
 
     private Android.Net.Wifi.WifiManager.MulticastLock? _multicast;

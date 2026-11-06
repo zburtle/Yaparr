@@ -98,6 +98,81 @@ jobs:
           path: artifacts/*.deb
           if-no-files-found: error
 
+  # The Android package, signed with the release key: the secrets ANDROID_KEYSTORE_BASE64 (the keystore file, base64), ANDROID_KEYSTORE_PASSWORD,
+  # ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD. Without them no package is built: the key in the repository is public, so a package signed with
+  # it could be replaced by anyone, and it is never released. The site (yaparr.com) offers the package on Android phones.
+  android:
+    needs: version
+    if: needs.version.outputs.version != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    steps:
+      - name: Signing key
+        id: key
+        run: |
+          if [ -n "$KEYSTORE" ]; then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::No Android signing key is set up in this repository's secrets, so no Android package is built."
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.key.outputs.signed == 'true'
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        if: steps.key.outputs.signed == 'true'
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install the Android workload
+        if: steps.key.outputs.signed == 'true'
+        run: dotnet workload install android
+
+      - name: Install the Android SDK parts
+        if: steps.key.outputs.signed == 'true'
+        run: >
+          dotnet build apps/Yaparr.Android -t:InstallAndroidDependencies
+          -p:JavaSdkDirectory="$JAVA_HOME_21_X64"
+          -p:AndroidSdkDirectory="$ANDROID_HOME"
+          -p:AcceptAndroidSDKLicenses=true
+
+      # The version code Android compares is made of the release's version (1.36.2 is 1036002), so each release is newer than the last.
+      - name: Build the package
+        if: steps.key.outputs.signed == 'true'
+        run: |
+          echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/yaparr-release.keystore"
+          version='${{ needs.version.outputs.version }}'
+          IFS=. read -r major minor patch <<< "${version%%-*}"
+          dotnet build apps/Yaparr.Android -c Release \
+            -p:ApplicationVersion=$((major * 1000000 + minor * 1000 + patch)) -p:ApplicationDisplayVersion="$version" \
+            -p:JavaSdkDirectory="$JAVA_HOME_21_X64" -p:AndroidSdkDirectory="$ANDROID_HOME" \
+            -p:AndroidKeyStore=true -p:AndroidSigningKeyStore="$RUNNER_TEMP/yaparr-release.keystore" \
+            -p:AndroidSigningStorePass=env:ANDROID_KEYSTORE_PASSWORD -p:AndroidSigningKeyAlias="$ANDROID_KEY_ALIAS" \
+            -p:AndroidSigningKeyPass=env:ANDROID_KEY_PASSWORD
+          mkdir -p artifacts
+          cp apps/Yaparr.Android/bin/Release/net10.0-android/org.yaparr.android-Signed.apk "artifacts/Yaparr-$version.apk"
+          rm -f "$RUNNER_TEMP/yaparr-release.keystore"
+
+      # The certificate's fingerprint is what yaparr.com's asset links file names, so that links to the site open in the app.
+      - name: Show who signed it
+        if: steps.key.outputs.signed == 'true'
+        run: |
+          apksigner="$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)"
+          "$apksigner" verify --print-certs artifacts/Yaparr-*.apk | tee "$RUNNER_TEMP/certs.txt"
+          { echo '### Android signing certificate'; grep 'SHA-256' "$RUNNER_TEMP/certs.txt"; } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: steps.key.outputs.signed == 'true'
+        with:
+          name: installer-android
+          path: artifacts/*.apk
+          if-no-files-found: error
+
   flatpak:
     needs: version
     if: needs.version.outputs.version != ''
@@ -180,7 +255,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: [version, windows, deb, flatpak]
+    needs: [version, windows, deb, flatpak, android]
     if: needs.version.outputs.version != ''
     runs-on: ubuntu-latest
     steps:

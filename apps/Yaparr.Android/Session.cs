@@ -163,6 +163,13 @@ public sealed class Session : IDisposable
 
     // ---- rooms ----
 
+    /// <summary>The room an invite is for, if you are in it already (under this key or an older or newer one).</summary>
+    public Chat? FindRoom(RoomKey key) =>
+        _rooms.Values.FirstOrDefault(c => c.Invite != null && RoomIdOf(c.Invite) == key.RoomId);
+
+    /// <summary>The direct chat with a person, if one is open.</summary>
+    public Chat? FindDirect(PeerId person) => _directs.GetValueOrDefault(person.Value);
+
     /// <summary>Makes a new room that you own and opens it.</summary>
     public Task<Chat> NewRoomAsync(string label) =>
         JoinKeyedRoomAsync(label, RoomKey.Generate(_node!.AccountId), persist: true);
