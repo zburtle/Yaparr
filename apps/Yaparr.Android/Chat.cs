@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using Avalonia.Media;
+using Yaparr.AppCore;
 using Yaparr.Chat;
 
 namespace Yaparr.AndroidApp;
@@ -43,7 +44,8 @@ public sealed class Chat : Observable
     private readonly List<Line> _all = new();
     private readonly HashSet<string> _ids = new();
     private readonly Dictionary<string, int> _unread = new();
-    private string _title, _preview = "", _status = "";
+    private string _title, _preview = "", _status = "", _syncText = "";
+    private bool _syncing;
     private string _channel = RoomChannels.DefaultText;
 
     public Chat(string title, ChatRoom? room, DirectChat? direct, string? invite)
@@ -140,6 +142,34 @@ public sealed class Chat : Observable
         foreach (var m in members) VoiceMembers.Add(m);
         Raise(nameof(HasVoiceMembers));
         Raise(nameof(VoiceText));
+    }
+
+    /// <summary>What a room is doing to get going ("Finding members..."), empty when it is ready.</summary>
+    public string SyncText
+    {
+        get => _syncText;
+        private set { if (_syncText == value) return; _syncText = value; Raise(); Raise(nameof(HasSyncText)); Raise(nameof(ShowPreview)); }
+    }
+
+    public bool HasSyncText => _syncText.Length > 0;
+
+    public bool ShowPreview => _syncText.Length == 0;
+
+    /// <summary>The room is working on it, so the list shows a progress bar.</summary>
+    public bool IsSyncing
+    {
+        get => _syncing;
+        private set { if (_syncing == value) return; _syncing = value; Raise(); }
+    }
+
+    /// <summary>Where the room is in getting going; call now and then. Direct chats have nothing to report.</summary>
+    public RoomSyncState UpdateSync()
+    {
+        if (Room is not { } room) return RoomSyncState.Ready;
+        var state = room.SyncState;
+        SyncText = SyncStatus.RoomText(state);
+        IsSyncing = SyncStatus.IsBusy(state);
+        return state;
     }
 
     /// <summary>Who is here, or what is happening, under the title.</summary>

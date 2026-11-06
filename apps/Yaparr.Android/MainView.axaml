@@ -47,7 +47,15 @@
                             Click="AddClicked" />
                 </Grid>
             </Border>
-            <TextBlock x:Name="ListStatus" Grid.Row="1" Margin="16,8" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" FontSize="12" />
+            <StackPanel Grid.Row="1">
+                <Border x:Name="SyncBanner" IsVisible="False" Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1">
+                    <StackPanel>
+                        <TextBlock x:Name="SyncText" Margin="16,8" TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Accent}" />
+                        <ProgressBar x:Name="SyncBar" Height="3" MinHeight="3" IsIndeterminate="True" Maximum="1" />
+                    </StackPanel>
+                </Border>
+                <TextBlock x:Name="ListStatus" Margin="16,8" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" FontSize="12" />
+            </StackPanel>
             <Grid Grid.Row="2">
                 <ListBox x:Name="ChatList" Background="Transparent" SelectionChanged="ChatSelected">
                     <ListBox.ItemTemplate>
@@ -59,7 +67,9 @@
                                 </Border>
                                 <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center" Spacing="2">
                                     <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource Ink}" />
-                                    <TextBlock Text="{Binding Preview}" FontSize="13" MaxLines="1" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource Muted}" />
+                                    <TextBlock Text="{Binding Preview}" IsVisible="{Binding ShowPreview}" FontSize="13" MaxLines="1" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource Muted}" />
+                                    <TextBlock Text="{Binding SyncText}" IsVisible="{Binding HasSyncText}" FontSize="13" MaxLines="1" Foreground="{DynamicResource Accent}" />
+                                    <ProgressBar IsVisible="{Binding IsSyncing}" IsIndeterminate="True" Height="2" MinHeight="2" MinWidth="0" Width="64" HorizontalAlignment="Left" />
                                 </StackPanel>
                                 <Border Grid.Column="2" IsVisible="{Binding HasUnread}" Background="{DynamicResource Accent}" CornerRadius="12"
                                         MinWidth="24" Padding="7,2" VerticalAlignment="Center">

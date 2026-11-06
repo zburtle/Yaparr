@@ -89,6 +89,13 @@ public partial class MainView : UserControl
         session.Chats.CollectionChanged += (_, _) => EmptyHint.IsVisible = session.Started && session.Chats.Count == 0;
         session.Notice += text => ListStatus.Text = text;
         session.ConnectionChanged += text => ListStatus.Text = text;
+        session.SyncChanged += (text, progress) =>
+        {
+            SyncBanner.IsVisible = text != null;
+            SyncText.Text = text ?? "";
+            SyncBar.IsIndeterminate = progress == null;
+            SyncBar.Value = progress ?? 0;
+        };
         ListStatus.Text = "Connecting...";
         try
         {
@@ -156,7 +163,8 @@ public partial class MainView : UserControl
             LinkStartButton.IsVisible = false;
             // The rooms of the account come from the computer once this phone has connected to it.
             await BeginAsync(linked.DisplayName);
-            ListStatus.Text = $"Linked: you are {linked.DisplayName} here too. Your rooms arrive once this phone has connected to your computer.";
+            _session?.BeginDeviceSearch();
+            ListStatus.Text = $"Linked: you are {linked.DisplayName} here too.";
         }
         catch (Exception ex) when (ex is CryptographicException or FormatException or InvalidOperationException)
         {
