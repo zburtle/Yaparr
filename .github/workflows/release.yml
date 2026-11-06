@@ -220,11 +220,15 @@ jobs:
     with:
       version: ${{ needs.version.outputs.version }}
 
-  # Puts the signed builds in the Flatpak repository, served from the gh-pages branch at flatpak.yaparr.com, so that
-  # "flatpak update" finds them. Only runs when the signing key is set up.
+  # Puts the signed builds in the Flatpak repository, so that "flatpak update" finds them. The repository is a repository of its own, Yaparr.Flatpak,
+  # served from its gh-pages branch at flatpak.yaparr.com, so that it and its signing key stay apart from this one: this workflow's token cannot write
+  # to another repository, so the push is made with a deploy key (write access to that one repository only), the secret FLATPAK_REPO_DEPLOY_KEY.
+  # Only runs when both the signing key and the deploy key are set up.
   flatpak-repo:
     needs: [version, publish]
     if: needs.version.outputs.version != ''
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -237,9 +241,11 @@ jobs:
       - name: Add to the repository
         env:
           KEY: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}
-          TOKEN: ${{ github.token }}
+          DEPLOY_KEY: ${{ secrets.FLATPAK_REPO_DEPLOY_KEY }}
+          FLATPAK_REPO: ${{ github.repository_owner }}/Yaparr.Flatpak
         run: |
           if [ -z "$KEY" ] || [ ! -d flatpak-repos ]; then echo "No signed Flatpak builds; nothing to publish."; exit 0; fi
+          if [ -z "$DEPLOY_KEY" ]; then echo "::error::There is no FLATPAK_REPO_DEPLOY_KEY, so the Flatpak builds cannot be added to the repository."; exit 1; fi
           sudo apt-get update
           sudo apt-get install -y flatpak ostree gnupg
           export GNUPGHOME="$RUNNER_TEMP/gnupg"
@@ -247,7 +253,16 @@ jobs:
           echo "$KEY" | gpg --batch --import
           export FLATPAK_GPG_HOME="$GNUPGHOME"
           export FLATPAK_GPG_KEY="$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr/ {print $10; exit}')"
-          remote="https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          # The deploy key, and GitHub's own host key (its published fingerprint, so a different server is not trusted).
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_KEY" > "$HOME/.ssh/flatpak_repo"
+          chmod 600 "$HOME/.ssh/flatpak_repo"
+          ssh-keyscan -t ed25519 github.com > "$RUNNER_TEMP/github_host" 2>/dev/null
+          expected="$(curl -fsS https://api.github.com/meta | jq -r '.ssh_key_fingerprints.SHA256_ED25519')"
+          ssh-keygen -lf "$RUNNER_TEMP/github_host" | grep -qF "$expected" || { echo "::error::The host key of github.com is not the published one."; exit 1; }
+          cp "$RUNNER_TEMP/github_host" "$HOME/.ssh/known_hosts"
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/flatpak_repo -o IdentitiesOnly=yes"
+          remote="git@github.com:${FLATPAK_REPO}.git"
           git clone --depth 1 --branch gh-pages "$remote" site || mkdir site
           rm -rf site/.git
           bash installer/publish-flatpak-repo.sh site flatpak-repos/*
