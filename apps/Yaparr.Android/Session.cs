@@ -264,7 +264,7 @@ public sealed class Session : IDisposable
         if (chat.Room is not { } room || _node == null) return;
         if (_callChat == chat && chat.VoiceChannelId == channelId) return;
         LeaveVoice();
-        var call = new VoiceCall(context, room, RoomChannels.DefaultVoice, _settings);
+        var call = new VoiceCall(context, room, channelId, _settings);
         call.Interrupted += () => UI(() =>
         {
             if (_callChat is { } c) { c.Muted = true; Notice?.Invoke("Another app is using the audio, so your microphone is muted."); }
