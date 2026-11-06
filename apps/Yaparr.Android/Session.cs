@@ -41,6 +41,49 @@ public sealed class Session : IDisposable
     /// <summary>Something worth telling the person (a person not found, a room left on another device).</summary>
     public event Action<string>? Notice;
 
+    /// <summary>Who this phone is connected to, as a sentence; said again whenever it changes.</summary>
+    public event Action<string>? ConnectionChanged;
+
+    private readonly Queue<string> _log = new();
+
+    private void Log(string line)
+    {
+        lock (_log)
+        {
+            _log.Enqueue($"{DateTime.Now:HH:mm:ss} {line}");
+            while (_log.Count > 300) _log.Dequeue();
+        }
+    }
+
+    /// <summary>What to send along with a report of a problem: who the phone is, who it is connected to, and what the node has been doing.</summary>
+    public string Diagnostics()
+    {
+        var text = new System.Text.StringBuilder();
+        text.AppendLine("Yaparr Android " + (typeof(Session).Assembly.GetName().Version?.ToString() ?? "?"));
+        if (_node is { } node)
+        {
+            text.AppendLine($"account {node.AccountId.Short}, this device {node.Id.Short}");
+            text.AppendLine($"rooms {_rooms.Count}, direct chats {_directs.Count}, connected to {node.ConnectedPeers.Count}:");
+            foreach (var p in node.ConnectedPeers)
+                text.AppendLine($"  {p.DisplayName} {p.Id.Short}{(node.IsMyDevice(p.Id) ? " (your device)" : "")}{(p.IsRelayed ? " (relayed)" : "")} {p.EndPoint}");
+        }
+        else text.AppendLine("not started");
+        text.AppendLine("--- log ---");
+        lock (_log) foreach (var line in _log) text.AppendLine(line);
+        return text.ToString();
+    }
+
+    private void SayConnection()
+    {
+        if (_node is not { } node) return;
+        var peers = node.ConnectedPeers;
+        int mine = peers.Count(p => node.IsMyDevice(p.Id));
+        string text = peers.Count == 0
+            ? "Not connected to anyone yet. Looking for your devices and people..."
+            : $"Connected to {peers.Count} device{(peers.Count == 1 ? "" : "s")}" + (mine > 0 ? $", {mine} of them yours" : "");
+        ConnectionChanged?.Invoke(text);
+    }
+
     public bool Started => _node != null;
 
     public string AccountId => _node?.AccountId.Value ?? "";
@@ -70,13 +113,17 @@ public sealed class Session : IDisposable
             PeerCachePath = Path.Combine(_data.Directory, "peers.json"),
             ClockOffsetsPath = Path.Combine(_data.Directory, "clocks.json"),
             Dht = new Yaparr.Discovery.Dht.DhtOptions { NodeCachePath = Path.Combine(_data.Directory, "dht-nodes.txt") },
+            Log = Log,
         });
         node.SyncedRoomChanged += OnSyncedRoomChanged;
         node.DisplayNameChanged += OnDisplayNameChanged;
         node.IncomingDirectChat += chat => UI(() => AddDirect(chat));
+        node.PeerConnected += _ => UI(SayConnection);
+        node.PeerDisconnected += _ => UI(SayConnection);
         ReconcileFromAccount();
         node.Start();
         _saveTimer.Start();
+        SayConnection();
 
         foreach (var stored in node.StoredDirectChats) AddDirect(stored);
         foreach (var priv in _settings.PrivateRooms.ToList())

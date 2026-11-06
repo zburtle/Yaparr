@@ -43,6 +43,32 @@ public class MainActivity : AvaloniaMainActivity
         base.OnCreate(savedInstanceState);
     }
 
+    private Android.Net.Wifi.WifiManager.MulticastLock? _multicast;
+
+    // Android drops the multicast packets that finding people on the same Wi-Fi uses, unless the app asks to receive them. While the
+    // app is open it does.
+    protected override void OnResume()
+    {
+        base.OnResume();
+        try
+        {
+            if (GetSystemService(WifiService) is Android.Net.Wifi.WifiManager wifi)
+            {
+                _multicast ??= wifi.CreateMulticastLock("yaparr");
+                _multicast?.SetReferenceCounted(false);
+                if (_multicast is { IsHeld: false }) _multicast.Acquire();
+            }
+        }
+        catch (Java.Lang.SecurityException) { }
+    }
+
+    protected override void OnPause()
+    {
+        try { if (_multicast is { IsHeld: true }) _multicast.Release(); }
+        catch (Java.Lang.RuntimeException) { }
+        base.OnPause();
+    }
+
     protected override void OnActivityResult(int requestCode, Result resultCode, Intent? data)
     {
         base.OnActivityResult(requestCode, resultCode, data);

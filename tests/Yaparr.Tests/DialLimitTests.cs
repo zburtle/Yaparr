@@ -59,6 +59,7 @@ public class DialLimitTests
             DisplayName = "dialer",
             DiscoveryFactory = _ => new FixedDiscovery(silent.EndPoints),
             DiscoveryInterval = TimeSpan.FromMilliseconds(300),
+            FindOwnDevices = false, // this test counts what the room search contacts
         });
         node.Start();
         await node.JoinRoomAsync(RoomKey.Generate(), "flood");
@@ -77,6 +78,7 @@ public class DialLimitTests
             DisplayName = "dialer",
             DiscoveryFactory = _ => new FixedDiscovery(silent.EndPoints),
             Log = log.Enqueue,
+            FindOwnDevices = false, // this test counts what the direct chat search contacts
         });
         node.Start();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));

@@ -85,11 +85,11 @@ public partial class MainView : UserControl
         ChatList.ItemsSource = session.Chats;
         session.Chats.CollectionChanged += (_, _) => EmptyHint.IsVisible = session.Started && session.Chats.Count == 0;
         session.Notice += text => ListStatus.Text = text;
+        session.ConnectionChanged += text => ListStatus.Text = text;
         ListStatus.Text = "Connecting...";
         try
         {
             await session.StartAsync(name, _linkedEntries);
-            ListStatus.Text = "";
             EmptyHint.IsVisible = session.Chats.Count == 0;
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
@@ -167,6 +167,13 @@ public partial class MainView : UserControl
         if (ChatList.SelectedItem is not Chat chat) return;
         ChatList.SelectedItem = null;
         OpenChat(chat);
+    }
+
+    private async void DiagnosticsClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_session == null || TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard) return;
+        await clipboard.SetTextAsync(_session.Diagnostics());
+        ListStatus.Text = "Copied who this phone is connected to and what it has been doing. Paste it where you are reporting the problem.";
     }
 
     private void AddClicked(object? sender, RoutedEventArgs e)
