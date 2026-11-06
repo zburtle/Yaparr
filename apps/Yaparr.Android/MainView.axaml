@@ -148,10 +148,16 @@
             <ListBox x:Name="Messages" Grid.Row="2" Background="Transparent" Padding="8,8" ItemsSource="{Binding Shown}">
                 <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="local:Line">
-                        <Border HorizontalAlignment="{Binding Align}" MaxWidth="320" Padding="12,8" CornerRadius="16" Background="{Binding Fill}">
+                        <Border HorizontalAlignment="{Binding Align}" MaxWidth="320" Padding="12,8" CornerRadius="16" Background="{Binding Fill}" Holding="MessageHeld">
                             <StackPanel Spacing="2">
                                 <TextBlock Text="{Binding Who}" FontSize="11" FontWeight="SemiBold" Opacity="0.75"
                                            Foreground="{Binding Ink}" IsVisible="{Binding !Mine}" />
+                                <Border IsVisible="{Binding HasReply}" Background="#22000000" CornerRadius="8" Padding="8,4" Tapped="QuoteTapped">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding ReplyWho}" FontSize="11" FontWeight="SemiBold" Foreground="{Binding Ink}" />
+                                        <TextBlock Text="{Binding ReplyText}" FontSize="12" MaxLines="2" TextTrimming="CharacterEllipsis" Foreground="{Binding Ink}" Opacity="0.8" />
+                                    </StackPanel>
+                                </Border>
                                 <Border IsVisible="{Binding HasAttachment}" CornerRadius="10" ClipToBounds="True" Tapped="PictureTapped" Background="Transparent">
                                     <StackPanel Spacing="4">
                                         <Image Source="{Binding Picture}" IsVisible="{Binding HasPicture}" MaxWidth="260" MaxHeight="340" Stretch="Uniform" />
@@ -167,13 +173,38 @@
                 </ListBox.ItemTemplate>
             </ListBox>
 
-            <Border Grid.Row="3" Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="10">
+            <StackPanel Grid.Row="3">
+            <Border x:Name="ReplyBar" IsVisible="False" Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="12,6">
+                <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel>
+                        <TextBlock x:Name="ReplyBarTitle" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource Accent}" />
+                        <TextBlock x:Name="ReplyBarText" FontSize="13" MaxLines="1" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource Muted}" />
+                    </StackPanel>
+                    <Button Grid.Column="1" Content="✕" Background="Transparent" Foreground="{DynamicResource Muted}" Click="CancelReplyClicked" />
+                </Grid>
+            </Border>
+            <Border x:Name="MentionBar" IsVisible="False" Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="8,6">
+                <ScrollViewer HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled">
+                    <ItemsControl x:Name="MentionList">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="6" /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="local:Person">
+                                <Button Content="{Binding Name}" Padding="14,6" CornerRadius="16" Click="MentionChosen" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Border>
+            <Border Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="10">
                 <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
                     <Button Content="+" FontSize="22" Padding="14,0" Background="Transparent" Foreground="{DynamicResource Accent}" Click="AttachClicked" />
-                    <TextBox x:Name="InputBox" Grid.Column="1" PlaceholderText="Message" AcceptsReturn="False" KeyDown="InputKeyDown" />
+                    <TextBox x:Name="InputBox" Grid.Column="1" PlaceholderText="Message" AcceptsReturn="False" KeyDown="InputKeyDown" TextChanged="InputChanged" />
                     <Button Grid.Column="2" Classes="primary" Content="Send" Click="SendClicked" />
                 </Grid>
             </Border>
+            </StackPanel>
         </Grid>
 
         <!-- Make or join a room, or write to a person. -->
@@ -197,6 +228,16 @@
         </Border>
 
         <!-- The people of the open room: tap one to write to them. -->
+        <!-- What can be done with a message: a small window in the middle. -->
+        <Border x:Name="ActionPanel" IsVisible="False" Background="#99000000" PointerPressed="OverlayBackdropPressed">
+            <Border Background="{DynamicResource Surface}" CornerRadius="16" Margin="40" Padding="8" MaxWidth="320" VerticalAlignment="Center">
+                <StackPanel Spacing="2">
+                    <TextBlock x:Name="ActionTitle" FontSize="13" MaxLines="2" TextTrimming="CharacterEllipsis" Margin="12,8,12,6" Foreground="{DynamicResource Muted}" />
+                    <StackPanel x:Name="ActionList" />
+                </StackPanel>
+            </Border>
+        </Border>
+
         <!-- A picture, big. -->
         <Border x:Name="PicturePanel" IsVisible="False" Background="#FF0B0B0B">
             <Grid RowDefinitions="Auto,*">

@@ -9,7 +9,7 @@ namespace Yaparr.AndroidApp;
 public sealed class Line : Observable
 {
     private IImage? _picture;
-    private string _pictureStatus = "";
+    private string _pictureStatus = "", _replyWho = "", _replyText = "";
 
     public Line(string id, string who, string text, DateTimeOffset when, bool mine, string? channel = null, ChatMessage? source = null)
     {
@@ -23,6 +23,35 @@ public sealed class Line : Observable
         Source = source;
         Attachment = source?.Attachment;
     }
+
+    /// <summary>The key of the message this one answers, if it answers one.</summary>
+    public string? ReplyKey { get; set; }
+
+    /// <summary>The people this message names.</summary>
+    public IReadOnlyList<Mention> Mentions { get; set; } = Array.Empty<Mention>();
+
+    /// <summary>This message names you (or everyone, from an admin).</summary>
+    public bool MentionsMe { get; set; }
+
+    public bool HasReply => ReplyKey != null;
+
+    /// <summary>Who wrote the message this one answers; empty until that message is found.</summary>
+    public string ReplyWho
+    {
+        get => _replyWho;
+        set { if (_replyWho == value) return; _replyWho = value; Raise(); }
+    }
+
+    /// <summary>The start of the message this one answers, or that it is not on this phone.</summary>
+    public string ReplyText
+    {
+        get => _replyText;
+        set { if (_replyText == value) return; _replyText = value; Raise(); }
+    }
+
+    /// <summary>A short form of the message for the reply bar and the quote under a reply.</summary>
+    public string Preview => Attachment != null ? (Text.Length == 0 ? "Picture" : "Picture: " + Text) : Text.Length > 120 ? Text[..120] + "\u2026" : Text;
+
 
     public string Id { get; }
     public string Who { get; }
@@ -83,7 +112,7 @@ public sealed class Line : Observable
     public string PreviewText => Attachment == null ? Text : Text.Length == 0 ? "Picture" : "Picture: " + Text;
 
     public HorizontalAlignment Align => Mine ? HorizontalAlignment.Right : HorizontalAlignment.Left;
-    public IBrush Fill => Resource(Mine ? "BubbleMine" : "BubbleOther");
+    public IBrush Fill => MentionsMe && !Mine ? Resource("Mention") : Resource(Mine ? "BubbleMine" : "BubbleOther");
     public IBrush Ink => Mine ? Brushes.White : Resource("Ink");
 
     private static IBrush Resource(string key) =>

@@ -11,6 +11,7 @@
                     <SolidColorBrush x:Key="Surface" Color="#FFFFFF" />
                     <SolidColorBrush x:Key="Line" Color="#E6E8F0" />
                     <SolidColorBrush x:Key="Muted" Color="#6B7280" />
+                    <SolidColorBrush x:Key="Mention" Color="#FFF1C2" />
                     <SolidColorBrush x:Key="Ink" Color="#161821" />
                     <SolidColorBrush x:Key="BubbleOther" Color="#EEF0F7" />
                     <SolidColorBrush x:Key="BubbleMine" Color="#4F6BED" />
@@ -22,6 +23,7 @@
                     <SolidColorBrush x:Key="Surface" Color="#1A1B22" />
                     <SolidColorBrush x:Key="Line" Color="#292B36" />
                     <SolidColorBrush x:Key="Muted" Color="#9AA0AE" />
+                    <SolidColorBrush x:Key="Mention" Color="#4A4220" />
                     <SolidColorBrush x:Key="Ink" Color="#ECEEF4" />
                     <SolidColorBrush x:Key="BubbleOther" Color="#262833" />
                     <SolidColorBrush x:Key="BubbleMine" Color="#5870F0" />

@@ -37,6 +37,8 @@ public partial class MainView : UserControl
         LinkStartButton.IsVisible = !_data.HasIdentity;
         AttachedToVisualTree += (_, _) => OnAttached();
         LinkInbox.Arrived += () => _ = HandleLinksAsync();
+        // Messages are not picked from the list: a press does something (a long press opens the actions), and nothing stays highlighted.
+        Messages.SelectionChanged += (_, _) => Messages.SelectedItem = null;
         // A phone that has been used before opens straight onto its rooms.
         if (_data.HasIdentity && !string.IsNullOrWhiteSpace(_settings.DisplayName)) _ = BeginAsync(_settings.DisplayName);
     }
@@ -56,11 +58,12 @@ public partial class MainView : UserControl
         foreach (var s in _screens) s.IsVisible = s == screen;
     }
 
-    private bool AnyOverlay => AddPanel.IsVisible || PeoplePanel.IsVisible || ConfirmPanel.IsVisible || RoutePanel.IsVisible || PicturePanel.IsVisible;
+    private bool AnyOverlay => AddPanel.IsVisible || PeoplePanel.IsVisible || ConfirmPanel.IsVisible || RoutePanel.IsVisible || PicturePanel.IsVisible || ActionPanel.IsVisible;
 
     // One step back; false when there is nothing to go back to and the phone may leave the app.
     private bool GoBack()
     {
+        if (ActionPanel.IsVisible) { ActionPanel.IsVisible = false; return true; }
         if (PicturePanel.IsVisible) { PicturePanel.IsVisible = false; return true; }
         if (RoutePanel.IsVisible) { RoutePanel.IsVisible = false; return true; }
         if (ConfirmPanel.IsVisible) { ConfirmPanel.IsVisible = false; return true; }
@@ -325,6 +328,9 @@ public partial class MainView : UserControl
     {
         _session?.Close();
         _current = null;
+        ClearReply();
+        _named.Clear();
+        MentionBar.IsVisible = false;
         ChatPanel.DataContext = null;
         ShowOnly(ListPanel);
     }
@@ -423,6 +429,106 @@ public partial class MainView : UserControl
 
     private Line? _bigLine;
 
+    // ---- replies, mentions and the actions of a message ----
+
+    private Line? _replyTo;
+    private readonly Dictionary<string, string> _named = new();   // account -> the name as it was put in the text
+
+    private void StartReply(Line line)
+    {
+        _replyTo = line;
+        ReplyBarTitle.Text = line.Mine ? "Replying to yourself" : "Replying to " + line.Who;
+        ReplyBarText.Text = line.Preview;
+        ReplyBar.IsVisible = true;
+        InputBox.Focus();
+    }
+
+    private void ClearReply()
+    {
+        _replyTo = null;
+        ReplyBar.IsVisible = false;
+    }
+
+    private void CancelReplyClicked(object? sender, RoutedEventArgs e) => ClearReply();
+
+    // A long press on a message: reply, copy, and for an admin delete.
+    private void MessageHeld(object? sender, HoldingRoutedEventArgs e)
+    {
+        if (e.HoldingState != HoldingState.Started || sender is not Control { DataContext: Line line } || _session == null || _current is not { } chat) return;
+        e.Handled = true;
+        ActionTitle.Text = line.Mine ? "Your message" : line.Who;
+        ActionList.Children.Clear();
+        AddAction("Reply", () => StartReply(line));
+        if (line.Text.Length > 0) AddAction("Copy text", async () => await CopyAsync(line.Text, "Copied"));
+        if (_session.CanDelete(chat, line))
+            AddAction("Delete for everyone", () => Ask("Delete this message for everyone in the room?", "Delete", () =>
+            {
+                _session?.DeleteMessage(chat, line);
+                return Task.CompletedTask;
+            }), danger: true);
+        ActionPanel.IsVisible = true;
+    }
+
+    private void AddAction(string label, Action action, bool danger = false)
+    {
+        var item = new Avalonia.Controls.Button
+        {
+            Content = label,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Left,
+            Padding = new Avalonia.Thickness(16, 14),
+            Background = Avalonia.Media.Brushes.Transparent,
+            Foreground = Yaparr.AndroidApp.Theme.Brush(danger ? "Bad" : "Ink"),
+        };
+        item.Click += (_, _) => { ActionPanel.IsVisible = false; action(); };
+        ActionList.Children.Add(item);
+    }
+
+    // A tap on the quote in a reply goes to the message it answers, in its channel.
+    private void QuoteTapped(object? sender, TappedEventArgs e)
+    {
+        if (sender is not Control { DataContext: Line { ReplyKey: { } key } } || _current is not { } chat || _session == null) return;
+        e.Handled = true;
+        if (chat.FindByKey(key) is not { } original) { chat.Status = "That message is not on this phone"; return; }
+        if (original.Channel is { } channel && channel != chat.CurrentChannel) _session.SelectChannel(chat, channel);
+        if (chat.Shown.Contains(original)) Messages.ScrollIntoView(original);
+    }
+
+    // While an @ and some letters end the text, the people they could mean are offered.
+    private void InputChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (_current is not { IsRoom: true } chat || _session == null) { MentionBar.IsVisible = false; return; }
+        var text = InputBox.Text ?? "";
+        int caret = Math.Min(InputBox.CaretIndex, text.Length);
+        int start = caret;
+        while (start > 0 && !char.IsWhiteSpace(text[start - 1])) start--;
+        if (start >= caret || text[start] != '@') { MentionBar.IsVisible = false; return; }
+        var prefix = text[(start + 1)..caret];
+        var people = _session.Mentionable(chat).Where(p => p.Name.StartsWith(prefix, StringComparison.CurrentCultureIgnoreCase)).Take(12).ToList();
+        MentionList.ItemsSource = people;
+        MentionBar.IsVisible = people.Count > 0;
+    }
+
+    private void MentionChosen(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control { DataContext: Person person }) return;
+        var text = InputBox.Text ?? "";
+        int caret = Math.Min(InputBox.CaretIndex, text.Length);
+        int start = caret;
+        while (start > 0 && !char.IsWhiteSpace(text[start - 1])) start--;
+        if (start >= caret || text[start] != '@') return;
+        var tag = "@" + person.Name + " ";
+        InputBox.Text = text[..start] + tag + text[caret..];
+        InputBox.CaretIndex = start + tag.Length;
+        _named[person.Id] = person.Name;
+        MentionBar.IsVisible = false;
+    }
+
+    // The people whose @name is still in the text, as the library wants them.
+    private List<Mention> NamedPeople(string text) =>
+        _named.Where(kv => text.Contains("@" + kv.Value, StringComparison.Ordinal))
+            .Select(kv => new Mention(new Yaparr.Identity.PeerId(kv.Key), kv.Value)).ToList();
+
     // The + button: pick a picture with the system's chooser and send it, with what is typed as its caption.
     private async void AttachClicked(object? sender, RoutedEventArgs e)
     {
@@ -433,8 +539,10 @@ public partial class MainView : UserControl
         var caption = (InputBox.Text ?? "").Trim();
         try
         {
-            await _session.SendPictureAsync(chat, file.Bytes, file.Name, caption);
+            var reply = _replyTo;
+            await _session.SendPictureAsync(chat, file.Bytes, file.Name, caption, reply?.Id);
             InputBox.Text = "";
+            ClearReply();
             ScrollToEnd();
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
@@ -493,12 +601,16 @@ public partial class MainView : UserControl
     {
         var text = (InputBox.Text ?? "").Trim();
         if (text.Length == 0 || _current is not { } chat || _session == null) return;
+        var reply = _replyTo;
+        var mentions = NamedPeople(text);
         InputBox.Text = "";
-        try { await _session.SendAsync(chat, text); }
+        ClearReply();
+        try { await _session.SendAsync(chat, text, reply?.Id, mentions); }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
         {
             chat.Status = "Could not send: " + ex.Message;
             InputBox.Text = text;
+            if (reply != null) StartReply(reply);
         }
     }
 

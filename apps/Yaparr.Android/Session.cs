@@ -351,6 +351,7 @@ public sealed class Session : IDisposable
     private void Reload(Chat chat, ChatRoom room)
     {
         var keep = chat.CurrentChannel;
+        chat.ResetMessages();
         foreach (var m in room.GetHistory()) AddHistoryLine(chat, m, room.RoomId, counted: false);
         chat.SelectChannel(keep);
     }
@@ -367,6 +368,18 @@ public sealed class Session : IDisposable
         }
         return people.Values.OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
     }
+
+    /// <summary>Whether you can delete this message for everyone: an owner or admin, in a room.</summary>
+    public bool CanDelete(Chat chat, Line line) => chat.Room is { MyRole: >= RoomRole.Admin } && line.Source != null;
+
+    /// <summary>Deletes a message for everyone in the room (owners and admins only).</summary>
+    public void DeleteMessage(Chat chat, Line line)
+    {
+        if (chat.Room is { } room && line.Source != null) room.DeleteMessage(line.Source);
+    }
+
+    /// <summary>The people who can be named in the chat: everyone in the room but you.</summary>
+    public IReadOnlyList<Person> Mentionable(Chat chat) => PeopleOf(chat);
 
     /// <summary>Leaves the room here and on your other devices.</summary>
     public async Task LeaveAsync(Chat chat)
@@ -448,7 +461,14 @@ public sealed class Session : IDisposable
     {
         bool mine = _node != null && _node.IsMyDevice(m.From.Id);
         var parts = m.Parts;
-        return new Line(m.Key, m.From.DisplayName, m.Attachment != null ? parts.Body : m.Body, m.Timestamp, mine, m.Channel, m);
+        var line = new Line(m.Key, m.From.DisplayName, m.Attachment != null ? parts.Body : m.Body, m.Timestamp, mine, m.Channel, m)
+        {
+            ReplyKey = parts.ReplyTo, Mentions = parts.Mentions,
+            MentionsMe = _node != null && !mine && (m.Room != null && _rooms.Keys.FirstOrDefault(r => r.Name == m.Room) is { } named
+                ? named.Names(m, _node.AccountId)
+                : parts.Mentions.Any(x => x.Account == _node.AccountId)),
+        };
+        return line;
     }
 
     // A message of the history that came while the app was shut: unread when it is newer than what was seen in its channel.
@@ -563,12 +583,12 @@ public sealed class Session : IDisposable
     public byte[]? PictureBytes(Line line) => line.Attachment is { } a ? _node?.ReadAttachment(a.Hash) : null;
 
     /// <summary>Shrinks a picture for sending (also dropping camera and location details), sends it with <paramref name="caption"/> to the chat, and shows it.</summary>
-    public async Task SendPictureAsync(Chat chat, byte[] original, string fileName, string caption)
+    public async Task SendPictureAsync(Chat chat, byte[] original, string fileName, string caption, string? replyKey = null)
     {
         if (_node is not { } node) return;
         var prepared = await Task.Run(() => ImageTools.Prepare(original, fileName));
         var attachment = node.PrepareAttachment(prepared.Bytes, prepared.FileName, prepared.Thumbnail);
-        var text = attachment.ToText(caption);
+        var text = attachment.ToText(caption, replyKey);
         string id;
         string? channel = null;
         if (chat.Room is { } room)
@@ -577,7 +597,7 @@ public sealed class Session : IDisposable
             id = channel == RoomChannels.DefaultText ? await room.SendAsync(text) : await room.SendAsync(text, channel);
         }
         else id = await chat.Direct!.SendAsync(text);
-        var line = new Line(ChatMessage.KeyOf(node.Id, id), node.DisplayName, caption, DateTimeOffset.Now, mine: true, channel) { Attachment = attachment };
+        var line = new Line(ChatMessage.KeyOf(node.Id, id), node.DisplayName, caption, DateTimeOffset.Now, mine: true, channel, OwnMessage(chat, id, text, channel, attachment)) { Attachment = attachment, ReplyKey = replyKey };
         if (chat.Add(line))
         {
             if (!_pictureLines.TryGetValue(attachment.Hash, out var list)) _pictureLines[attachment.Hash] = list = new List<Line>();
@@ -587,8 +607,12 @@ public sealed class Session : IDisposable
         Resort(chat);
     }
 
+    // A message just sent from this phone, as the library would hand it back: what deleting it needs.
+    private ChatMessage OwnMessage(Chat chat, string id, string text, string? channel, Attachment? attachment) =>
+        new(new PeerInfo(_node!.Id, _node.DisplayName, null, AccountId: _node.AccountId), chat.Room?.Name, id, text, DateTimeOffset.Now, Attachment: attachment, Channel: channel);
+
     /// <summary>Sends a message to the chat, in the channel on show.</summary>
-    public async Task SendAsync(Chat chat, string text)
+    public async Task SendAsync(Chat chat, string text, string? replyKey = null, IReadOnlyCollection<Mention>? mentions = null)
     {
         if (_node == null) return;
         string id;
@@ -596,10 +620,10 @@ public sealed class Session : IDisposable
         if (chat.Room is { } room)
         {
             channel = chat.CurrentChannel;
-            id = channel == RoomChannels.DefaultText ? await room.SendAsync(text) : await room.SendAsync(text, channel);
+            id = await room.SendAsync(text, channel == RoomChannels.DefaultText ? null : channel, replyKey, mentions);
         }
-        else id = await chat.Direct!.SendAsync(text);
-        chat.Add(new Line(ChatMessage.KeyOf(_node.Id, id), _node.DisplayName, text, DateTimeOffset.Now, mine: true, channel));
+        else id = await chat.Direct!.SendAsync(text, replyKey);
+        chat.Add(new Line(ChatMessage.KeyOf(_node.Id, id), _node.DisplayName, text, DateTimeOffset.Now, mine: true, channel, OwnMessage(chat, id, text, channel, null)) { ReplyKey = replyKey, Mentions = mentions?.ToList() ?? new List<Mention>() });
         Resort(chat);
     }
 
