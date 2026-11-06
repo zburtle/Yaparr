@@ -206,6 +206,7 @@ public sealed class Session : IDisposable
         room.MemberLeft += _ => UI(() => ShowMembers(chat, room));
         room.MemberRenamed += _ => UI(() => ShowMembers(chat, room));
         room.ModerationChanged += () => UI(() => Reload(chat, room));
+        room.VoiceChanged += () => UI(() => RefreshVoice(chat));
 
         foreach (var m in room.GetHistory()) AddHistoryLine(chat, m, room.RoomId);
         RefreshChannels(chat, room);
@@ -217,6 +218,95 @@ public sealed class Session : IDisposable
     }
 
     private void RefreshChannels(Chat chat, ChatRoom room) => chat.SetChannels(room.Channels);
+
+    // ---- voice ----
+
+    private VoiceCall? _call;
+    private Chat? _callChat;
+    private readonly HashSet<string> _speaking = new();
+
+    /// <summary>The room you are in voice in, or null.</summary>
+    public Chat? VoiceChat => _callChat;
+
+    /// <summary>Joins the room's voice channel on this phone, leaving the one you are in. Throws if the microphone cannot be opened.</summary>
+    public void JoinVoice(Chat chat, Android.Content.Context context)
+    {
+        if (chat.Room is not { } room || _node == null) return;
+        if (_callChat == chat) return;
+        LeaveVoice();
+        var call = new VoiceCall(context, room, RoomChannels.DefaultVoice);
+        call.Interrupted += () => UI(() =>
+        {
+            if (_callChat is { } c) { c.Muted = true; Notice?.Invoke("Another app is using the audio, so your microphone is muted."); }
+        });
+        call.Session.SpeakingChanged += (id, speaking) => UI(() => OnSpeaking(id.Value, speaking));
+        _call = call;
+        _callChat = chat;
+        chat.InVoice = true;
+        chat.Muted = chat.Deafened = false;
+        chat.RouteLabel = AudioRoutes.Label(call.Route);
+        RefreshVoice(chat);
+    }
+
+    public void LeaveVoice()
+    {
+        var call = _call;
+        var chat = _callChat;
+        _call = null;
+        _callChat = null;
+        _speaking.Clear();
+        call?.Dispose();
+        if (chat != null)
+        {
+            chat.InVoice = false;
+            chat.Muted = chat.Deafened = false;
+            RefreshVoice(chat);
+        }
+    }
+
+    public void ToggleMute()
+    {
+        if (_call == null || _callChat == null) return;
+        _call.Session.Muted = !_call.Session.Muted;
+        _callChat.Muted = _call.Session.Muted;
+        RefreshVoice(_callChat);
+    }
+
+    public void ToggleDeafen()
+    {
+        if (_call == null || _callChat == null) return;
+        _call.Session.Deafened = !_call.Session.Deafened;
+        _callChat.Deafened = _call.Session.Deafened;
+        RefreshVoice(_callChat);
+    }
+
+    /// <summary>Where the sound can go now, and which of those it goes to.</summary>
+    public IReadOnlyList<(AudioRoute Route, string Label, bool Selected)> VoiceRoutes() =>
+        _call == null ? Array.Empty<(AudioRoute, string, bool)>()
+            : _call.AvailableRoutes().Select(r => (r, AudioRoutes.Label(r), r == _call.Route)).ToList();
+
+    public void SelectRoute(AudioRoute route)
+    {
+        if (_call == null || _callChat == null) return;
+        _call.Select(route);
+        _callChat.RouteLabel = AudioRoutes.Label(_call.Route);
+    }
+
+    private void OnSpeaking(string id, bool speaking)
+    {
+        if (speaking) _speaking.Add(id); else _speaking.Remove(id);
+        if (_callChat != null) foreach (var m in _callChat.VoiceMembers) m.Speaking = _speaking.Contains(m.Id);
+    }
+
+    /// <summary>Shows who is in the room's voice channel.</summary>
+    private void RefreshVoice(Chat chat)
+    {
+        if (chat.Room is not { } room) return;
+        var members = new List<VoiceMember>();
+        foreach (var p in room.VoiceParticipants.Where(p => p.Channel == RoomChannels.DefaultVoice))
+            members.Add(new VoiceMember(p.Peer.Id.Value, p.Peer.DisplayName, p.IsSelf) { Muted = p.Muted, Deafened = p.Deafened, Speaking = _speaking.Contains(p.Peer.Id.Value) });
+        chat.SetVoiceMembers(members);
+    }
 
     /// <summary>Puts the line under the title back to who is here, after something else was said there.</summary>
     public void RefreshStatus(Chat chat)
@@ -427,6 +517,7 @@ public sealed class Session : IDisposable
     public void Dispose()
     {
         _saveTimer.Stop();
+        LeaveVoice();
         Save();
         _cts.Cancel();
         _node?.Dispose();

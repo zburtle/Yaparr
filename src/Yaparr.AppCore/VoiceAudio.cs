@@ -1,6 +1,7 @@
 using SoundFlow.Abstracts;
 using SoundFlow.Abstracts.Devices;
 using SoundFlow.Backends.MiniAudio;
+using SoundFlow.Backends.MiniAudio.Enums;
 using SoundFlow.Backends.MiniAudio.Devices;
 using SoundFlow.Enums;
 using SoundFlow.Structs;
@@ -108,20 +109,29 @@ internal sealed class VoiceAudio : IDisposable
         });
     }
 
+    // Opened as a call's microphone and speakers, Android treats the audio as a call: it switches on the phone's own echo cancellation and noise
+    // suppression (which the maker has tuned to the phone's own speaker and microphone) and routes it as a call. Other systems ignore these settings.
+    private static MiniAudioDeviceConfig CallConfig() => new()
+    {
+        AAudio = new AAudioSettings { Usage = AAudioUsage.VoiceCommunication, ContentType = AAudioContentType.Speech, InputPreset = AAudioInputPreset.VoiceCommunication },
+        OpenSL = new OpenSlSettings { RecordingPreset = OpenSlRecordingPreset.VoiceCommunication, StreamType = OpenSlStreamType.Voice },
+    };
+
     private readonly AudioCaptureDevice _capture;
     private readonly AudioPlaybackDevice _playback;
 
-    public VoiceAudio(VoiceSession session, string? input, string? output)
+    /// <param name="forCall">Open the devices as a call's (on Android: with the phone's own echo cancellation and noise suppression).</param>
+    public VoiceAudio(VoiceSession session, string? input, string? output, bool forCall = false)
     {
         var engine = Engine;
         DeviceInfo? inInfo = engine.CaptureDevices.Where(d => d.Name == input).Select(d => (DeviceInfo?)d).FirstOrDefault();
         DeviceInfo? outInfo = engine.PlaybackDevices.Where(d => d.Name == output).Select(d => (DeviceInfo?)d).FirstOrDefault();
 
-        _playback = engine.InitializePlaybackDevice(outInfo, Format, new MiniAudioDeviceConfig());
+        _playback = engine.InitializePlaybackDevice(outInfo, Format, forCall ? CallConfig() : new MiniAudioDeviceConfig());
         _playback.MasterMixer.AddComponent(new Speaker(engine, Format, session));
         try
         {
-            _capture = engine.InitializeCaptureDevice(inInfo, Format, new MiniAudioDeviceConfig());
+            _capture = engine.InitializeCaptureDevice(inInfo, Format, forCall ? CallConfig() : new MiniAudioDeviceConfig());
         }
         catch
         {

@@ -56,11 +56,12 @@ public partial class MainView : UserControl
         foreach (var s in _screens) s.IsVisible = s == screen;
     }
 
-    private bool AnyOverlay => AddPanel.IsVisible || PeoplePanel.IsVisible || ConfirmPanel.IsVisible;
+    private bool AnyOverlay => AddPanel.IsVisible || PeoplePanel.IsVisible || ConfirmPanel.IsVisible || RoutePanel.IsVisible;
 
     // One step back; false when there is nothing to go back to and the phone may leave the app.
     private bool GoBack()
     {
+        if (RoutePanel.IsVisible) { RoutePanel.IsVisible = false; return true; }
         if (ConfirmPanel.IsVisible) { ConfirmPanel.IsVisible = false; return true; }
         if (PeoplePanel.IsVisible) { PeoplePanel.IsVisible = false; return true; }
         if (AddPanel.IsVisible) { AddPanel.IsVisible = false; return true; }
@@ -355,6 +356,58 @@ public partial class MainView : UserControl
         if (_current == null || sender is not Avalonia.Controls.Button { DataContext: ChannelChip chip }) return;
         _session?.SelectChannel(_current, chip.Id);
         ScrollToEnd();
+    }
+
+    // ---- voice ----
+
+    private async void JoinVoiceClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_current == null || _session == null || MainActivity.Instance is not { } activity) return;
+        var chat = _current;
+        // The microphone is asked for the first time someone joins; without it there is no call.
+        if (!await activity.RequestMicrophoneAsync())
+        {
+            ListStatus.Text = "Voice needs the microphone. Allow it for Yaparr in the phone's settings to join a voice channel.";
+            chat.Status = "Microphone not allowed";
+            return;
+        }
+        try { _session.JoinVoice(chat, activity); }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            chat.Status = "Couldn't open the microphone or speaker";
+            ListStatus.Text = $"Couldn't join voice: {ex.Message}";
+        }
+    }
+
+    private void MuteClicked(object? sender, RoutedEventArgs e) => _session?.ToggleMute();
+
+    private void LeaveVoiceClicked(object? sender, RoutedEventArgs e) => _session?.LeaveVoice();
+
+    private void DeafenClicked(object? sender, RoutedEventArgs e) => _session?.ToggleDeafen();
+
+    // Where the sound goes: a small window in the middle, as in Android's own call screen, with the one in use marked.
+    private void RouteClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_session == null) return;
+        var routes = _session.VoiceRoutes();
+        if (routes.Count == 0) return;
+        RouteList.Children.Clear();
+        foreach (var (route, label, selected) in routes)
+        {
+            var item = new Avalonia.Controls.Button
+            {
+                Content = (selected ? "\u25CF   " : "\u25CB   ") + label,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Left,
+                Padding = new Avalonia.Thickness(14, 14),
+                Background = Avalonia.Media.Brushes.Transparent,
+                FontWeight = selected ? Avalonia.Media.FontWeight.SemiBold : Avalonia.Media.FontWeight.Normal,
+                Foreground = Yaparr.AndroidApp.Theme.Brush(selected ? "Accent" : "Ink"),
+            };
+            item.Click += (_, _) => { _session?.SelectRoute(route); RoutePanel.IsVisible = false; };
+            RouteList.Children.Add(item);
+        }
+        RoutePanel.IsVisible = true;
     }
 
     private async void SendClicked(object? sender, RoutedEventArgs e) => await SendAsync();

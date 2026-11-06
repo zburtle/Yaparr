@@ -89,6 +89,59 @@ public sealed class Chat : Observable
         private set { if (_preview == value) return; _preview = value; Raise(); }
     }
 
+    // ---- voice ----
+
+    private bool _inVoice, _muted, _deafened;
+    private string _routeLabel = "Speaker";
+
+    /// <summary>Everyone in the room's voice channel, you included.</summary>
+    public ObservableCollection<VoiceMember> VoiceMembers { get; } = new();
+
+    /// <summary>You are in the room's voice channel on this phone.</summary>
+    public bool InVoice
+    {
+        get => _inVoice;
+        set { if (_inVoice == value) return; _inVoice = value; Raise(); Raise(nameof(CanJoinVoice)); Raise(nameof(VoiceText)); }
+    }
+
+    public bool Muted
+    {
+        get => _muted;
+        set { if (_muted == value) return; _muted = value; Raise(); Raise(nameof(MuteLabel)); }
+    }
+
+    public bool Deafened
+    {
+        get => _deafened;
+        set { if (_deafened == value) return; _deafened = value; Raise(); Raise(nameof(DeafenLabel)); }
+    }
+
+    /// <summary>Where the sound goes now ("Speaker", "Phone", "Bluetooth", "Headset"): the button for choosing says it.</summary>
+    public string RouteLabel
+    {
+        get => _routeLabel;
+        set { if (_routeLabel == value) return; _routeLabel = value; Raise(); }
+    }
+
+    public string MuteLabel => _muted ? "Unmute" : "Mute";
+    public string DeafenLabel => _deafened ? "Undeafen" : "Deafen";
+
+    /// <summary>A room you are not in the call of can be joined.</summary>
+    public bool CanJoinVoice => IsRoom && !_inVoice;
+
+    public bool HasVoiceMembers => VoiceMembers.Count > 0;
+
+    public string VoiceText => _inVoice ? "You're in voice" : VoiceMembers.Count == 0 ? "No one in voice" : VoiceMembers.Count + " in voice";
+
+    /// <summary>Puts the voice bar in line with who is in the channel now.</summary>
+    public void SetVoiceMembers(IReadOnlyList<VoiceMember> members)
+    {
+        VoiceMembers.Clear();
+        foreach (var m in members) VoiceMembers.Add(m);
+        Raise(nameof(HasVoiceMembers));
+        Raise(nameof(VoiceText));
+    }
+
     /// <summary>Who is here, or what is happening, under the title.</summary>
     public string Status
     {
