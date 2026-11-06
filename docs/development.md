@@ -57,7 +57,16 @@ Screen sharing runs a trimmed FFmpeg that has a repository of its own, [Yaparr.F
 
 ## Releases
 
-Every push to `master` runs `.github/workflows/release.yml`, where [semantic-release](https://semantic-release.org) reads the commit messages since the last tag. `fix:` makes a patch release, `feat:` a minor one, and a `!` after the type (`feat!:`) or a `BREAKING CHANGE:` footer a major one; `docs:`, `chore:`, `test:`, `ci:` and `refactor:` release nothing. When a release is due, the MSI and both .deb packages are built with that version, then the tag, the release notes and the downloads are published. A commit with no such prefix is ignored, so use them from now on.
+There are two releases, each with its own version and its own tags, so that a change to one does not make a release of the other.
+
+- **The computer app** (`v1.2.3`): the MSI, the .deb packages and the Flatpak bundles. Every push to `master` runs `.github/workflows/release.yml`, where [semantic-release](https://semantic-release.org) reads the commit messages since the last `v` tag. `fix:` makes a patch release, `feat:` a minor one, and a `!` after the type (`feat!:`) or a `BREAKING CHANGE:` footer a major one; `docs:`, `chore:`, `test:`, `ci:` and `refactor:` release nothing. When a release is due, the packages are built with that version, then the tag, the release notes and the downloads are published. A commit with no such prefix is ignored, so use them from now on.
+- **The Android app** (`android-v1.2.3`): the signed APK, made by `.github/workflows/release-android.yml` in the same way, from the commits since the last `android-v` tag. See [the Android app](android-app.md#releases).
+
+Which release a commit counts for is decided by the files it changed (`.github/release/track-filter.js`): the Android app's folder and its documentation page are only for the Android release; the library (`src/Yaparr`), the shared layer (`src/Yaparr.AppCore`) and `Directory.Build.props` count for both; everything else counts for the computer release. A commit that changes both counts for both. The two configurations are `.github/release/desktop.json` and `.github/release/android.json`. To see what a release would be without making it, run semantic-release with `--dry-run` and `--extends ./.github/release/<track>.json` from the repository root (it needs a `GITHUB_TOKEN`).
+
+### Starting the Android releases
+
+The Android release counts from the last `android-v` tag, and its version code is made from the version (1.36.2 is 1036002), so each release must be newer than the one before. The first one therefore needs a tag that says where the numbering stands: tag the commit of the last package that was released with its version, for example `git tag android-v1.46.0 v1.46.0 && git push origin android-v1.46.0`. Without it the release would start again at 1.0.0, no phone would take it as an update, and the workflow stops with a message saying so.
 
 ## Pinned workflow dependencies
 

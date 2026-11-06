@@ -1,9 +1,8 @@
 {
   "branches": ["master"],
-  "tagFormat": "v${version}",
+  "tagFormat": "android-v${version}",
   "plugins": [
-    "@semantic-release/commit-analyzer",
-    "@semantic-release/release-notes-generator",
+    ["./.github/release/track-filter.js", { "track": "android" }],
     [
       "@semantic-release/exec",
       {
@@ -13,7 +12,9 @@
     [
       "@semantic-release/github",
       {
-        "assets": [{ "path": "installers/*" }]
+        "assets": [{ "path": "installers/*.apk" }],
+        "releaseNameTemplate": "Android ${nextRelease.version}",
+        "draftRelease": true
       }
     ]
   ]
