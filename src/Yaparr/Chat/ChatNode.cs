@@ -36,6 +36,13 @@ public sealed class ChatNodeOptions
 
     public bool EnableRelaying { get; init; } = true;
 
+    /// <summary>
+    /// Look for the other devices of this account on its topic and connect to them, so that devices with no room in common (a phone
+    /// just linked with a QR code) still meet and share the account's settings. On by default; a test that counts the addresses a
+    /// search contacts turns it off, so that its own search is the only one.
+    /// </summary>
+    public bool FindOwnDevices { get; init; } = true;
+
     /// <summary>People blocked in an earlier run. <see cref="ChatNode.Block"/> and <see cref="ChatNode.BlockChanged"/> keep the list up to date.</summary>
     public IReadOnlyCollection<PeerId> BlockedPeers { get; init; } = Array.Empty<PeerId>();
 
@@ -447,6 +454,7 @@ public sealed partial class ChatNode : IDisposable
                 _ = RunLoopAsync(() => d.AnnounceAsync(peerTopic, _cts.Token), $"peer announce ({d.GetType().Name})");
         _ = Task.Run(OutboxLoopAsync);
         _ = Task.Run(RedialLoopAsync);
+        if (_options.FindOwnDevices) _ = Task.Run(SiblingLoopAsync);
         if (_discoveries.OfType<IPeerRecords>().Any())
             _ = RunLoopAsync(PublishRecordAsync, "address record", null, TimeSpan.FromMinutes(3));
         System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged += OnAddressChanged;

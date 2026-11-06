@@ -27,6 +27,9 @@ connections, relays, voice and delivery work per device; what is shared is the p
   For a phone there is a third way: **Show a QR code** shows the code and its passphrase together as one QR code for two minutes, and the
   Android app scans it (**Link with a computer**). The QR code leaves your list of rooms out, because it would not fit; the rooms follow from
   the computer once the phone has connected to it. Show it only to someone next to you.
+- **Finding each other.** Devices of one account find each other without a room in common: each announces itself on the account's topic and
+  every few seconds, while it is connected to none of its other devices, looks there and connects to what it finds (and less often when one is
+  connected). A phone that was just linked and has no rooms yet therefore still meets your computers, and receives the name, blocks and rooms.
 - **Backup and restore.** **Settings > Backup > Back up profile…** saves a zip of everything Yaparr keeps for you: your identity key, rooms, message history, pictures and settings. To restore it, choose **Restore a backup** on the first-start screen of a computer that has no account yet. There is no restore for a computer that already has an account, so nothing is replaced by accident. A backup is for losing or replacing a computer: two computers running the same backup would clash, so to use your account on a second computer at the same time, link it.
 - **Sharing your id.** Give people your account id (**Copy my ID**), which is the same on every device. A direct chat
   with a person reaches all of their devices, and counts as delivered when every connected device confirmed it.
