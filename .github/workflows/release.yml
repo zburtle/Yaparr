@@ -47,9 +47,8 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Test
-        run: dotnet test tests/Yaparr.Tests -c Release
-
+      # The tests are not run again here: the pull request that was merged already ran them (test.yml), and running them
+      # again took more than half of this job.
       - name: Build installer
         shell: pwsh
         env:

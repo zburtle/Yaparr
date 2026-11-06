@@ -2,7 +2,8 @@ name: Android
 
 # Builds the Android app and keeps the package as a download (the run's artifact, 14 days) so it can be tried on a phone. It has its own workflow because it needs the Android workload, a JDK and the Android SDK, which the other
 # jobs do not: a change that cannot affect it does not run it, and a problem with it does not hold up the tests.
-# Nothing here is a required check for merging.
+# Nothing here is a required check for merging. It runs for pull requests only: after a merge the release workflow builds the package again (signed),
+# so a run on master would be the same build a third time.
 on:
   pull_request:
     paths:
@@ -10,13 +11,11 @@ on:
       - 'src/**'
       - 'Directory.Build.props'
       - '.github/workflows/android.yml'
-  push:
-    branches: [master]
-    paths:
-      - 'apps/Yaparr.Android/**'
-      - 'src/**'
-      - 'Directory.Build.props'
-      - '.github/workflows/android.yml'
+
+# A newer push to the same pull request replaces the run that is still going: its result would be out of date.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
