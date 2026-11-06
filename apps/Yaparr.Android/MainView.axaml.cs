@@ -56,11 +56,12 @@ public partial class MainView : UserControl
         foreach (var s in _screens) s.IsVisible = s == screen;
     }
 
-    private bool AnyOverlay => AddPanel.IsVisible || PeoplePanel.IsVisible || ConfirmPanel.IsVisible || RoutePanel.IsVisible;
+    private bool AnyOverlay => AddPanel.IsVisible || PeoplePanel.IsVisible || ConfirmPanel.IsVisible || RoutePanel.IsVisible || PicturePanel.IsVisible;
 
     // One step back; false when there is nothing to go back to and the phone may leave the app.
     private bool GoBack()
     {
+        if (PicturePanel.IsVisible) { PicturePanel.IsVisible = false; return true; }
         if (RoutePanel.IsVisible) { RoutePanel.IsVisible = false; return true; }
         if (ConfirmPanel.IsVisible) { ConfirmPanel.IsVisible = false; return true; }
         if (PeoplePanel.IsVisible) { PeoplePanel.IsVisible = false; return true; }
@@ -416,6 +417,67 @@ public partial class MainView : UserControl
             RouteList.Children.Add(item);
         }
         RoutePanel.IsVisible = true;
+    }
+
+    // ---- pictures ----
+
+    private Line? _bigLine;
+
+    // The + button: pick a picture with the system's chooser and send it, with what is typed as its caption.
+    private async void AttachClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_current == null || _session == null || MainActivity.Instance is not { } activity) return;
+        var chat = _current;
+        var picked = await activity.PickPictureAsync();
+        if (picked is not { } file) return;
+        var caption = (InputBox.Text ?? "").Trim();
+        try
+        {
+            await _session.SendPictureAsync(chat, file.Bytes, file.Name, caption);
+            InputBox.Text = "";
+            ScrollToEnd();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            ShowChatNote(chat, ex.Message);
+        }
+    }
+
+    // A line under the title for a few seconds, then who is here again.
+    private async void ShowChatNote(Chat chat, string text)
+    {
+        chat.Status = text;
+        await Task.Delay(5000);
+        if (chat.Status == text) _session?.RefreshStatus(chat);
+    }
+
+    // A tap on a picture: big if it is here, otherwise fetch it.
+    private void PictureTapped(object? sender, TappedEventArgs e)
+    {
+        if (sender is not Control { DataContext: Line line } || _session == null) return;
+        if (!line.HasPicture) { _session.DownloadPicture(line); return; }
+        var bytes = _session.PictureBytes(line);
+        if (bytes == null) return;
+        try
+        {
+            using var ms = new MemoryStream(bytes);
+            BigPicture.Source = Avalonia.Media.Imaging.Bitmap.DecodeToWidth(ms, 1600);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IOException) { return; }
+        _bigLine = line;
+        PicturePanel.IsVisible = true;
+    }
+
+    private void PictureCloseClicked(object? sender, RoutedEventArgs e) => PicturePanel.IsVisible = false;
+
+    // Save: the system asks where, so the app needs no permission for the phone's storage.
+    private async void PictureSaveClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_bigLine is not { Attachment: { } a } line || _session == null || MainActivity.Instance is not { } activity) return;
+        var bytes = _session.PictureBytes(line);
+        if (bytes == null) return;
+        bool saved = await activity.SaveFileAsync(bytes, a.FileName, a.Mime);
+        if (saved && _current != null) ShowChatNote(_current, "Picture saved");
     }
 
     private async void SendClicked(object? sender, RoutedEventArgs e) => await SendAsync();

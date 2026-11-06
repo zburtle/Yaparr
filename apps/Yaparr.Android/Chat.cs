@@ -232,7 +232,7 @@ public sealed class Chat : Observable
         if (line.When >= LastActivity)
         {
             LastActivity = line.When;
-            Preview = (line.Mine ? "You: " : IsRoom ? line.Who + ": " : "") + line.Text;
+            Preview = (line.Mine ? "You: " : IsRoom ? line.Who + ": " : "") + line.PreviewText;
         }
         return true;
     }

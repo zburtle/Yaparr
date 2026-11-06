@@ -152,7 +152,14 @@
                             <StackPanel Spacing="2">
                                 <TextBlock Text="{Binding Who}" FontSize="11" FontWeight="SemiBold" Opacity="0.75"
                                            Foreground="{Binding Ink}" IsVisible="{Binding !Mine}" />
-                                <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Foreground="{Binding Ink}" />
+                                <Border IsVisible="{Binding HasAttachment}" CornerRadius="10" ClipToBounds="True" Tapped="PictureTapped" Background="Transparent">
+                                    <StackPanel Spacing="4">
+                                        <Image Source="{Binding Picture}" IsVisible="{Binding HasPicture}" MaxWidth="260" MaxHeight="340" Stretch="Uniform" />
+                                        <Image Source="{Binding Thumbnail}" IsVisible="{Binding HasPictureStatus}" MaxWidth="260" MaxHeight="200" Stretch="Uniform" Opacity="0.6" />
+                                        <TextBlock Text="{Binding PictureStatus}" IsVisible="{Binding HasPictureStatus}" FontSize="12" Foreground="{Binding Ink}" />
+                                    </StackPanel>
+                                </Border>
+                                <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Foreground="{Binding Ink}" IsVisible="{Binding HasText}" />
                                 <TextBlock Text="{Binding Time}" FontSize="10" Opacity="0.6" HorizontalAlignment="Right" Foreground="{Binding Ink}" />
                             </StackPanel>
                         </Border>
@@ -161,9 +168,10 @@
             </ListBox>
 
             <Border Grid.Row="3" Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="10">
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                    <TextBox x:Name="InputBox" PlaceholderText="Message" AcceptsReturn="False" KeyDown="InputKeyDown" />
-                    <Button Grid.Column="1" Classes="primary" Content="Send" Click="SendClicked" />
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                    <Button Content="+" FontSize="22" Padding="14,0" Background="Transparent" Foreground="{DynamicResource Accent}" Click="AttachClicked" />
+                    <TextBox x:Name="InputBox" Grid.Column="1" PlaceholderText="Message" AcceptsReturn="False" KeyDown="InputKeyDown" />
+                    <Button Grid.Column="2" Classes="primary" Content="Send" Click="SendClicked" />
                 </Grid>
             </Border>
         </Grid>
@@ -189,6 +197,17 @@
         </Border>
 
         <!-- The people of the open room: tap one to write to them. -->
+        <!-- A picture, big. -->
+        <Border x:Name="PicturePanel" IsVisible="False" Background="#FF0B0B0B">
+            <Grid RowDefinitions="Auto,*">
+                <Grid ColumnDefinitions="*,Auto,Auto" Margin="12,44,12,8">
+                    <Button Content="Close" Foreground="White" Background="Transparent" Click="PictureCloseClicked" />
+                    <Button Grid.Column="2" Content="Save" Foreground="White" Background="Transparent" Click="PictureSaveClicked" />
+                </Grid>
+                <Image x:Name="BigPicture" Grid.Row="1" Stretch="Uniform" Margin="0,0,0,24" />
+            </Grid>
+        </Border>
+
         <!-- Where the sound of a call goes: a small window in the middle, one line for each place it can go. -->
         <Border x:Name="RoutePanel" IsVisible="False" Background="#99000000" PointerPressed="OverlayBackdropPressed">
             <Border Background="{DynamicResource Surface}" CornerRadius="16" Margin="40" Padding="8" MaxWidth="320"
