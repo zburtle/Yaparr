@@ -17,6 +17,9 @@ public sealed partial class ChatNode
     // The topic is one anyone can announce on, so a search dials only a few of what it finds.
     private const int MaxSiblingDials = 8;
 
+    /// <summary>Another device of your account is connected right now.</summary>
+    public bool HasOwnDeviceConnected => _peers.Values.Any(IsSibling);
+
     private async Task SiblingLoopAsync()
     {
         var topic = Topics.ForPeer(AccountId);

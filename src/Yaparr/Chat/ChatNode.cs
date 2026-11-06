@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
@@ -1303,6 +1303,7 @@ public sealed partial class ChatNode : IDisposable
         if (_options.SyncHistory)
         {
             peer.HistoryExpectedUntil = Environment.TickCount64 + 60_000;
+            room.SyncRequestedAt = Environment.TickCount64;
             Send(peer.Connection, new Wire { Type = Wire.Sync, Room = RefTo(room, peer), Have = room.History.Keys() });
         }
     }
@@ -1662,6 +1663,7 @@ public sealed partial class ChatNode : IDisposable
 
             case Wire.History when wire.Room != null && wire.Msgs != null && Environment.TickCount64 < peer.HistoryExpectedUntil
                                    && ResolveRoom(peer, wire.Room) is { } histRoom && histRoom.MemberStates.ContainsKey(peer.Id):
+                histRoom.HistoryReceivedAt = Environment.TickCount64;
                 OnGroupMessage(peer, histRoom, wire.Msgs, live: false);
                 break;
 

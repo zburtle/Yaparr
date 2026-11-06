@@ -301,6 +301,36 @@ public sealed class ConversationVm : Observable
         }
     }
     public string Subtitle => IsRoom ? "Room" : "Direct chat";
+
+    private string _syncText = "";
+    private bool _syncing;
+
+    /// <summary>What a room is doing to get going ("Finding members…"); empty when it is ready.</summary>
+    public string SyncText
+    {
+        get => _syncText;
+        private set { if (_syncText == value) return; _syncText = value; Raise(); Raise(nameof(HasSyncText)); Raise(nameof(ShowSubtitle)); }
+    }
+
+    public bool HasSyncText => _syncText.Length > 0;
+
+    public bool ShowSubtitle => _syncText.Length == 0;
+
+    /// <summary>The room is working on it, so the list shows a progress bar.</summary>
+    public bool IsSyncing
+    {
+        get => _syncing;
+        private set { if (_syncing == value) return; _syncing = value; Raise(); }
+    }
+
+    /// <summary>Where the room is in getting going; call now and then.</summary>
+    public RoomSyncState UpdateSync(ChatRoom room)
+    {
+        var state = room.SyncState;
+        SyncText = SyncStatus.RoomText(state);
+        IsSyncing = SyncStatus.IsBusy(state);
+        return state;
+    }
     public bool IsDirect => !IsRoom;
 
     /// <summary>Full peer ID of the other person in a direct chat.</summary>

@@ -23,6 +23,10 @@ public sealed class Session : IDisposable
     private readonly Dictionary<string, Chat> _directs = new();
     private readonly CancellationTokenSource _cts = new();
     private readonly DispatcherTimer _saveTimer = new() { Interval = TimeSpan.FromSeconds(10) };
+    private readonly DispatcherTimer _syncTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+    private readonly DeviceSearch _deviceSearch = new();
+    private string? _banner;
+    private double? _bannerProgress;
     private ChatNode? _node;
     private Chat? _open;
     private bool _channelChoiceDirty;
@@ -43,6 +47,24 @@ public sealed class Session : IDisposable
 
     /// <summary>Who this phone is connected to, as a sentence; said again whenever it changes.</summary>
     public event Action<string>? ConnectionChanged;
+
+    /// <summary>What the banner above the room list says now (null: hide it), and how far along it is (0 to 1, or null when that cannot be told).</summary>
+    public event Action<string?, double?>? SyncChanged;
+
+    /// <summary>This device was just linked to an account: say that it is looking for the device it was linked from.</summary>
+    public void BeginDeviceSearch() { _deviceSearch.Begin(); UpdateSync(); }
+
+    private void UpdateSync()
+    {
+        if (_node is not { } node) return;
+        var states = new List<RoomSyncState>();
+        foreach (var chat in Chats.ToList()) if (chat.IsRoom) states.Add(chat.UpdateSync());
+        var banner = SyncStatus.Banner(_deviceSearch.Update(node), states, out var progress);
+        if (banner == _banner && progress == _bannerProgress) return;
+        _banner = banner;
+        _bannerProgress = progress;
+        SyncChanged?.Invoke(banner, progress);
+    }
 
     private readonly Queue<string> _log = new();
 
@@ -123,6 +145,8 @@ public sealed class Session : IDisposable
         ReconcileFromAccount();
         node.Start();
         _saveTimer.Start();
+        _syncTimer.Tick += (_, _) => UpdateSync();
+        _syncTimer.Start();
         SayConnection();
 
         foreach (var stored in node.StoredDirectChats) AddDirect(stored);
@@ -427,6 +451,7 @@ public sealed class Session : IDisposable
     public void Dispose()
     {
         _saveTimer.Stop();
+        _syncTimer.Stop();
         Save();
         _cts.Cancel();
         _node?.Dispose();

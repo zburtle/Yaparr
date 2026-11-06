@@ -235,6 +235,14 @@
             <TextBlock x:Name="ReconnectText" Foreground="White" FontWeight="SemiBold" TextWrapping="Wrap" />
         </Border>
 
+        <!-- Shown while rooms are getting going, or while a linked computer looks for the device it was linked from. -->
+        <Border x:Name="SyncBar" DockPanel.Dock="Top" Margin="12,6,12,0" Padding="12,8" CornerRadius="8" Background="{DynamicResource Surface}" IsVisible="False">
+            <StackPanel Spacing="6">
+                <TextBlock x:Name="SyncBarText" Foreground="{DynamicResource Accent}" TextWrapping="Wrap" />
+                <ProgressBar x:Name="SyncProgress" Height="3" MinHeight="3" IsIndeterminate="True" Maximum="1" />
+            </StackPanel>
+        </Border>
+
         <!-- Latest alert only (copied, exported, update problems…); hidden when there is none. -->
         <Border x:Name="AlertBar" DockPanel.Dock="Bottom" Margin="16,2,16,6" IsVisible="False">
             <TextBlock x:Name="StatusText" Classes="muted small" TextTrimming="CharacterEllipsis" />
@@ -253,7 +261,9 @@
                                         </Border>
                                         <StackPanel Grid.Column="1" Margin="10,0,6,0" VerticalAlignment="Center">
                                             <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                            <TextBlock Text="{Binding Subtitle}" Classes="muted small" />
+                                            <TextBlock Text="{Binding Subtitle}" IsVisible="{Binding ShowSubtitle}" Classes="muted small" />
+                                            <TextBlock Text="{Binding SyncText}" IsVisible="{Binding HasSyncText}" Classes="small" Foreground="{DynamicResource Accent}" />
+                                            <ProgressBar IsVisible="{Binding IsSyncing}" IsIndeterminate="True" Height="2" MinHeight="2" MinWidth="0" Width="64" HorizontalAlignment="Left" Margin="0,2,0,0" />
                                         </StackPanel>
                                         <Border Grid.Column="2" IsVisible="{Binding HasUnread}" Background="{DynamicResource Accent}"
                                                 CornerRadius="10" MinWidth="20" Height="20" Padding="6,0" VerticalAlignment="Center">
