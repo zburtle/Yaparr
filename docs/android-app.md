@@ -56,7 +56,10 @@ For now the call ends when Yaparr leaves the screen, because there is no foregro
 - **You:** your name, as people see it. Saving it changes it on your other devices too.
 - **Appearance:** System (follows the phone), Light or Dark; it applies at once and is kept. Messages already on screen keep the colours they had until the chat is opened again.
 - **Voice:** whether the microphone sends all the time or only when you talk, how loud you have to be to be heard (sensitivity), how loud everyone sounds, and evening out your own microphone. A call that is going takes the change at once. Echo and noise are handled by Android itself, so there is nothing to set for them.
+- **Backup:** saves a copy of your account, room keys and message history as a zip file; Android asks where to put it (the system's "save as", so the app needs no permission for your files). Keep the file private: anyone who has it can pretend to be you and read your rooms.
 - **About:** the version, and a button that copies who the phone is connected to and what it has been doing, for a report of a problem.
+
+**Restore a backup** is on the first screen of a phone that has no account yet (so nothing is replaced): choose the zip file and Yaparr brings the account, the rooms and the history back and starts again. To use your account on a second device at the same time, link it instead of restoring; two devices running the same backup would clash.
 
 Not there yet: choosing the microphone or speakers (the route button in a call picks where the sound goes), and the network and VPN options.
 
