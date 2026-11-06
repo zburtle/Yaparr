@@ -24,6 +24,9 @@ public sealed class AppSettings
     public string? DisplayName { get; set; }
     public bool VpnEnabled { get; set; }
 
+    /// <summary>System, Light or Dark: the colours the app uses (the phone app; the computer follows its system).</summary>
+    public string Theme { get; set; } = "System";
+
     /// <summary>The first-run connection guide has been shown, so it does not come up again by itself.</summary>
     public bool ConnectionGuideShown { get; set; }
     public List<PrivateRoomSetting> PrivateRooms { get; set; } = new();

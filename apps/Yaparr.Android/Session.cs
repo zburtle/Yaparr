@@ -261,7 +261,7 @@ public sealed class Session : IDisposable
         if (chat.Room is not { } room || _node == null) return;
         if (_callChat == chat) return;
         LeaveVoice();
-        var call = new VoiceCall(context, room, RoomChannels.DefaultVoice);
+        var call = new VoiceCall(context, room, RoomChannels.DefaultVoice, _settings);
         call.Interrupted += () => UI(() =>
         {
             if (_callChat is { } c) { c.Muted = true; Notice?.Invoke("Another app is using the audio, so your microphone is muted."); }
@@ -273,6 +273,20 @@ public sealed class Session : IDisposable
         chat.Muted = chat.Deafened = false;
         chat.RouteLabel = AudioRoutes.Label(call.Route);
         RefreshVoice(chat);
+    }
+
+    /// <summary>A voice setting changed: the call that is going takes it at once.</summary>
+    public void ApplyVoiceSettings()
+    {
+        if (_call != null) VoiceCall.Apply(_call.Session, _settings);
+    }
+
+    /// <summary>A new name for you, on this phone and your other devices. Throws if it is empty.</summary>
+    public void Rename(string name)
+    {
+        _node?.Rename(name);
+        _settings.DisplayName = name.Trim();
+        _data.SaveSettings(_settings);
     }
 
     public void LeaveVoice()
