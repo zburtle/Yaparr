@@ -1,4 +1,4 @@
-namespace Yaparr.Desktop;
+namespace Yaparr.AppCore;
 
 /// <summary>
 /// For each text channel of each room, the time up to which it has been seen, kept in the settings so that what was unread when the app

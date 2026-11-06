@@ -1,0 +1,61 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Yaparr.AndroidApp.App"
+             RequestedThemeVariant="Default">
+    <!-- The same colours as the desktop app, so the two look alike. -->
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="AppBg" Color="#F2F3F8" />
+                    <SolidColorBrush x:Key="Surface" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="Line" Color="#E6E8F0" />
+                    <SolidColorBrush x:Key="Muted" Color="#6B7280" />
+                    <SolidColorBrush x:Key="Ink" Color="#161821" />
+                    <SolidColorBrush x:Key="BubbleOther" Color="#EEF0F7" />
+                    <SolidColorBrush x:Key="BubbleMine" Color="#4F6BED" />
+                    <SolidColorBrush x:Key="Accent" Color="#4F6BED" />
+                    <SolidColorBrush x:Key="Bad" Color="#D93B3B" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="AppBg" Color="#101116" />
+                    <SolidColorBrush x:Key="Surface" Color="#1A1B22" />
+                    <SolidColorBrush x:Key="Line" Color="#292B36" />
+                    <SolidColorBrush x:Key="Muted" Color="#9AA0AE" />
+                    <SolidColorBrush x:Key="Ink" Color="#ECEEF4" />
+                    <SolidColorBrush x:Key="BubbleOther" Color="#262833" />
+                    <SolidColorBrush x:Key="BubbleMine" Color="#5870F0" />
+                    <SolidColorBrush x:Key="Accent" Color="#6E85F5" />
+                    <SolidColorBrush x:Key="Bad" Color="#F0605F" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+
+    <Application.Styles>
+        <FluentTheme />
+        <Style Selector="Button">
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="16,12" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Button.primary">
+            <Setter Property="Background" Value="{DynamicResource Accent}" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="Button.primary:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource Accent}" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+        <Style Selector="Button.primary:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Opacity" Value="0.8" />
+            <Setter Property="Background" Value="{DynamicResource Accent}" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+        <Style Selector="TextBox">
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="12,10" />
+        </Style>
+    </Application.Styles>
+</Application>

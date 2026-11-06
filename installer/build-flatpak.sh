@@ -39,7 +39,7 @@ mkdir -p "$app" "$meta"
 
 echo "Building Yaparr $version ($rid)"
 # Self-contained, so the Flatpak runtime needs no .NET. Invariant globalization matches the .deb.
-dotnet publish "$root/samples/Yaparr.Desktop/Yaparr.Desktop.csproj" -c Release -r "$rid" --self-contained true \
+dotnet publish "$root/apps/Yaparr.Desktop/Yaparr.Desktop.csproj" -c Release -r "$rid" --self-contained true \
   -p:Version="$version" -p:UpdateRepository="$repo" -p:InvariantGlobalization=true -p:DebugType=None \
   -o "$app"
 

@@ -166,6 +166,7 @@ copyright holders named here):
   Avalonia                    Copyright (c) The AvaloniaUI Project
   SkiaSharp, HarfBuzzSharp    Copyright (c) Microsoft Corporation
   Microsoft.Win32.SystemEvents Copyright (c) Microsoft Corporation
+  QRCoder                     Copyright (c) 2013-2025 Raffael Herrmann, 2024-2025 Shane Krueger
 
 SkiaSharp and HarfBuzzSharp draw the text and graphics. The native libraries inside them
 include Skia, HarfBuzz, FreeType, libpng, zlib and others, each under its own licence. Their
@@ -294,3 +295,15 @@ Built into it:
     runtime and winpthreads (licenses/gcc-libs, licenses/crt, licenses/winpthreads)
 
 FFmpeg is a trademark of Fabrice Bellard, originator of the FFmpeg project. Yaparr is not endorsed by the FFmpeg project.
+
+ANDROID APP (QR code scanning)
+==============================================================================
+
+The Android app reads a link QR code with the phone's camera. It uses, under the Apache License 2.0
+(https://www.apache.org/licenses/LICENSE-2.0):
+
+  ZXing.Net                   Copyright (c) Michael Jahn and the ZXing authors
+  AndroidX CameraX            Copyright (c) The Android Open Source Project
+
+The .NET bindings for the AndroidX libraries (Xamarin.AndroidX.*) are Copyright (c) Microsoft Corporation, under the
+MIT license (the text above applies).

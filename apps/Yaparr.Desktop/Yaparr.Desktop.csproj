@@ -37,7 +37,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Using Include="Yaparr.AppCore" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Yaparr\Yaparr.csproj" />
+    <ProjectReference Include="..\..\src\Yaparr.AppCore\Yaparr.AppCore.csproj" />
     <ProjectReference Include="..\..\src\Yaparr.Voice.WebRtc\Yaparr.Voice.WebRtc.csproj" />
     <ProjectReference Include="..\..\src\Yaparr.Screen\Yaparr.Screen.csproj" />
   </ItemGroup>

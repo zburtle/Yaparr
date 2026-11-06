@@ -3,7 +3,7 @@ using System.IO.Compression;
 using System.Text.Json;
 using Yaparr.Identity;
 
-namespace Yaparr.Desktop;
+namespace Yaparr.AppCore;
 
 public sealed class PrivateRoomSetting
 {

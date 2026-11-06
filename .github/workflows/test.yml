@@ -7,7 +7,7 @@ on:
   pull_request:
     paths:
       - 'src/**'
-      - 'samples/**'
+      - 'apps/**'
       - 'tests/**'
       - 'tools/**'
       - 'installer/**'
@@ -22,7 +22,7 @@ on:
     branches: [master]
     paths:
       - 'src/**'
-      - 'samples/**'
+      - 'apps/**'
       - 'tests/**'
       - 'tools/**'
       - 'installer/**'
@@ -51,7 +51,7 @@ jobs:
         run: dotnet test tests/Yaparr.Tests -c Release
 
       - name: Build the desktop app
-        run: dotnet build samples/Yaparr.Desktop -c Release
+        run: dotnet build apps/Yaparr.Desktop -c Release
 
   # Screen sharing on Linux: the command lines for x11grab and VA-API, the window and monitor lists, and a real capture of a
   # virtual X server (Xvfb) with FFmpeg. The rest of the tests are not run here yet.

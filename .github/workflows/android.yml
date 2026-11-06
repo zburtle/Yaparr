@@ -1,0 +1,59 @@
+name: Android
+
+# Builds the Android app and keeps the package as a download (the run's artifact, 14 days) so it can be tried on a phone. It has its own workflow because it needs the Android workload, a JDK and the Android SDK, which the other
+# jobs do not: a change that cannot affect it does not run it, and a problem with it does not hold up the tests.
+# Nothing here is a required check for merging.
+on:
+  pull_request:
+    paths:
+      - 'apps/Yaparr.Android/**'
+      - 'src/**'
+      - 'Directory.Build.props'
+      - '.github/workflows/android.yml'
+  push:
+    branches: [master]
+    paths:
+      - 'apps/Yaparr.Android/**'
+      - 'src/**'
+      - 'Directory.Build.props'
+      - '.github/workflows/android.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install the Android workload
+        run: dotnet workload install android
+
+      # The runner has a JDK 21 and an Android SDK; this fetches the platform and build tools the app needs.
+      - name: Install the Android SDK parts
+        run: >
+          dotnet build apps/Yaparr.Android -t:InstallAndroidDependencies
+          -p:JavaSdkDirectory="$JAVA_HOME_21_X64"
+          -p:AndroidSdkDirectory="$ANDROID_HOME"
+          -p:AcceptAndroidSDKLicenses=true
+
+      # A debug build, signed with the debug key, so the file can be installed on a phone as it is. Its assemblies are inside the
+      # package, so it runs without the development tools.
+      - name: Build the Android app
+        run: >
+          dotnet build apps/Yaparr.Android -c Debug
+          -p:EmbedAssembliesIntoApk=true
+          -p:JavaSdkDirectory="$JAVA_HOME_21_X64"
+          -p:AndroidSdkDirectory="$ANDROID_HOME"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: yaparr-android-debug
+          path: apps/Yaparr.Android/bin/Debug/net10.0-android/*-Signed.apk
+          if-no-files-found: error
+          retention-days: 14

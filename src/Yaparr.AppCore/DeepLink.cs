@@ -1,6 +1,6 @@
 using Yaparr.Chat;
 
-namespace Yaparr.Desktop;
+namespace Yaparr.AppCore;
 
 internal enum DeepLinkKind { Join, Chat }
 

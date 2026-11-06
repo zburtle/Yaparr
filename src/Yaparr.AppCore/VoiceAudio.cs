@@ -6,7 +6,7 @@ using SoundFlow.Enums;
 using SoundFlow.Structs;
 using Yaparr.Voice;
 
-namespace Yaparr.Desktop;
+namespace Yaparr.AppCore;
 
 /// <summary>Connects a voice session to the microphone and speakers.</summary>
 internal sealed class VoiceAudio : IDisposable

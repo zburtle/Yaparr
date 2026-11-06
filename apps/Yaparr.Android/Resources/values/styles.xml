@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!-- Avalonia's activity is an AppCompat one: it needs an AppCompat theme. DayNight follows the phone's light/dark setting. -->
+  <style name="YaparrTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
+    <item name="android:windowLightStatusBar">false</item>
+  </style>
+</resources>

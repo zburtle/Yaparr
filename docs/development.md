@@ -9,8 +9,10 @@
 | `src/Yaparr` | The library: discovery, transport, chat, voice, media. |
 | `src/Yaparr.Screen` | Screen capture, encoding and decoding with FFmpeg. |
 | `src/Yaparr.Voice.WebRtc` | `WebRtcVoiceProcessor`: echo cancellation and noise suppression. |
-| `samples/Yaparr.Cli` | A command line chat. |
-| `samples/Yaparr.Desktop` | The desktop app. |
+| `src/Yaparr.AppCore` | What the desktop and Android apps share that has no window in it: the profile folder and settings, read marks, links, picture preparation, voice audio. |
+| `apps/Yaparr.Cli` | A command line chat. |
+| `apps/Yaparr.Desktop` | The desktop app. |
+| `apps/Yaparr.Android` | The Android app (see [android-app.md](android-app.md)); not in `Yaparr.slnx`, so a plain `dotnet build` does not need the Android workload. It has its own workflow, `android.yml`. |
 | `tests/Yaparr.Tests` | The tests. |
 | `tools` | Network test agent and runner, and the screen sharing demo. |
 | `installer` | The MSI and .deb builds. |
@@ -21,7 +23,7 @@
 
 ## Debugging the command line
 
-`samples/Yaparr.Cli/Properties/launchSettings.json` has profiles for Visual Studio / Rider
+`apps/Yaparr.Cli/Properties/launchSettings.json` has profiles for Visual Studio / Rider
 (or `dotnet run --launch-profile "<name>"`): alice/bob/carol in a shared local room,
 a "wait for a DM" instance, and one on the real DHT. The local ones pass `--local`, which swaps the DHT for a
 temp-directory discovery so instances on one machine find each other in seconds. Start one profile at a time,

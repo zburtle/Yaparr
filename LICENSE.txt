@@ -3,7 +3,7 @@ Copyright (C) 2026 Zach Burtle
 
 Yaparr is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as
 published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. This
-covers the whole repository: the library in src/, the apps in samples/, and the tools, tests and installer.
+covers the whole repository: the library in src/, the apps in apps/, and the tools, tests and installer.
 The licence is in COPYING.
 SPDX-License-Identifier: GPL-3.0-or-later
 
