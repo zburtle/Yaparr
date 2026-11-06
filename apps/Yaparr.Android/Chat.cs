@@ -43,6 +43,7 @@ public sealed class Chat : Observable
 {
     private readonly List<Line> _all = new();
     private readonly HashSet<string> _ids = new();
+    private readonly Dictionary<string, Line> _byKey = new();
     private readonly Dictionary<string, int> _unread = new();
     private string _title, _preview = "", _status = "", _syncText = "";
     private bool _syncing;
@@ -219,6 +220,10 @@ public sealed class Chat : Observable
     public bool Add(Line line)
     {
         if (!_ids.Add(line.Id)) return false;
+        _byKey[line.Id] = line;
+        Quote(line);
+        // A message that came later than one that answers it (history arrives in no fixed order) fills in its quote now.
+        foreach (var other in _all) if (other.ReplyKey == line.Id) Quote(other);
         // Messages come in order, except a late one from the history, which goes where its time says.
         int at = _all.Count;
         while (at > 0 && _all[at - 1].When > line.When) at--;
@@ -235,6 +240,26 @@ public sealed class Chat : Observable
             Preview = (line.Mine ? "You: " : IsRoom ? line.Who + ": " : "") + line.PreviewText;
         }
         return true;
+    }
+
+    /// <summary>Forgets all the messages, so the history can be put back as it is now (a message an admin deleted is then gone).</summary>
+    public void ResetMessages()
+    {
+        _all.Clear();
+        _ids.Clear();
+        _byKey.Clear();
+        Shown.Clear();
+    }
+
+    /// <summary>The message with this key, or null if this phone does not have it.</summary>
+    public Line? FindByKey(string key) => _byKey.GetValueOrDefault(key);
+
+    // A reply shows who it answers and the start of what they said.
+    private void Quote(Line line)
+    {
+        if (line.ReplyKey is not { } key) return;
+        if (_byKey.TryGetValue(key, out var original)) { line.ReplyWho = original.Mine ? "You" : original.Who; line.ReplyText = original.Preview; }
+        else { line.ReplyWho = ""; line.ReplyText = "An earlier message"; }
     }
 
     /// <summary>Counts a message as unread in its channel.</summary>

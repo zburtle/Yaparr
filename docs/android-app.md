@@ -29,6 +29,14 @@ The **+** next to the message box sends a picture or GIF. It opens Android's own
 
 Not there yet: taking a picture with the camera from the app (the chooser can still offer a camera app on some phones), and several pictures at once.
 
+## Replies, mentions and message actions
+
+A long press on a message opens a small window with what can be done with it: **Reply**, **Copy text**, and, for the owner or an admin of the room, **Delete for everyone** (after a question). A reply shows a bar above the message box ("Replying to ...", with a cross to drop it), and the sent message carries a quote of the one it answers, in the chat and for everyone else; a tap on the quote goes to that message, in its channel. A quote whose message is not on the phone says "An earlier message". A picture can be a reply too.
+
+Typing an **@** and the start of a name in a room offers the people there, as buttons above the keyboard; choosing one puts their name in the text and names them in the message, so they are told. A message that names you has a yellow bubble.
+
+Not there yet: @everyone, and asking the other members for an original message the phone does not have.
+
 ## Voice
 
 A room has a voice bar under its title: who is in the voice channel, and **Join voice**. The first time, Android asks to allow the microphone (only for this; text chat never needs it). In a call there are four buttons: **Mute**, **Deafen**, **Speaker** (the loudspeaker, or the phone's earpiece, or a headset when one is connected; the button shows which one is on) and **Leave**, and everyone in the channel is shown, lit up while they talk. The call runs through the same library as on the computer (Opus over the existing connections), with speech levelling on so quiet voices are raised and a crowd does not clip. While you are in a call Android treats the phone as being in a call: other apps' audio gives way, and if a phone call or another app takes the audio your microphone is muted until you unmute it.
