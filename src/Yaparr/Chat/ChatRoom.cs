@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using Yaparr.Identity;
@@ -22,6 +22,25 @@ public sealed class ChatRoom
     }
 
     public string Name { get; }
+
+    // When this device first looked for the room, and the last time a member was asked for, or sent, the messages it is missing.
+    private readonly long _startedAt = Environment.TickCount64;
+    internal long SyncRequestedAt, HistoryReceivedAt;
+
+    /// <summary>
+    /// Where the room is in getting going on this device, for showing that something is happening. A room that has been looked for for a
+    /// minute with no one found is <see cref="RoomSyncState.NoOneOnline"/>, which is not a problem: it is just quiet.
+    /// </summary>
+    public RoomSyncState SyncState
+    {
+        get
+        {
+            long now = Environment.TickCount64;
+            if (MemberStates.IsEmpty && Indirect.IsEmpty) return now - _startedAt < RoomSyncTimes.GiveUpFindingMs ? RoomSyncState.FindingMembers : RoomSyncState.NoOneOnline;
+            long last = Math.Max(SyncRequestedAt, HistoryReceivedAt);
+            return last > 0 && now - last < RoomSyncTimes.QuietMs ? RoomSyncState.LoadingHistory : RoomSyncState.Ready;
+        }
+    }
 
     internal RoomHistory History { get; set; } = null!;
 
@@ -363,4 +382,28 @@ public sealed class DirectChat
     internal void RaiseMessage(ChatMessage m) => MessageReceived?.Invoke(m);
     internal void RaiseDelivery(DeliveryStatus s) => DeliveryChanged?.Invoke(s);
     internal void RaiseRead() => ReadChanged?.Invoke();
+}
+
+/// <summary>How far a room is in getting going on this device (see <see cref="ChatRoom.SyncState"/>).</summary>
+public enum RoomSyncState
+{
+    /// <summary>No one from the room has been reached yet.</summary>
+    FindingMembers,
+
+    /// <summary>Connected to members, and the messages missed so far are still arriving.</summary>
+    LoadingHistory,
+
+    /// <summary>Connected, and nothing more is arriving.</summary>
+    Ready,
+
+    /// <summary>Looked for a while and found no one; the room is quiet, and will connect when someone comes online.</summary>
+    NoOneOnline,
+}
+
+internal static class RoomSyncTimes
+{
+    public const long GiveUpFindingMs = 60_000;
+
+    /// <summary>History counts as still arriving until this long after the last request or batch.</summary>
+    public const long QuietMs = 3_000;
 }

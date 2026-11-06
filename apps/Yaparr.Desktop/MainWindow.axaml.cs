@@ -377,6 +377,7 @@ public partial class MainWindow : Window
         ProfileIdText.Text = _node.AccountId.Value;
         ReconcileFromAccount();
         _node.Start();
+        StartSyncIndicator();
         StartLinks();
         UpdateStatus();
         RefreshPeers();
