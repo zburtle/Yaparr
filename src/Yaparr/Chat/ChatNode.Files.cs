@@ -60,17 +60,28 @@ public sealed partial class ChatNode
     public Task<AttachmentState> FetchAttachmentAsync(ChatMessage message, bool force = false, CancellationToken ct = default) =>
         StartFetch(message, force, trustedOnly: false, ct);
 
-    private Task<AttachmentState> StartFetch(ChatMessage message, bool force, bool trustedOnly, CancellationToken ct)
+    private Task<AttachmentState> StartFetch(ChatMessage message, bool force, bool trustedOnly, CancellationToken ct, bool joined = false)
     {
         if (message.Attachment is not { } a) return Task.FromResult(AttachmentState.Unavailable);
         if (_blobs.Has(a.Hash)) return Task.FromResult(AttachmentState.Ready);
         lock (_fetches)
         {
-            if (_fetches.TryGetValue(a.Hash, out var running) && !running.IsCompleted) return running;
+            if (_fetches.TryGetValue(a.Hash, out var running) && !running.IsCompleted)
+                return joined ? running : RetryIfNotReadyAsync(running, message, force, trustedOnly, ct);
             var task = Task.Run(() => FetchCoreAsync(message, a, force, trustedOnly, ct));
             _fetches[a.Hash] = task;
             return task;
         }
+    }
+
+    // A request for a file that is already being fetched shares that attempt. The attempt may have started before this request, and so
+    // before something it needs happened: it asked our other device for the file before that device had it, for instance. So when it
+    // ends without the file, the request looks again, once, with what is known now.
+    private async Task<AttachmentState> RetryIfNotReadyAsync(Task<AttachmentState> running, ChatMessage message, bool force, bool trustedOnly, CancellationToken ct)
+    {
+        var state = await running.ConfigureAwait(false);
+        if (state == AttachmentState.Ready || ct.IsCancellationRequested) return state;
+        return await StartFetch(message, force, trustedOnly, ct, joined: true).ConfigureAwait(false);
     }
 
     // A picture from someone we do not know is only fetched from people we know who already have it (our own devices, our
