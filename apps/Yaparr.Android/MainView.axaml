@@ -41,8 +41,8 @@
             <Border Grid.Row="0" Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="16,44,8,10">
                 <Grid ColumnDefinitions="*,Auto,Auto">
                     <TextBlock Text="Yaparr" FontSize="22" FontWeight="Bold" VerticalAlignment="Center" Foreground="{DynamicResource Ink}" />
-                    <Button Grid.Column="1" Content="Copy info" FontSize="13" Padding="10,6" Background="Transparent" Foreground="{DynamicResource Muted}"
-                            Click="DiagnosticsClicked" />
+                    <Button Grid.Column="1" Content="Settings" FontSize="13" Padding="10,6" Background="Transparent" Foreground="{DynamicResource Muted}"
+                            Click="SettingsClicked" />
                     <Button Grid.Column="2" Content="+" FontSize="22" Padding="16,2" Background="Transparent" Foreground="{DynamicResource Accent}"
                             Click="AddClicked" />
                 </Grid>
@@ -83,6 +83,52 @@
                            TextWrapping="Wrap" TextAlignment="Center" Margin="32" VerticalAlignment="Center"
                            Foreground="{DynamicResource Muted}" IsVisible="False" />
             </Grid>
+        </Grid>
+
+        <!-- Settings: who you are, how the app looks, and the microphone. -->
+        <Grid x:Name="SettingsPanel" IsVisible="False" RowDefinitions="Auto,*">
+            <Border Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="4,44,8,10">
+                <Grid ColumnDefinitions="Auto,*">
+                    <Button Content="‹" FontSize="26" Padding="14,0" Background="Transparent" Foreground="{DynamicResource Accent}" Click="SettingsBackClicked" />
+                    <TextBlock Grid.Column="1" Text="Settings" FontSize="20" FontWeight="Bold" VerticalAlignment="Center" Foreground="{DynamicResource Ink}" />
+                </Grid>
+            </Border>
+            <ScrollViewer Grid.Row="1">
+                <StackPanel Margin="16,12,16,32" Spacing="10" MaxWidth="520">
+                    <TextBlock Text="You" FontWeight="SemiBold" Foreground="{DynamicResource Muted}" />
+                    <TextBlock Text="Your name, as people see it. It changes on your other devices too." TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                        <TextBox x:Name="SettingsName" MaxLength="40" />
+                        <Button Grid.Column="1" Classes="primary" Content="Save" Click="SaveNameClicked" />
+                    </Grid>
+                    <TextBlock x:Name="SettingsNote" FontSize="12" Foreground="{DynamicResource Accent}" />
+
+                    <TextBlock Text="Appearance" FontWeight="SemiBold" Margin="0,14,0,0" Foreground="{DynamicResource Muted}" />
+                    <Grid ColumnDefinitions="*,*,*" ColumnSpacing="6">
+                        <Button x:Name="ThemeSystem" Content="System" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="ThemeClicked" Tag="System" />
+                        <Button x:Name="ThemeLight" Grid.Column="1" Content="Light" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="ThemeClicked" Tag="Light" />
+                        <Button x:Name="ThemeDark" Grid.Column="2" Content="Dark" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="ThemeClicked" Tag="Dark" />
+                    </Grid>
+
+                    <TextBlock Text="Voice" FontWeight="SemiBold" Margin="0,14,0,0" Foreground="{DynamicResource Muted}" />
+                    <CheckBox x:Name="AlwaysOnCheck" Content="Send all the time, not only when I talk" Click="VoiceSettingChanged" />
+                    <StackPanel>
+                        <TextBlock Text="Microphone sensitivity (how loud you have to be to be heard)" TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Ink}" />
+                        <Slider x:Name="SensitivitySlider" Minimum="1" Maximum="60" ValueChanged="VoiceSliderChanged" PointerCaptureLost="VoiceSliderReleased" />
+                    </StackPanel>
+                    <StackPanel>
+                        <TextBlock Text="Everyone's volume" FontSize="13" Foreground="{DynamicResource Ink}" />
+                        <Slider x:Name="VolumeSlider" Minimum="50" Maximum="300" ValueChanged="VoiceSliderChanged" PointerCaptureLost="VoiceSliderReleased" />
+                    </StackPanel>
+                    <CheckBox x:Name="AutoVolumeCheck" Content="Even out my microphone (raise a quiet one, lower a loud one)" Click="VoiceSettingChanged" />
+                    <TextBlock Text="Echo and noise are taken out by Android itself, as in a phone call." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
+
+                    <TextBlock Text="About" FontWeight="SemiBold" Margin="0,14,0,0" Foreground="{DynamicResource Muted}" />
+                    <TextBlock x:Name="VersionText" FontSize="13" Foreground="{DynamicResource Ink}" />
+                    <Button HorizontalAlignment="Stretch" Content="Copy what this phone is connected to" Click="DiagnosticsClicked" />
+                    <TextBlock Text="Copies who this phone is connected to and what it has been doing, for a report of a problem." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
+                </StackPanel>
+            </ScrollViewer>
         </Grid>
 
         <!-- One room or direct chat: the messages, and a box to write in. -->

@@ -33,13 +33,22 @@ internal sealed class VoiceCall : IDisposable
         }
     }
 
-    public VoiceCall(Context context, ChatRoom room, string channel)
+    /// <summary>What the settings say about the microphone and loudness; also used on a call that is going when a setting changes. A crowd is always kept from clipping and quiet voices raised, which suits a phone.</summary>
+    public static void Apply(VoiceSession session, AppSettings settings)
+    {
+        session.Activation = settings.VoiceAlwaysOn ? VoiceActivation.Open : VoiceActivation.VoiceActivity;
+        session.Sensitivity = Math.Clamp(settings.VoiceSensitivity, 1, 100) / 1000f;
+        session.OutputGain = Math.Clamp(settings.VoiceOutputVolume, 0, 300) / 100f;
+        session.AutomaticVolume = settings.VoiceAutomaticVolume;
+        session.LevelSpeakers = true;
+    }
+
+    public VoiceCall(Context context, ChatRoom room, string channel, AppSettings settings)
     {
         Session = room.JoinVoice(channel);
-        // What a phone wants in a call: quiet voices raised, and a crowd kept from clipping. Echo and noise are dealt with by Android itself: the
-        // microphone and speakers are opened as a call's (see VoiceAudio), which switches on the phone's own echo cancellation and noise suppression.
-        Session.Activation = VoiceActivation.VoiceActivity;
-        Session.LevelSpeakers = true;
+        // Echo and noise are dealt with by Android itself: the microphone and speakers are opened as a call's (see VoiceAudio), which switches on
+        // the phone's own echo cancellation and noise suppression.
+        Apply(Session, settings);
         _audio = context.GetSystemService(Context.AudioService) as AudioManager;
         if (_audio != null)
         {

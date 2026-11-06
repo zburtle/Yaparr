@@ -30,9 +30,10 @@ public partial class MainView : UserControl
     public MainView()
     {
         InitializeComponent();
-        _screens = new Control[] { StartPanel, LinkPanel, ListPanel, ChatPanel };
+        _screens = new Control[] { StartPanel, LinkPanel, ListPanel, ChatPanel, SettingsPanel };
         _settings = _data.LoadSettings();
         NameBox.Text = _settings.DisplayName ?? "";
+        ApplyTheme();
         // Linking is for a phone that has no account yet.
         LinkStartButton.IsVisible = !_data.HasIdentity;
         AttachedToVisualTree += (_, _) => OnAttached();
@@ -71,6 +72,7 @@ public partial class MainView : UserControl
         if (ConfirmPanel.IsVisible) { ConfirmPanel.IsVisible = false; return true; }
         if (PeoplePanel.IsVisible) { PeoplePanel.IsVisible = false; return true; }
         if (AddPanel.IsVisible) { AddPanel.IsVisible = false; return true; }
+        if (SettingsPanel.IsVisible) { SettingsBackClicked(null, new RoutedEventArgs()); return true; }
         if (ChatPanel.IsVisible) { BackToList(); return true; }
         if (LinkPanel.IsVisible) { LinkBackClicked(null, new RoutedEventArgs()); return true; }
         return false;
@@ -245,11 +247,106 @@ public partial class MainView : UserControl
         OpenChat(chat);
     }
 
+    // ---- settings ----
+
+    private bool _loadingSettings;
+
+    private void ApplyTheme()
+    {
+        if (Avalonia.Application.Current is { } app)
+            app.RequestedThemeVariant = _settings.Theme switch { "Light" => Avalonia.Styling.ThemeVariant.Light, "Dark" => Avalonia.Styling.ThemeVariant.Dark, _ => Avalonia.Styling.ThemeVariant.Default };
+    }
+
+    private void ShowTheme()
+    {
+        foreach (var button in new[] { ThemeSystem, ThemeLight, ThemeDark })
+        {
+            bool on = (string?)button.Tag == _settings.Theme;
+            button.Background = on ? Yaparr.AndroidApp.Theme.Brush("Accent") : Avalonia.Media.Brushes.Transparent;
+            button.Foreground = on ? Avalonia.Media.Brushes.White : Yaparr.AndroidApp.Theme.Brush("Ink");
+        }
+    }
+
+    private void SettingsClicked(object? sender, RoutedEventArgs e)
+    {
+        _loadingSettings = true;
+        SettingsName.Text = _settings.DisplayName ?? "";
+        SettingsNote.Text = "";
+        AlwaysOnCheck.IsChecked = _settings.VoiceAlwaysOn;
+        SensitivitySlider.Value = _settings.VoiceSensitivity;
+        VolumeSlider.Value = _settings.VoiceOutputVolume;
+        AutoVolumeCheck.IsChecked = _settings.VoiceAutomaticVolume;
+        VersionText.Text = "Yaparr " + AppVersion();
+        _loadingSettings = false;
+        ShowTheme();
+        ShowOnly(SettingsPanel);
+    }
+
+    private static string AppVersion()
+    {
+        try
+        {
+            var context = Android.App.Application.Context;
+            return context.PackageManager?.GetPackageInfo(context.PackageName ?? "", 0)?.VersionName ?? "";
+        }
+        catch (Exception ex) when (ex is Android.Content.PM.PackageManager.NameNotFoundException or Java.Lang.RuntimeException) { return ""; }
+    }
+
+    private void SettingsBackClicked(object? sender, RoutedEventArgs e)
+    {
+        _data.SaveSettings(_settings);
+        ShowOnly(ListPanel);
+    }
+
+    private void SaveNameClicked(object? sender, RoutedEventArgs e)
+    {
+        var name = (SettingsName.Text ?? "").Trim();
+        if (name.Length == 0) { SettingsNote.Text = "Enter a name."; return; }
+        try
+        {
+            if (_session != null) _session.Rename(name);
+            else { _settings.DisplayName = name; _data.SaveSettings(_settings); }
+            SettingsNote.Text = "Saved.";
+        }
+        catch (ArgumentException ex) { SettingsNote.Text = ex.Message; }
+    }
+
+    private void ThemeClicked(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Avalonia.Controls.Button { Tag: string theme }) return;
+        _settings.Theme = theme;
+        _data.SaveSettings(_settings);
+        ApplyTheme();
+        ShowTheme();
+    }
+
+    private void VoiceSettingChanged(object? sender, RoutedEventArgs e)
+    {
+        if (_loadingSettings) return;
+        _settings.VoiceAlwaysOn = AlwaysOnCheck.IsChecked == true;
+        _settings.VoiceAutomaticVolume = AutoVolumeCheck.IsChecked == true;
+        _data.SaveSettings(_settings);
+        _session?.ApplyVoiceSettings();
+    }
+
+    // A slider makes many changes a second: they are kept in memory and a call hears them at once; the file is written when the finger lifts.
+    private void VoiceSliderChanged(object? sender, Avalonia.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+    {
+        if (_loadingSettings) return;
+        _settings.VoiceSensitivity = (int)Math.Round(SensitivitySlider.Value);
+        _settings.VoiceOutputVolume = (int)Math.Round(VolumeSlider.Value);
+        _session?.ApplyVoiceSettings();
+    }
+
+    private void VoiceSliderReleased(object? sender, PointerCaptureLostEventArgs e) => _data.SaveSettings(_settings);
+
     private async void DiagnosticsClicked(object? sender, RoutedEventArgs e)
     {
         if (_session == null || TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard) return;
         await clipboard.SetTextAsync(_session.Diagnostics());
-        ListStatus.Text = "Copied who this phone is connected to and what it has been doing. Paste it where you are reporting the problem.";
+        var note = "Copied who this phone is connected to and what it has been doing. Paste it where you are reporting the problem.";
+        ListStatus.Text = note;
+        SettingsNote.Text = note;
     }
 
     private void AddClicked(object? sender, RoutedEventArgs e)

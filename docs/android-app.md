@@ -53,6 +53,17 @@ A room has a voice bar under its title: one row for each voice channel of the ro
 
 For now the call ends when Yaparr leaves the screen, because there is no foreground service yet. Echo and noise are handled by Android itself: Yaparr opens the microphone and speakers as a call's, which switches on the phone's own echo cancellation and noise suppression, the same ones phone calls and other calling apps use. How good they are depends on the phone, and unlike on the computer there are no settings for them. If you hear your own echo, use the phone (earpiece) or a headset instead of the loudspeaker. The default voice channel only; other voice channels come later.
 
+## Settings
+
+**Settings** at the top of the room list holds:
+
+- **You:** your name, as people see it. Saving it changes it on your other devices too.
+- **Appearance:** System (follows the phone), Light or Dark; it applies at once and is kept. Messages already on screen keep the colours they had until the chat is opened again.
+- **Voice:** whether the microphone sends all the time or only when you talk, how loud you have to be to be heard (sensitivity), how loud everyone sounds, and evening out your own microphone. A call that is going takes the change at once. Echo and noise are handled by Android itself, so there is nothing to set for them.
+- **About:** the version, and a button that copies who the phone is connected to and what it has been doing, for a report of a problem.
+
+Not there yet: choosing the microphone or speakers (the route button in a call picks where the sound goes), and the network and VPN options.
+
 ## Links
 
 Yaparr links open in the app: `yaparr://join/<invite>` and `yaparr://chat/<peer id>`, and the forms people share, `https://yaparr.com/join#<invite>` and `https://yaparr.com/chat#<peer id>`. A link never acts on its own: for a room the join sheet opens with the invite filled in, asking you to name the room and to confirm (joining lets the other members see your IP address); for a person a question asks first. If you are in the room or already chat with them, the link just shows it. In a room the menu has Copy invite link, and in a direct chat Copy chat link; the join sheet also takes a link instead of an invite.
