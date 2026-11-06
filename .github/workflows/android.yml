@@ -53,6 +53,22 @@ jobs:
           -p:JavaSdkDirectory="$JAVA_HOME_21_X64"
           -p:AndroidSdkDirectory="$ANDROID_HOME"
 
+      # The release build (trimmed, shortened) is what a release ships, so it is built here too, to find a problem before a merge starts a
+      # release. It is not kept: the package for a release is signed with the release key, in the release workflow. The build log is kept if it fails.
+      - name: Build the release configuration
+        run: >
+          dotnet build apps/Yaparr.Android -c Release -bl:release.binlog
+          -p:ApplicationVersion=${{ github.run_number }}
+          -p:JavaSdkDirectory="$JAVA_HOME_21_X64"
+          -p:AndroidSdkDirectory="$ANDROID_HOME"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: android-release-build-log
+          path: release.binlog
+          retention-days: 7
+
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: yaparr-android-debug
