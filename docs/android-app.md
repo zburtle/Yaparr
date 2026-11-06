@@ -1,4 +1,4 @@
-# Android app
+﻿# Android app
 
 `apps/Yaparr.Android` is the Android app, built with Avalonia. It uses the same library as the desktop app. It opens onto the list of your rooms and direct chats (the one with the newest message first, with a count of what is unread); tap one to read and send text messages. The + button makes a room, joins one from an invite, or opens a chat with a person from their ID. In a room the menu has the people (tap one to write to them), Copy invite and Leave; a room with several text channels shows them as buttons above the messages. The phone's back button goes back from a chat to the list. Rooms are kept in the settings the same way as on the desktop, so a room you join on one of your devices turns up on the others.
 
