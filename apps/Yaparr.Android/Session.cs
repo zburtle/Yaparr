@@ -279,6 +279,10 @@ public sealed class Session : IDisposable
         RefreshVoice(chat);
     }
 
+    /// <summary>Looks at the network again and explains in plain words what works and what does not (the same check as on the computer).</summary>
+    public Task<NetworkCheckReport> CheckNetworkAsync() =>
+        _node?.CheckNetworkAsync() ?? throw new InvalidOperationException("Yaparr has not finished starting yet.");
+
     /// <summary>A voice setting changed: the call that is going takes it at once.</summary>
     public void ApplyVoiceSettings()
     {
