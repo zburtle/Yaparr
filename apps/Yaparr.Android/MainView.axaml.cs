@@ -70,7 +70,7 @@ public partial class MainView : UserControl
         if (SoundPanel.IsVisible) { SoundPanel.IsVisible = false; return true; }
         if (NetworkPanel.IsVisible) { NetworkPanel.IsVisible = false; return true; }
         if (ActionPanel.IsVisible) { ActionPanel.IsVisible = false; return true; }
-        if (PicturePanel.IsVisible) { PicturePanel.IsVisible = false; return true; }
+        if (PicturePanel.IsVisible) { PictureCloseClicked(null, new RoutedEventArgs()); return true; }
         if (RoutePanel.IsVisible) { RoutePanel.IsVisible = false; return true; }
         if (ConfirmPanel.IsVisible) { ConfirmPanel.IsVisible = false; return true; }
         if (PeoplePanel.IsVisible) { PeoplePanel.IsVisible = false; return true; }
@@ -907,14 +907,30 @@ public partial class MainView : UserControl
         }
     }
 
+    // A GIF plays while its tile is on screen: the file is read when the tile scrolls into view and let go when it scrolls out, so a long
+    // shelf keeps only what is visible in memory.
     private Control ShelfTile(ShelfItem item, Avalonia.Media.Imaging.Bitmap? bitmap)
     {
+        var image = new AnimatedImage { Source = bitmap, Stretch = Avalonia.Media.Stretch.Uniform, MaxFrameSide = 240 };
         var tile = new Avalonia.Controls.Button
         {
             Width = 92, Height = 92, Padding = new Avalonia.Thickness(0), Margin = new Avalonia.Thickness(3), Background = Avalonia.Media.Brushes.Transparent,
             ClipToBounds = true, CornerRadius = new Avalonia.CornerRadius(8),
-            Content = new Avalonia.Controls.Image { Source = bitmap, Stretch = Avalonia.Media.Stretch.UniformToFill },
+            Content = image,
         };
+        if (item.IsGif && bitmap != null)
+        {
+            bool playing = false;
+            tile.EffectiveViewportChanged += async (_, args) =>
+            {
+                bool inView = args.EffectiveViewport.Width > 0 && args.EffectiveViewport.Height > 0;
+                if (inView == playing) return;
+                playing = inView;
+                if (!inView) { image.Animation = null; image.Source = bitmap; return; }
+                var data = _session?.Shelf is { } shelf ? await Task.Run(() => shelf.Read(item.Id)) : null;
+                if (playing) image.Animation = data;
+            };
+        }
         bool held = false;
         tile.Holding += (_, args) =>
         {
@@ -993,13 +1009,18 @@ public partial class MainView : UserControl
         {
             using var ms = new MemoryStream(bytes);
             BigPicture.Source = Avalonia.Media.Imaging.Bitmap.DecodeToWidth(ms, 1600);
+            BigPicture.Animation = line.Animation;
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IOException) { return; }
         _bigLine = line;
         PicturePanel.IsVisible = true;
     }
 
-    private void PictureCloseClicked(object? sender, RoutedEventArgs e) => PicturePanel.IsVisible = false;
+    private void PictureCloseClicked(object? sender, RoutedEventArgs e)
+    {
+        PicturePanel.IsVisible = false;
+        BigPicture.Animation = null;
+    }
 
     // Save: the system asks where, so the app needs no permission for the phone's storage.
     private async void PictureSaveClicked(object? sender, RoutedEventArgs e)

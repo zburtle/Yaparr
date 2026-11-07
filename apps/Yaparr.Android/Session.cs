@@ -669,10 +669,12 @@ public sealed class Session : IDisposable
     private async Task ShowPictureAsync(Line line, string hash)
     {
         var node = _node;
+        byte[]? animation = null;
         var image = await Task.Run(() =>
         {
             var bytes = node?.ReadAttachment(hash);
             if (bytes == null) return null;
+            if (ImageSniffer.TryRead(bytes, out var info) && info.Mime == "image/gif" && info.Frames > 1) animation = bytes;
             try
             {
                 using var ms = new MemoryStream(bytes);
@@ -682,7 +684,7 @@ public sealed class Session : IDisposable
         });
         UI(() =>
         {
-            if (image != null) line.Picture = image;
+            if (image != null) { line.Picture = image; line.Animation = animation; }
             else line.PictureStatus = "Couldn't show the picture.";
         });
     }

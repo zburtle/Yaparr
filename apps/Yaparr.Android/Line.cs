@@ -83,6 +83,15 @@ public sealed class Line : Observable
 
     public bool HasPicture => _picture != null;
 
+    /// <summary>The bytes of the picture when it is an animated GIF, so that it can be played (the still above is its first frame).</summary>
+    public byte[]? Animation
+    {
+        get => _animation;
+        set { _animation = value; Raise(); }
+    }
+
+    private byte[]? _animation;
+
     /// <summary>What is happening to a picture that is not here yet ("Loading…", "Tap to download (3 MB)").</summary>
     public string PictureStatus
     {

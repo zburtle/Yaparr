@@ -36,22 +36,46 @@ public partial class MainWindow
             var loaded = await Task.Run(() => chunk.Select(item =>
             {
                 var preview = Shelf.Preview(item.Id);
-                return (item, bitmap: preview == null ? null : new Bitmap(new MemoryStream(preview)));
+                return (item, preview, bitmap: preview == null ? null : new Bitmap(new MemoryStream(preview)));
             }).ToList());
-            if (version != _shelfVersion) { foreach (var (_, bitmap) in loaded) bitmap?.Dispose(); return; }
-            foreach (var (item, bitmap) in loaded) ShelfGrid.Children.Add(ShelfTile(item, bitmap));
+            if (version != _shelfVersion) { foreach (var (_, _, bitmap) in loaded) bitmap?.Dispose(); return; }
+            foreach (var (item, preview, bitmap) in loaded) ShelfGrid.Children.Add(ShelfTile(item, preview, bitmap));
         }
     }
 
-    private Control ShelfTile(ShelfItem item, Bitmap? bitmap)
+    // A GIF plays while its tile is on screen: the file is read when the tile scrolls into view and let go when it scrolls out, so a long
+    // shelf keeps only what is visible in memory.
+    private Control ShelfTile(ShelfItem item, byte[]? preview, Bitmap? bitmap)
     {
+        PictureView? player = null;
+        Control content;
+        if (item.IsGif && bitmap != null)
+        {
+            player = new PictureView { Fit = true, MaxFrameSide = 240, Thumbnail = preview, PixelWidth = bitmap.PixelSize.Width, PixelHeight = bitmap.PixelSize.Height, IsHitTestVisible = false };
+            content = player;
+        }
+        else content = new Image { Source = bitmap, Stretch = Avalonia.Media.Stretch.Uniform };
         var button = new Button
         {
             Width = 104, Height = 104, Padding = new Thickness(0), Margin = new Thickness(3), Background = Avalonia.Media.Brushes.Transparent,
             ClipToBounds = true, CornerRadius = new CornerRadius(8), Tag = item.Id,
-            Content = new Image { Source = bitmap, Stretch = Avalonia.Media.Stretch.UniformToFill },
+            Content = content,
+            HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center, VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center,
             ContextMenu = new ContextMenu(),
         };
+        if (player != null)
+        {
+            bool playing = false;
+            button.EffectiveViewportChanged += async (_, e) =>
+            {
+                bool inView = e.EffectiveViewport.Width > 0 && e.EffectiveViewport.Height > 0;
+                if (inView == playing) return;
+                playing = inView;
+                if (!inView) { player.Data = null; return; }
+                var data = await Task.Run(() => Shelf.Read(item.Id));
+                if (playing) player.Data = data;
+            };
+        }
         ToolTip.SetTip(button, $"{(item.IsGif ? "GIF" : "Picture")}, {FormatSize(item.Bytes)}. Click to send it, right-click to take it off the shelf.");
         var remove = new MenuItem { Header = "_Remove from the shelf" };
         remove.Click += async (_, _) => { Shelf.Remove(item.Id); await FillShelfAsync(); };
