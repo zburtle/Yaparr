@@ -37,7 +37,7 @@ public partial class MainWindow
     private void MessageMenu_Opening(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         var message = MessageList.SelectedItem as MessageVm;
-        ReplyItem.IsVisible = message is { Key: not null, IsSystem: false };
+        ReplyItem.IsVisible = ReactItem.IsVisible = message is { Key: not null, IsSystem: false };
         SavePictureItem.IsVisible = AddToShelfItem.IsVisible = message is { Image: not null };
         RetryItem.IsVisible = message is { CanRetry: true };
         BlockSenderItem.IsVisible = message != null && BlockedIdOf(message) is { } id && _node?.IsBlocked(new PeerId(id)) == false;

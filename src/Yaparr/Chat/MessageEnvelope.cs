@@ -30,7 +30,7 @@ public sealed record Mention(PeerId Account, string Name)
 /// What a message says besides its words: which earlier message it answers, and which people it names.
 /// <see cref="ReplyTo"/> is the <see cref="ChatMessage.Key"/> of that message.
 /// </summary>
-public sealed record MessageParts(string Body, string? ReplyTo, IReadOnlyList<Mention> Mentions, LinkPreview? Preview = null)
+public sealed record MessageParts(string Body, string? ReplyTo, IReadOnlyList<Mention> Mentions, LinkPreview? Preview = null, ReactionEvent? Reaction = null)
 {
     public static readonly MessageParts None = new("", null, Array.Empty<Mention>());
 }
@@ -82,6 +82,35 @@ public static class MessageEnvelope
         throw new InvalidOperationException("That message is too long.");
     }
 
+    /// <summary>
+    /// The text to send for putting <paramref name="emoji"/> on the message with key <paramref name="target"/> (<see cref="ChatMessage.Key"/>), or taking it off
+    /// again. It is a message of its own that is not shown as one (see <see cref="ReactionEvent"/>); the words are only for versions that do not know it.
+    /// </summary>
+    public static string WrapReaction(string target, string emoji, bool on)
+    {
+        if (!IsKey(target)) throw new ArgumentException("That is not the key of a message.", nameof(target));
+        if (!EmojiData.TryNormalize(emoji, out var standard)) throw new ArgumentException("That is not an emoji that can be used as a reaction.", nameof(emoji));
+        var header = JsonSerializer.Serialize(new Header { X = new HeaderReaction { T = target.ToLowerInvariant(), E = standard, O = on ? null : 0 } }, Json);
+        return Marker + header + End + (on ? "reacted " : "took back ") + standard;
+    }
+
+    // The header of a reaction starts with its field, so a reaction can be told from any other message without reading it all.
+    private static readonly string ReactionStart = Marker + "{\"x\":";
+
+    /// <summary>Whether a message text is a reaction (see <see cref="WrapReaction"/>), told cheaply. It is not checked to be a good one.</summary>
+    public static bool IsReactionText(string text) => text.StartsWith(ReactionStart, StringComparison.Ordinal);
+
+    /// <summary>Reads a reaction out of a message text: false when it is not one, or its message key or emoji are not good.</summary>
+    public static bool TryReadReaction(string text, out ReactionEvent reaction)
+    {
+        reaction = null!;
+        if (!IsReactionText(text)) return false;
+        var parts = Parse(text);
+        if (parts.Reaction == null) return false;
+        reaction = parts.Reaction;
+        return true;
+    }
+
     /// <summary>Reads a message text. Anything that is not a well formed envelope is just words.</summary>
     public static MessageParts Parse(string text)
     {
@@ -94,6 +123,7 @@ public static class MessageEnvelope
             if (header == null) return new MessageParts(text, null, Array.Empty<Mention>());
             var reply = header.R != null && IsKey(header.R) ? header.R.ToLowerInvariant() : null;
             var preview = ReadPreview(header.P);
+            var reaction = ReadReaction(header.X);
             var mentions = (header.M ?? Array.Empty<HeaderMention>())
                 .Where(m => m.A != null && IsAccount(m.A) && CleanName(m.N ?? "").Length > 0)
                 .Select(m => new Mention(new PeerId(m.A!.ToLowerInvariant()), CleanName(m.N!)))
@@ -101,7 +131,7 @@ public static class MessageEnvelope
             var body = text[(end + 1)..];
             // A card is for a link that is in the words; a card for some other address is not shown.
             if (preview != null && !body.Contains(preview.Url, StringComparison.Ordinal)) preview = null;
-            return new MessageParts(body, reply, mentions, preview);
+            return new MessageParts(body, reply, mentions, preview, reaction);
         }
         catch (JsonException) { return new MessageParts(text, null, Array.Empty<Mention>()); }
     }
@@ -118,6 +148,10 @@ public static class MessageEnvelope
         return new LinkPreview(p.U, p.T ?? "", p.D ?? "", thumb).Normalized();
     }
 
+    // A reaction from the header: a message key and an emoji of the set, or nothing.
+    private static ReactionEvent? ReadReaction(HeaderReaction? x) =>
+        x?.T != null && IsKey(x.T) && EmojiData.TryNormalize(x.E, out var emoji) ? new ReactionEvent(x.T.ToLowerInvariant(), emoji, x.O != 0) : null;
+
     // A message key (SignedMessage.KeyOf): 32 hexadecimal digits.
     internal static bool IsKey(string s) => s.Length == 32 && s.All(Uri.IsHexDigit);
 
@@ -133,9 +167,17 @@ public static class MessageEnvelope
 
     private sealed class Header
     {
+        public HeaderReaction? X { get; set; }   // first, see ReactionStart
         public string? R { get; set; }
         public HeaderMention[]? M { get; set; }
         public HeaderPreview? P { get; set; }
+    }
+
+    private sealed class HeaderReaction
+    {
+        public string? T { get; set; }
+        public string? E { get; set; }
+        public int? O { get; set; }   // 0 when it is taken off
     }
 
     private sealed class HeaderPreview

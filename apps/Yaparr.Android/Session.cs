@@ -14,7 +14,7 @@ public sealed record Person(string Name, string Id, string Role = "");
 /// you joined in the settings (the same way the desktop app does, so the account sync between your devices finds them), brings
 /// them back when the app starts, and counts what is unread. Everything that reaches the screens is passed to the UI thread.
 /// </summary>
-public sealed class Session : IDisposable
+public sealed partial class Session : IDisposable
 {
     private readonly AppData _data;
     private readonly AppSettings _settings;
@@ -228,6 +228,7 @@ public sealed class Session : IDisposable
         var chat = new Chat(label, room, null, invite);
         _rooms[room] = chat;
         room.MessageReceived += m => UI(() => OnMessage(chat, m));
+        room.ReactionsChanged += _ => UI(() => ScheduleReactions(chat));
         room.ChannelsChanged += () => UI(() => RefreshChannels(chat, room));
         room.MemberJoined += _ => UI(() => ShowMembers(chat, room));
         room.MemberLeft += _ => UI(() => ShowMembers(chat, room));
@@ -240,6 +241,7 @@ public sealed class Session : IDisposable
         room.VoiceChannelRemoved += id => UI(() => { if (_callChat == chat && chat.VoiceChannelId == id) LeaveVoice(); });
 
         foreach (var m in room.GetHistory()) AddHistoryLine(chat, m, room.RoomId);
+        RefreshReactions(chat);
         RefreshChannels(chat, room);
         RefreshVoice(chat);
         if (_settings.RoomChannels.TryGetValue(room.RoomId, out var wanted) && chat.Channels.Any(c => c.Id == wanted)) chat.SelectChannel(wanted);
@@ -443,6 +445,7 @@ public sealed class Session : IDisposable
         var keep = chat.CurrentChannel;
         chat.ResetMessages();
         foreach (var m in room.GetHistory()) AddHistoryLine(chat, m, room.RoomId, counted: false);
+        RefreshReactions(chat);
         chat.SelectChannel(keep);
     }
 
@@ -596,6 +599,7 @@ public sealed class Session : IDisposable
         var chat = new Chat(direct.DisplayName, null, direct, null);
         _directs[direct.PeerId.Value] = chat;
         direct.MessageReceived += m => UI(() => OnMessage(chat, m));
+        direct.ReactionsChanged += _ => UI(() => ScheduleReactions(chat));
         // Another of your devices read it: nothing here is new any more.
         direct.ReadChanged += () => UI(chat.ClearAllUnread);
         var readUpTo = direct.ReadUpTo;
@@ -604,6 +608,7 @@ public sealed class Session : IDisposable
             var line = ToLine(m);
             if (chat.Add(line) && !line.Mine && (readUpTo == null || m.Timestamp > readUpTo)) chat.NoteUnread(null);
         }
+        RefreshReactions(chat);
         chat.Status = "Direct chat";
         Chats.Add(chat);
         Resort(chat);

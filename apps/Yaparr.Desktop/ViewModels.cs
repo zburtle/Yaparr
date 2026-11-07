@@ -1,9 +1,12 @@
 ﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using Avalonia;
+using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Yaparr.Chat;
+using Yaparr.Identity;
 
 namespace Yaparr.Desktop;
 
@@ -55,6 +58,41 @@ public sealed class MessageVm : Observable
 
     public Attachment? Attachment { get; }
     public ChatMessage? Source { get; init; }
+
+    // ---- reactions ----
+
+    private string _reactionSignature = "";
+
+    /// <summary>The emoji on this message, with how many put them there; the last one, when there are any, is the button to add another.</summary>
+    public System.Collections.ObjectModel.ObservableCollection<ReactionChipVm> Reactions { get; } = new();
+
+    public bool HasReactions => Reactions.Count > 0;
+
+    /// <summary>A message that is not a notice can be reacted to (it has a key to point at).</summary>
+    public bool CanReact => Key != null && !IsSystem;
+
+    /// <summary>Where the button that opens the picker sits: on the outer top corner of the bubble.</summary>
+    public Thickness ReactButtonMargin => IsMine ? new Thickness(0, -10, -8, 0) : new Thickness(-8, -10, 0, 0);
+
+    /// <summary>The reactions sit on the same side as the bubble.</summary>
+    public HorizontalAlignment ReactionAlign => IsMine ? HorizontalAlignment.Right : HorizontalAlignment.Left;
+
+    /// <summary>Shows what the message's reactions come to now. Nothing changes on screen when they are as they were.</summary>
+    public void SetReactions(IReadOnlyList<ReactionSummary> reactions, PeerId me, Func<PeerId, string> nameOf)
+    {
+        var signature = string.Join("|", reactions.Select(r => r.Emoji + ":" + string.Join(",", r.Accounts.Select(a => a.Value)))) + "/" + me.Value;
+        if (signature == _reactionSignature) return;
+        _reactionSignature = signature;
+        Reactions.Clear();
+        foreach (var r in reactions)
+        {
+            var names = r.Accounts.Select(nameOf).OrderBy(n => n, StringComparer.CurrentCultureIgnoreCase).ToList();
+            var who = names.Count <= 8 ? string.Join(", ", names) : string.Join(", ", names.Take(8)) + " and " + (names.Count - 8) + " more";
+            Reactions.Add(new ReactionChipVm(this, r.Emoji, r.Count, r.Accounts.Contains(me), who + "\n" + (EmojiData.Find(r.Emoji)?.Name ?? "")));
+        }
+        if (reactions.Count > 0) Reactions.Add(ReactionChipVm.Add(this));
+        Raise(nameof(HasReactions));
+    }
 
     /// <summary>The card the sender attached for a link in the words, shown below them.</summary>
     public LinkPreview? Card { get; init; }
@@ -129,7 +167,7 @@ public sealed class MessageVm : Observable
         if (_isMine) return;
         _isMine = true;
         _deviceNote = deviceNote;
-        foreach (var name in new[] { nameof(IsMine), nameof(ShowSender), nameof(IsOther), nameof(Kind), nameof(Status), nameof(HasStatus), nameof(IsFailed), nameof(CanRetry), nameof(DeviceNote), nameof(TimeText), nameof(Display), nameof(Highlight) })
+        foreach (var name in new[] { nameof(IsMine), nameof(ReactionAlign), nameof(ReactButtonMargin), nameof(ShowSender), nameof(IsOther), nameof(Kind), nameof(Status), nameof(HasStatus), nameof(IsFailed), nameof(CanRetry), nameof(DeviceNote), nameof(TimeText), nameof(Display), nameof(Highlight) })
             Raise(name);
     }
 
@@ -291,8 +329,34 @@ public sealed record PeerVm(string Id, string Name, bool Online, DateTimeOffset 
     }) + "\n" + Id;
 }
 
+/// <summary>One emoji under a message: the emoji, how many put it there, whether you did, and who (for the tooltip). The button that adds another has <see cref="IsAdd"/>.</summary>
+public sealed class ReactionChipVm : Observable
+{
+    public ReactionChipVm(MessageVm owner, string emoji, int count, bool mine, string tooltip)
+    {
+        Owner = owner; Emoji = emoji; Count = count; Mine = mine; Tooltip = tooltip;
+    }
+
+    public static ReactionChipVm Add(MessageVm owner) => new(owner, "\u263A\uFE0F", 0, false, "Add a reaction") { IsAdd = true };
+
+    public MessageVm Owner { get; }
+    public string Emoji { get; }
+    public int Count { get; }
+    public bool Mine { get; }
+    public string Tooltip { get; }
+    public bool IsAdd { get; private init; }
+    public bool ShowCount => !IsAdd;
+    public string CountText => Count.ToString();
+}
+
 public sealed class ConversationVm : Observable
 {
+    /// <summary>Counts the reactions of this conversation as they stand now (the room's or the direct chat's).</summary>
+    public Func<ReactionSet>? ReactionSource { get; set; }
+
+    /// <summary>Puts an emoji on a message or takes it off: the message's key, the emoji, whether to put it on, and the message's channel.</summary>
+    public Func<string, string, bool, string?, Task>? React { get; set; }
+
     private int _unread;
     private string _title;
     private readonly HashSet<string> _ids = new();

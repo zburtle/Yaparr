@@ -52,6 +52,15 @@ A message can answer an earlier one and name people. `room.SendAsync(text, chann
 - **The key.** It comes from who wrote the message and its id, so nobody else can make a message that has it. A reply points at that key and does **not** copy the words it answers: the app looks the original up in its own history, so a reply can never misquote. When the original is not there (older than the history kept), the reply says "an earlier message that is not here".
 - **In the app,** see [The desktop app](desktop-app.md#replies-and-mentions).
 
+## Reactions
+
+An emoji can be put on a message, and taken off again. `room.SendReactionAsync(messageKey, emoji, on, channelId)` and `DirectChat.SendReactionAsync(messageKey, emoji, on)` send it; `room.GetReactions()` and `DirectChat.GetReactions()` give a `ReactionSet` (`For(messageKey)` is the emoji on a message, each with the accounts that put it there, `Has(...)` asks about one account); `ReactionsChanged` (the message key) is raised when any of it changes, including when reactions arrive with the history.
+
+- **How it travels.** A reaction is a message of its own, signed and passed on like any, with the message it is on and the emoji in the envelope header (`MessageEnvelope.WrapReaction`), so rooms, direct chats, catch-up, linked devices, bans and blocks, rate limits and history all work for it without anything new. It is not shown as a message: it never reaches `MessageReceived` or `GetHistory`, and is not unread. A version that does not know reactions shows "reacted 👍".
+- **What counts.** For each person, message and emoji the latest event wins (put on, or taken off; at the same moment the message key decides, so every device agrees). A person with several devices counts once. Reactions from people you blocked or the room banned are not counted.
+- **Which emoji.** Only those of `EmojiData`: Unicode's emoji up to version 13.1 (newer ones are drawn as an empty box by older systems), 1,812 of them, without skin tone variants as entries (a skin tone is accepted on an emoji that has them). A receiver ignores a reaction with anything else, so it cannot be an arbitrary string. `EmojiData.Quick` are the thirteen offered first: 👍 💯 ❤️ 😂 😭 🔥 🙏 😍 🎉 👀 🤔 😮 👎. `EmojiData.Search` finds emoji by name and keyword (English, from CLDR); `EmojiData.Groups` are the emoji by group for a picker. The data is made by `tools/emoji/build_emoji_data.py` from Unicode's files; raise its version when the oldest system Yaparr runs on has caught up.
+- **History.** Reactions have a share of the history of their own, four times the number of messages kept, so many reactions do not push messages out (and the other way round). A reaction on a message that has left the history is not shown.
+
 ## Link previews
 
 A message with a web link can carry a card for it: the page's title, a short description and a small square picture. The link stays in the words as it was written; the card is shown below it. `room.SendAsync(text, channelId, replyTo, mentions, preview)` and `DirectChat.SendAsync(text, replyTo, preview)` send one, and `ChatMessage.Parts.Preview` reads it (a `LinkPreview`).

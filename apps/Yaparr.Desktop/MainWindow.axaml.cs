@@ -634,6 +634,8 @@ public partial class MainWindow : Window
         room.DeliveryChanged += s => UI(() => conv.ApplyDelivery(s, room.GetDeliveryDetails(s.MessageId)));
 
         room.MessageReceived += m => UI(() => OnMessage(conv, ToVm(m), announce: !m.IsCatchUp));
+        room.ReactionsChanged += _ => UI(() => ScheduleReactions(conv));
+        WireReactions(conv, room.GetReactions, (key, emoji, on, channel) => room.SendReactionAsync(key, emoji, on, channel));
         room.VoiceChanged += () => UI(() => RefreshVoice(conv, room));
         room.VoiceTakenOver += _ => UI(() =>
         {
@@ -647,7 +649,7 @@ public partial class MainWindow : Window
         room.RolesChanged += () => UI(() => { RefreshPeers(); RefreshMembers(); });
         room.ChannelsChanged += () => UI(() => RefreshChannels(conv, room));
         room.SecretChanged += (before, after) => UI(() => OnSecretChanged(conv, before, after));
-        room.ModerationChanged += () => UI(() => { conv.Reload(room.GetHistory().Select(ToVm).ToList()); RefreshPeers(); RefreshMembers(); });
+        room.ModerationChanged += () => UI(() => { conv.Reload(room.GetHistory().Select(ToVm).ToList()); RefreshReactions(conv); RefreshPeers(); RefreshMembers(); });
 
         if (_settings.RoomChannels.TryGetValue(room.RoomId, out var wantedChannel)) conv.PendingChannel = wantedChannel;
         RefreshChannels(conv, room);
@@ -658,6 +660,7 @@ public partial class MainWindow : Window
             conv.Add(vm);
             CountIfUnread(conv, room, vm);
         }
+        RefreshReactions(conv);
         _conversations.Add(conv);
         SelectConversation(conv);
         RefreshPeers();
@@ -810,9 +813,12 @@ public partial class MainWindow : Window
 
         var kept = chat.History;
         chat.MessageReceived += m => UI(() => OnMessage(conv, ToVm(m), announce: !m.IsCatchUp));
+        chat.ReactionsChanged += _ => UI(() => ScheduleReactions(conv));
+        WireReactions(conv, chat.GetReactions, (key, emoji, on, _) => chat.SendReactionAsync(key, emoji, on));
         UI(() =>
         {
             foreach (var m in kept) conv.Add(ToVm(m));
+            RefreshReactions(conv);
             if (chat.Peer != null) Remember(chat.Peer);
             _conversations.Add(conv);
             RefreshPeers();

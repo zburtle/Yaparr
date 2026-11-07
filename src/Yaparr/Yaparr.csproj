@@ -22,6 +22,11 @@
     <None Include="README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
 
+  <!-- The emoji reactions can use, with names and keywords (made by tools/emoji/build_emoji_data.py from Unicode's data). -->
+  <ItemGroup>
+    <EmbeddedResource Include="Chat\Emoji\emoji.tsv" LogicalName="Yaparr.Chat.Emoji.emoji.tsv" />
+  </ItemGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="Yaparr.Tests" />
     <InternalsVisibleTo Include="Yaparr.NetAgent" />

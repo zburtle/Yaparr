@@ -19,6 +19,10 @@ Right-click a message and choose **Reply**: a bar above the box shows what you a
 
 Type **@** at the start of a word in a room to choose someone from the people of the room (arrow keys and Enter or Tab, or click); their name is written into your message and marked. Admins and the owner can also type **@everyone** to name every member; from anyone else it is only words. A message that names you, or answers one of yours, gets an outline, and the unread badge of that room shows an **@** until you read it. In a direct chat there is nobody to name, but replies work.
 
+## Reactions
+
+Point at a message and click the small smiley at its corner, or right-click it and choose **React…**: a picker opens with the thirteen quick emoji (👍 💯 ❤️ 😂 😭 🔥 🙏 😍 🎉 👀 🤔 😮 👎), a search box (type a name such as "party" or "thumbs") and the rest of the emoji by group. The emoji then shows under the message with how many put it there; yours has an outline. Click one under a message to add yours or take it back; point at it to see who. The smiley next to them adds another. Reactions work in rooms and direct chats and are kept with the history. How it works: [Rooms and messages](rooms-and-messages.md#reactions).
+
 ## Link previews
 
 When you send a message with a web link, Yaparr reads the page (title, description and picture) from your computer and sends a small card with the message. It shows below your words, which still hold the link as you wrote it. Everyone who reads the message sees the card without contacting the site, so the site only ever sees you. Clicking a card asks first and shows the full address, then opens it in your browser. If the page is slow or has nothing to show, the message goes without a card after a few seconds. Turn it off in Settings > Network (**Show a preview under the links I send**). How it works: [Rooms and messages](rooms-and-messages.md#link-previews).

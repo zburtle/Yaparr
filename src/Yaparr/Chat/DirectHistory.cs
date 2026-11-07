@@ -142,7 +142,14 @@ internal sealed class DirectHistory
         long cutoff = OldestAllowed();
         foreach (var k in chat.Where(kv => kv.Value.Ts < cutoff).Select(kv => kv.Key).ToList()) chat.Remove(k);
         if (chat.Count <= _max) return;
-        foreach (var k in chat.OrderBy(kv => kv.Value.Ts).Take(chat.Count - _max).Select(kv => kv.Key).ToList()) chat.Remove(k);
+        // Reactions have a share of their own (see RoomHistory.ReactionBudget).
+        var reactions = chat.Where(kv => MessageEnvelope.IsReactionText(kv.Value.Text)).ToList();
+        int allowed = _max * RoomHistory.ReactionBudget;
+        if (reactions.Count > allowed)
+            foreach (var kv in reactions.OrderBy(kv => kv.Value.Ts).Take(reactions.Count - allowed)) chat.Remove(kv.Key);
+        var messages = chat.Where(kv => !MessageEnvelope.IsReactionText(kv.Value.Text)).ToList();
+        if (messages.Count > _max)
+            foreach (var kv in messages.OrderBy(kv => kv.Value.Ts).Take(messages.Count - _max)) chat.Remove(kv.Key);
     }
 
     private string? PathFor(string peer) => _directory == null ? null : Path.Combine(_directory, $"dm-{peer}.jsonl");

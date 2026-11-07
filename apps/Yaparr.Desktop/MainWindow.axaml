@@ -143,6 +143,33 @@
         <Style Selector="Border.bubble.mine Border.quote TextBlock">
             <Setter Property="Foreground" Value="White" />
         </Style>
+        <Style Selector="Button.addreact">
+            <Setter Property="Opacity" Value="0" />
+            <Setter Property="Padding" Value="4,0" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Background" Value="{DynamicResource AppBg}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="FontFamily" Value="Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji, Twemoji Mozilla" />
+        </Style>
+        <Style Selector="ListBoxItem:pointerover Button.addreact">
+            <Setter Property="Opacity" Value="1" />
+        </Style>
+        <Style Selector="Button.chip">
+            <Setter Property="Padding" Value="7,2" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Background" Value="#22808080" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="Button.chip.mine">
+            <Setter Property="Background" Value="#33808080" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
+        </Style>
         <Style Selector="Border.card">
             <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
             <Setter Property="BorderThickness" Value="3,0,0,0" />
@@ -533,7 +560,8 @@
                                     <TextBlock Classes="sys" IsVisible="{Binding IsSystem}" Text="{Binding Text}" />
                                     <TextBlock IsVisible="{Binding ShowSender}" Text="{Binding Sender}" Foreground="{Binding SenderBrush}"
                                                FontSize="12" FontWeight="SemiBold" Margin="10,6,0,0" />
-                                    <Border Classes="bubble" IsVisible="{Binding !IsSystem}"
+                                    <Panel IsVisible="{Binding !IsSystem}">
+                                    <Border Classes="bubble"
                                             Classes.mine="{Binding IsMine}" Classes.other="{Binding IsOther}"
                                             Classes.missed="{Binding IsCatchUp}" Classes.failed="{Binding IsFailed}" Classes.mention="{Binding Highlight}">
                                         <StackPanel Spacing="2">
@@ -565,12 +593,32 @@
                                             <TextBlock Classes="time" Text="{Binding TimeText}" ToolTip.Tip="{Binding FullTime}" />
                                         </StackPanel>
                                     </Border>
+                                    <Button Classes="addreact" Content="&#x1F642;" IsVisible="{Binding CanReact}" HorizontalAlignment="{Binding ReactionAlign}" VerticalAlignment="Top"
+                                            Margin="{Binding ReactButtonMargin}" ToolTip.Tip="React" Click="AddReactionHover_Click" />
+                                    </Panel>
+                                    <ItemsControl ItemsSource="{Binding Reactions}" IsVisible="{Binding HasReactions}" MaxWidth="560"
+                                                  HorizontalAlignment="{Binding ReactionAlign}" Margin="8,0,8,0">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="local:ReactionChipVm">
+                                                <Button Classes="chip" Classes.mine="{Binding Mine}" Margin="0,0,4,4" ToolTip.Tip="{Binding Tooltip}" Click="ReactionChip_Click">
+                                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                                        <TextBlock Text="{Binding Emoji}" FontFamily="Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji, Twemoji Mozilla" VerticalAlignment="Center" />
+                                                        <TextBlock Text="{Binding CountText}" IsVisible="{Binding ShowCount}" FontSize="12" VerticalAlignment="Center" />
+                                                    </StackPanel>
+                                                </Button>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
                                     <TextBlock Classes="status" Classes.failed="{Binding CanRetry}" IsVisible="{Binding HasStatus}" Text="{Binding Status}" ToolTip.Tip="{Binding DeliveryDetail}" />
                                 </StackPanel>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                         <ListBox.ContextMenu>
                             <ContextMenu Opening="MessageMenu_Opening">
+                                <MenuItem x:Name="ReactItem" Header="Re_act…" Click="ReactItem_Click" />
                                 <MenuItem x:Name="ReplyItem" Header="_Reply" Click="Reply_Click" />
                                 <MenuItem x:Name="SavePictureItem" Header="_Save picture as…" Click="SavePicture_Click" />
                                 <MenuItem x:Name="AddToShelfItem" Header="Add to my _GIF shelf" Click="AddToShelf_Click" />
@@ -600,6 +648,19 @@
                             </StackPanel>
                         </DockPanel>
                     </Border>
+                    <Popup x:Name="ReactionPopup" Placement="Pointer" IsLightDismissEnabled="True">
+                        <Border Padding="8" CornerRadius="12" Width="340" Background="{DynamicResource AppBg}" BorderBrush="{DynamicResource Line}" BorderThickness="1">
+                            <StackPanel Spacing="6">
+                                <WrapPanel x:Name="QuickRow" HorizontalAlignment="Center" />
+                                <TextBox x:Name="EmojiSearch" Watermark="Search emoji" MaxLength="40" />
+                                <StackPanel x:Name="EmojiTabs" Orientation="Horizontal" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="EmojiTitle" Classes="muted small" Margin="4,0,0,0" />
+                                <ScrollViewer MaxHeight="230" HorizontalScrollBarVisibility="Disabled">
+                                    <WrapPanel x:Name="EmojiGrid" />
+                                </ScrollViewer>
+                            </StackPanel>
+                        </Border>
+                    </Popup>
                     <Popup x:Name="ShelfPopup" PlacementTarget="{Binding #ShelfButton}" Placement="TopEdgeAlignedLeft" IsLightDismissEnabled="True" Closed="ShelfPopup_Closed">
                         <Border Padding="8" CornerRadius="12" Width="372" Background="{DynamicResource AppBg}" BorderBrush="{DynamicResource Line}" BorderThickness="1">
                             <DockPanel>

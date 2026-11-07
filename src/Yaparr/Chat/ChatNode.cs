@@ -1079,7 +1079,12 @@ public sealed partial class ChatNode : IDisposable
     }
 
     internal IReadOnlyList<ChatMessage> GetHistory(ChatRoom room) =>
-        room.History.Snapshot().Where(m => !IsBlocked(new PeerId(m.From)) && !IsBannedIn(room, new PeerId(m.From)) && !IsMessageDeleted(room, m)).Select(m => ToChatMessage(room, m, catchUp: false)).ToList();
+        room.History.Snapshot().Where(m => !MessageEnvelope.IsReactionText(m.Text) && !IsBlocked(new PeerId(m.From)) && !IsBannedIn(room, new PeerId(m.From)) && !IsMessageDeleted(room, m)).Select(m => ToChatMessage(room, m, catchUp: false)).ToList();
+
+    /// <summary>The reactions on the messages of a room, as its history comes to now (people you blocked or the room banned do not count).</summary>
+    internal ReactionSet GetReactions(ChatRoom room) =>
+        ReactionTally.Build(room.History.Snapshot().Where(m => MessageEnvelope.IsReactionText(m.Text)).Select(m => (SignedMessage.Key(m), m.From, m.Ts, m.Text)),
+            from => AccountOf(new PeerId(from)), account => IsBlocked(account) || IsBannedIn(room, account));
 
     private ChatMessage ToChatMessage(ChatRoom room, StoredMessage m, bool catchUp)
     {

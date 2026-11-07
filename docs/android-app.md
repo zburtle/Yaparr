@@ -39,6 +39,10 @@ Typing an **@** and the start of a name in a room offers the people there, as bu
 
 Not there yet: @everyone, and asking the other members for an original message the phone does not have.
 
+## Reactions
+
+**React…** in a message's long-press menu opens a panel with the thirteen quick emoji (👍 💯 ❤️ 😂 😭 🔥 🙏 😍 🎉 👀 🤔 😮 👎), a search box and the rest of the emoji by group. The emoji shows under the message with how many put it there; tap one to add yours or take it back, and tap the smiley next to them to add another. Rooms and direct chats; see [Rooms and messages](rooms-and-messages.md#reactions). Not there yet: seeing who put an emoji there.
+
 ## Link previews
 
 A message with a web link carries a card below it with the page's title, description and picture, as on the computer: the phone reads the page when the message is sent, and the people reading it never contact the site. A tap on a card asks first and shows the full address, then opens it in the browser. Settings > **Link previews** turns sending cards off. See [Rooms and messages](rooms-and-messages.md#link-previews).
