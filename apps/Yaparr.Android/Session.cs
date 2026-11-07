@@ -235,6 +235,7 @@ public sealed partial class Session : IDisposable
         room.MemberRenamed += _ => UI(() => ShowMembers(chat, room));
         room.ModerationChanged += () => UI(() => Reload(chat, room));
         room.VoiceChanged += () => UI(() => RefreshVoice(chat));
+        room.MediaGroupsChanged += () => UI(() => RefreshShares(chat));
         room.SoundsChanged += () => UI(() => SoundsChanged?.Invoke(chat));
         room.GifsChanged += () => UI(() => GifsChanged?.Invoke(chat));
         room.ChannelsChanged += () => UI(() => RefreshVoice(chat));
@@ -258,6 +259,9 @@ public sealed partial class Session : IDisposable
     private VoiceCall? _call;
     private Chat? _callChat;
     private readonly HashSet<string> _speaking = new();
+
+    /// <summary>What this phone's connection can send, as measured (bytes a second), or null until it has been.</summary>
+    public long? UploadBytesPerSecond => _node?.MeasuredUploadBytesPerSecond;
 
     /// <summary>The room you are in voice in, or null.</summary>
     public Chat? VoiceChat => _callChat;
@@ -364,11 +368,15 @@ public sealed partial class Session : IDisposable
         _callChat = null;
         _speaking.Clear();
         call?.Dispose();
+        // Watching a screen goes with being in the call.
+        if (chat != null && _watchChat == chat) StopWatching();
         if (chat != null)
         {
             chat.InVoice = false;
             chat.Muted = chat.Deafened = false;
             RefreshVoice(chat);
+            // Leaving the call ends a share that was going into it, unless another of your devices is still in it.
+            if (_shareChat == chat && chat.Room is { CanShareScreen: false }) StopScreenShare();
         }
     }
 
@@ -424,6 +432,9 @@ public sealed partial class Session : IDisposable
             channels.Add(new VoiceChannelVm(c.Id, c.Name) { MembersText = names.Count == 0 ? "No one" : string.Join(", ", names), InCall = inCall && chat.VoiceChannelId == c.Id });
         }
         chat.SetVoice(channels, mine);
+        // Another of your devices is in the call and this one is not: this phone can still share its screen into it.
+        chat.InVoiceElsewhere = !inCall && room.CanShareScreen;
+        RefreshShares(chat);
     }
 
     /// <summary>Puts the line under the title back to who is here, after something else was said there.</summary>

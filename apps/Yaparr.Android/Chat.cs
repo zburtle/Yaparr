@@ -104,7 +104,7 @@ public sealed class Chat : Observable
     public bool InVoice
     {
         get => _inVoice;
-        set { if (_inVoice == value) return; _inVoice = value; Raise(); Raise(nameof(CanJoinVoice)); }
+        set { if (_inVoice == value) return; _inVoice = value; Raise(); Raise(nameof(CanJoinVoice)); Raise(nameof(CanShareScreen)); Raise(nameof(ShowShareHint)); }
     }
 
     public bool Muted
@@ -132,7 +132,41 @@ public sealed class Chat : Observable
     /// <summary>A room you are not in the call of can be joined.</summary>
     public bool CanJoinVoice => IsRoom && !_inVoice;
 
+    private bool _inVoiceElsewhere, _sharing;
+
+    /// <summary>Another of your devices is in this room's call and this phone is not.</summary>
+    public bool InVoiceElsewhere
+    {
+        get => _inVoiceElsewhere;
+        set { if (_inVoiceElsewhere == value) return; _inVoiceElsewhere = value; Raise(); Raise(nameof(CanShareScreen)); Raise(nameof(ShareHint)); }
+    }
+
+    /// <summary>This phone's screen is being shared with the room.</summary>
+    public bool IsSharing
+    {
+        get => _sharing;
+        set { if (_sharing == value) return; _sharing = value; Raise(); Raise(nameof(CanShareScreen)); Raise(nameof(ShareHint)); }
+    }
+
+    /// <summary>The phone's screen can be shared: Android 14 or newer, and one of your devices (this one or another) is in the room's call.</summary>
+    public bool CanShareScreen => IsRoom && Session.CanShareHere && (_inVoice || _inVoiceElsewhere) && !_sharing;
+
+    public bool ShowShareHint => CanShareScreen && !_inVoice;
+    public string ShareHint => "Share this phone's screen in the call you are in on your other device.";
+
     public bool HasVoiceMembers => VoiceMembers.Count > 0;
+
+    /// <summary>The screens shared in the voice channel this phone is in.</summary>
+    public ObservableCollection<ShareItem> Shares { get; } = new();
+
+    public bool HasShares => Shares.Count > 0;
+
+    public void SetShares(IReadOnlyList<ShareItem> shares)
+    {
+        Shares.Clear();
+        foreach (var share in shares) Shares.Add(share);
+        Raise(nameof(HasShares));
+    }
 
     /// <summary>The room's voice channels, each with who is in it.</summary>
     public ObservableCollection<VoiceChannelVm> VoiceChannels { get; } = new();
