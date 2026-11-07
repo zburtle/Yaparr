@@ -2,7 +2,7 @@
 
 `apps/Yaparr.Android` is the Android app, built with Avalonia. It uses the same library as the desktop app. It opens onto the list of your rooms and direct chats (the one with the newest message first, with a count of what is unread); tap one to read and send text messages. The + button makes a room, joins one from an invite, or opens a chat with a person from their ID. In a room the menu has the people (tap one to write to them), Copy invite and Leave; a room with several text channels shows them as buttons above the messages. The phone's back button goes back from a chat to the list. Rooms are kept in the settings the same way as on the desktop, so a room you join on one of your devices turns up on the others.
 
-It works only while the app is open. There is no foreground service, no background connection and no notifications yet, and no voice, pictures, soundboard or screen sharing. These and the other desktop features are tracked in #126 and #127.
+It works only while the app is open. There is no foreground service, no background connection and no notifications yet, and no screen sharing or watching one. Voice, pictures and GIFs, the GIF shelf, replies and mentions, moderation, settings, the connection check, backup and the soundboard are all there (see the sections below); what is still missing from them is listed in each section and in #127.
 
 ## Build and run
 
@@ -99,5 +99,6 @@ In the app's private storage (`files/Yaparr`): the identity key, the name, the l
 ## Known limits
 
 - Tried on an emulator (Android 16): first start, making a room, sending a message, going back to the list, the room menu, and restarting the app (it comes back on the list with the room and its last message). Not tried with a second person, because a peer on the same Wi-Fi as the emulator cannot reach it (the emulator sits behind its own NAT, and the connection attempts time out). So receiving messages, the unread counts, direct chats, the list of people, channel buttons, and rooms arriving from a linked computer are written but not checked: test them with a real phone.
-- Not there yet: voice channels (they are left out of the channel buttons until #126), pictures, replies, mentions, roles and moderation, blocking, and settings (#127).
+- Not there yet: making a text or voice channel in a room (the computer makes them; the phone shows and joins them), a foreground service, notifications, and screen sharing (when it is built it will support Android 14 and newer only, so that "Share one app" keeps notifications out of the picture). The smaller gaps are at the end of each section above.
+- Everything above was tried on an emulator, not with a second person on the other end (bans, mentions and received replies in particular) and not on a real phone.
 - Linking: pasting the code and passphrase was tried on the emulator, and so was scanning. The camera scan was tried on the emulator's virtual camera (the scene had the QR code on posters around the camera): it asked for the camera permission, read the code and linked. A real phone is not tried yet.
