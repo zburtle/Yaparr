@@ -38,7 +38,7 @@ public partial class MainWindow
     {
         var message = MessageList.SelectedItem as MessageVm;
         ReplyItem.IsVisible = message is { Key: not null, IsSystem: false };
-        SavePictureItem.IsVisible = message is { Image: not null };
+        SavePictureItem.IsVisible = AddToShelfItem.IsVisible = message is { Image: not null };
         RetryItem.IsVisible = message is { CanRetry: true };
         BlockSenderItem.IsVisible = message != null && BlockedIdOf(message) is { } id && _node?.IsBlocked(new PeerId(id)) == false;
         var room = SelectedRoom;
