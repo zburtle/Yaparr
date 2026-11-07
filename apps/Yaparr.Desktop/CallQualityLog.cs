@@ -71,7 +71,8 @@ public sealed class CallQualityLog
             long resent = status.Retransmitted - _resent, dropped = status.Dropped - _dropped;
             long gap = sharer.TakeLongestGapMs();
             double wanted = Math.Max(1, sharer.Options.Fps);
-            bool bad = fps < wanted * 0.8 || gap > 3000.0 / wanted || resent > 50 || dropped > 0;
+            // More pictures than were asked for means the capture is handing over a burst (the encoder then sends many times the bitrate).
+            bool bad = fps < wanted * 0.8 || fps > wanted * 1.5 || gap > 3000.0 / wanted || resent > 50 || dropped > 0;
             (_frames, _bytes, _resent, _dropped, _at) = (frames, bytes, status.Retransmitted, status.Dropped, now);
             if (bad)
             {

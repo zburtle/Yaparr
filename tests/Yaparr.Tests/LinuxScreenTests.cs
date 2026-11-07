@@ -292,7 +292,7 @@ public class LinuxScreenTests
     {
         var args = PortalPipeline.GstArguments(Monitor1080, 9, new ScreenOptions { Fps = 30 });
         string line = string.Join(' ', args);
-        Assert.StartsWith("-q pipewiresrc fd=9 path=57 keepalive-time=33 do-timestamp=true ! videoconvert ! videoscale ! videorate ! ", line);
+        Assert.StartsWith("-q pipewiresrc fd=9 path=57 keepalive-time=33 do-timestamp=true ! videoconvert ! videoscale ! videorate skip-to-first=true max-duplication-time=500000000 ! ", line);
         Assert.Contains("video/x-raw,format=I420,width=1280,height=720,framerate=30/1", line);
         Assert.EndsWith("! fdsink fd=1 sync=false", line);
     }

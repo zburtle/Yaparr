@@ -37,7 +37,10 @@ public static class PortalPipeline
         {
             "-q",
             "pipewiresrc", "fd=" + number(fd), "path=" + stream.NodeId.ToString(CultureInfo.InvariantCulture), "keepalive-time=" + number(keepAlive), "do-timestamp=true",
-            "!", "videoconvert", "!", "videoscale", "!", "videorate", "!",
+            // videorate starts its output at time zero, so when the first picture of the stream is stamped much later (some desktops stamp with their own
+            // clock) it makes up every picture in between at once: a flood of copies of the first picture, a minute or two of video in a few seconds, at
+            // many times the stream's bitrate. skip-to-first starts at the first picture, and max-duplication-time stops it filling a long gap.
+            "!", "videoconvert", "!", "videoscale", "!", "videorate", "skip-to-first=true", "max-duplication-time=500000000", "!",
             $"video/x-raw,format=I420,width={number(width)},height={number(height)},framerate={number(o.Fps)}/1",
             "!", "fdsink", "fd=1", "sync=false",
         };
