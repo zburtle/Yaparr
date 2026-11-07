@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
+using Yaparr.AppCore;
 using System.Text.RegularExpressions;
 
 namespace Yaparr.Desktop;
@@ -47,28 +48,8 @@ internal static partial class ClipboardPictures
                || parsed.Query.Contains(".gif", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static readonly HttpClient Client = new(new SocketsHttpHandler
-    {
-        // No proxy and no cookies, and the connection is made here so that an address inside a home or office network is refused
-        // (a copied page must not make the app knock on the router or on a machine next door). A redirect goes through the same check.
-        UseProxy = false,
-        UseCookies = false,
-        MaxAutomaticRedirections = 3,
-        ConnectTimeout = TimeSpan.FromSeconds(8),
-        ConnectCallback = async (context, ct) =>
-        {
-            var addresses = await Dns.GetHostAddressesAsync(context.DnsEndPoint.Host, ct).ConfigureAwait(false);
-            var allowed = addresses.Where(IsPublic).ToArray();
-            if (allowed.Length == 0) throw new HttpRequestException("That address is not on the public internet.");
-            var socket = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
-            try
-            {
-                await socket.ConnectAsync(allowed, context.DnsEndPoint.Port, ct).ConfigureAwait(false);
-                return new NetworkStream(socket, ownsSocket: true);
-            }
-            catch { socket.Dispose(); throw; }
-        },
-    }) { Timeout = TimeSpan.FromSeconds(20) };
+    // The connection is made by PublicWeb, so that an address inside a home or office network is refused.
+    private static readonly HttpClient Client = new(PublicWeb.CreateHandler()) { Timeout = TimeSpan.FromSeconds(20) };
 
     static ClipboardPictures()
     {
@@ -95,19 +76,5 @@ internal static partial class ClipboardPictures
             return ms.ToArray();
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException or SocketException) { return null; }
-    }
-
-    private static bool IsPublic(IPAddress address)
-    {
-        if (address.IsIPv4MappedToIPv6) address = address.MapToIPv4();
-        if (IPAddress.IsLoopback(address) || address.Equals(IPAddress.Any) || address.Equals(IPAddress.IPv6Any)) return false;
-        if (address.AddressFamily == AddressFamily.InterNetworkV6)
-            return !address.IsIPv6LinkLocal && !address.IsIPv6SiteLocal && !address.IsIPv6Multicast && (address.GetAddressBytes()[0] & 0xFE) != 0xFC;
-        var b = address.GetAddressBytes();
-        return !(b[0] == 10 || b[0] == 127 || b[0] == 0 || b[0] >= 224
-                 || (b[0] == 172 && b[1] is >= 16 and <= 31)
-                 || (b[0] == 192 && b[1] == 168)
-                 || (b[0] == 169 && b[1] == 254)
-                 || (b[0] == 100 && b[1] is >= 64 and <= 127));
     }
 }

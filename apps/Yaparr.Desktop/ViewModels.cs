@@ -2,6 +2,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Yaparr.Chat;
 
 namespace Yaparr.Desktop;
@@ -54,6 +55,30 @@ public sealed class MessageVm : Observable
 
     public Attachment? Attachment { get; }
     public ChatMessage? Source { get; init; }
+
+    /// <summary>The card the sender attached for a link in the words, shown below them.</summary>
+    public LinkPreview? Card { get; init; }
+    public bool HasPreview => Card != null;
+    public string PreviewTitle => Card?.Title is { Length: > 0 } t ? t : Card?.Host ?? "";
+    public string PreviewDescription => Card?.Description ?? "";
+    public bool HasPreviewDescription => PreviewDescription.Length > 0;
+    public string PreviewHost => Card?.Host ?? "";
+    public bool HasPreviewImage => PreviewImage != null;
+
+    private Bitmap? _previewImage;
+    private bool _previewImageTried;
+
+    /// <summary>The small picture of the card, once it has been read from the message.</summary>
+    public Bitmap? PreviewImage
+    {
+        get
+        {
+            if (_previewImageTried || Card?.Thumbnail is not { Length: > 0 } bytes) return _previewImage;
+            _previewImageTried = true;
+            try { _previewImage = new Bitmap(new MemoryStream(bytes)); } catch (Exception) { }
+            return _previewImage;
+        }
+    }
 
     /// <summary>The text channel of a room message; null for direct messages and notices.</summary>
     public string? Channel { get; init; }

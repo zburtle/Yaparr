@@ -30,7 +30,7 @@ public sealed record Mention(PeerId Account, string Name)
 /// What a message says besides its words: which earlier message it answers, and which people it names.
 /// <see cref="ReplyTo"/> is the <see cref="ChatMessage.Key"/> of that message.
 /// </summary>
-public sealed record MessageParts(string Body, string? ReplyTo, IReadOnlyList<Mention> Mentions)
+public sealed record MessageParts(string Body, string? ReplyTo, IReadOnlyList<Mention> Mentions, LinkPreview? Preview = null)
 {
     public static readonly MessageParts None = new("", null, Array.Empty<Mention>());
 }
@@ -60,16 +60,26 @@ public static class MessageEnvelope
     /// The text to send for <paramref name="body"/> that answers the message with key <paramref name="replyTo"/> and names
     /// <paramref name="mentions"/>. With neither, it is the body unchanged.
     /// </summary>
-    public static string Wrap(string body, string? replyTo, IReadOnlyCollection<Mention>? mentions)
+    public static string Wrap(string body, string? replyTo, IReadOnlyCollection<Mention>? mentions, LinkPreview? preview = null)
     {
         var named = (mentions ?? Array.Empty<Mention>()).Select(m => new Mention(m.Account, CleanName(m.Name))).Where(m => m.Name.Length > 0)
             .GroupBy(m => m.Account).Select(g => g.First()).Take(MaxMentions).ToArray();
         if (replyTo != null && !IsKey(replyTo)) throw new ArgumentException("That is not the key of a message.", nameof(replyTo));
-        if (replyTo == null && named.Length == 0) return body;
-        var header = JsonSerializer.Serialize(new Header { R = replyTo, M = named.Length == 0 ? null : named.Select(m => new HeaderMention { A = m.Account.Value, N = m.Name }).ToArray() }, Json);
-        var text = Marker + header + End + body;
-        if (text.Length > MaxText) throw new InvalidOperationException("That message is too long.");
-        return text;
+        var card = preview?.Normalized();
+        if (replyTo == null && named.Length == 0 && card == null) return body;
+        // A card that does not fit loses its picture first, then goes; the words and the people they name always come first.
+        foreach (var candidate in card == null ? new LinkPreview?[] { null } : new[] { card, card with { Thumbnail = null }, null })
+        {
+            var header = JsonSerializer.Serialize(new Header
+            {
+                R = replyTo, M = named.Length == 0 ? null : named.Select(m => new HeaderMention { A = m.Account.Value, N = m.Name }).ToArray(),
+                P = candidate == null ? null : new HeaderPreview { U = candidate.Url, T = candidate.Title, D = candidate.Description.Length == 0 ? null : candidate.Description, I = candidate.Thumbnail is { Length: > 0 } th ? Convert.ToBase64String(th) : null },
+            }, Json);
+            if (replyTo == null && named.Length == 0 && candidate == null) return body;
+            var text = Marker + header + End + body;
+            if (text.Length <= MaxText) return text;
+        }
+        throw new InvalidOperationException("That message is too long.");
     }
 
     /// <summary>Reads a message text. Anything that is not a well formed envelope is just words.</summary>
@@ -83,13 +93,29 @@ public static class MessageEnvelope
             var header = JsonSerializer.Deserialize<Header>(text.AsSpan(Marker.Length, end - Marker.Length), Json);
             if (header == null) return new MessageParts(text, null, Array.Empty<Mention>());
             var reply = header.R != null && IsKey(header.R) ? header.R.ToLowerInvariant() : null;
+            var preview = ReadPreview(header.P);
             var mentions = (header.M ?? Array.Empty<HeaderMention>())
                 .Where(m => m.A != null && IsAccount(m.A) && CleanName(m.N ?? "").Length > 0)
                 .Select(m => new Mention(new PeerId(m.A!.ToLowerInvariant()), CleanName(m.N!)))
                 .GroupBy(m => m.Account).Select(g => g.First()).Take(MaxMentions).ToList();
-            return new MessageParts(text[(end + 1)..], reply, mentions);
+            var body = text[(end + 1)..];
+            // A card is for a link that is in the words; a card for some other address is not shown.
+            if (preview != null && !body.Contains(preview.Url, StringComparison.Ordinal)) preview = null;
+            return new MessageParts(body, reply, mentions, preview);
         }
         catch (JsonException) { return new MessageParts(text, null, Array.Empty<Mention>()); }
+    }
+
+    // A card from the header, held to the same limits as one that is sent. Anything that does not hold is left out; the words are unaffected.
+    private static LinkPreview? ReadPreview(HeaderPreview? p)
+    {
+        if (p?.U == null) return null;
+        byte[]? thumb = null;
+        if (p.I is { Length: > 0 and <= LinkPreview.MaxThumbnailBytes * 2 })
+        {
+            try { thumb = Convert.FromBase64String(p.I); } catch (FormatException) { }
+        }
+        return new LinkPreview(p.U, p.T ?? "", p.D ?? "", thumb).Normalized();
     }
 
     // A message key (SignedMessage.KeyOf): 32 hexadecimal digits.
@@ -109,6 +135,15 @@ public static class MessageEnvelope
     {
         public string? R { get; set; }
         public HeaderMention[]? M { get; set; }
+        public HeaderPreview? P { get; set; }
+    }
+
+    private sealed class HeaderPreview
+    {
+        public string? U { get; set; }
+        public string? T { get; set; }
+        public string? D { get; set; }
+        public string? I { get; set; }
     }
 
     private sealed class HeaderMention

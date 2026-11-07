@@ -39,6 +39,10 @@ Typing an **@** and the start of a name in a room offers the people there, as bu
 
 Not there yet: @everyone, and asking the other members for an original message the phone does not have.
 
+## Link previews
+
+A message with a web link carries a card below it with the page's title, description and picture, as on the computer: the phone reads the page when the message is sent, and the people reading it never contact the site. A tap on a card asks first and shows the full address, then opens it in the browser. Settings > **Link previews** turns sending cards off. See [Rooms and messages](rooms-and-messages.md#link-previews).
+
 ## Renaming a room
 
 **Rename the room** in a room's menu gives it a name of your own, for you only: the others keep the name they gave it, and a name you choose is kept with the room across restarts.

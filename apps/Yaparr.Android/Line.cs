@@ -69,6 +69,31 @@ public sealed class Line : Observable
     /// <summary>The picture this message carries, if it carries one.</summary>
     public Attachment? Attachment { get; set; }
 
+    /// <summary>The card the sender attached for a link in the words, shown below them.</summary>
+    public LinkPreview? Card { get; set; }
+    public bool HasCard => Card != null;
+    public string CardHost => Card?.Host ?? "";
+    public string CardTitle => Card?.Title is { Length: > 0 } t ? t : Card?.Host ?? "";
+    public string CardDescription => Card?.Description ?? "";
+    public bool HasCardDescription => CardDescription.Length > 0;
+    public bool HasCardImage => CardImage != null;
+
+    private IImage? _cardImage;
+    private bool _cardImageTried;
+
+    /// <summary>The small picture of the card, once it has been read from the message.</summary>
+    public IImage? CardImage
+    {
+        get
+        {
+            if (_cardImageTried || Card?.Thumbnail is not { Length: > 0 } bytes) return _cardImage;
+            _cardImageTried = true;
+            try { using var ms = new MemoryStream(bytes); _cardImage = new Bitmap(ms); }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IOException) { }
+            return _cardImage;
+        }
+    }
+
     public bool HasAttachment => Attachment != null;
 
     /// <summary>Text under the picture is its caption; a message that is only a picture has none.</summary>

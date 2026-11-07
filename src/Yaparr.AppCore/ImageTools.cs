@@ -52,6 +52,32 @@ internal static class ImageTools
         finally { scaled?.Dispose(); }
     }
 
+    /// <summary>
+    /// The small square picture of a link's card: the middle of the page's picture, as large as fits in <see cref="LinkPreview.MaxThumbnailBytes"/>.
+    /// Null when the bytes are not a picture that can be read.
+    /// </summary>
+    public static byte[]? CardThumbnail(byte[] input)
+    {
+        if (!ImageSniffer.TryRead(input, out _)) return null;
+        using var source = SKBitmap.Decode(input);
+        if (source == null || source.Width < 1 || source.Height < 1) return null;
+        int edge = Math.Min(source.Width, source.Height);
+        var crop = new SKRect((source.Width - edge) / 2f, (source.Height - edge) / 2f, (source.Width + edge) / 2f, (source.Height + edge) / 2f);
+        using var image = SKImage.FromBitmap(source);
+        foreach (var (side, quality) in new[] { (LinkPreview.MaxThumbnailDimension, 60), (112, 55), (96, 50), (80, 45), (64, 40), (48, 35) })
+        {
+            using var flat = new SKBitmap(side, side, SKColorType.Bgra8888, SKAlphaType.Opaque);
+            using (var canvas = new SKCanvas(flat))
+            {
+                canvas.Clear(SKColors.White);
+                canvas.DrawImage(image, crop, new SKRect(0, 0, side, side), new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear));
+            }
+            using var encoded = SKImage.FromBitmap(flat).Encode(SKEncodedImageFormat.Jpeg, quality);
+            if (encoded != null && encoded.Size <= LinkPreview.MaxThumbnailBytes) return encoded.ToArray();
+        }
+        return null;
+    }
+
     /// <summary>A tiny preview that travels inside the message, so there is something to show before the file arrives.</summary>
     private static byte[]? Thumbnail(SKBitmap source)
     {
