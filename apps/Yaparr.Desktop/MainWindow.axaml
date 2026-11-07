@@ -422,7 +422,7 @@
                                 <Button Classes="icon" Classes.on="{Binding Deafened}" Content="🎧" ToolTip.Tip="{Binding DeafenTip}"
                                         IsVisible="{Binding CanUseVoiceControls}" Click="DeafenVoice_Click" />
                                 <Button Classes="icon" Content="🎛" ToolTip.Tip="Soundboard" IsVisible="{Binding CanUseVoiceControls}" Click="Soundboard_Click" />
-                                <Button Classes="icon" Content="🖥" ToolTip.Tip="Share your screen" IsVisible="{Binding CanShare}" Click="ShareScreen_Click" />
+                                <Button Classes="icon" Content="🖥" ToolTip.Tip="{Binding ShareTip}" IsVisible="{Binding CanShare}" Click="ShareScreen_Click" />
                                 <Button Classes="icon on" Content="🖥" ToolTip.Tip="Stop sharing" IsVisible="{Binding CanStopSharing}" Click="StopSharing_Click" />
                                 <Button Content="Leave" Foreground="{DynamicResource Bad}" ToolTip.Tip="Leave voice" IsVisible="{Binding CanUseVoiceControls}" Click="LeaveVoice_Click" />
                                 <Button Classes="icon" Content="⋯" FontWeight="Bold" ToolTip.Tip="More">

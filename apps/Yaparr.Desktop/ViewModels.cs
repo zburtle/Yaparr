@@ -386,7 +386,7 @@ public sealed class ConversationVm : Observable
     public bool InVoice
     {
         get => _inVoice;
-        set { if (_inVoice == value) return; _inVoice = value; Raise(); Raise(nameof(CanJoinVoice)); Raise(nameof(CanUseVoiceControls)); Raise(nameof(CanShare)); Raise(nameof(CanWatchShares)); Raise(nameof(NeedsVoiceToWatch)); }
+        set { if (_inVoice == value) return; _inVoice = value; Raise(); Raise(nameof(CanJoinVoice)); Raise(nameof(CanUseVoiceControls)); Raise(nameof(CanShare)); Raise(nameof(ShareTip)); Raise(nameof(CanWatchShares)); Raise(nameof(NeedsVoiceToWatch)); }
     }
 
     public bool Muted
@@ -420,7 +420,18 @@ public sealed class ConversationVm : Observable
     }
 
     /// <summary>Sharing a screen needs being in the room's voice channel, and works on Windows only for now; watching works everywhere.</summary>
-    public bool CanShare => IsRoom && _inVoice && !_sharing && Yaparr.Screen.ScreenCapture.Supported;
+    public bool CanShare => IsRoom && (_inVoice || _inVoiceElsewhere) && !_sharing && Yaparr.Screen.ScreenCapture.Supported;
+
+    private bool _inVoiceElsewhere;
+
+    /// <summary>Another of your devices is in this room's call and this one is not: this one can still share its screen into that call.</summary>
+    public bool InVoiceElsewhere
+    {
+        get => _inVoiceElsewhere;
+        set { if (_inVoiceElsewhere == value) return; _inVoiceElsewhere = value; Raise(); Raise(nameof(CanShare)); Raise(nameof(ShareTip)); }
+    }
+
+    public string ShareTip => _inVoice ? "Share your screen" : "Share this device's screen in the call you are in on your other device";
     public bool CanStopSharing => _sharing;
 
     public string MuteGlyph => _muted ? "🔇" : "🎤";

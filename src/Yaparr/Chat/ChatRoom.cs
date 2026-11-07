@@ -309,6 +309,16 @@ public sealed class ChatRoom
     /// <summary>The people currently in this room's voice channel, including you if you have joined.</summary>
     public IReadOnlyList<VoiceParticipant> VoiceParticipants => _node.GetVoiceParticipants(this);
 
+    /// <summary>
+    /// The voice channel a screen share from this device goes to: the one you are in, or else the one another of your linked devices is in
+    /// (you can share from a device that is not in the call while another of yours is). Null when none of your devices is in voice, and then
+    /// there is nothing to share into.
+    /// </summary>
+    public string? ScreenShareChannel => ActiveVoice?.ChannelId ?? _node.ChannelOfMyOtherDevice(this);
+
+    /// <summary>Whether this device may share its screen with the room now: one of your devices, this one or a linked one, is in a voice channel.</summary>
+    public bool CanShareScreen => ScreenShareChannel != null;
+
     /// <summary>Your session in this room's voice channel, or null if you have not joined.</summary>
     public Yaparr.Voice.VoiceSession? CurrentVoice => ActiveVoice;
 
