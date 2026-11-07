@@ -164,9 +164,13 @@ public partial class MainWindow
 
     private void StopSharing_Click(object? sender, RoutedEventArgs e) => StopSharingCore();
 
+    // What the last share looked like when it ended, for "Copy sharing diagnostics".
+    private string? _lastSharingReport;
+
     private void StopSharingCore()
     {
         var sharer = _sharer;
+        if (sharer != null) _lastSharingReport = sharer.Describe();
         var conv = _sharerConv;
         _sharer = null;
         _sharerConv = null;

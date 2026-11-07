@@ -251,6 +251,17 @@ public class LinuxScreenTests
         Assert.Equal(wayland, ScreenCapture.IsWayland(session, socket));
     }
 
+    [Fact]
+    public async Task The_sharing_diagnostics_say_how_this_computer_shares_and_do_not_fail_without_ffmpeg()
+    {
+        var text = await ScreenDiagnostics.BuildAsync(ffmpegPath: Path.Combine(Path.GetTempPath(), "no-such-ffmpeg-" + Guid.NewGuid().ToString("N")));
+        Assert.Contains("Screen sharing", text);
+        Assert.Contains("Way of capture here:", text);
+        Assert.Contains("FFmpeg version:", text);   // asked of a program that is not there: said so, not thrown
+        Assert.Contains("could not run", text);
+        if (OperatingSystem.IsLinux()) Assert.Contains("Session: XDG_SESSION_TYPE=", text);
+    }
+
     private static readonly PortalStream Monitor1080 = new(57, 1920, 1080, false);
 
     [Fact]

@@ -41,6 +41,8 @@ Help > "Connection guide" explains in plain words when the VPN and TURN options 
 
 Settings > About > "Copy diagnostics" puts the version, system, network state and check, how each person is reached, the voice settings and the last 300 log lines on the clipboard. Names of people and rooms are left out, ids and addresses are shortened (`LogScrubber`) and keys and passwords removed.
 
+Settings > About > "Copy sharing diagnostics" is the same for a problem with sharing a screen or watching one (a share that shows one picture and no more, say): the kind of desktop (session type, Wayland or X11, Flatpak or not), whether the portal or the X11 copy is used, which of GStreamer, xrandr and the sound tools are there, FFmpeg's version and the encoders it has, what the current or last share did (encoder, frames and key frames sent, frames per second, the FFmpeg arguments and what FFmpeg and GStreamer last said) and the log lines about sharing and watching. Names are left out and addresses shortened, as in the other report (`ScreenDiagnostics` and `ScreenSharer.Describe`).
+
 Help > "Report a problem…" does that and then opens the bug report form on GitHub in your browser, with the version and system already filled in; the diagnostics are too long for a link, so they are on the clipboard to paste into the form's Diagnostics box (read them first). The repository's issue forms (bug report and feature request) are in `.github/ISSUE_TEMPLATE`, and a vulnerability is pointed to the private security report instead.
 
 ## Logs

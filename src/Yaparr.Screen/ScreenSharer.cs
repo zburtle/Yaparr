@@ -199,6 +199,35 @@ public sealed class ScreenSharer : IDisposable
     /// <summary>The sharing ended; the exception is null when it was stopped on purpose.</summary>
     public event Action<Exception?>? Ended;
 
+    private volatile string _lastArguments = "";
+    private DateTime _startedAt;
+
+    /// <summary>
+    /// A plain description of this share for a bug report: what is being shared and how, how many pictures were sent and how fast, and what
+    /// the programs behind it last said. A viewer that sees one picture and no more shows up as few frames and a long gap here.
+    /// </summary>
+    public string Describe()
+    {
+        var text = new System.Text.StringBuilder();
+        var seconds = _startedAt == default ? 0 : (DateTime.UtcNow - _startedAt).TotalSeconds;
+        text.AppendLine($"  Sharing: {(_options.Portal != null ? (_options.Portal.IsWindow ? "a window, chosen in the desktop's picker" : "a screen, chosen in the desktop's picker") : _options.WindowHandle != null ? "a window" : "a monitor")}, {_options.Fps} fps, {_options.Kbps} kbit/s, up to {_options.MaxWidth}x{_options.MaxHeight}, a key frame every {_options.KeyFrameSeconds:0.#} s");
+        text.AppendLine($"  Encoder: {ScreenCodecs.Describe(Codec, Encoder)}{(FallbackReason is { } why ? $" (not used: {why})" : "")}");
+        text.AppendLine($"  Sent: {Frames} frames, {KeyFrames} of them key frames, {Bytes / 1024} KB in {seconds:0} s ({(seconds > 1 ? Frames / seconds : 0):0.0} frames per second on average)");
+        text.AppendLine($"  Longest wait for a frame from FFmpeg since this was last asked: {Interlocked.Read(ref _maxGapMs)} ms; running: {(IsRunning ? "yes" : "no")}");
+        text.AppendLine($"  Sound: {(SharingSound ? "shared" : SoundProblem ?? "not shared")}");
+        if (_options.Portal != null)
+        {
+            bool gst; lock (_gate) gst = _gstreamer is { HasExited: false };
+            text.AppendLine($"  GStreamer is {(gst ? "running" : "not running")}; the portal stream is {_options.Portal.Stream.Width}x{_options.Portal.Stream.Height}");
+        }
+        text.AppendLine($"  FFmpeg arguments: {_lastArguments}");
+        text.AppendLine($"  FFmpeg and GStreamer last said: {(LastErrors.Length > 0 ? LastErrors : "nothing")}");
+        return text.ToString();
+    }
+
+    /// <summary>Whether the share is still going (not ended or stopped).</summary>
+    public bool IsRunning => _run is { IsCompleted: false };
+
     /// <summary>What FFmpeg last printed to its error output, to explain a failure.</summary>
     public string LastErrors { get { lock (_gate) return string.Join(" | ", _errors); } }
 
@@ -263,6 +292,8 @@ public sealed class ScreenSharer : IDisposable
         var portal = _options.Portal;
         var psi = new ProcessStartInfo(_ffmpeg) { RedirectStandardOutput = true, RedirectStandardError = true, RedirectStandardInput = portal != null, UseShellExecute = false, CreateNoWindow = true };
         foreach (var a in FfmpegArgs.Capture(_options, codec, encoder ?? HardwareEncoder.Nvenc, gpuScale)) psi.ArgumentList.Add(a);
+        _lastArguments = string.Join(' ', psi.ArgumentList);
+        _startedAt = DateTime.UtcNow;
         var process = Process.Start(psi) ?? throw new InvalidOperationException("FFmpeg did not start.");
         lock (_gate) _process = process;
         if (portal != null) StartPortalSource(portal, process);
