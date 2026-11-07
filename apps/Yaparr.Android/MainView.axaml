@@ -265,7 +265,10 @@
             </Border>
             <Border Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="10">
                 <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="4">
-                    <Button Content="+" FontSize="22" Padding="14,0" Background="Transparent" Foreground="{DynamicResource Accent}" Click="AttachClicked" />
+                    <Button Padding="14,0" Background="Transparent" Foreground="{DynamicResource Accent}" Click="AttachClicked">
+                        <!-- The plus sits low in its line, so it is lifted to line up with the middle of the capitals of GIF beside it. -->
+                        <TextBlock Text="+" FontSize="22" Margin="0,-3,0,0" VerticalAlignment="Center" />
+                    </Button>
                     <Button Grid.Column="1" Content="GIF" FontSize="13" FontWeight="SemiBold" Padding="8,0" Background="Transparent" Foreground="{DynamicResource Accent}" Click="ShelfClicked" />
                     <TextBox x:Name="InputBox" Grid.Column="2" PlaceholderText="Message" AcceptsReturn="False" KeyDown="InputKeyDown" TextChanged="InputChanged" />
                     <Button Grid.Column="3" Classes="primary" Content="Send" Click="SendClicked" />
