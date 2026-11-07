@@ -26,6 +26,7 @@ public partial class MainWindow
         var text = SyncStatus.Banner(_deviceSearch.Update(node), states, out var progress);
         SyncBar.IsVisible = text != null;
         SyncBarText.Text = text ?? "";
+        Avalonia.Controls.ToolTip.SetTip(SyncBar, text);
         SyncProgress.IsIndeterminate = progress == null;
         SyncProgress.Value = progress ?? 0;
     }
