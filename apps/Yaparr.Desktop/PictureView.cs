@@ -28,6 +28,7 @@ public sealed class PictureView : Control
     private IImage? _thumb, _full;
     private SKCodec? _codec;
     private SKBitmap? _buffer;
+    private SKBitmap? _scaled;
     private SKImageInfo _info;
     private SKCodecFrameInfo[] _frames = Array.Empty<SKCodecFrameInfo>();
     private WriteableBitmap? _frameBitmap;
@@ -84,6 +85,8 @@ public sealed class PictureView : Control
         _codec = null;
         _buffer?.Dispose();
         _buffer = null;
+        _scaled?.Dispose();
+        _scaled = null;
         _frameBitmap = null;
         _full = null;
         _bufferFrame = -1;
@@ -127,7 +130,16 @@ public sealed class PictureView : Control
         _info = new SKImageInfo(codec.Info.Width, codec.Info.Height, SKColorType.Bgra8888, SKAlphaType.Premul);
         _buffer = new SKBitmap(_info);
         _frames = codec.FrameInfo;
-        _frameBitmap = new WriteableBitmap(new PixelSize(_info.Width, _info.Height), new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Premul);
+        // Small players (the shelf) keep the frames at the size they are shown, so many of them can play at once.
+        int shownWidth = _info.Width, shownHeight = _info.Height;
+        if (MaxFrameSide > 0 && Math.Max(_info.Width, _info.Height) > MaxFrameSide)
+        {
+            double scale = (double)MaxFrameSide / Math.Max(_info.Width, _info.Height);
+            shownWidth = Math.Max(1, (int)(_info.Width * scale));
+            shownHeight = Math.Max(1, (int)(_info.Height * scale));
+            _scaled = new SKBitmap(new SKImageInfo(shownWidth, shownHeight, SKColorType.Bgra8888, SKAlphaType.Premul));
+        }
+        _frameBitmap = new WriteableBitmap(new PixelSize(shownWidth, shownHeight), new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Premul);
         ShowFrame(0);
         _full = _frameBitmap;
         StartAnimation();
@@ -170,16 +182,25 @@ public sealed class PictureView : Control
         _bufferFrame = index;
         _frame = index;
 
-        using var fb = _frameBitmap.Lock();
-        var source = _buffer.GetPixels();
-        int row = Math.Min(_info.RowBytes, fb.RowBytes);
-        var line = new byte[row];
-        for (int y = 0; y < _info.Height; y++)
+        var shown = _buffer;
+        if (_scaled != null)
         {
-            Marshal.Copy(source + y * _info.RowBytes, line, 0, row);
+            shown.ScalePixels(_scaled, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear));
+            shown = _scaled;
+        }
+        using var fb = _frameBitmap.Lock();
+        var source = shown.GetPixels();
+        int row = Math.Min(shown.RowBytes, fb.RowBytes);
+        var line = new byte[row];
+        for (int y = 0; y < shown.Height; y++)
+        {
+            Marshal.Copy(source + y * shown.RowBytes, line, 0, row);
             Marshal.Copy(line, 0, fb.Address + y * fb.RowBytes, row);
         }
     }
+
+    /// <summary>When above zero, an animated picture keeps its frames at no more than this many pixels on a side (for small players).</summary>
+    public int MaxFrameSide { get; init; }
 
     /// <summary>Fill the space given (keeping the shape, up to three times the real size) instead of the small size used in the chat.</summary>
     public bool Fit { get; init; }

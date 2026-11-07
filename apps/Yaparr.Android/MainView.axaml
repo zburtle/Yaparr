@@ -226,7 +226,7 @@
                                 </Border>
                                 <Border IsVisible="{Binding HasAttachment}" CornerRadius="10" ClipToBounds="True" Tapped="PictureTapped" Background="Transparent">
                                     <StackPanel Spacing="4">
-                                        <Image Source="{Binding Picture}" IsVisible="{Binding HasPicture}" MaxWidth="260" MaxHeight="340" Stretch="Uniform" />
+                                        <local:AnimatedImage Source="{Binding Picture}" Animation="{Binding Animation}" IsVisible="{Binding HasPicture}" MaxWidth="260" MaxHeight="340" Stretch="Uniform" />
                                         <Image Source="{Binding Thumbnail}" IsVisible="{Binding HasPictureStatus}" MaxWidth="260" MaxHeight="200" Stretch="Uniform" Opacity="0.6" />
                                         <TextBlock Text="{Binding PictureStatus}" IsVisible="{Binding HasPictureStatus}" FontSize="12" Foreground="{Binding Ink}" />
                                     </StackPanel>
@@ -312,7 +312,7 @@
                     <Button Content="Close" Foreground="White" Background="Transparent" Click="PictureCloseClicked" />
                     <Button Grid.Column="2" Content="Save" Foreground="White" Background="Transparent" Click="PictureSaveClicked" />
                 </Grid>
-                <Image x:Name="BigPicture" Grid.Row="1" Stretch="Uniform" Margin="0,0,0,24" />
+                <local:AnimatedImage x:Name="BigPicture" Grid.Row="1" Stretch="Uniform" Margin="0,0,0,24" />
             </Grid>
         </Border>
 
