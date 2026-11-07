@@ -99,10 +99,10 @@ public static class DiagnosticsReport
         return HidePerson(text.ToString());
     }
 
-    private static string Scrub(string line) => LogScrubber.Scrub(line);
+    internal static string Scrub(string line) => LogScrubber.Scrub(line);
 
     // The Windows user name is in every path the log mentions.
-    private static string HidePerson(string text)
+    internal static string HidePerson(string text)
     {
         var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         if (profile.Length > 3) text = text.Replace(profile, "%USERPROFILE%", StringComparison.OrdinalIgnoreCase);

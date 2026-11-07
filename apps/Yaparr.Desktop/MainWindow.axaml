@@ -793,6 +793,7 @@
                             <TextBlock Text="About" FontSize="15" FontWeight="SemiBold" />
                             <TextBlock x:Name="AboutText" TextWrapping="Wrap" />
                             <Button Content="Copy diagnostics" Click="CopyDiagnostics_Click" />
+                            <Button Content="Copy sharing diagnostics" Click="CopySharingDiagnostics_Click" ToolTip.Tip="For a problem with sharing a screen or watching one: how this computer shares, what the last share did and the log lines about it" />
                             <Button Content="Open log file" Click="OpenLog_Click" />
                             <Button Content="Open log folder" Click="OpenLogFolder_Click" />
                             <Button Content="Open source licences" Click="OpenLicences_Click" />

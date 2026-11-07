@@ -218,6 +218,41 @@ public partial class MainWindow : Window
         }
     }
 
+    // Everything about screen sharing for a bug report: the kind of desktop and the programs, what the current or last share did, and
+    // the log lines about sharing and watching.
+    private async void CopySharingDiagnostics_Click(object? sender, RoutedEventArgs e)
+    {
+        StatusText.Text = "Collecting sharing diagnostics…";
+        try
+        {
+            var text = new System.Text.StringBuilder();
+            text.AppendLine($"Yaparr {Updater.CurrentVersion}");
+            text.AppendLine($"When: {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}");
+            text.AppendLine($"System: {System.Runtime.InteropServices.RuntimeInformation.OSDescription} ({System.Runtime.InteropServices.RuntimeInformation.OSArchitecture})");
+            text.AppendLine();
+            text.Append(await Yaparr.Screen.ScreenDiagnostics.BuildAsync(ct: _cts.Token));
+            text.AppendLine();
+            text.AppendLine("Your share");
+            if (_sharer != null) text.Append(_sharer.Describe());
+            else if (_lastSharingReport != null) text.AppendLine("  (it has ended; this is how it was)").Append(_lastSharingReport);
+            else text.AppendLine("  You have not shared a screen since Yaparr started.");
+            text.AppendLine();
+            text.AppendLine("Log lines about sharing and watching");
+            var lines = _log.Tail(2000).Where(l => System.Text.RegularExpressions.Regex.IsMatch(l, "screen|shar|portal|FFmpeg|GStreamer|stream|watch|viewer", System.Text.RegularExpressions.RegexOptions.IgnoreCase)).TakeLast(80).ToList();
+            foreach (var line in lines) text.AppendLine("  " + DiagnosticsReport.Scrub(line));
+            if (lines.Count == 0) text.AppendLine("  (none)");
+            StatusText.Text = await Dialogs.CopyAsync(this, DiagnosticsReport.HidePerson(text.ToString()))
+                ? "Sharing diagnostics copied. Paste them into your bug report: addresses are shortened and names are left out."
+                : "Couldn't copy: another program is using the clipboard. Try again.";
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            _log.Write("could not collect sharing diagnostics: " + ex);
+            StatusText.Text = "Couldn't collect the sharing diagnostics: " + ex.Message;
+        }
+    }
+
     // Opens the bug report form on GitHub with the version and system filled in. The diagnostics are too long for a link, so they go
     // on the clipboard to be pasted into the form.
     private async void ReportProblem_Click(object? sender, RoutedEventArgs e)
