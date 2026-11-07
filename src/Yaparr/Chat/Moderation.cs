@@ -19,7 +19,7 @@ public sealed record StoredMod(string Pub, string Acct, string Cert, string Kind
 
 internal static class SignedMod
 {
-    public const string Ban = "ban", Unban = "unban", DeleteMessage = "delmsg", DeleteSound = "delsound";
+    public const string Ban = "ban", Unban = "unban", DeleteMessage = "delmsg", DeleteSound = "delsound", DeleteGif = "delgif";
     private const int MaxLabel = 64;
     private static readonly TimeSpan MaxFutureSkew = TimeSpan.FromMinutes(5);
 
@@ -57,7 +57,7 @@ internal static class SignedMod
     {
         Ban or Unban => IsHex(target, 64),
         DeleteMessage => IsHex(target, 32),
-        DeleteSound => IsHex(target, 16),
+        DeleteSound or DeleteGif => IsHex(target, 16),
         _ => false,
     };
 
@@ -83,4 +83,5 @@ internal sealed class ModView
     public readonly Dictionary<string, string> Banned = new();
     public readonly HashSet<string> Messages = new();
     public readonly HashSet<string> Sounds = new();
+    public readonly HashSet<string> Gifs = new();
 }

@@ -295,6 +295,25 @@
         </Border>
 
         <!-- The people of the open room: tap one to write to them. -->
+        <!-- The GIF shelf: pictures kept on this phone to send again with one tap. -->
+        <Border x:Name="ShelfPanel" IsVisible="False" Background="#99000000" PointerPressed="OverlayBackdropPressed">
+            <Border Background="{DynamicResource Surface}" CornerRadius="16" Margin="20" Padding="16" MaxWidth="440" VerticalAlignment="Center" MaxHeight="620">
+                <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="10">
+                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                        <TextBlock Text="GIF shelf" FontWeight="Bold" FontSize="20" Foreground="{DynamicResource Ink}" VerticalAlignment="Center" />
+                        <Button x:Name="ShelfMineTab" Grid.Column="1" Content="Mine" Classes="primary" Padding="12,6" Click="ShelfMineClicked" />
+                        <Button x:Name="ShelfRoomTab" Grid.Column="2" Content="This room" Padding="12,6" Click="ShelfRoomClicked" />
+                    </Grid>
+                    <TextBlock x:Name="ShelfHint" Grid.Row="1" TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />
+                    <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Disabled"><WrapPanel x:Name="ShelfGrid" /></ScrollViewer>
+                    <Grid Grid.Row="3" ColumnDefinitions="*,*" ColumnSpacing="8">
+                        <Button x:Name="ShelfAddButton" Content="Add a picture" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="ShelfAddClicked" />
+                        <Button Grid.Column="1" Content="Close" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="ShelfCloseClicked" />
+                    </Grid>
+                </Grid>
+            </Border>
+        </Border>
+
         <!-- What can be done with a message: a small window in the middle. -->
         <Border x:Name="ActionPanel" IsVisible="False" Background="#99000000" PointerPressed="OverlayBackdropPressed">
             <Border Background="{DynamicResource Surface}" CornerRadius="16" Margin="40" Padding="8" MaxWidth="320" VerticalAlignment="Center">
@@ -356,21 +375,6 @@
                     <Grid Grid.Row="3" ColumnDefinitions="*,*" ColumnSpacing="8">
                         <Button Content="Add a sound" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="AddSoundClicked" />
                         <Button Grid.Column="1" Content="Close" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="SoundCloseClicked" />
-                    </Grid>
-                </Grid>
-            </Border>
-        </Border>
-
-        <!-- The GIF shelf: pictures kept on this phone to send again with one tap. -->
-        <Border x:Name="ShelfPanel" IsVisible="False" Background="#99000000" PointerPressed="OverlayBackdropPressed">
-            <Border Background="{DynamicResource Surface}" CornerRadius="16" Margin="20" Padding="16" MaxWidth="440" VerticalAlignment="Center" MaxHeight="620">
-                <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="10">
-                    <TextBlock Text="GIF shelf" FontWeight="Bold" FontSize="20" Foreground="{DynamicResource Ink}" />
-                    <TextBlock x:Name="ShelfHint" Grid.Row="1" TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />
-                    <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Disabled"><WrapPanel x:Name="ShelfGrid" /></ScrollViewer>
-                    <Grid Grid.Row="3" ColumnDefinitions="*,*" ColumnSpacing="8">
-                        <Button Content="Add a picture" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="ShelfAddClicked" />
-                        <Button Grid.Column="1" Content="Close" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="ShelfCloseClicked" />
                     </Grid>
                 </Grid>
             </Border>

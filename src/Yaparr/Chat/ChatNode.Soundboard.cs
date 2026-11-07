@@ -155,6 +155,7 @@ public sealed partial class ChatNode
                 catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException) { }
             }
         }
+        AddLiveGifHashes(hashes);
         return hashes;
     }
 
