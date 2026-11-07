@@ -131,8 +131,19 @@ public sealed class VoiceSession : IDisposable
 
     public IReadOnlyCollection<PeerId> Speaking => _remotes.Values.Where(r => r.Speaking).Select(r => r.Id).ToList();
 
-    private volatile bool _automaticVolume, _levelSpeakers;
+    private volatile bool _automaticVolume, _levelSpeakers, _clickSuppression;
     private readonly SpeechLeveler _micLeveler = new();
+    private ClickSuppressor? _clicks;   // only on the microphone's thread
+
+    /// <summary>
+    /// Takes short, sharp clicks (keyboard and mouse) out of your microphone before it is cleaned and sent; see
+    /// <see cref="ClickSuppressor"/>. It adds 10 ms of delay to your voice while it is on. Off by default.
+    /// </summary>
+    public bool ClickSuppression
+    {
+        get => _clickSuppression;
+        set => _clickSuppression = value;
+    }
 
     /// <summary>
     /// Automatic volume for your microphone: a quiet one is raised and a loud one lowered towards a normal speaking level (see
@@ -243,6 +254,9 @@ public sealed class VoiceSession : IDisposable
     // A processor that breaks must not stop the microphone: switch it off and carry on.
     private void CleanCapture(float[] frame)
     {
+        // Before the processor, so that the clicks are gone before the noise suppression and echo cancellation see them.
+        if (_clickSuppression) (_clicks ??= new ClickSuppressor()).Process(frame);
+        else _clicks = null;
         if (_processor is { } processor)
         {
             try { processor.ProcessCapture(frame); }

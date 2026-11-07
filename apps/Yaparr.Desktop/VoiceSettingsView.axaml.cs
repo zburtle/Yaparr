@@ -81,6 +81,7 @@ public partial class VoiceSettingsView : UserControl
             PushToTalkSoundBox.IsChecked = _settings.VoicePushToTalkSound;
             NoiseBox.SelectedItem = Enum.TryParse<NoiseSuppression>(_settings.VoiceNoiseSuppression, out var noise) ? noise.ToString() : nameof(NoiseSuppression.Moderate);
             EchoBox.IsChecked = _settings.VoiceEchoCancellation;
+            ClickBox.IsChecked = _settings.VoiceClickSuppression;
             LevelSpeakersBox.IsChecked = _settings.VoiceLevelSpeakers;
             AutomaticVolumeBox.IsChecked = _settings.VoiceAutomaticVolume;
             SensitivityBox.Value = _settings.VoiceSensitivity;
@@ -106,6 +107,7 @@ public partial class VoiceSettingsView : UserControl
         _settings.VoiceAlwaysOn = AlwaysBox.IsChecked == true;
         _settings.VoicePushToTalkSound = PushToTalkSoundBox.IsChecked == true;
         _settings.VoiceEchoCancellation = EchoBox.IsChecked == true;
+        _settings.VoiceClickSuppression = ClickBox.IsChecked == true;
         _settings.VoiceLevelSpeakers = LevelSpeakersBox.IsChecked == true;
         _settings.VoiceAutomaticVolume = AutomaticVolumeBox.IsChecked == true;
         _settings.VoiceNoiseSuppression = NoiseBox.SelectedItem as string ?? nameof(NoiseSuppression.Moderate);
