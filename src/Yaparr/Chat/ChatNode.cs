@@ -630,6 +630,7 @@ public sealed partial class ChatNode : IDisposable
             return existing;
         }
         LoadSounds(room);
+        LoadGifs(room);
         LoadRoles(room);
         LoadMods(room);
         LoadChannels(room);
@@ -1294,6 +1295,7 @@ public sealed partial class ChatNode : IDisposable
         SendPresenceTo(room, peer, includeCache: true);
         SendVoiceStateTo(room, peer);
         SendSoundsTo(room, peer);
+        SendGifsTo(room, peer);
         SendRolesTo(room, peer);
         SendModsTo(room, peer);
         SendChannelsTo(room, peer);
@@ -1570,6 +1572,12 @@ public sealed partial class ChatNode : IDisposable
                                  && ResolveRoom(peer, wire.Room) is { } soundRoom && soundRoom.MemberStates.ContainsKey(peer.Id):
                 if (!rate.AdmitSoundList()) { Dropped(peer, rate, "sent too many sound lists"); break; }
                 OnSounds(peer, soundRoom, wire.Snd);
+                break;
+
+            case Wire.Gif when wire.Room != null && wire.Gf != null
+                               && ResolveRoom(peer, wire.Room) is { } gifRoom && gifRoom.MemberStates.ContainsKey(peer.Id):
+                if (!rate.AdmitGifList()) { Dropped(peer, rate, "sent too many GIF lists"); break; }
+                OnGifs(peer, gifRoom, wire.Gf);
                 break;
 
             case Wire.Roles when wire.Room != null && wire.Rol != null

@@ -123,6 +123,8 @@ public sealed class ChatRoom
     internal readonly object IndirectGate = new();
     internal readonly Dictionary<string, StoredSound> SoundEntries = new();
     internal readonly object SoundGate = new();
+    internal readonly Dictionary<string, StoredGif> GifEntries = new();
+    internal readonly object GifGate = new();
     internal readonly Dictionary<string, StoredRole> RoleEntries = new();
     internal readonly object RoleGate = new();
     internal readonly Dictionary<string, StoredMod> ModEntries = new();
@@ -262,6 +264,28 @@ public sealed class ChatRoom
     /// <summary>A sound was added, changed, removed or finished downloading.</summary>
     public event Action? SoundsChanged;
     internal void RaiseSoundsChanged() => SoundsChanged?.Invoke();
+
+    /// <summary>The room's GIF shelf: pictures any member added, newest first. Anyone in the room can add one; only the person who added one can remove it, and an admin can take any down.</summary>
+    public IReadOnlyList<GifInfo> Gifs => _node.GetGifs(this);
+
+    /// <summary>A picture was added to or removed from the shelf, or finished downloading.</summary>
+    public event Action? GifsChanged;
+    internal void RaiseGifsChanged() => GifsChanged?.Invoke();
+
+    /// <summary>Adds a picture to the room's GIF shelf (PNG, JPEG, GIF or WebP up to <see cref="GifLimits.MaxBytes"/>).</summary>
+    public GifInfo AddGif(byte[] data) => _node.AddGif(this, data);
+
+    /// <summary>Removes a picture you added.</summary>
+    public void RemoveGif(string id) => _node.RemoveGif(this, id);
+
+    /// <summary>Takes a picture off the shelf for everyone. Only for the owner and admins of the room.</summary>
+    public void DeleteGif(string id) => _node.DeleteGif(this, id);
+
+    /// <summary>The picture's file, if it is on this computer.</summary>
+    public byte[]? GetGif(string id) => _node.ReadGif(this, id);
+
+    /// <summary>Starts downloading the shelf's pictures that are not here yet; <see cref="GifsChanged"/> is raised as each arrives. Call it when the shelf is opened.</summary>
+    public void RequestGifs() => _node.RequestGifs(this);
 
     /// <summary>A sound is being played into the voice channel you are in (possibly by you).</summary>
     public event Action<PeerId, SoundInfo>? SoundPlayed;

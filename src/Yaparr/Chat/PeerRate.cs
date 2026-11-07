@@ -27,6 +27,10 @@ public sealed class PeerLimits
     public int SoundListsBurst { get; init; } = 20;
     public double SoundListsPerSecond { get; init; } = 2;
 
+    /// <summary>GIF shelf lists: one statement is sent for each picture added, and people add several at once, so the burst is wide.</summary>
+    public int GifListsBurst { get; init; } = 250;
+    public double GifListsPerSecond { get; init; } = 20;
+
     /// <summary>Lists of room admins, each statement in them costing a signature check.</summary>
     public int RoleListsBurst { get; init; } = 10;
     public double RoleListsPerSecond { get; init; } = 1;
@@ -80,7 +84,7 @@ internal sealed class TokenBucket
 internal sealed class PeerRate
 {
     private readonly PeerLimits _limits;
-    private readonly TokenBucket _frames, _bytes, _messages, _plays, _soundLists, _roleLists, _modLists;
+    private readonly TokenBucket _frames, _bytes, _messages, _plays, _soundLists, _gifLists, _roleLists, _modLists;
     private readonly object _gate = new();
     private long _windowStart;
     private int _dropped;
@@ -93,6 +97,7 @@ internal sealed class PeerRate
         _messages = new(limits.MessagesBurst, limits.MessagesPerSecond);
         _plays = new(limits.PlaysBurst, limits.PlaysPerSecond);
         _soundLists = new(limits.SoundListsBurst, limits.SoundListsPerSecond);
+        _gifLists = new(limits.GifListsBurst, limits.GifListsPerSecond);
         _roleLists = new(limits.RoleListsBurst, limits.RoleListsPerSecond);
         _modLists = new(limits.ModListsBurst, limits.ModListsPerSecond);
     }
@@ -101,6 +106,7 @@ internal sealed class PeerRate
     public bool AdmitMessages(int count) => _messages.TryTake(count);
     public bool AdmitPlay() => _plays.TryTake();
     public bool AdmitSoundList() => _soundLists.TryTake();
+    public bool AdmitGifList() => _gifLists.TryTake();
     public bool AdmitRoleList() => _roleLists.TryTake();
     public bool AdmitModList() => _modLists.TryTake();
 

@@ -235,6 +235,7 @@ public sealed class Session : IDisposable
         room.ModerationChanged += () => UI(() => Reload(chat, room));
         room.VoiceChanged += () => UI(() => RefreshVoice(chat));
         room.SoundsChanged += () => UI(() => SoundsChanged?.Invoke(chat));
+        room.GifsChanged += () => UI(() => GifsChanged?.Invoke(chat));
         room.ChannelsChanged += () => UI(() => RefreshVoice(chat));
         room.VoiceChannelRemoved += id => UI(() => { if (_callChat == chat && chat.VoiceChannelId == id) LeaveVoice(); });
 
@@ -286,6 +287,20 @@ public sealed class Session : IDisposable
 
     /// <summary>The room's soundboard changed (a sound was added, removed or finished arriving).</summary>
     public event Action<Chat>? SoundsChanged;
+
+    /// <summary>The room's GIF shelf changed (a picture was added, removed or finished arriving).</summary>
+    public event Action<Chat>? GifsChanged;
+
+    public bool IsMine(GifInfo gif) => _node != null && gif.Owner == _node.Id;
+
+    /// <summary>You can remove a picture you added; an owner or admin can take any down.</summary>
+    public bool CanRemoveGif(Chat chat, GifInfo gif) => IsMine(gif) || chat.Room is { MyRole: >= RoomRole.Admin };
+
+    public void RemoveGif(Chat chat, GifInfo gif)
+    {
+        if (chat.Room is not { } room) return;
+        if (IsMine(gif)) room.RemoveGif(gif.Id); else room.DeleteGif(gif.Id);
+    }
 
     public IReadOnlyList<SoundInfo> SoundsOf(Chat chat) => chat.Room?.Sounds ?? Array.Empty<SoundInfo>();
 
