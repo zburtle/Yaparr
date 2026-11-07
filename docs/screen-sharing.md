@@ -6,6 +6,8 @@
 
 While you share, a small readout window shows the encoder, frames per second, key frames, the watchers connected directly to you, and who is watching (everyone in the tree, by name, one entry per person) and, after ten seconds, who keeps asking to join without getting in, with a pointer to the connection guide (`MediaSource.Viewers` and `MediaSource.Unreached`, from the sharer's picture of the tree and the join requests it has seen). The `.deb` recommends the system `ffmpeg` package, which the viewer uses on Linux.
 
+**Preview.** While you share, **What viewers see** shows above the readout, in the People panel: the frames that are being sent, decoded again here (`ScreenSharer.FrameEncoded` into a `ScreenViewer` through `LocalFrames`), so it is the real picture with its quality and smoothness, not a copy of the capture. It costs a second decoder while it is open, so it only runs while it is shown (it stops when you look at another room, and with **Hide**). Sharing a window starts it open; sharing a whole monitor starts it closed, because the preview would show itself inside the picture (**Show** opens it to check the quality, and it closes again when you change to a monitor).
+
 The distribution is built: `StartMedia`, `WatchMedia` and the tree behind them pass signed packets from a sharer to a whole room ([Streams and large rooms](streams-and-large-rooms.md)), with a cache of the packets since the last key for late viewers.
 
 ## What is built

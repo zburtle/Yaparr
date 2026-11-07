@@ -183,8 +183,14 @@ public sealed class MediaSource : IDisposable
     }
 }
 
+/// <summary>Where a viewer gets whole frames from: a stream someone shares with the room, or the sharer's own encoder (for a preview).</summary>
+public interface IMediaFrameSource
+{
+    event Action<MediaFrame>? FrameReceived;
+}
+
 /// <summary>Watching a stream someone shares with the room. Dispose it to stop.</summary>
-public sealed class MediaView : IDisposable
+public sealed class MediaView : IDisposable, IMediaFrameSource
 {
     private readonly ChatNode _node;
     private readonly MediaGroup _group;

@@ -13,7 +13,7 @@ public sealed record Picture(int Width, int Height, byte[] Bgra);
 /// </summary>
 public sealed class ScreenViewer : IDisposable
 {
-    private readonly MediaView _view;
+    private readonly IMediaFrameSource _view;
     private readonly string _ffmpeg;
     private readonly object _gate = new();
     private readonly Queue<string> _errors = new();
@@ -33,7 +33,7 @@ public sealed class ScreenViewer : IDisposable
     /// <paramref name="gpuDecode"/>: also decode H.264 on the graphics card (Windows, Direct3D 11), falling back to the processor if
     /// FFmpeg cannot. Off by default: on the machines measured (issue #100) it did not use less processor time than decoding in software.
     /// </summary>
-    public ScreenViewer(MediaView view, string? ffmpegPath = null, bool gpuDecode = false)
+    public ScreenViewer(IMediaFrameSource view, string? ffmpegPath = null, bool gpuDecode = false)
     {
         _gpu = gpuDecode && OperatingSystem.IsWindows();
         _view = view;
