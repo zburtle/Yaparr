@@ -1,5 +1,6 @@
 ﻿using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using Yaparr.Chat;
 using Yaparr.Screen;
 
@@ -35,7 +36,7 @@ public partial class MainWindow
         var watching = _screenViews.Keys.ToHashSet();
         conv.Shares.Clear();
         foreach (var g in shares)
-            conv.Shares.Add(new ShareVm(g.Id, g.Name, isMine: _node != null && g.Root == _node.Id) { Watching = watching.Contains(g.Id) });
+            conv.Shares.Add(new ShareVm(g.Id, g.Name, isMine: _node != null && _node.IsMyDevice(g.Root)) { Watching = watching.Contains(g.Id) });
         conv.SharesChanged();
 
         // A share that ended stops being watched.
@@ -72,9 +73,11 @@ public partial class MainWindow
 
     private async void ShareScreen_Click(object? sender, RoutedEventArgs e)
     {
-        if (_node == null || _selected is not { IsRoom: true, InVoice: true } conv || _sharer != null) return;
+        if (_node == null || _selected is not { IsRoom: true } conv || _sharer != null) return;
         var room = _roomConversations.FirstOrDefault(kv => kv.Value == conv).Key;
         if (room == null) return;
+        // From this device when it is in the call, or when another of your devices is; with none of them in voice there is nothing to share into.
+        if (!room.CanShareScreen) { StatusText.Text = "Join the voice channel on one of your devices first."; return; }
 
         var ffmpeg = await GetFfmpegAsync();
         if (ffmpeg == null) return;
@@ -115,6 +118,7 @@ public partial class MainWindow
             });
             _sharer = sharer;
             _sharerConv = conv;
+            GuardSharingWithoutVoice(sharer, conv, room);
             _sharerStats = new SharerStatsView(sharer, options.Fps, room);
             _sharerStats.StopRequested += StopSharingCore;
             _sharerStats.ChangeRequested += () => _ = ChangeSharedAsync(sharer, conv);
@@ -122,7 +126,9 @@ public partial class MainWindow
             SharePreview.Attach(sharer, ffmpeg, wholeMonitor: what == "screen");
             UpdateSharerPanel();
             conv.IsSharing = true;
-            conv.Add(MessageVm.System($"You are sharing your {what}. Everyone in the room can watch it."));
+            conv.Add(MessageVm.System(conv.InVoice
+                ? $"You are sharing your {what}. Everyone in the room can watch it."
+                : $"You are sharing your {what} in the call on your other device. Everyone in the room can watch it. It stops when none of your devices is in the call."));
             if (options.ShareSound)
                 conv.Add(MessageVm.System(sharer.SharingSound
                     ? (options.WindowHandle != null && options.Portal == null ? "The sound of that window is shared too." : "The sound of your computer is shared too, except Yaparr's own, so the voice chat does not go round.")
@@ -164,6 +170,26 @@ public partial class MainWindow
     }
 
     private void StopSharing_Click(object? sender, RoutedEventArgs e) => StopSharingCore();
+
+    // A share belongs to a call. This device may share while another of your devices is the one in the call, so the share ends when no device of
+    // yours is in that channel any more. The announcements of the call come every few seconds and can be late, so it takes a short silence.
+    private void GuardSharingWithoutVoice(ScreenSharer sharer, ConversationVm conv, ChatRoom room)
+    {
+        var channel = sharer.Source.Info.Channel ?? RoomChannels.DefaultVoice;
+        int missed = 0;
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
+        timer.Tick += (_, _) =>
+        {
+            if (_sharer != sharer) { timer.Stop(); return; }
+            missed = room.ScreenShareChannel == channel ? 0 : missed + 1;
+            if (missed < 3) return;
+            timer.Stop();
+            _log.Write("screen sharing ended: none of your devices is in the voice channel any more");
+            StopSharingCore();
+            conv.Add(MessageVm.System("Screen sharing stopped: none of your devices is in the call any more."));
+        };
+        timer.Start();
+    }
 
     // What the last share looked like when it ended, for "Copy sharing diagnostics".
     private string? _lastSharingReport;

@@ -160,6 +160,19 @@ public sealed partial class ChatNode
         return new VoiceReach(others.Count, others.Where(id => !IsLive(id)).ToList());
     }
 
+    /// <summary>
+    /// The voice channel another device of this account is in, as far as this device has heard (they announce it to the room like anyone
+    /// in a call), or null when none is. This device's own call does not count.
+    /// </summary>
+    internal string? ChannelOfMyOtherDevice(ChatRoom room)
+    {
+        long cutoff = Environment.TickCount64 - (long)VoiceLifetime.TotalMilliseconds;
+        lock (room.IndirectGate)
+            return room.Voice.Where(kv => kv.Value.State.Active && kv.Value.SeenAt >= cutoff && kv.Key != Id && IsMyDevice(kv.Key))
+                .OrderBy(kv => kv.Key.Value, StringComparer.Ordinal)
+                .Select(kv => kv.Value.State.Chan ?? RoomChannels.DefaultVoice).FirstOrDefault();
+    }
+
     internal IReadOnlyList<VoiceParticipant> GetVoiceParticipants(ChatRoom room)
     {
         var result = new List<VoiceParticipant>();

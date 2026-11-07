@@ -44,6 +44,8 @@ connections, relays, voice and delivery work per device; what is shared is the p
 - **My devices.** The table under Settings > Devices lists this device and the others of your account that are connected, and a message you sent from another device says which one next to its time.
 - **Blocks.** A linked device's presence beacon carries its certificate, so a block of the person reaches a device we have never connected to, once its beacon has reached us.
 
+- **Screen sharing.** A linked device that is not in a voice call can share its screen into the call another of your devices is in (see [Sharing a screen](screen-sharing.md#sharing-from-a-linked-device)); with none of your devices in the call it cannot.
+
 Limit: every linked device holds the account key, so there is no way to take a lost device away from the account (it would need a new identity). Details are in the [backlog](../BACKLOG.md).
 
 Why it works this way: this replaced the first plan (one key on every device, with connections keyed by peer and device ID), which would have meant reworking every table keyed by peer ID and made older clients fight over the one slot.

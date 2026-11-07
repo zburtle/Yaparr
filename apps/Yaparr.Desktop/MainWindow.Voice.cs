@@ -44,6 +44,7 @@ public partial class MainWindow
         }
         UpdateVoiceChannels(conv, room);
         conv.VoiceMembersChanged();
+        conv.InVoiceElsewhere = !conv.InVoice && room.CanShareScreen;
         WatchConnection();
         if (conv == _selected) UpdateHeaderSubtitle();
 

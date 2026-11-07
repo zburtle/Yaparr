@@ -31,7 +31,10 @@ public sealed class ScreenSharer : IDisposable
         _ffmpeg = ffmpegPath;
     }
 
-    /// <summary>Announces a screen share in the room and starts sending it.</summary>
+    /// <summary>
+    /// Announces a screen share in the room and starts sending it, to the voice channel this device is in or, when it is not in one, the
+    /// channel another of your linked devices is in (<see cref="ChatRoom.ScreenShareChannel"/>).
+    /// </summary>
     public static ScreenSharer Start(ChatNode node, ChatRoom room, string name, ScreenOptions options, string? ffmpegPath = null)
     {
         if (ScreenCapture.WhyNotSupported is { } why) throw new PlatformNotSupportedException(why);
@@ -39,7 +42,7 @@ public sealed class ScreenSharer : IDisposable
         FfmpegArgs.Capture(options); // checks the numbers before anything is announced
         if (options.Portal != null) { if (PortalPipeline.Missing() is { } missing) throw new PlatformNotSupportedException(missing); }
         else if (options.WindowHandle is { } handle && !ShareWindows.Exists(handle)) throw new InvalidOperationException("That window is not open any more.");
-        var source = node.StartMedia(room, "screen", name, signed: true, upstream: false, kbps: options.Kbps, channel: room.CurrentVoice?.ChannelId);
+        var source = node.StartMedia(room, "screen", name, signed: true, upstream: false, kbps: options.Kbps, channel: room.ScreenShareChannel);
         var sharer = new ScreenSharer(source, options, ffmpegPath);
         if (options.ShareSound) sharer.StartSound(node, room);
         sharer.WatchPortal(options.Portal);
