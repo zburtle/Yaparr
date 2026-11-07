@@ -12,6 +12,10 @@ finish-args:
   # Avalonia draws through X11 (on Wayland through XWayland); --share=ipc lets it use shared memory.
   - --share=ipc
   - --socket=x11
+  # Not for drawing (Avalonia uses X11) but so that the app can tell it is on a Wayland desktop: a Flatpak is not given XDG_SESSION_TYPE,
+  # and WAYLAND_DISPLAY only exists with this socket. Without it a Wayland desktop looks like X11, and the screen is copied from XWayland,
+  # which only ever shows the first picture. Sharing itself goes through the portal (below), not this socket.
+  - --socket=wayland
   - --device=dri
   # Microphone and speakers for voice, through PulseAudio or PipeWire's PulseAudio service. The same connection lists and records
   # the sound of the programs a share carries (pactl and parec, from the runtime).
