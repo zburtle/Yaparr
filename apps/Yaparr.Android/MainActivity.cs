@@ -17,6 +17,12 @@ using Avalonia.Android;
 [assembly: UsesPermission(Android.Manifest.Permission.ModifyAudioSettings)]
 [assembly: UsesFeature("android.hardware.microphone", Required = false)]
 
+// Sharing the screen runs as a foreground service of the media projection kind (Android 14 and newer), with a notification that says so
+// and has a button to stop; the notification needs the permission to show on Android 13 and newer, asked for with the first share.
+[assembly: UsesPermission(Android.Manifest.Permission.ForegroundService)]
+[assembly: UsesPermission("android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION")]
+[assembly: UsesPermission(Android.Manifest.Permission.PostNotifications)]
+
 // The camera is only for reading a link QR code, and the app works without one.
 [assembly: UsesPermission(Android.Manifest.Permission.Camera)]
 [assembly: UsesFeature("android.hardware.camera", Required = false)]
@@ -81,7 +87,24 @@ public class MainActivity : AvaloniaMainActivity
         return request.Task;
     }
 
-    private const int MicrophoneRequest = 0x6d69, PickRequest = 0x7069, SaveRequest = 0x7376, PickFileRequest = 0x7066;
+    private const int MicrophoneRequest = 0x6d69, PickRequest = 0x7069, SaveRequest = 0x7376, PickFileRequest = 0x7066, CaptureRequest = 0x6361, NotificationsRequest = 0x6e74;
+    private static TaskCompletionSource<(int ResultCode, Intent Data)?>? s_capture;
+
+    /// <summary>
+    /// Asks Android to share the screen: its own dialog, where the person chooses one app or the whole screen (Android 14 and newer). Null if they say no.
+    /// Also asks, once, to be allowed to show the notification that goes with a share (the share does not depend on the answer).
+    /// </summary>
+    public async Task<(int ResultCode, Intent Data)?> RequestScreenCaptureAsync()
+    {
+        if (OperatingSystem.IsAndroidVersionAtLeast(33) && CheckSelfPermission(Android.Manifest.Permission.PostNotifications) != Permission.Granted)
+            RequestPermissions(new[] { Android.Manifest.Permission.PostNotifications }, NotificationsRequest);
+        s_capture?.TrySetResult(null);
+        var request = s_capture = new TaskCompletionSource<(int, Intent)?>();
+        if (GetSystemService(MediaProjectionService) is not Android.Media.Projection.MediaProjectionManager manager) return null;
+        try { StartActivityForResult(manager.CreateScreenCaptureIntent(), CaptureRequest); }
+        catch (ActivityNotFoundException) { request.TrySetResult(null); }
+        return await request.Task;
+    }
     private static TaskCompletionSource<string?>? s_pickFile;
     private static TaskCompletionSource<(byte[] Bytes, string Name)?>? s_pick;
     private static TaskCompletionSource<bool>? s_save;
@@ -247,6 +270,7 @@ public class MainActivity : AvaloniaMainActivity
         if (requestCode == PickRequest) { FinishPick(resultCode, data); return; }
         if (requestCode == SaveRequest) { FinishSave(resultCode, data); return; }
         if (requestCode == PickFileRequest) { FinishPickFile(resultCode, data); return; }
+        if (requestCode == CaptureRequest) { s_capture?.TrySetResult(resultCode == Result.Ok && data != null ? ((int)resultCode, data) : null); return; }
         App.Scanner?.OnActivityResult(requestCode, resultCode, data);
     }
 }

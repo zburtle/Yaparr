@@ -25,7 +25,7 @@ A share belongs to a voice channel, and only people in that channel see it liste
 - The desktop app shows the button on a device that is not in the call as soon as a linked one joins. A share from your other device shows in the call's list as yours, without a Watch button (the share is not shown back to you, which would loop the picture and the sound).
 - A share that was started this way ends by itself when none of your devices has been in that channel for about twelve seconds (the announcements come every few seconds and can be late), with a note in the room. A device that shares from its own call still stops when it leaves it.
 - Viewers need nothing new. The share is announced by the laptop's own key, and everyone already knows it belongs to your account (the same way messages from your other devices are recognised).
-- Android cannot share a screen yet (see the [Android notes](android-app.md)); when it can, it will use the same rule.
+- A phone with Android 14 or newer shares by the same rule (`ChatRoom.ScreenShareChannel`): see [Sharing the screen](android-app.md#sharing-the-screen). It sends the same kind of stream (H.264, Annex B, parameter sets in front of each key frame) and the same sound stream (`ScreenSharer.SoundKind`), so the computer's viewer shows and plays it without any change; and a phone can watch the computer's share, H.264 or VP8, with its own decoder (see [Watching a screen](android-app.md#watching-a-screen)).
 
 ## Linux
 
