@@ -21,6 +21,9 @@
         <ComboBox x:Name="NoiseBox" HorizontalAlignment="Stretch" />
         <TextBlock x:Name="ProcessingNote" Classes="muted small" TextWrapping="Wrap"
                    Text="Takes steady noise such as fans and hiss out of your microphone. A headset works best and needs no echo cancellation." />
+        <CheckBox x:Name="ClickBox" Margin="0,6,0,0" Content="Take out keyboard and mouse clicks" />
+        <TextBlock Classes="muted small" TextWrapping="Wrap"
+                   Text="Removes short, sharp clicks such as keys and mouse buttons, which noise suppression does not. Adds about 10 ms of delay to your voice." />
         <CheckBox x:Name="AlwaysBox" Margin="0,10,0,0" Content="Always send my microphone (no voice activation)" />
         <CheckBox x:Name="PushToTalkBox" Margin="0,4,0,0" Content="Push to talk: send only while I hold a key or mouse button" />
         <StackPanel Orientation="Horizontal" Spacing="8" Margin="24,0,0,0">
