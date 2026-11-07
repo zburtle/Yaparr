@@ -30,6 +30,8 @@ public partial class MainView : UserControl
     public MainView()
     {
         InitializeComponent();
+        // The box takes several lines (a pasted report, say); Enter still sends, so it is caught before the box turns it into a new line.
+        InputBox.AddHandler(KeyDownEvent, InputKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         _screens = new Control[] { StartPanel, LinkPanel, ListPanel, ChatPanel, SettingsPanel };
         _settings = _data.LoadSettings();
         NameBox.Text = _settings.DisplayName ?? "";

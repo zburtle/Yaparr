@@ -35,6 +35,8 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        // The box takes several lines (a pasted report, say), so Enter has to be caught before the box turns it into a new line; Shift+Enter is the new line.
+        InputBox.AddHandler(KeyDownEvent, InputBox_KeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         DragDrop.SetAllowDrop(this, true);
         AddHandler(DragDrop.DragOverEvent, OnDragOver);
         AddHandler(DragDrop.DropEvent, OnDrop);
