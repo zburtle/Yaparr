@@ -61,7 +61,7 @@ public partial class MainView : UserControl
         foreach (var s in _screens) s.IsVisible = s == screen;
     }
 
-    private bool AnyOverlay => AddPanel.IsVisible || PeoplePanel.IsVisible || ConfirmPanel.IsVisible || RoutePanel.IsVisible || PicturePanel.IsVisible || ActionPanel.IsVisible || PromptPanel.IsVisible || BlockedPanel.IsVisible || NetworkPanel.IsVisible || SoundPanel.IsVisible || ShelfPanel.IsVisible;
+    private bool AnyOverlay => AddPanel.IsVisible || PeoplePanel.IsVisible || ConfirmPanel.IsVisible || RoutePanel.IsVisible || PicturePanel.IsVisible || ActionPanel.IsVisible || PromptPanel.IsVisible || BlockedPanel.IsVisible || NetworkPanel.IsVisible || SoundPanel.IsVisible || ShelfPanel.IsVisible || SharePanel.IsVisible || WatchPanel.IsVisible;
 
     // One step back; false when there is nothing to go back to and the phone may leave the app.
     private bool GoBack()
@@ -70,6 +70,8 @@ public partial class MainView : UserControl
         if (BlockedPanel.IsVisible) { BlockedPanel.IsVisible = false; return true; }
         if (ActionPanel.IsVisible) { ActionPanel.IsVisible = false; return true; }
         if (ShelfPanel.IsVisible) { ShelfPanel.IsVisible = false; return true; }
+        if (WatchPanel.IsVisible) { CloseWatch(); return true; }
+        if (SharePanel.IsVisible) { SharePanel.IsVisible = false; return true; }
         if (SoundPanel.IsVisible) { SoundPanel.IsVisible = false; return true; }
         if (NetworkPanel.IsVisible) { NetworkPanel.IsVisible = false; return true; }
         if (PicturePanel.IsVisible) { PictureCloseClicked(null, new RoutedEventArgs()); return true; }
@@ -718,6 +720,137 @@ public partial class MainView : UserControl
     }
 
     private void MuteClicked(object? sender, RoutedEventArgs e) => _session?.ToggleMute();
+
+    // The panel first: the quality and the sound. Then Android asks the person what to share (one app, or the whole screen) in a dialog of its
+    // own; the sharing itself carries on in a service, so it goes on while another app is in front.
+    private ShareQuality _shareQuality = ShareQuality.Standard;
+
+    private void ShareScreenClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_current == null || _session == null) return;
+        _shareQuality = ShareQuality.BestFor(_session.UploadBytesPerSecond);
+        BuildShareQualityList();
+        bool canHearApps = OperatingSystem.IsAndroidVersionAtLeast(29);
+        ShareSoundCheck.IsEnabled = canHearApps;
+        ShareSoundCheck.IsChecked = canHearApps;
+        SharePanel.IsVisible = true;
+    }
+
+    private void BuildShareQualityList()
+    {
+        ShareQualityList.Children.Clear();
+        foreach (var quality in ShareQuality.All)
+        {
+            bool selected = quality == _shareQuality;
+            var item = new Avalonia.Controls.Button
+            {
+                Content = (selected ? "\u25CF   " : "\u25CB   ") + quality.Label,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Left,
+                Padding = new Avalonia.Thickness(14, 12),
+                Background = Avalonia.Media.Brushes.Transparent,
+                FontWeight = selected ? Avalonia.Media.FontWeight.SemiBold : Avalonia.Media.FontWeight.Normal,
+                Foreground = Yaparr.AndroidApp.Theme.Brush(selected ? "Accent" : "Ink"),
+            };
+            item.Click += (_, _) => { _shareQuality = quality; BuildShareQualityList(); };
+            ShareQualityList.Children.Add(item);
+        }
+        ShareHintText.Text = _shareQuality.Hint(_session?.UploadBytesPerSecond);
+    }
+
+    private void ShareCancelClicked(object? sender, RoutedEventArgs e) => SharePanel.IsVisible = false;
+
+    private async void ShareGoClicked(object? sender, RoutedEventArgs e)
+    {
+        SharePanel.IsVisible = false;
+        if (_current is not { } chat || _session == null || MainActivity.Instance is not { } activity) return;
+        bool sound = ShareSoundCheck.IsChecked == true;
+        // Android calls the permission for capturing audio the microphone's; it is asked for here only when the sound is wanted.
+        if (sound && !await activity.RequestMicrophoneAsync())
+        {
+            sound = false;
+            chat.Status = "The sound needs the microphone permission, so only the picture is shared";
+        }
+        var consent = await activity.RequestScreenCaptureAsync();
+        if (consent is not { } agreed) { chat.Status = "Sharing the screen was not allowed"; return; }
+        try { _session.StartScreenShare(chat, activity, agreed.ResultCode, agreed.Data, _shareQuality, sound); }
+        catch (Exception ex) when (ex is InvalidOperationException)
+        {
+            chat.Status = "Couldn't share the screen: " + ex.Message;
+        }
+    }
+
+    private void StopShareClicked(object? sender, RoutedEventArgs e) => _session?.StopScreenShare();
+
+    // ---- watching a shared screen ----
+
+    private ShareItem? _watchedShare;
+    private Chat? _watchedChat;
+    private int _pictureWidth, _pictureHeight;
+    private bool _watchWired;
+
+    private void WatchClicked(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is not ShareItem share || _current is not { } chat || _session == null) return;
+        _watchedShare = share;
+        _watchedChat = chat;
+        _pictureWidth = _pictureHeight = 0;
+        WatchTitle.Text = share.Name;
+        WatchStatus.Text = "Waiting for the picture\u2026";
+        WatchStatus.IsVisible = true;
+        if (!_watchWired)
+        {
+            _watchWired = true;
+            WatchHost.SurfaceReady += surface => Dispatcher.UIThread.Post(() => BeginWatching(surface));
+            WatchHost.SurfaceLost += () => _session?.StopWatching();
+            WatchArea.SizeChanged += (_, _) => FitWatchHost();
+            _session.WatchEnded += () => Dispatcher.UIThread.Post(() => { if (WatchPanel.IsVisible) CloseWatch(); });
+        }
+        WatchPanel.IsVisible = true;
+        // The surface of an earlier time is still there when the panel was only hidden; the first time Android makes it a moment after the panel shows.
+        if (WatchHost.CurrentSurface is { } there) BeginWatching(there);
+    }
+
+    private void BeginWatching(Android.Views.Surface surface)
+    {
+        if (_watchedShare is not { } share || _watchedChat is not { } chat || _session == null || !WatchPanel.IsVisible) return;
+        try
+        {
+            var watch = _session.StartWatching(chat, share, surface);
+            watch.PictureSize += (w, h) => Dispatcher.UIThread.Post(() =>
+            {
+                _pictureWidth = w; _pictureHeight = h;
+                WatchStatus.IsVisible = false;
+                FitWatchHost();
+            });
+            watch.Failed += message => Dispatcher.UIThread.Post(() => { WatchStatus.Text = message; WatchStatus.IsVisible = true; });
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+        {
+            WatchStatus.Text = "Couldn't watch this screen: " + ex.Message;
+        }
+    }
+
+    // The picture keeps its shape and is as big as the space allows.
+    private void FitWatchHost()
+    {
+        if (_pictureWidth < 1 || _pictureHeight < 1) return;
+        var area = WatchArea.Bounds;
+        if (area.Width < 1 || area.Height < 1) return;
+        double scale = Math.Min(area.Width / _pictureWidth, area.Height / _pictureHeight);
+        WatchHost.Width = Math.Max(2, _pictureWidth * scale);
+        WatchHost.Height = Math.Max(2, _pictureHeight * scale);
+    }
+
+    private void CloseWatch()
+    {
+        _session?.StopWatching();
+        WatchPanel.IsVisible = false;
+        _watchedShare = null;
+        _watchedChat = null;
+    }
+
+    private void WatchStopClicked(object? sender, RoutedEventArgs e) => CloseWatch();
 
     private void LeaveVoiceClicked(object? sender, RoutedEventArgs e) => _session?.LeaveVoice();
 

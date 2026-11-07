@@ -36,6 +36,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Yaparr\Yaparr.csproj" />
     <ProjectReference Include="..\..\src\Yaparr.AppCore\Yaparr.AppCore.csproj" />
+    <!-- The stream formats and codec facts of a shared screen (H.264 and VP8 frames, the names of the sound streams). Nothing is captured or decoded with FFmpeg on the phone. -->
+    <ProjectReference Include="..\..\src\Yaparr.Screen\Yaparr.Screen.csproj" />
   </ItemGroup>
 
   <ItemGroup>

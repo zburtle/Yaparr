@@ -197,6 +197,20 @@
                         <Button Grid.Column="3" Content="Leave" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="4,8" Foreground="{DynamicResource Bad}" Click="LeaveVoiceClicked" />
                     </Grid>
                     <Button Content="Soundboard" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="4,8" IsVisible="{Binding InVoice}" Click="SoundboardClicked" />
+                    <Button Content="Share my screen" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="4,8" IsVisible="{Binding CanShareScreen}" Click="ShareScreenClicked" />
+                    <TextBlock Text="{Binding ShareHint}" IsVisible="{Binding ShowShareHint}" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" />
+                    <Button Content="Stop sharing my screen" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="4,8" Foreground="{DynamicResource Bad}" IsVisible="{Binding IsSharing}" Click="StopShareClicked" />
+                    <ItemsControl ItemsSource="{Binding Shares}" IsVisible="{Binding HasShares}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="local:ShareItem">
+                                <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,6">
+                                    <TextBlock Text="{Binding Name}" FontSize="14" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Foreground="{DynamicResource Ink}" />
+                                    <Button Grid.Column="1" Classes="primary" Content="Watch" Padding="14,6" IsVisible="{Binding !IsMine}" Click="WatchClicked" />
+                                    <TextBlock Grid.Column="1" Text="Yours" IsVisible="{Binding IsMine}" FontSize="13" VerticalAlignment="Center" Foreground="{DynamicResource Muted}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
                 </StackPanel>
             </Border>
             </StackPanel>
@@ -312,6 +326,36 @@
         </Border>
 
         <!-- The people of the open room: tap one to write to them. -->
+        <!-- Watching a screen someone shares: the picture is drawn by the phone's video decoder on a native surface. -->
+        <Border x:Name="WatchPanel" IsVisible="False" Background="Black">
+            <Grid RowDefinitions="Auto,*,Auto">
+                <TextBlock x:Name="WatchTitle" Margin="16,56,16,10" FontWeight="SemiBold" FontSize="16" Foreground="White" TextTrimming="CharacterEllipsis" />
+                <Grid x:Name="WatchArea" Grid.Row="1">
+                    <local:ScreenSurfaceHost x:Name="WatchHost" HorizontalAlignment="Center" VerticalAlignment="Center" Width="2" Height="2" />
+                    <TextBlock x:Name="WatchStatus" Text="Waiting for the picture&#8230;" Foreground="#CCFFFFFF" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center" Margin="24" />
+                </Grid>
+                <Button Grid.Row="2" Content="Stop watching" Margin="16,10,16,24" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="4,12" Background="#33FFFFFF" Foreground="White" Click="WatchStopClicked" />
+            </Grid>
+        </Border>
+
+        <!-- Sharing the screen: what quality, and whether the sound goes too; then Android asks what to share. -->
+        <Border x:Name="SharePanel" IsVisible="False" Background="#99000000" PointerPressed="OverlayBackdropPressed">
+            <Border Background="{DynamicResource Surface}" CornerRadius="16" Margin="20" Padding="16" MaxWidth="440" VerticalAlignment="Center">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Share my screen" FontWeight="Bold" FontSize="20" Foreground="{DynamicResource Ink}" />
+                    <TextBlock Text="Quality" FontWeight="SemiBold" Foreground="{DynamicResource Ink}" />
+                    <StackPanel x:Name="ShareQualityList" />
+                    <TextBlock x:Name="ShareHintText" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
+                    <CheckBox x:Name="ShareSoundCheck" Content="Share the sound of the app too" IsChecked="True" />
+                    <TextBlock Text="Next, Android asks what to share. Choose one app to keep notifications and other apps out of the picture." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                        <Button Classes="primary" Content="Choose what to share" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="ShareGoClicked" />
+                        <Button Grid.Column="1" Content="Cancel" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="ShareCancelClicked" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </Border>
+
         <!-- The GIF shelf: pictures kept on this phone to send again with one tap. -->
         <Border x:Name="ShelfPanel" IsVisible="False" Background="#99000000" PointerPressed="OverlayBackdropPressed">
             <Border Background="{DynamicResource Surface}" CornerRadius="16" Margin="20" Padding="16" MaxWidth="440" VerticalAlignment="Center" MaxHeight="620">
