@@ -128,6 +128,10 @@
                     <TextBlock Text="Looks at how this phone can be reached and why connecting to someone may fail." TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />
                     <Button HorizontalAlignment="Stretch" Content="Check the connection" Click="NetworkClicked" />
 
+                    <TextBlock Text="Link previews" FontWeight="SemiBold" Margin="0,14,0,0" Foreground="{DynamicResource Muted}" />
+                    <CheckBox x:Name="LinkPreviewCheck" Content="Show a preview under the links I send" Click="LinkPreviewChanged" />
+                    <TextBlock Text="When you send a web link, this phone reads the page's title, description and picture and sends them with the message. The people who read it never contact the site, so it does not see their address, but it does see yours. Turn this off to send only the link." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
+
                     <TextBlock Text="Backup" FontWeight="SemiBold" Margin="0,14,0,0" Foreground="{DynamicResource Muted}" />
                     <TextBlock Text="A backup is a copy of your account, room keys and message history, to bring back on a new phone if you lose this one." TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />
                     <Button HorizontalAlignment="Stretch" Content="Back up this phone's account" Click="BackupClicked" />
@@ -232,6 +236,16 @@
                                     </StackPanel>
                                 </Border>
                                 <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Foreground="{Binding Ink}" IsVisible="{Binding HasText}" />
+                                <Border IsVisible="{Binding HasCard}" Background="#22000000" CornerRadius="8" Padding="8" Margin="0,2,0,0" Tapped="CardTapped">
+                                    <Grid ColumnDefinitions="Auto,*">
+                                        <Image Source="{Binding CardImage}" IsVisible="{Binding HasCardImage}" Width="56" Height="56" Margin="0,0,8,0" Stretch="UniformToFill" VerticalAlignment="Top" />
+                                        <StackPanel Grid.Column="1" Spacing="1">
+                                            <TextBlock Text="{Binding CardHost}" FontSize="11" Opacity="0.75" TextTrimming="CharacterEllipsis" Foreground="{Binding Ink}" />
+                                            <TextBlock Text="{Binding CardTitle}" FontWeight="SemiBold" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" Foreground="{Binding Ink}" />
+                                            <TextBlock Text="{Binding CardDescription}" IsVisible="{Binding HasCardDescription}" FontSize="12" Opacity="0.85" TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis" Foreground="{Binding Ink}" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
                                 <TextBlock Text="{Binding Time}" FontSize="10" Opacity="0.6" HorizontalAlignment="Right" Foreground="{Binding Ink}" />
                             </StackPanel>
                         </Border>

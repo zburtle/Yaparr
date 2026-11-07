@@ -52,6 +52,16 @@ A message can answer an earlier one and name people. `room.SendAsync(text, chann
 - **The key.** It comes from who wrote the message and its id, so nobody else can make a message that has it. A reply points at that key and does **not** copy the words it answers: the app looks the original up in its own history, so a reply can never misquote. When the original is not there (older than the history kept), the reply says "an earlier message that is not here".
 - **In the app,** see [The desktop app](desktop-app.md#replies-and-mentions).
 
+## Link previews
+
+A message with a web link can carry a card for it: the page's title, a short description and a small square picture. The link stays in the words as it was written; the card is shown below it. `room.SendAsync(text, channelId, replyTo, mentions, preview)` and `DirectChat.SendAsync(text, replyTo, preview)` send one, and `ChatMessage.Parts.Preview` reads it (a `LinkPreview`).
+
+- **Who fetches.** Only the sender's app. `LinkPreviewFetcher` (in `Yaparr.AppCore`) requests the page when the message is sent, reads its Open Graph tags (`og:title`, `og:description`, `og:image`, then the `twitter:` ones, the page's own title and its description tag), fetches the picture, crops it to a square and shrinks it to at most 128 px and 3000 bytes. The people who read the message never contact the site, so it never sees their address. Sending waits up to four seconds for the page; after that the message goes without a card.
+- **What is not fetched.** Only the first `http` or `https` link in the words. A page that is not HTML, has nothing to show, or does not answer gets no card. Yaparr's own invitation links never get one. Addresses inside the local network (this computer, a router, a machine next door) are refused, redirects included (`PublicWeb`), so a link cannot make the app probe a home or office network. No cookies and no proxy.
+- **How it travels.** In the envelope header next to a reply and the names (`MessageEnvelope`), so the signature covers it and a version from before this one ignores it and shows the words. Limits: title 120 characters, description 220, address 600. If the message would be too long, the picture goes first, then the card; the words are never cut.
+- **Trust.** The card is what the sender's app says the page contains; the readers have not looked at the page. A card is only shown when its address is in the words of the same message, the app shows the host name on it, and opening one asks first and shows the full address.
+- **Off switch.** Settings, under Network: **Show a preview under the links I send** (on by default; `AppSettings.LinkPreviews`). Turned off, links go as plain words. This only changes what your app sends; cards that others send you are still shown.
+
 ## Delivery and reliability
 
 - **Delivery receipts.** `SendAsync` on a room or direct chat returns the message id. `DeliveryChanged` reports `Sending`, `Delivered`, `PartlyDelivered`, `NotDelivered` or `Queued` (nobody connected). Unconfirmed messages are sent again when the recipient reconnects, and `Retry(id)` sends them on demand.

@@ -19,6 +19,10 @@ Right-click a message and choose **Reply**: a bar above the box shows what you a
 
 Type **@** at the start of a word in a room to choose someone from the people of the room (arrow keys and Enter or Tab, or click); their name is written into your message and marked. Admins and the owner can also type **@everyone** to name every member; from anyone else it is only words. A message that names you, or answers one of yours, gets an outline, and the unread badge of that room shows an **@** until you read it. In a direct chat there is nobody to name, but replies work.
 
+## Link previews
+
+When you send a message with a web link, Yaparr reads the page (title, description and picture) from your computer and sends a small card with the message. It shows below your words, which still hold the link as you wrote it. Everyone who reads the message sees the card without contacting the site, so the site only ever sees you. Clicking a card asks first and shows the full address, then opens it in your browser. If the page is slow or has nothing to show, the message goes without a card after a few seconds. Turn it off in Settings > Network (**Show a preview under the links I send**). How it works: [Rooms and messages](rooms-and-messages.md#link-previews).
+
 ## Channels
 
 A room made by this version lists its channels under it, text and voice. Click a text channel to show it, a voice channel to join it. The owner and admins right-click a channel to rename it, move it up or down (the first text and voice channels stay first) or delete it. The app remembers which text channel was on show in each room, and keeps count of what you have not read in each channel across restarts: the number on a room is what has arrived in its channels since you last looked at them, and a first start after an upgrade counts everything already there as read.

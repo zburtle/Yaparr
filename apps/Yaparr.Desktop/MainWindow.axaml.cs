@@ -353,6 +353,7 @@ public partial class MainWindow : Window
         _log.Write($"Yaparr {Updater.CurrentVersion} starting");
         Updater.Log = _log.Write;
         SetUpNotifications();
+        SetUpLinkPreviews();
         VoiceView.Attach(_settings, OnVoiceSettingChanged, () => _voice?.InputLevel);
         NetworkView.Attach(() => _node);
         VpnPanel.Attach(_vpn);
@@ -839,7 +840,7 @@ public partial class MainWindow : Window
         var parts = m.Parts;
         var vm = new MessageVm(m.Timestamp, m.From.DisplayName, parts.Body, m.IsCatchUp, isMine: mine, id: m.Id, attachment: m.Attachment)
         {
-            Source = m, Key = m.Key, ReplyKey = parts.ReplyTo, Mentions = parts.Mentions,
+            Source = m, Key = m.Key, ReplyKey = parts.ReplyTo, Mentions = parts.Mentions, Card = parts.Preview,
             MentionsMe = _node != null && NamesMe(m),
             Channel = m.Channel, DeviceNote = mine && _node!.Id != m.From.Id ? "from your other device " + m.From.Id.Short : "",
         };
@@ -1145,14 +1146,15 @@ public partial class MainWindow : Window
         {
             var reply = _replyTo;
             var mentions = conv.IsRoom ? ActiveMentions(text) : new List<Mention>();
-            var id = await conv.Send(MessageEnvelope.Wrap(text, reply?.Key, mentions));
+            var preview = await PreviewForAsync(text);
+            var id = await conv.Send(MessageEnvelope.Wrap(text, reply?.Key, mentions, preview));
             InputBox.Text = "";
             ClearReply();
             _chosenMentions.Clear();
             conv.Add(new MessageVm(DateTimeOffset.Now, _node.DisplayName, text, isMine: true, id: id)
             {
                 Channel = conv.IsRoom ? conv.CurrentChannel : null,
-                Key = ChatMessage.KeyOf(_node.Id, id), ReplyKey = reply?.Key, Mentions = mentions,
+                Key = ChatMessage.KeyOf(_node.Id, id), ReplyKey = reply?.Key, Mentions = mentions, Card = preview,
             });
             ScrollToEnd();
         }

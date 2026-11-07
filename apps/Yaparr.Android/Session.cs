@@ -618,7 +618,7 @@ public sealed class Session : IDisposable
         var parts = m.Parts;
         var line = new Line(m.Key, m.From.DisplayName, m.Attachment != null ? parts.Body : m.Body, m.Timestamp, mine, m.Channel, m)
         {
-            ReplyKey = parts.ReplyTo, Mentions = parts.Mentions,
+            ReplyKey = parts.ReplyTo, Mentions = parts.Mentions, Card = parts.Preview,
             MentionsMe = _node != null && !mine && (m.Room != null && _rooms.Keys.FirstOrDefault(r => r.Name == m.Room) is { } named
                 ? named.Names(m, _node.AccountId)
                 : parts.Mentions.Any(x => x.Account == _node.AccountId)),
@@ -779,14 +779,34 @@ public sealed class Session : IDisposable
         if (_node == null) return;
         string id;
         string? channel = null;
+        var preview = await PreviewForAsync(chat, text);
         if (chat.Room is { } room)
         {
             channel = chat.CurrentChannel;
-            id = await room.SendAsync(text, channel == RoomChannels.DefaultText ? null : channel, replyKey, mentions);
+            id = await room.SendAsync(text, channel == RoomChannels.DefaultText ? null : channel, replyKey, mentions, preview);
         }
-        else id = await chat.Direct!.SendAsync(text, replyKey);
-        chat.Add(new Line(ChatMessage.KeyOf(_node.Id, id), _node.DisplayName, text, DateTimeOffset.Now, mine: true, channel, OwnMessage(chat, id, text, channel, null)) { ReplyKey = replyKey, Mentions = mentions?.ToList() ?? new List<Mention>() });
+        else id = await chat.Direct!.SendAsync(text, replyKey, preview);
+        chat.Add(new Line(ChatMessage.KeyOf(_node.Id, id), _node.DisplayName, text, DateTimeOffset.Now, mine: true, channel, OwnMessage(chat, id, text, channel, null)) { ReplyKey = replyKey, Mentions = mentions?.ToList() ?? new List<Mention>(), Card = preview });
         Resort(chat);
+    }
+
+    private LinkPreviewFetcher? _previewFetcher;
+
+    // The card for the first web link in the words, or null: no link, previews are off, or the page could not be read in a few seconds.
+    // The message is signed with its card, so the card has to be ready before it goes.
+    private async Task<LinkPreview?> PreviewForAsync(Chat chat, string text)
+    {
+        if (!_settings.LinkPreviews || LinkPreview.FirstLink(text) is not { } link) return null;
+        var before = chat.Status;
+        chat.Status = "Getting a preview of the link\u2026";
+        try
+        {
+            _previewFetcher ??= new LinkPreviewFetcher();
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(4));
+            return await _previewFetcher.FetchAsync(link, cts.Token);
+        }
+        catch (OperationCanceledException) { return null; }
+        finally { chat.Status = before; }
     }
 
     // The chat with the newest message goes first.

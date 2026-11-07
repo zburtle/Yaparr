@@ -354,6 +354,7 @@ public partial class MainView : UserControl
         SensitivitySlider.Value = _settings.VoiceSensitivity;
         VolumeSlider.Value = _settings.VoiceOutputVolume;
         AutoVolumeCheck.IsChecked = _settings.VoiceAutomaticVolume;
+        LinkPreviewCheck.IsChecked = _settings.LinkPreviews;
         VersionText.Text = "Yaparr " + AppVersion();
         _loadingSettings = false;
         ShowTheme();
@@ -396,6 +397,24 @@ public partial class MainView : UserControl
         _data.SaveSettings(_settings);
         ApplyTheme();
         ShowTheme();
+    }
+
+    private void LinkPreviewChanged(object? sender, RoutedEventArgs e)
+    {
+        if (_loadingSettings) return;
+        _settings.LinkPreviews = LinkPreviewCheck.IsChecked == true;
+        _data.SaveSettings(_settings);
+    }
+
+    // Opening a link is a choice: the card is the sender's description, so the address it really goes to is shown first.
+    private void CardTapped(object? sender, TappedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is not Line { Card: { } card } || !Uri.TryCreate(card.Url, UriKind.Absolute, out var uri)) return;
+        e.Handled = true;
+        Ask(card.Url + "\n\nIt opens in your browser, and the site will see your address.", "Open", async () =>
+        {
+            if (TopLevel.GetTopLevel(this)?.Launcher is { } launcher) await launcher.LaunchUriAsync(uri);
+        });
     }
 
     private void VoiceSettingChanged(object? sender, RoutedEventArgs e)

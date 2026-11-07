@@ -24,6 +24,9 @@ public sealed class AppSettings
     public string? DisplayName { get; set; }
     public bool VpnEnabled { get; set; }
 
+    /// <summary>When a message you send has a web link, fetch the page's title, description and picture and send them along as a card under the link. The readers never contact the site.</summary>
+    public bool LinkPreviews { get; set; } = true;
+
     /// <summary>System, Light or Dark: the colours the app uses (the phone app; the computer follows its system).</summary>
     public string Theme { get; set; } = "System";
 

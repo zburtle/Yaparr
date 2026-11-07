@@ -338,8 +338,8 @@ public sealed class ChatRoom
     /// <paramref name="mentions"/> (accounts, up to <see cref="MessageEnvelope.MaxMentions"/>); the words themselves should say
     /// who is named: each <see cref="Mention"/> says whom, and the name as it is written after an @ in the words. Either can be left out. Returns the id of the message.
     /// </summary>
-    public Task<string> SendAsync(string text, string? channelId, string? replyTo, IReadOnlyCollection<Mention>? mentions = null) =>
-        Task.FromResult(_node.SendRoomMessage(this, MessageEnvelope.Wrap(text, replyTo, mentions), channelId));
+    public Task<string> SendAsync(string text, string? channelId, string? replyTo, IReadOnlyCollection<Mention>? mentions = null, LinkPreview? preview = null) =>
+        Task.FromResult(_node.SendRoomMessage(this, MessageEnvelope.Wrap(text, replyTo, mentions, preview), channelId));
 
     /// <summary>
     /// Asks the members you are connected to for messages you do not have, by key (<see cref="ChatMessage.Key"/>), for example the
@@ -396,7 +396,7 @@ public sealed class DirectChat
     public Task<string> SendAsync(string text) => Task.FromResult(_node.SendDirectMessage(PeerId, text));
 
     /// <summary>Sends a message that answers the message with the key <paramref name="replyTo"/> (<see cref="ChatMessage.Key"/>).</summary>
-    public Task<string> SendAsync(string text, string? replyTo) => Task.FromResult(_node.SendDirectMessage(PeerId, MessageEnvelope.Wrap(text, replyTo, null)));
+    public Task<string> SendAsync(string text, string? replyTo, LinkPreview? preview = null) => Task.FromResult(_node.SendDirectMessage(PeerId, MessageEnvelope.Wrap(text, replyTo, null, preview)));
 
     /// <summary>Who a message you sent has reached, while it is still being tracked.</summary>
     public IReadOnlyList<DeliveryRecipient> GetDeliveryDetails(string messageId) => _node.GetDeliveryDetails(messageId);

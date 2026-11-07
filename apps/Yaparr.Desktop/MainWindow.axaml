@@ -143,6 +143,20 @@
         <Style Selector="Border.bubble.mine Border.quote TextBlock">
             <Setter Property="Foreground" Value="White" />
         </Style>
+        <Style Selector="Border.card">
+            <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
+            <Setter Property="BorderThickness" Value="3,0,0,0" />
+            <Setter Property="Padding" Value="8,6,8,6" />
+            <Setter Property="Margin" Value="0,4,0,2" />
+            <Setter Property="MaxWidth" Value="420" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="Background" Value="#22808080" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector="Border.bubble.mine Border.card TextBlock">
+            <Setter Property="Foreground" Value="White" />
+        </Style>
         <Style Selector="Border.bubble.failed">
             <Setter Property="Background" Value="{DynamicResource Bad}" />
         </Style>
@@ -538,6 +552,16 @@
                                                         HorizontalAlignment="Center" VerticalAlignment="Center" Click="Download_Click" />
                                             </Grid>
                                             <local:MessageText Classes="body" IsVisible="{Binding HasText}" Body="{Binding Text}" Marks="{Binding MentionMarks}" TextWrapping="Wrap" />
+                                            <Border Classes="card" IsVisible="{Binding HasPreview}" PointerReleased="PreviewCard_PointerReleased" ToolTip.Tip="{Binding Card.Url}">
+                                                <Grid ColumnDefinitions="Auto,*">
+                                                    <Image Source="{Binding PreviewImage}" IsVisible="{Binding HasPreviewImage}" Width="64" Height="64" Margin="0,0,8,0" Stretch="UniformToFill" VerticalAlignment="Top" />
+                                                    <StackPanel Grid.Column="1" Spacing="1">
+                                                        <TextBlock Text="{Binding PreviewHost}" FontSize="11" Opacity="0.75" TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Text="{Binding PreviewTitle}" FontWeight="SemiBold" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Text="{Binding PreviewDescription}" IsVisible="{Binding HasPreviewDescription}" FontSize="12" Opacity="0.85" TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis" />
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
                                             <TextBlock Classes="time" Text="{Binding TimeText}" ToolTip.Tip="{Binding FullTime}" />
                                         </StackPanel>
                                     </Border>
@@ -763,6 +787,10 @@
                             <TextBlock Text="Network" FontSize="15" FontWeight="SemiBold" />
                             <TextBlock Classes="muted" TextWrapping="Wrap" Text="If people cannot reach you, this shows why. A VPN or a TURN relay, under Network in the list, can help." />
                             <local:NetworkCheckView x:Name="NetworkView" />
+                            <TextBlock Text="Link previews" FontWeight="SemiBold" Margin="0,10,0,0" />
+                            <CheckBox x:Name="LinkPreviewItem" Content="Show a preview under the links I send" />
+                            <TextBlock Classes="muted small" TextWrapping="Wrap"
+                                       Text="When you send a web link, this computer reads the page's title, description and picture and sends them with the message. The people who read it never contact the site, so it does not see their address, but it does see yours. Turn this off to send only the link." />
                         </StackPanel>
                         <StackPanel x:Name="SectionVpn" Spacing="10" IsVisible="False">
                             <TextBlock Text="VPN" FontSize="15" FontWeight="SemiBold" />
