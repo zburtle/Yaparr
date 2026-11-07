@@ -119,6 +119,7 @@ public partial class MainWindow
             _sharerStats.StopRequested += StopSharingCore;
             _sharerStats.ChangeRequested += () => _ = ChangeSharedAsync(sharer, conv);
             SharerPanel.Child = _sharerStats;
+            SharePreview.Attach(sharer, ffmpeg, wholeMonitor: what == "screen");
             UpdateSharerPanel();
             conv.IsSharing = true;
             conv.Add(MessageVm.System($"You are sharing your {what}. Everyone in the room can watch it."));
@@ -177,6 +178,7 @@ public partial class MainWindow
         _sharerStats = null;
         SharerPanel.Child = null;
         SharerPanel.IsVisible = false;
+        SharePreview.Detach();
         if (conv != null)
         {
             conv.IsSharing = false;
@@ -310,6 +312,7 @@ public partial class MainWindow
             sharer.Change(next);
             var what = next.Portal?.IsWindow ?? next.WindowHandle != null ? "a window" : "a monitor";
             _log.Write($"screen sharing changed to {what}");
+            SharePreview.SetKind(wholeMonitor: !(next.Portal?.IsWindow ?? next.WindowHandle != null));
             conv.Add(MessageVm.System($"You are now sharing {what}."));
         }
         catch (Exception ex)
@@ -320,7 +323,7 @@ public partial class MainWindow
     }
 
     // The readout of your own share shows in the room you share to.
-    private void UpdateSharerPanel() => SharerPanel.IsVisible = _sharerStats != null && _selected == _sharerConv;
+    private void UpdateSharerPanel() => SharerPanel.IsVisible = SharePreview.IsVisible = _sharerStats != null && _selected == _sharerConv;
 
     private void CloseScreens()
     {

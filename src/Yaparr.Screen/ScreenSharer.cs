@@ -178,6 +178,12 @@ public sealed class ScreenSharer : IDisposable
     }
 
     public MediaSource Source => _source;
+
+    /// <summary>
+    /// Each frame just before it is sent to the room (raised on the thread that sends, so a handler has to be quick), for a preview of what
+    /// viewers get: give them to a <see cref="ScreenViewer"/> through a <see cref="LocalFrames"/>. Nothing is done with them when nobody listens.
+    /// </summary>
+    public event Action<byte[], bool>? FrameEncoded;
     public long Frames => Interlocked.Read(ref _frames);
     public long Bytes => Interlocked.Read(ref _bytes);
     public long KeyFrames => Interlocked.Read(ref _keys);
@@ -336,6 +342,7 @@ public sealed class ScreenSharer : IDisposable
                     while (gap > (seen = Interlocked.Read(ref _maxGapMs)) && Interlocked.CompareExchange(ref _maxGapMs, gap, seen) != seen) { }
                     while (gap > (seen = Interlocked.Read(ref _longestGapMs)) && Interlocked.CompareExchange(ref _longestGapMs, gap, seen) != seen) { }
                 }
+                FrameEncoded?.Invoke(frame, isKey);
                 await _source.SendFrameAsync(frame, isKey, ct).ConfigureAwait(false);
                 Interlocked.Increment(ref _frames);
                 Interlocked.Add(ref _bytes, frame.Length);
