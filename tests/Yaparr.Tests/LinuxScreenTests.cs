@@ -251,6 +251,19 @@ public class LinuxScreenTests
         Assert.Equal(wayland, ScreenCapture.IsWayland(session, socket));
     }
 
+    // A Flatpak is not given XDG_SESSION_TYPE, and WAYLAND_DISPLAY only exists in the sandbox with the Wayland socket. Without that socket
+    // a Wayland desktop looks like X11 to the app, which then copies the picture from XWayland: a viewer sees the first picture and no more.
+    [Fact]
+    public void The_flatpak_can_see_that_it_is_on_a_wayland_desktop()
+    {
+        string? dir = AppContext.BaseDirectory;
+        while (dir != null && !File.Exists(Path.Combine(dir, "installer", "flatpak", "com.yaparr.Yaparr.yml"))) dir = Path.GetDirectoryName(dir);
+        Assert.NotNull(dir);
+        var arguments = File.ReadAllLines(Path.Combine(dir!, "installer", "flatpak", "com.yaparr.Yaparr.yml")).Select(l => l.Trim()).ToList();
+        Assert.Contains("- --socket=wayland", arguments);
+        Assert.Contains("- --socket=x11", arguments); // the window itself is still drawn through X11
+    }
+
     private static readonly PortalStream Monitor1080 = new(57, 1920, 1080, false);
 
     [Fact]
