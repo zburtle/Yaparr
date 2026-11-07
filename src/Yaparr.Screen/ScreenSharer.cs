@@ -182,7 +182,10 @@ public sealed class ScreenSharer : IDisposable
     public long Bytes => Interlocked.Read(ref _bytes);
     public long KeyFrames => Interlocked.Read(ref _keys);
 
-    private long _lastFrameTick, _maxGapMs;
+    private long _lastFrameTick, _maxGapMs, _longestGapMs;
+
+    /// <summary>Like <see cref="TakeMaxFrameGapMs"/> but with a counter of its own, so the log can ask once a minute without taking it from the sharing panel.</summary>
+    public long TakeLongestGapMs() => Interlocked.Exchange(ref _longestGapMs, 0);
 
     /// <summary>The longest wait between two frames from FFmpeg since this was last called (milliseconds), for spotting an encoder that falls behind.</summary>
     public long TakeMaxFrameGapMs() => Interlocked.Exchange(ref _maxGapMs, 0);
@@ -300,6 +303,7 @@ public sealed class ScreenSharer : IDisposable
                 {
                     long gap = tick - before, seen;
                     while (gap > (seen = Interlocked.Read(ref _maxGapMs)) && Interlocked.CompareExchange(ref _maxGapMs, gap, seen) != seen) { }
+                    while (gap > (seen = Interlocked.Read(ref _longestGapMs)) && Interlocked.CompareExchange(ref _longestGapMs, gap, seen) != seen) { }
                 }
                 await _source.SendFrameAsync(frame, isKey, ct).ConfigureAwait(false);
                 Interlocked.Increment(ref _frames);

@@ -22,12 +22,19 @@ public partial class ShareDialog : Window
     private readonly ScreenOptions? _current;
 
     /// <summary>With <paramref name="current"/>, picks another monitor or window for a share that is running: quality and sound stay as they are.</summary>
-    public ShareDialog() : this(null) { }
+    public ShareDialog() : this(null, null) { }
 
-    public ShareDialog(ScreenOptions? current)
+    /// <summary>The upload speed Yaparr measured for this connection (see <see cref="Yaparr.Chat.ChatNode.MeasuredUploadBytesPerSecond"/>), if it has.</summary>
+    private readonly long? _upload;
+
+    /// <summary>With <paramref name="upload"/>, the dialog says what this connection suits and starts at the best quality that can be sent to three people at once.</summary>
+    public ShareDialog(long? upload) : this(null, upload) { }
+
+    public ShareDialog(ScreenOptions? current, long? upload = null)
     {
         InitializeComponent();
         _current = current;
+        _upload = upload;
         // The note about covered and minimised windows is about Windows Graphics Capture, and the sound is shared only where a
         // program's own sound can be captured.
         WindowsNote.IsVisible = OperatingSystem.IsWindows() || ScreenCapture.UsesPortal;
@@ -58,7 +65,24 @@ public partial class ShareDialog : Window
         }
         FillChoices(selectFirst: true);
         foreach (var q in Qualities) QualityBox.Items.Add(q.Label);
-        QualityBox.SelectedIndex = 0;
+        // The best quality that this connection can send to three people at once, or the lowest when none can (or the upload is not known yet).
+        int best = 0;
+        if (_upload != null)
+            for (int i = 0; i < Qualities.Length; i++)
+                if (Yaparr.Chat.ChatNode.DirectViewersAt(_upload, Qualities[i].Kbps) >= 3) best = i;
+        QualityBox.SelectedIndex = best;
+    }
+
+    private void QualityBox_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_upload is not { } upload || QualityBox.SelectedIndex < 0) { QualityHint.IsVisible = false; return; }
+        var q = Qualities[QualityBox.SelectedIndex];
+        int viewers = Yaparr.Chat.ChatNode.DirectViewersAt(upload, q.Kbps);
+        string speed = $"{upload * 8 / 1_000_000.0:0} Mbit/s";
+        QualityHint.IsVisible = true;
+        QualityHint.Text = viewers >= 3
+            ? $"Your connection sends about {speed}, enough to send this directly to {(viewers >= 6 ? "six" : viewers.ToString())} people at once; anyone else watches through them."
+            : $"Your connection sends about {speed}, which suits sending this to {viewers} {(viewers == 1 ? "person" : "people")} at once, and the rest watch through them. A lower quality keeps the picture and the voice chat steadier for everyone.";
     }
 
     // The monitors first, then the windows.

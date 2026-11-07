@@ -27,6 +27,21 @@ internal static class UploadPlan
 {
     public const int MinForward = 128 * 1024, MaxForward = 2 * 1024 * 1024, MaxFanout = 6;
 
+    /// <summary>
+    /// How many members the sharer of a stream sends to directly: two fifths of its upload, as for others, but up to 8 MB/s, since the person sharing chose to and their
+    /// connection is the one that was measured. The configured number of places until the upload is measured; <paramref name="mayGrow"/> lets a fast connection use
+    /// more than that (up to 6).
+    /// </summary>
+    public static int RootFanout(long? measured, int kbps, int configured, bool mayGrow = false)
+    {
+        if (measured is not > 0) return configured;
+        double stream = Math.Max(8, kbps) * 125.0;
+        double allowance = Math.Clamp(measured.Value * 2 / 5, MinForward, 8 * 1024 * 1024);
+        int fits = (int)Math.Clamp(allowance / stream, 1, MaxFanout);
+        // With the number left to the default, the connection decides (1 to 6); with a number the caller chose, it can only lower it.
+        return mayGrow ? fits : Math.Min(configured, fits);
+    }
+
     /// <summary>How much a member forwards for others: two fifths of what it can send, within limits. The configured number until it is measured.</summary>
     public static int ForwardBytesPerSecond(long? measured, int configured) =>
         measured is > 0 ? (int)Math.Clamp(measured.Value * 2 / 5, MinForward, MaxForward) : configured;
@@ -61,6 +76,12 @@ public sealed partial class ChatNode
     }
 
     /// <summary>What this device can send to the internet, in bytes per second, as last measured; null until it has been.</summary>
+    /// <summary>
+    /// How many members a stream of this bitrate can be sent to directly from a connection with this upload (1 to 6), for telling the person
+    /// who is about to share what their connection suits. <paramref name="measuredUpload"/> is <see cref="MeasuredUploadBytesPerSecond"/>.
+    /// </summary>
+    public static int DirectViewersAt(long? measuredUpload, int kbps) => UploadPlan.RootFanout(measuredUpload, kbps, 3, mayGrow: true);
+
     public long? MeasuredUploadBytesPerSecond => Interlocked.Read(ref _measuredUpload) is var v and > 0 ? v : null;
 
     /// <summary>What this device passes on for other members, in kilobytes per second: from its measured upload, or the configured amount.</summary>

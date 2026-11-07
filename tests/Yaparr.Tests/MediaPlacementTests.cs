@@ -25,6 +25,18 @@ public class MediaPlacementTests
     }
 
     [Fact]
+    public void A_sharer_with_fewer_places_than_it_started_with_is_not_given_more_joiners()
+    {
+        var root = P("r");
+        var g = new MediaGroup { Info = new MediaGroupInfo("g", "screen", "test", root, true, false), RootFanout = 3 };
+        g.Map[P("a")] = new MapNode(root, 0);
+        // One place (its upload only carries one copy) and it is taken: the next joiner is not placed under it.
+        Assert.Null(ChatNode.ChoosePlace(g, P("j"), new HashSet<PeerId>(), rootPlaces: 1));
+        // With the places it was started with there would be room.
+        Assert.Equal(root, ChatNode.ChoosePlace(g, P("j"), new HashSet<PeerId>()));
+    }
+
+    [Fact]
     public void A_parent_the_joiner_is_already_connected_to_is_preferred_over_a_shallower_one()
     {
         var g = Group(out _, out var a, out var b);

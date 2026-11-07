@@ -29,6 +29,27 @@ public class UploadSpeedTests
     }
 
     [Fact]
+    public void The_sharer_sends_to_as_many_members_as_its_own_upload_carries()
+    {
+        // Not measured: the places it was started with.
+        Assert.Equal(3, UploadPlan.RootFanout(null, 4000, 3));
+        // 10 Mbit/s up (1.25 MB/s): two fifths is 0.5 MB/s, one copy of a 4 Mbit/s screen (0.5 MB/s), not three.
+        Assert.Equal(1, UploadPlan.RootFanout(1_250_000, 4000, 3));
+        // The same line carries a 1 Mbit/s screen to three.
+        Assert.Equal(3, UploadPlan.RootFanout(1_250_000, 1000, 3));
+        // A very fast line (25 MB/s) sends 1080p at 6 Mbit/s to three, which the 2 MB/s limit for members passing a stream on would not allow.
+        Assert.Equal(3, UploadPlan.RootFanout(25_000_000, 6000, 3));
+        Assert.True(UploadPlan.Fanout(5 * 1024 * 1024, 6000, 3) < 3);
+        // Never more than it was started with, and the dialog asks the same question.
+        Assert.Equal(2, UploadPlan.RootFanout(25_000_000, 6000, 2));
+        Assert.Equal(6, ChatNode.DirectViewersAt(25_000_000, 4000));   // a fast line uses more places than the default three
+        Assert.Equal(3, UploadPlan.RootFanout(25_000_000, 4000, 3));      // unless the number was chosen by the caller
+        Assert.Equal(6, UploadPlan.RootFanout(25_000_000, 4000, 3, mayGrow: true));
+        Assert.Equal(1, UploadPlan.RootFanout(1_250_000, 4000, 3, mayGrow: true));
+        Assert.Equal(1, ChatNode.DirectViewersAt(1_250_000, 4000));
+    }
+
+    [Fact]
     public async Task A_burst_of_packets_to_a_peer_measures_the_speed_of_the_narrowest_link_and_a_second_test_is_refused()
     {
         var hub = new InMemoryDiscoveryHub();
