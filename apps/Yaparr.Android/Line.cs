@@ -6,7 +6,7 @@ using Yaparr.Chat;
 namespace Yaparr.AndroidApp;
 
 /// <summary>One message as the list shows it.</summary>
-public sealed class Line : Observable
+public sealed partial class Line : Observable
 {
     private IImage? _picture;
     private string _pictureStatus = "", _replyWho = "", _replyText = "";

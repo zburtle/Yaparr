@@ -303,6 +303,9 @@ public sealed class Chat : Observable
         Shown.Clear();
     }
 
+    /// <summary>Every message of the chat, in all its channels.</summary>
+    public IEnumerable<Line> AllLines => _all;
+
     /// <summary>The message with this key, or null if this phone does not have it.</summary>
     public Line? FindByKey(string key) => _byKey.GetValueOrDefault(key);
 

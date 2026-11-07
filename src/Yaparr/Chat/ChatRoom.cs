@@ -337,6 +337,24 @@ public sealed class ChatRoom
     /// <summary>Sends a message and returns its id, which <see cref="DeliveryChanged"/> reports on.</summary>
     public Task<string> SendAsync(string text) => Task.FromResult(_node.SendRoomMessage(this, text, null));
 
+    /// <summary>The reactions on a message changed (the key of the message, <see cref="ChatMessage.Key"/>): someone put an emoji on it, took one off, or one arrived with the history.</summary>
+    public event Action<string>? ReactionsChanged;
+
+    /// <summary>The reactions on the messages of this room, counted from its history now (people you blocked or the room banned do not count).</summary>
+    public ReactionSet GetReactions() => _node.GetReactions(this);
+
+    /// <summary>
+    /// Puts <paramref name="emoji"/> (one of <see cref="EmojiData"/>) on the message with the key <paramref name="messageKey"/>, or takes it off again
+    /// (<paramref name="on"/> false). It is sent as a message of its own, in <paramref name="channelId"/> (the channel of the message it is on), and
+    /// is not shown as one. Returns its id.
+    /// </summary>
+    public Task<string> SendReactionAsync(string messageKey, string emoji, bool on, string? channelId = null)
+    {
+        var id = _node.SendRoomMessage(this, MessageEnvelope.WrapReaction(messageKey, emoji, on), channelId);
+        ReactionsChanged?.Invoke(messageKey);
+        return Task.FromResult(id);
+    }
+
     /// <summary>Who a message you sent has reached, while it is still being tracked.</summary>
     public IReadOnlyList<DeliveryRecipient> GetDeliveryDetails(string messageId) => _node.GetDeliveryDetails(messageId);
 
@@ -364,7 +382,12 @@ public sealed class ChatRoom
 
     public Task LeaveAsync() => _node.LeaveRoomAsync(this);
 
-    internal void RaiseMessage(ChatMessage m) => MessageReceived?.Invoke(m);
+    // A reaction arrives as a message but is not shown as one: it changes what the message it is on shows.
+    internal void RaiseMessage(ChatMessage m)
+    {
+        if (m.Parts.Reaction is { } reaction) ReactionsChanged?.Invoke(reaction.Target);
+        else MessageReceived?.Invoke(m);
+    }
     internal void RaiseJoined(PeerInfo p) => MemberJoined?.Invoke(p);
     internal void RaiseLeft(PeerInfo p) => MemberLeft?.Invoke(p);
     internal void RaiseRenamed(PeerInfo p) => MemberRenamed?.Invoke(p);
@@ -403,6 +426,20 @@ public sealed class DirectChat
     public event Action<ChatMessage>? MessageReceived;
     public event Action<DeliveryStatus>? DeliveryChanged;
 
+    /// <summary>The reactions on a message changed (the key of the message, <see cref="ChatMessage.Key"/>): someone put an emoji on it, took one off, or one arrived with the history.</summary>
+    public event Action<string>? ReactionsChanged;
+
+    /// <summary>The reactions on the messages of this conversation, yours and theirs.</summary>
+    public ReactionSet GetReactions() => _node.GetDirectReactions(PeerId);
+
+    /// <summary>Puts <paramref name="emoji"/> on the message with the key <paramref name="messageKey"/>, or takes it off again (<paramref name="on"/> false). The emoji has to be one of <see cref="EmojiData"/>.</summary>
+    public Task<string> SendReactionAsync(string messageKey, string emoji, bool on)
+    {
+        var id = _node.SendDirectMessage(PeerId, MessageEnvelope.WrapReaction(messageKey, emoji, on));
+        ReactionsChanged?.Invoke(messageKey);
+        return Task.FromResult(id);
+    }
+
     public Task<string> SendAsync(string text) => Task.FromResult(_node.SendDirectMessage(PeerId, text));
 
     /// <summary>Sends a message that answers the message with the key <paramref name="replyTo"/> (<see cref="ChatMessage.Key"/>).</summary>
@@ -413,7 +450,12 @@ public sealed class DirectChat
 
     public void Retry(string messageId) => _node.RetryMessage(messageId);
 
-    internal void RaiseMessage(ChatMessage m) => MessageReceived?.Invoke(m);
+    // A reaction arrives as a message but is not shown as one: it changes what the message it is on shows.
+    internal void RaiseMessage(ChatMessage m)
+    {
+        if (m.Parts.Reaction is { } reaction) ReactionsChanged?.Invoke(reaction.Target);
+        else MessageReceived?.Invoke(m);
+    }
     internal void RaiseDelivery(DeliveryStatus s) => DeliveryChanged?.Invoke(s);
     internal void RaiseRead() => ReadChanged?.Invoke();
 }

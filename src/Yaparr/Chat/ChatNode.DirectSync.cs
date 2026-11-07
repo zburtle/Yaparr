@@ -90,9 +90,14 @@ public sealed partial class ChatNode
     public IReadOnlyList<DirectChat> StoredDirectChats =>
         _directHistory.Peers().Select(p => GetDirectChat(new PeerId(p))).ToList();
 
+    /// <summary>The reactions in a direct chat: yours and the other person's.</summary>
+    internal ReactionSet GetDirectReactions(PeerId person) =>
+        ReactionTally.Build(_directHistory.For(person.Value).Where(r => MessageEnvelope.IsReactionText(r.Text)).Select(r => (DirectHistory.Key(r), r.Mine ? AccountId.Value : person.Value, r.Ts, r.Text)),
+            from => new PeerId(from), account => account != AccountId && IsBlocked(account));
+
     internal IReadOnlyList<ChatMessage> GetDirectHistory(PeerId person) =>
         _directHistory.For(person.Value)
-            .Where(r => r.Mine || !IsBlocked(person))
+            .Where(r => !MessageEnvelope.IsReactionText(r.Text) && (r.Mine || !IsBlocked(person)))
             .Select(r => BuildMessage(
                 r.Mine ? new PeerInfo(Id, DisplayName, null, false, AccountId) : new PeerInfo(person, r.Name.Length > 0 ? r.Name : person.Short, null, false, person),
                 null, r.Id, r.Text, DateTimeOffset.FromUnixTimeMilliseconds(r.Ts)))

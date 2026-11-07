@@ -260,6 +260,21 @@
                                         </StackPanel>
                                     </Grid>
                                 </Border>
+                                <ItemsControl ItemsSource="{Binding Reactions}" IsVisible="{Binding HasReactions}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="local:ReactionChip">
+                                            <Border Background="{Binding Fill}" BorderBrush="{Binding Edge}" BorderThickness="1" CornerRadius="12" Padding="8,3" Margin="0,2,4,2" Tapped="ReactionChipTapped">
+                                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                                    <TextBlock Text="{Binding Emoji}" FontSize="15" FontFamily="Roboto" VerticalAlignment="Center" />
+                                                    <TextBlock Text="{Binding CountText}" IsVisible="{Binding ShowCount}" FontSize="12" VerticalAlignment="Center" Foreground="{Binding Ink}" />
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
                                 <TextBlock Text="{Binding Time}" FontSize="10" Opacity="0.6" HorizontalAlignment="Right" Foreground="{Binding Ink}" />
                             </StackPanel>
                         </Border>
@@ -352,6 +367,25 @@
                         <Button Classes="primary" Content="Choose what to share" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="ShareGoClicked" />
                         <Button Grid.Column="1" Content="Cancel" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="ShareCancelClicked" />
                     </Grid>
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <!-- Reacting to a message: the quick emoji, and a search through all of them. -->
+        <Border x:Name="ReactPanel" IsVisible="False" Background="#99000000" PointerPressed="OverlayBackdropPressed">
+            <Border Background="{DynamicResource Surface}" CornerRadius="16" Margin="16" Padding="12" MaxWidth="440" VerticalAlignment="Center">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="React" FontWeight="Bold" FontSize="20" Foreground="{DynamicResource Ink}" />
+                    <WrapPanel x:Name="ReactQuick" HorizontalAlignment="Center" />
+                    <TextBox x:Name="ReactSearch" PlaceholderText="Search emoji" MaxLength="40" />
+                    <ScrollViewer HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled">
+                        <StackPanel x:Name="ReactTabs" Orientation="Horizontal" />
+                    </ScrollViewer>
+                    <TextBlock x:Name="ReactTitle" FontSize="12" Foreground="{DynamicResource Muted}" />
+                    <ScrollViewer MaxHeight="300" HorizontalScrollBarVisibility="Disabled">
+                        <WrapPanel x:Name="ReactGrid" />
+                    </ScrollViewer>
+                    <Button Content="Close" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="ReactCloseClicked" />
                 </StackPanel>
             </Border>
         </Border>

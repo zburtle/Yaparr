@@ -61,7 +61,7 @@ public partial class MainView : UserControl
         foreach (var s in _screens) s.IsVisible = s == screen;
     }
 
-    private bool AnyOverlay => AddPanel.IsVisible || PeoplePanel.IsVisible || ConfirmPanel.IsVisible || RoutePanel.IsVisible || PicturePanel.IsVisible || ActionPanel.IsVisible || PromptPanel.IsVisible || BlockedPanel.IsVisible || NetworkPanel.IsVisible || SoundPanel.IsVisible || ShelfPanel.IsVisible || SharePanel.IsVisible || WatchPanel.IsVisible;
+    private bool AnyOverlay => AddPanel.IsVisible || PeoplePanel.IsVisible || ConfirmPanel.IsVisible || RoutePanel.IsVisible || PicturePanel.IsVisible || ActionPanel.IsVisible || PromptPanel.IsVisible || BlockedPanel.IsVisible || NetworkPanel.IsVisible || SoundPanel.IsVisible || ShelfPanel.IsVisible || SharePanel.IsVisible || WatchPanel.IsVisible || ReactPanel.IsVisible;
 
     // One step back; false when there is nothing to go back to and the phone may leave the app.
     private bool GoBack()
@@ -72,6 +72,7 @@ public partial class MainView : UserControl
         if (ShelfPanel.IsVisible) { ShelfPanel.IsVisible = false; return true; }
         if (WatchPanel.IsVisible) { CloseWatch(); return true; }
         if (SharePanel.IsVisible) { SharePanel.IsVisible = false; return true; }
+        if (ReactPanel.IsVisible) { ReactPanel.IsVisible = false; return true; }
         if (SoundPanel.IsVisible) { SoundPanel.IsVisible = false; return true; }
         if (NetworkPanel.IsVisible) { NetworkPanel.IsVisible = false; return true; }
         if (PicturePanel.IsVisible) { PictureCloseClicked(null, new RoutedEventArgs()); return true; }
@@ -914,6 +915,7 @@ public partial class MainView : UserControl
         e.Handled = true;
         ActionTitle.Text = line.Mine ? "Your message" : line.Who;
         ActionList.Children.Clear();
+        AddAction("React\u2026", () => OpenReact(line));
         AddAction("Reply", () => StartReply(line));
         if (line.HasPicture && _session.PictureBytes(line) is { } shelved)
             AddAction("Add to my GIF shelf", () =>

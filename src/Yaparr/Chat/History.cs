@@ -215,13 +215,21 @@ internal sealed class RoomHistory
 
     private long OldestAllowed() => DateTimeOffset.UtcNow.Subtract(_maxAge).ToUnixTimeMilliseconds();
 
+    /// <summary>How many reactions are kept for each message the history can hold: they are small, and a busy room reacts a lot.</summary>
+    public const int ReactionBudget = 4;
+
     private void Trim()
     {
         long cutoff = OldestAllowed();
         foreach (var k in _messages.Where(kv => kv.Value.Ts < cutoff).Select(kv => kv.Key).ToList()) _messages.Remove(k);
         if (_messages.Count <= _max) return;
+        // Reactions have a share of their own, so many of them do not push messages out of the history (and the other way round).
+        var reactions = _messages.Where(kv => MessageEnvelope.IsReactionText(kv.Value.Text)).ToList();
+        int allowed = _max * ReactionBudget;
+        if (reactions.Count > allowed)
+            foreach (var kv in reactions.OrderBy(kv => kv.Value.Ts).Take(reactions.Count - allowed)) _messages.Remove(kv.Key);
         // The limit is per channel, so a busy channel does not push a quiet one out of the history.
-        foreach (var channel in _messages.GroupBy(kv => kv.Value.Chan ?? "").Where(g => g.Count() > _max).ToList())
+        foreach (var channel in _messages.Where(kv => !MessageEnvelope.IsReactionText(kv.Value.Text)).GroupBy(kv => kv.Value.Chan ?? "").Where(g => g.Count() > _max).ToList())
             foreach (var k in channel.OrderBy(kv => kv.Value.Ts).Take(channel.Count() - _max).Select(kv => kv.Key).ToList())
                 _messages.Remove(k);
     }
