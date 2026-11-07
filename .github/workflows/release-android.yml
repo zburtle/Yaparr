@@ -2,20 +2,12 @@ name: Release Android
 
 # The Android app, released on its own: its own version (android-v1.2.3), its own tag, and its own release with the signed package. It is made
 # when a commit that concerns the app (its folder, the library, the shared layer; see .github/release/track-filter.js) calls for one, and it
-# does not wait for, or hold up, the computer release (release.yml).
+# does not wait for, or hold up, the computer release (release.yml). It runs only when started by hand (Actions, Run workflow, on master), so
+# that many merged changes go out as one release; a run that finds nothing to release does nothing.
 #
 # Its release is never the "latest" one: the computer app updates itself from the latest release, and yaparr.com looks there for the installers,
 # so the Android releases are kept out of that and the site looks for the newest Android release on its own.
 on:
-  push:
-    branches: [master]
-    paths:
-      - 'apps/Yaparr.Android/**'
-      - 'src/Yaparr/**'
-      - 'src/Yaparr.AppCore/**'
-      - 'Directory.Build.props'
-      - '.github/release/**'
-      - '.github/workflows/release-android.yml'
   workflow_dispatch:
 
 permissions:

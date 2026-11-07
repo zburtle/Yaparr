@@ -2,10 +2,11 @@ name: Release installer
 
 # The computer app: the MSI, the .deb packages and the Flatpak bundles, with its own version (v1.2.3). The Android app has its own release, with its own
 # version (android-v1.2.3), in release-android.yml. Each looks only at the commits that concern it (.github/release/track-filter.js).
+#
+# It runs only when started by hand (Actions, Run workflow, on master), so that many merged changes go out as one release, with the version the
+# commits since the last tag call for. A run that finds nothing to release does nothing.
 
 on:
-  push:
-    branches: [master]
   workflow_dispatch:
 
 permissions:
