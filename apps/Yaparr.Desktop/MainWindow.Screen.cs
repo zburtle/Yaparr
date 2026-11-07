@@ -79,7 +79,7 @@ public partial class MainWindow
         var ffmpeg = await GetFfmpegAsync();
         if (ffmpeg == null) return;
 
-        var dialog = new ShareDialog();
+        var dialog = new ShareDialog(_node.MeasuredUploadBytesPerSecond);
         if (!await dialog.ShowDialog<bool>(this) || dialog.Result == null) return;
         var options = dialog.Result;
 

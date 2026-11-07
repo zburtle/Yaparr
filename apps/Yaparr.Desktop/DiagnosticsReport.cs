@@ -13,7 +13,7 @@ public static class DiagnosticsReport
 {
     private const int LogLines = 300;
 
-    public static async Task<string> BuildAsync(ChatNode node, AppSettings settings, FileLog log, string dataDirectory, CancellationToken ct = default)
+    public static async Task<string> BuildAsync(ChatNode node, AppSettings settings, FileLog log, string dataDirectory, Yaparr.Voice.VoiceSession? voice = null, CancellationToken ct = default)
     {
         var text = new StringBuilder();
         void Line(string line = "") => text.AppendLine(line);
@@ -70,7 +70,26 @@ public static class DiagnosticsReport
 
         Line("Voice");
         Line($"  Microphone: {settings.VoiceInput ?? "default"}; speakers: {settings.VoiceOutput ?? "default"}");
-        Line($"  Echo cancellation {OnOff(settings.VoiceEchoCancellation)}, noise suppression {settings.VoiceNoiseSuppression}, automatic volume {OnOff(settings.VoiceAutomaticVolume)}, leveling people {OnOff(settings.VoiceLevelSpeakers)}, {(settings.VoiceAlwaysOn ? "always sending" : "sending when talking")}");
+        Line($"  Echo cancellation {OnOff(settings.VoiceEchoCancellation)}, noise suppression {settings.VoiceNoiseSuppression}, click suppression {OnOff(settings.VoiceClickSuppression)}, automatic volume {OnOff(settings.VoiceAutomaticVolume)}, leveling people {OnOff(settings.VoiceLevelSpeakers)}, {(settings.VoiceAlwaysOn ? "always sending" : "sending when talking")}");
+        Line();
+
+        if (voice != null)
+        {
+            Line("Voice quality (this call so far)");
+            foreach (var peer in voice.HeardFrom.OrderBy(p => p.Value, StringComparer.Ordinal))
+            {
+                var q = voice.Quality(peer);
+                Line($"  {peer.Short}: {q.Received} packets, {q.Lost} made up ({q.LossRate * 100:0.0}%), {q.Underruns} gaps, {q.BufferMs} ms held back, {node.GetLink(peer)}");
+            }
+            Line();
+        }
+
+        Line("Connections that dropped (the last 3 hours of the log)");
+        var drops = log.Tail(30000).Where(l => l.Contains(" disconnected from ") && DateTime.TryParse(l.AsSpan(0, Math.Min(23, l.Length)), out var at) && at > DateTime.Now.AddHours(-3))
+            .Select(l => System.Text.RegularExpressions.Regex.Match(l, @"disconnected from (\S+) at \S+: connection (.*)$"))
+            .Where(m => m.Success).GroupBy(m => m.Groups[1].Value).OrderByDescending(g => g.Count()).ToList();
+        if (drops.Count == 0) Line("  none");
+        foreach (var g in drops) Line($"  {g.Key}: {g.Count()} times ({string.Join(", ", g.GroupBy(m => m.Groups[2].Value).Select(r => r.Key + " x" + r.Count()))})");
         Line();
 
         var tail = log.Tail(LogLines);

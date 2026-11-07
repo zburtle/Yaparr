@@ -66,10 +66,10 @@ public partial class MainView : UserControl
     {
         if (PromptPanel.IsVisible) { PromptPanel.IsVisible = false; return true; }
         if (BlockedPanel.IsVisible) { BlockedPanel.IsVisible = false; return true; }
+        if (ActionPanel.IsVisible) { ActionPanel.IsVisible = false; return true; }
         if (ShelfPanel.IsVisible) { ShelfPanel.IsVisible = false; return true; }
         if (SoundPanel.IsVisible) { SoundPanel.IsVisible = false; return true; }
         if (NetworkPanel.IsVisible) { NetworkPanel.IsVisible = false; return true; }
-        if (ActionPanel.IsVisible) { ActionPanel.IsVisible = false; return true; }
         if (PicturePanel.IsVisible) { PictureCloseClicked(null, new RoutedEventArgs()); return true; }
         if (RoutePanel.IsVisible) { RoutePanel.IsVisible = false; return true; }
         if (ConfirmPanel.IsVisible) { ConfirmPanel.IsVisible = false; return true; }
@@ -100,6 +100,7 @@ public partial class MainView : UserControl
         session.Chats.CollectionChanged += (_, _) => EmptyHint.IsVisible = session.Started && session.Chats.Count == 0;
         session.Notice += text => ListStatus.Text = text;
         session.SoundsChanged += c => { if (SoundPanel.IsVisible && c == _current) ShowSounds(); };
+        session.GifsChanged += async c => { if (ShelfPanel.IsVisible && _shelfShowsRoom && c == _current) await FillShelfAsync(); };
         session.ConnectionChanged += text => ListStatus.Text = text;
         session.SyncChanged += (text, progress) =>
         {
@@ -871,29 +872,81 @@ public partial class MainView : UserControl
     }
 
     // ---- the GIF shelf ----
+    // "Mine" is a folder on this phone (see GifShelf); "This room" is the room's shared shelf, fetched when the tab is opened (see ChatRoom.Gifs).
 
     private int _shelfVersion;
+    private bool _shelfShowsRoom;
+    private readonly Dictionary<string, byte[]?> _roomPreviews = new();
 
     private async void ShelfClicked(object? sender, RoutedEventArgs e)
     {
         if (_session == null || _current == null) return;
+        _shelfShowsRoom = false;
         ShelfPanel.IsVisible = true;
+        await ShowShelfTabAsync();
+    }
+
+    private async void ShelfMineClicked(object? sender, RoutedEventArgs e) { _shelfShowsRoom = false; await ShowShelfTabAsync(); }
+
+    private async void ShelfRoomClicked(object? sender, RoutedEventArgs e) { _shelfShowsRoom = true; await ShowShelfTabAsync(); }
+
+    private void ShelfCloseClicked(object? sender, RoutedEventArgs e) => ShelfPanel.IsVisible = false;
+
+    private async Task ShowShelfTabAsync()
+    {
+        bool hasRoom = _current?.Room != null;
+        ShelfRoomTab.IsVisible = ShelfMineTab.IsVisible = hasRoom;
+        if (!hasRoom) _shelfShowsRoom = false;
+        ShelfMineTab.Classes.Set("primary", !_shelfShowsRoom);
+        ShelfRoomTab.Classes.Set("primary", _shelfShowsRoom);
+        ShelfAddButton.Content = _shelfShowsRoom ? "Add to the room" : "Add a picture";
+        if (_shelfShowsRoom) _current?.Room?.RequestGifs();
         await FillShelfAsync();
     }
 
-    private void ShelfCloseClicked(object? sender, RoutedEventArgs e) => ShelfPanel.IsVisible = false;
+    private static string CountText(int n) => n == 1 ? "1 picture" : n + " pictures";
 
     private async Task FillShelfAsync()
     {
         if (_session == null) return;
-        var shelf = _session.Shelf;
         int version = ++_shelfVersion;
+        if (_shelfShowsRoom && _current is { Room: { } room } roomChat)
+        {
+            var gifs = await Task.Run(() => room.Gifs);
+            if (version != _shelfVersion) return;
+            ShelfGrid.Children.Clear();
+            ShelfHint.Text = gifs.Count == 0
+                ? $"Nothing here yet. Add a GIF or picture and everyone in this room can send it."
+                : CountText(gifs.Count) + ". Tap one to send it, hold it for more.";
+            foreach (var chunk in gifs.Chunk(18))
+            {
+                var loaded = await Task.Run(() => chunk.Select(gif =>
+                {
+                    byte[]? preview = null;
+                    if (gif.Available)
+                    {
+                        lock (_roomPreviews)
+                            if (!_roomPreviews.TryGetValue(gif.Hash, out preview))
+                            {
+                                preview = room.GetGif(gif.Id) is { } file ? GifShelf.PreviewOf(file) : null;
+                                _roomPreviews[gif.Hash] = preview;
+                            }
+                    }
+                    return (gif, bitmap: preview == null ? null : new Avalonia.Media.Imaging.Bitmap(new MemoryStream(preview)));
+                }).ToList());
+                if (version != _shelfVersion) { foreach (var (_, bitmap) in loaded) bitmap?.Dispose(); return; }
+                foreach (var (gif, bitmap) in loaded) ShelfGrid.Children.Add(RoomShelfTile(roomChat, room, gif, bitmap));
+            }
+            return;
+        }
+
+        var shelf = _session.Shelf;
         var items = await Task.Run(() => shelf.List());
         if (version != _shelfVersion) return;
         ShelfGrid.Children.Clear();
         ShelfHint.Text = items.Count == 0
             ? "Nothing here yet. Add GIFs and pictures you like to send again, or hold a picture in a chat and choose Add to my GIF shelf. They stay on this phone."
-            : (items.Count == 1 ? "1 picture" : items.Count + " pictures") + ". Tap one to send it, hold it to take it off the shelf.";
+            : CountText(items.Count) + ". Tap one to send it, hold it for more.";
         // A few previews at a time, so a long shelf opens at once and fills in.
         foreach (var chunk in items.Chunk(18))
         {
@@ -903,22 +956,22 @@ public partial class MainView : UserControl
                 return (item, bitmap: preview == null ? null : new Avalonia.Media.Imaging.Bitmap(new MemoryStream(preview)));
             }).ToList());
             if (version != _shelfVersion) { foreach (var (_, bitmap) in loaded) bitmap?.Dispose(); return; }
-            foreach (var (item, bitmap) in loaded) ShelfGrid.Children.Add(ShelfTile(item, bitmap));
+            foreach (var (item, bitmap) in loaded) ShelfGrid.Children.Add(MyShelfTile(item, bitmap));
         }
     }
 
-    // A GIF plays while its tile is on screen: the file is read when the tile scrolls into view and let go when it scrolls out, so a long
-    // shelf keeps only what is visible in memory.
-    private Control ShelfTile(ShelfItem item, Avalonia.Media.Imaging.Bitmap? bitmap)
+    // A tile for a picture. A GIF plays while its tile is on screen: the file is read when the tile scrolls into view and let go when it scrolls
+    // out, so a long shelf keeps only what is visible in memory. Tap sends; hold opens a small menu.
+    private Control ShelfTile(bool isGif, Avalonia.Media.Imaging.Bitmap? bitmap, Func<byte[]?> read, Func<Task>? send, string title, Action<List<(string, Action, bool)>> menu)
     {
         var image = new AnimatedImage { Source = bitmap, Stretch = Avalonia.Media.Stretch.Uniform, MaxFrameSide = 240 };
         var tile = new Avalonia.Controls.Button
         {
             Width = 92, Height = 92, Padding = new Avalonia.Thickness(0), Margin = new Avalonia.Thickness(3), Background = Avalonia.Media.Brushes.Transparent,
             ClipToBounds = true, CornerRadius = new Avalonia.CornerRadius(8),
-            Content = image,
+            Content = bitmap != null ? image : new TextBlock { Text = "\u2026", Opacity = 0.5, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center },
         };
-        if (item.IsGif && bitmap != null)
+        if (isGif && bitmap != null)
         {
             bool playing = false;
             tile.EffectiveViewportChanged += async (_, args) =>
@@ -927,7 +980,7 @@ public partial class MainView : UserControl
                 if (inView == playing) return;
                 playing = inView;
                 if (!inView) { image.Animation = null; image.Source = bitmap; return; }
-                var data = _session?.Shelf is { } shelf ? await Task.Run(() => shelf.Read(item.Id)) : null;
+                var data = await Task.Run(read);
                 if (playing) image.Animation = data;
             };
         }
@@ -937,19 +990,62 @@ public partial class MainView : UserControl
             if (args.HoldingState != HoldingState.Started) return;
             held = true;
             args.Handled = true;
-            Ask("Take this picture off the GIF shelf? It is only removed from this phone.", "Remove", async () =>
-            {
-                _session?.Shelf.Remove(item.Id);
-                await FillShelfAsync();
-            });
+            var actions = new List<(string, Action, bool)>();
+            menu(actions);
+            ActionTitle.Text = title;
+            ActionList.Children.Clear();
+            foreach (var (label, action, danger) in actions) AddAction(label, action, danger);
+            ActionPanel.IsVisible = true;
         };
         tile.Click += async (_, _) =>
         {
             if (held) { held = false; return; }
-            await SendFromShelfAsync(item);
+            if (send != null) await send();
         };
+
         return tile;
     }
+
+    private Control MyShelfTile(ShelfItem item, Avalonia.Media.Imaging.Bitmap? bitmap) =>
+        ShelfTile(item.IsGif, bitmap, () => _session?.Shelf.Read(item.Id), () => SendFromShelfAsync(item), item.IsGif ? "GIF" : "Picture", actions =>
+        {
+            if (_current?.Room is { } room)
+                actions.Add(("Share with this room", async () =>
+                {
+                    try
+                    {
+                        var data = await Task.Run(() => _session?.Shelf.Read(item.Id));
+                        if (data != null) await Task.Run(() => room.AddGif(data));
+                        if (_current != null) ShowChatNote(_current, "Added to the room's GIF shelf");
+                    }
+                    catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { if (_current != null) ShowChatNote(_current, ex.Message); }
+                }, false));
+            actions.Add(("Remove from my shelf", () => Ask("Take this picture off your GIF shelf? It is only removed from this phone.", "Remove", async () =>
+            {
+                _session?.Shelf.Remove(item.Id);
+                await FillShelfAsync();
+            }), true));
+        });
+
+    private Control RoomShelfTile(Chat chat, Yaparr.Chat.ChatRoom room, GifInfo gif, Avalonia.Media.Imaging.Bitmap? bitmap) =>
+        ShelfTile(gif.IsGif, bitmap, () => room.GetGif(gif.Id), gif.Available ? () => SendFromRoomAsync(chat, room, gif) : null, "Added by " + gif.OwnerName, actions =>
+        {
+            if (gif.Available)
+                actions.Add(("Add to my shelf", () =>
+                {
+                    try { if (room.GetGif(gif.Id) is { } data) { _session?.Shelf.Add(data); ShowChatNote(chat, "Added to your GIF shelf"); } }
+                    catch (Exception ex) when (ex is ArgumentException or IOException) { ShowChatNote(chat, ex.Message); }
+                }, false));
+            if (_session != null && _session.CanRemoveGif(chat, gif))
+                actions.Add((_session.IsMine(gif) ? "Remove from the room's shelf" : "Take down for everyone", () => Ask(
+                    _session.IsMine(gif) ? "Remove this picture from the room's GIF shelf for everyone?" : $"Take this picture, added by {gif.OwnerName}, off the room's GIF shelf for everyone?",
+                    "Remove", async () =>
+                    {
+                        try { _session?.RemoveGif(chat, gif); }
+                        catch (Exception ex) when (ex is InvalidOperationException or KeyNotFoundException) { ShowChatNote(chat, ex.Message); }
+                        await FillShelfAsync();
+                    }), true));
+        });
 
     private async Task SendFromShelfAsync(ShelfItem item)
     {
@@ -959,11 +1055,26 @@ public partial class MainView : UserControl
         var data = await Task.Run(() => _session.Shelf.Read(item.Id));
         if (data == null) { ShowChatNote(chat, "That picture is no longer on the shelf"); return; }
         _session.Shelf.Used(item.Id);
+        await SendShelfPictureAsync(chat, data, item.Id);
+    }
+
+    private async Task SendFromRoomAsync(Chat chat, Yaparr.Chat.ChatRoom room, GifInfo gif)
+    {
+        ShelfPanel.IsVisible = false;
+        var data = await Task.Run(() => room.GetGif(gif.Id));
+        if (data == null) { ShowChatNote(chat, "That picture is no longer on the room's shelf"); return; }
+        var extension = gif.Mime switch { "image/gif" => ".gif", "image/png" => ".png", "image/webp" => ".webp", _ => ".jpg" };
+        await SendShelfPictureAsync(chat, data, gif.Hash[..16] + extension);
+    }
+
+    private async Task SendShelfPictureAsync(Chat chat, byte[] data, string name)
+    {
+        if (_session == null) return;
         var caption = (InputBox.Text ?? "").Trim();
         try
         {
             var reply = _replyTo;
-            await _session.SendPictureAsync(chat, data, item.Id, caption, reply?.Id);
+            await _session.SendPictureAsync(chat, data, name, caption, reply?.Id);
             InputBox.Text = "";
             ClearReply();
             ScrollToEnd();
@@ -981,10 +1092,11 @@ public partial class MainView : UserControl
         if (picked is not { } file) return;
         try
         {
-            await Task.Run(() => _session.Shelf.Add(file.Bytes));
+            if (_shelfShowsRoom && _current?.Room is { } room) await Task.Run(() => room.AddGif(file.Bytes));
+            else await Task.Run(() => _session.Shelf.Add(file.Bytes));
             await FillShelfAsync();
         }
-        catch (Exception ex) when (ex is ArgumentException or IOException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IOException)
         {
             ShelfHint.Text = ex.Message;
         }

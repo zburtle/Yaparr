@@ -113,6 +113,7 @@ public partial class MainWindow
         session.Sensitivity = _settings.VoiceSensitivity / 1000f;
         session.OutputGain = Math.Clamp(_settings.VoiceOutputVolume, 0, 300) / 100f;
         session.AutomaticVolume = _settings.VoiceAutomaticVolume;
+        session.ClickSuppression = _settings.VoiceClickSuppression;
         session.LevelSpeakers = _settings.VoiceLevelSpeakers;
     }
 

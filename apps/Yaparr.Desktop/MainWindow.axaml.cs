@@ -27,6 +27,7 @@ public partial class MainWindow : Window
     private AppSettings _settings = new();
     private VpnController _vpn = null!;
     private FileLog _log = null!;
+    private CallQualityLog? _callQuality;
     private ChatNode? _node;
     private ConversationVm? _selected;
     private bool _started;
@@ -204,7 +205,7 @@ public partial class MainWindow : Window
         StatusText.Text = "Collecting diagnostics…";
         try
         {
-            var text = await DiagnosticsReport.BuildAsync(_node, _settings, _log, _data.Directory, _cts.Token);
+            var text = await DiagnosticsReport.BuildAsync(_node, _settings, _log, _data.Directory, _voice, _cts.Token);
             StatusText.Text = await Dialogs.CopyAsync(this, text)
                 ? "Diagnostics copied. Paste them into your bug report: addresses and ids are shortened and keys are left out."
                 : "Couldn't copy: another program is using the clipboard. Try again.";
@@ -260,7 +261,7 @@ public partial class MainWindow : Window
         StatusText.Text = "Collecting diagnostics…";
         try
         {
-            var text = await DiagnosticsReport.BuildAsync(_node, _settings, _log, _data.Directory, _cts.Token);
+            var text = await DiagnosticsReport.BuildAsync(_node, _settings, _log, _data.Directory, _voice, _cts.Token);
             bool copied = await Dialogs.CopyAsync(this, text);
             var link = Updater.IssueFormUrl("bug_report.yml", Updater.CurrentVersion.ToString(), System.Runtime.InteropServices.RuntimeInformation.OSDescription);
             if (!await Launcher.LaunchUriAsync(new Uri(link)))
@@ -345,6 +346,7 @@ public partial class MainWindow : Window
         _settings = _data.LoadSettings();
         _vpn = new VpnController(_data, _settings, () => _node);
         _log = new FileLog(Path.Combine(_data.Directory, "logs"), legacyFile: Path.Combine(_data.Directory, "yaparr.log"));
+        _callQuality = new CallQualityLog(() => _voice, () => _sharer, () => _node, _log);
         CrashLog.Attach(_log, _log.Folder);
         _log.Write($"Yaparr {Updater.CurrentVersion} starting");
         Updater.Log = _log.Write;

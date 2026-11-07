@@ -99,8 +99,8 @@ public sealed partial class ChatNode
         }
         foreach (var m in all)
         {
-            if (m.Kind is not (SignedMod.DeleteMessage or SignedMod.DeleteSound) || SignerRole(m) < RoomRole.Admin) continue;
-            (m.Kind == SignedMod.DeleteMessage ? view.Messages : view.Sounds).Add(m.Target);
+            if (m.Kind is not (SignedMod.DeleteMessage or SignedMod.DeleteSound or SignedMod.DeleteGif) || SignerRole(m) < RoomRole.Admin) continue;
+            (m.Kind == SignedMod.DeleteMessage ? view.Messages : m.Kind == SignedMod.DeleteGif ? view.Gifs : view.Sounds).Add(m.Target);
         }
         return view;
     }
@@ -121,6 +121,8 @@ public sealed partial class ChatNode
     }
 
     internal bool IsSoundDeleted(ChatRoom room, string id) => Moderation(room).Sounds.Contains(id);
+
+    internal bool IsGifDeleted(ChatRoom room, string id) => Moderation(room).Gifs.Contains(id);
 
     // ---- giving orders --------------------------------------------------------------------------
 
@@ -164,6 +166,15 @@ public sealed partial class ChatNode
         lock (room.SoundGate) known = room.SoundEntries.ContainsKey(id);
         if (!known) throw new KeyNotFoundException("There is no such sound.");
         PublishMod(room, SignedMod.DeleteSound, id, "");
+    }
+
+    internal void DeleteGif(ChatRoom room, string id)
+    {
+        RequireAdmin(room);
+        bool known;
+        lock (room.GifGate) known = room.GifEntries.ContainsKey(id);
+        if (!known) throw new KeyNotFoundException("There is no such picture on the shelf.");
+        PublishMod(room, SignedMod.DeleteGif, id, "");
     }
 
     private void PublishMod(ChatRoom room, string kind, string target, string label)
@@ -271,6 +282,7 @@ public sealed partial class ChatNode
         if (membersChanged) AfterMembershipChange(room); else RefreshIndirect(room);
         if (voiceChanged) VoiceRosterChanged(room);
         room.RaiseSoundsChanged();
+        room.RaiseGifsChanged();
         room.RaiseModerationChanged();
     }
 }

@@ -56,6 +56,8 @@ public sealed class AppSettings
     public bool VoiceEchoCancellation { get; set; } = true;
     /// <summary>Off, Low, Moderate or High: how much steady background noise is taken out of your microphone.</summary>
     public string VoiceNoiseSuppression { get; set; } = "Moderate";
+    /// <summary>Take short, sharp clicks (keyboard and mouse) out of your microphone. Adds 10 ms of delay to your voice.</summary>
+    public bool VoiceClickSuppression { get; set; }
     /// <summary>Raise a quiet microphone and lower a loud one towards a normal speaking level before it is sent.</summary>
     public bool VoiceAutomaticVolume { get; set; }
     /// <summary>Bring everyone you hear to a similar loudness (on top of each person's own volume).</summary>

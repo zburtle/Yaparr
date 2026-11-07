@@ -572,13 +572,16 @@
                             </StackPanel>
                         </DockPanel>
                     </Border>
-                    <Popup x:Name="ShelfPopup" PlacementTarget="{Binding #ShelfButton}" Placement="TopEdgeAlignedLeft" IsLightDismissEnabled="True">
+                    <Popup x:Name="ShelfPopup" PlacementTarget="{Binding #ShelfButton}" Placement="TopEdgeAlignedLeft" IsLightDismissEnabled="True" Closed="ShelfPopup_Closed">
                         <Border Padding="8" CornerRadius="12" Width="372" Background="{DynamicResource AppBg}" BorderBrush="{DynamicResource Line}" BorderThickness="1">
                             <DockPanel>
                                 <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto" Margin="4,0,0,6">
-                                    <TextBlock Text="GIF shelf" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                    <StackPanel x:Name="ShelfTabs" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                                        <Button x:Name="ShelfMineTab" Content="My shelf" Classes="primary" Padding="10,3" CornerRadius="14" Click="ShelfMine_Click" />
+                                        <Button x:Name="ShelfRoomTab" Content="This room" Padding="10,3" CornerRadius="14" Click="ShelfRoom_Click" />
+                                    </StackPanel>
                                     <TextBlock x:Name="ShelfCount" Grid.Column="1" Classes="muted small" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                    <Button Grid.Column="2" Content="Add…" Padding="10,3" CornerRadius="14" Click="ShelfAdd_Click" />
+                                    <Button x:Name="ShelfAddButton" Grid.Column="2" Content="Add…" Padding="10,3" CornerRadius="14" Click="ShelfAdd_Click" />
                                 </Grid>
                                 <TextBlock x:Name="ShelfEmpty" DockPanel.Dock="Top" Classes="muted" TextWrapping="Wrap" Margin="4,6,4,10" IsVisible="False"
                                            Text="Nothing here yet. Add GIFs and pictures you like to send again, or right-click one in a chat and choose Add to my GIF shelf. They stay on this computer." />

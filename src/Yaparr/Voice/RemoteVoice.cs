@@ -126,6 +126,9 @@ internal sealed class RemoteVoice : IDisposable
     public int Underruns { get; private set; }
     public int Received { get; private set; }
 
+    /// <summary>How much audio is held back to ride out uneven arrival, in milliseconds. It grows when the network is rough.</summary>
+    public int BufferMs { get { lock (_gate) return _target * 20; } }
+
     /// <summary>How many 20 ms frames were decoded (and so cost something); frames that were skipped are not counted.</summary>
     public int Decoded { get; private set; }
 

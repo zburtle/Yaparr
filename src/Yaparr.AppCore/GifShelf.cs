@@ -87,6 +87,15 @@ internal sealed class GifShelf
         if (File.Exists(cached)) return File.ReadAllBytes(cached);
         var data = Read(id);
         if (data == null) return null;
+        var bytes = PreviewOf(data);
+        if (bytes == null) return null;
+        File.WriteAllBytes(cached, bytes);
+        return bytes;
+    }
+
+    /// <summary>A small still picture (a JPEG) of any picture file, for a grid.</summary>
+    public static byte[]? PreviewOf(byte[] data)
+    {
         using var source = SKBitmap.Decode(data);
         if (source == null) return null;
         double scale = Math.Min(1.0, (double)PreviewSide / Math.Max(source.Width, source.Height));
@@ -99,10 +108,7 @@ internal sealed class GifShelf
             canvas.DrawImage(image, new SKRect(0, 0, w, h), new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear));
         }
         using var encoded = SKImage.FromBitmap(flat).Encode(SKEncodedImageFormat.Jpeg, 80);
-        if (encoded == null) return null;
-        var bytes = encoded.ToArray();
-        File.WriteAllBytes(cached, bytes);
-        return bytes;
+        return encoded?.ToArray();
     }
 
     // An id is a name this class made: hex, a dot and an extension. Anything else could be a path.

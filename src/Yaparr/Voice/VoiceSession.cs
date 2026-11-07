@@ -22,6 +22,13 @@ public enum VoiceActivation
 /// Your presence in a room's voice channel. Audio devices are not part of the library: feed microphone samples to
 /// <see cref="PushCapture"/> and play what <see cref="PullPlayback"/> returns (48 kHz, mono, float).
 /// </summary>
+/// <summary>How the audio from one person has been arriving (see <see cref="VoiceSession.Quality"/>).</summary>
+public readonly record struct VoiceQuality(int Received, int Lost, int Underruns, int BufferMs)
+{
+    /// <summary>The share of packets that had to be made up, 0 to 1.</summary>
+    public double LossRate => Received + Lost == 0 ? 0 : (double)Lost / (Received + Lost);
+}
+
 public sealed class VoiceSession : IDisposable
 {
     public const int SampleRate = 48000;
@@ -131,8 +138,19 @@ public sealed class VoiceSession : IDisposable
 
     public IReadOnlyCollection<PeerId> Speaking => _remotes.Values.Where(r => r.Speaking).Select(r => r.Id).ToList();
 
-    private volatile bool _automaticVolume, _levelSpeakers;
+    private volatile bool _automaticVolume, _levelSpeakers, _clickSuppression;
     private readonly SpeechLeveler _micLeveler = new();
+    private ClickSuppressor? _clicks;   // only on the microphone's thread
+
+    /// <summary>
+    /// Takes short, sharp clicks (keyboard and mouse) out of your microphone before it is cleaned and sent; see
+    /// <see cref="ClickSuppressor"/>. It adds 10 ms of delay to your voice while it is on. Off by default.
+    /// </summary>
+    public bool ClickSuppression
+    {
+        get => _clickSuppression;
+        set => _clickSuppression = value;
+    }
 
     /// <summary>
     /// Automatic volume for your microphone: a quiet one is raised and a loud one lowered towards a normal speaking level (see
@@ -212,6 +230,13 @@ public sealed class VoiceSession : IDisposable
     public (int Received, int Lost, int Underruns) Stats(PeerId peer) =>
         _remotes.TryGetValue(peer, out var r) ? (r.Received, r.Lost, r.Underruns) : (0, 0, 0);
 
+    /// <summary>Everyone whose audio has arrived in this session so far.</summary>
+    public IReadOnlyList<PeerId> HeardFrom => _remotes.Keys.ToList();
+
+    /// <summary>How the audio from a person has been arriving: packets, how many had to be made up, how often the buffer ran dry, and how much is held back now.</summary>
+    public VoiceQuality Quality(PeerId peer) =>
+        _remotes.TryGetValue(peer, out var r) ? new VoiceQuality(r.Received, r.Lost, r.Underruns, r.BufferMs) : new VoiceQuality(0, 0, 0, 0);
+
     private RemoteVoice Remote(PeerId peer) => _remotes.GetOrAdd(peer, id =>
     {
         var remote = new RemoteVoice(id);
@@ -243,6 +268,9 @@ public sealed class VoiceSession : IDisposable
     // A processor that breaks must not stop the microphone: switch it off and carry on.
     private void CleanCapture(float[] frame)
     {
+        // Before the processor, so that the clicks are gone before the noise suppression and echo cancellation see them.
+        if (_clickSuppression) (_clicks ??= new ClickSuppressor()).Process(frame);
+        else _clicks = null;
         if (_processor is { } processor)
         {
             try { processor.ProcessCapture(frame); }
