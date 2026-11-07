@@ -59,13 +59,14 @@ public partial class MainView : UserControl
         foreach (var s in _screens) s.IsVisible = s == screen;
     }
 
-    private bool AnyOverlay => AddPanel.IsVisible || PeoplePanel.IsVisible || ConfirmPanel.IsVisible || RoutePanel.IsVisible || PicturePanel.IsVisible || ActionPanel.IsVisible || PromptPanel.IsVisible || BlockedPanel.IsVisible || NetworkPanel.IsVisible || SoundPanel.IsVisible;
+    private bool AnyOverlay => AddPanel.IsVisible || PeoplePanel.IsVisible || ConfirmPanel.IsVisible || RoutePanel.IsVisible || PicturePanel.IsVisible || ActionPanel.IsVisible || PromptPanel.IsVisible || BlockedPanel.IsVisible || NetworkPanel.IsVisible || SoundPanel.IsVisible || ShelfPanel.IsVisible;
 
     // One step back; false when there is nothing to go back to and the phone may leave the app.
     private bool GoBack()
     {
         if (PromptPanel.IsVisible) { PromptPanel.IsVisible = false; return true; }
         if (BlockedPanel.IsVisible) { BlockedPanel.IsVisible = false; return true; }
+        if (ShelfPanel.IsVisible) { ShelfPanel.IsVisible = false; return true; }
         if (SoundPanel.IsVisible) { SoundPanel.IsVisible = false; return true; }
         if (NetworkPanel.IsVisible) { NetworkPanel.IsVisible = false; return true; }
         if (ActionPanel.IsVisible) { ActionPanel.IsVisible = false; return true; }
@@ -759,6 +760,12 @@ public partial class MainView : UserControl
         ActionTitle.Text = line.Mine ? "Your message" : line.Who;
         ActionList.Children.Clear();
         AddAction("Reply", () => StartReply(line));
+        if (line.HasPicture && _session.PictureBytes(line) is { } shelved)
+            AddAction("Add to my GIF shelf", () =>
+            {
+                try { _session.Shelf.Add(shelved); ShowChatNote(chat, "Added to the GIF shelf"); }
+                catch (Exception ex) when (ex is ArgumentException or IOException) { ShowChatNote(chat, ex.Message); }
+            });
         if (line.Text.Length > 0) AddAction("Copy text", async () => await CopyAsync(line.Text, "Copied"));
         if (_session.CanDelete(chat, line))
             AddAction("Delete for everyone", () => Ask("Delete this message for everyone in the room?", "Delete", () =>
@@ -860,6 +867,110 @@ public partial class MainView : UserControl
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
             ShowChatNote(chat, ex.Message);
+        }
+    }
+
+    // ---- the GIF shelf ----
+
+    private int _shelfVersion;
+
+    private async void ShelfClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_session == null || _current == null) return;
+        ShelfPanel.IsVisible = true;
+        await FillShelfAsync();
+    }
+
+    private void ShelfCloseClicked(object? sender, RoutedEventArgs e) => ShelfPanel.IsVisible = false;
+
+    private async Task FillShelfAsync()
+    {
+        if (_session == null) return;
+        var shelf = _session.Shelf;
+        int version = ++_shelfVersion;
+        var items = await Task.Run(() => shelf.List());
+        if (version != _shelfVersion) return;
+        ShelfGrid.Children.Clear();
+        ShelfHint.Text = items.Count == 0
+            ? "Nothing here yet. Add GIFs and pictures you like to send again, or hold a picture in a chat and choose Add to my GIF shelf. They stay on this phone."
+            : (items.Count == 1 ? "1 picture" : items.Count + " pictures") + ". Tap one to send it, hold it to take it off the shelf.";
+        // A few previews at a time, so a long shelf opens at once and fills in.
+        foreach (var chunk in items.Chunk(18))
+        {
+            var loaded = await Task.Run(() => chunk.Select(item =>
+            {
+                var preview = shelf.Preview(item.Id);
+                return (item, bitmap: preview == null ? null : new Avalonia.Media.Imaging.Bitmap(new MemoryStream(preview)));
+            }).ToList());
+            if (version != _shelfVersion) { foreach (var (_, bitmap) in loaded) bitmap?.Dispose(); return; }
+            foreach (var (item, bitmap) in loaded) ShelfGrid.Children.Add(ShelfTile(item, bitmap));
+        }
+    }
+
+    private Control ShelfTile(ShelfItem item, Avalonia.Media.Imaging.Bitmap? bitmap)
+    {
+        var tile = new Avalonia.Controls.Button
+        {
+            Width = 92, Height = 92, Padding = new Avalonia.Thickness(0), Margin = new Avalonia.Thickness(3), Background = Avalonia.Media.Brushes.Transparent,
+            ClipToBounds = true, CornerRadius = new Avalonia.CornerRadius(8),
+            Content = new Avalonia.Controls.Image { Source = bitmap, Stretch = Avalonia.Media.Stretch.UniformToFill },
+        };
+        bool held = false;
+        tile.Holding += (_, args) =>
+        {
+            if (args.HoldingState != HoldingState.Started) return;
+            held = true;
+            args.Handled = true;
+            Ask("Take this picture off the GIF shelf? It is only removed from this phone.", "Remove", async () =>
+            {
+                _session?.Shelf.Remove(item.Id);
+                await FillShelfAsync();
+            });
+        };
+        tile.Click += async (_, _) =>
+        {
+            if (held) { held = false; return; }
+            await SendFromShelfAsync(item);
+        };
+        return tile;
+    }
+
+    private async Task SendFromShelfAsync(ShelfItem item)
+    {
+        if (_current == null || _session == null) return;
+        var chat = _current;
+        ShelfPanel.IsVisible = false;
+        var data = await Task.Run(() => _session.Shelf.Read(item.Id));
+        if (data == null) { ShowChatNote(chat, "That picture is no longer on the shelf"); return; }
+        _session.Shelf.Used(item.Id);
+        var caption = (InputBox.Text ?? "").Trim();
+        try
+        {
+            var reply = _replyTo;
+            await _session.SendPictureAsync(chat, data, item.Id, caption, reply?.Id);
+            InputBox.Text = "";
+            ClearReply();
+            ScrollToEnd();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            ShowChatNote(chat, ex.Message);
+        }
+    }
+
+    private async void ShelfAddClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_session == null || MainActivity.Instance is not { } activity) return;
+        var picked = await activity.PickPictureAsync();
+        if (picked is not { } file) return;
+        try
+        {
+            await Task.Run(() => _session.Shelf.Add(file.Bytes));
+            await FillShelfAsync();
+        }
+        catch (Exception ex) when (ex is ArgumentException or IOException)
+        {
+            ShelfHint.Text = ex.Message;
         }
     }
 

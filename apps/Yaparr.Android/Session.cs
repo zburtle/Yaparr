@@ -720,6 +720,11 @@ public sealed class Session : IDisposable
     }
 
     /// <summary>The picture as it was sent, for showing big or saving; null if it is not on the phone.</summary>
+    private GifShelf? _shelf;
+
+    /// <summary>The GIF shelf: pictures kept on this phone to send again.</summary>
+    internal GifShelf Shelf => _shelf ??= new GifShelf(_data.ShelfDirectory);
+
     public byte[]? PictureBytes(Line line) => line.Attachment is { } a ? _node?.ReadAttachment(a.Hash) : null;
 
     /// <summary>Shrinks a picture for sending (also dropping camera and location details), sends it with <paramref name="caption"/> to the chat, and shows it.</summary>

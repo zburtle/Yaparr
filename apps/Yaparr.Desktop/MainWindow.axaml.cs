@@ -1141,7 +1141,7 @@ public partial class MainWindow : Window
         UpdateInlineScreen();
         UpdateSharerPanel();
         bool has = _selected != null;
-        InputBox.IsEnabled = SendButton.IsEnabled = AttachButton.IsEnabled = has;
+        InputBox.IsEnabled = SendButton.IsEnabled = AttachButton.IsEnabled = ShelfButton.IsEnabled = has;
         MessageList.ItemsSource = _selected?.Messages;
         HeaderText.Text = _selected?.Name ?? "Welcome to Yaparr";
         HeaderSubtitle.Text = _selected?.Subtitle ?? "Serverless chat between friends";

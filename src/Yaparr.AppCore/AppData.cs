@@ -162,6 +162,8 @@ public sealed class AppData
 
     public string Directory { get; }
     public string HistoryDirectory => Path.Combine(Directory, "history");
+    /// <summary>Where the GIF shelf (pictures kept to send again) lives.</summary>
+    public string ShelfDirectory => Path.Combine(Directory, "gifshelf");
     public string VpnConfigPath => Path.Combine(Directory, "vpn.conf");
     private string SettingsPath => Path.Combine(Directory, "settings.json");
     private string IdentityPath => Path.Combine(Directory, "identity.key");
