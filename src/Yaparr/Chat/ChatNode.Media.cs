@@ -26,6 +26,9 @@ internal sealed class MediaGroup
     public MediaGroupInfo Info = null!;
     public byte[] RootPub = Array.Empty<byte>();
     public int RootFanout;
+
+    /// <summary>Root only: the number of places was not chosen by the caller, so a connection that can carry more copies than the default uses them (up to <see cref="UploadPlan.MaxFanout"/>).</summary>
+    public bool RootGrows;
     public long AnnSeenAt, LastAnnouncedAt;
     /// <summary>We could not reach the root for a while, so for choosing a new one this group is treated as gone.</summary>
     public bool Suspect;
@@ -126,8 +129,9 @@ public sealed class MediaSource : IDisposable
         int count = Fragments.Count(frame.Length, MaxPayload);
         int per = MaxPayload - Fragments.HeaderSize;
         uint id = Interlocked.Increment(ref _frameId);
-        // Fast enough for a key frame to go out in a fraction of a second, slow enough not to overflow the buffers on the way.
-        double rate = Math.Max(256 * 1024, _group.Info.Kbps * 125.0 * 4);
+        // Fast enough for a key frame to go out in a fraction of a second, slow enough not to overflow the buffers on the way or to fill a
+        // home connection's queue, where a burst makes voice packets wait behind it.
+        double rate = Math.Max(256 * 1024, _group.Info.Kbps * 125.0 * 3);
         long started = System.Diagnostics.Stopwatch.GetTimestamp();
         long sent = 0;
         for (int i = 0; i < count; i++)
@@ -311,7 +315,9 @@ public sealed partial class ChatNode
     {
         if (!_rooms.ContainsKey(room.Key)) throw new InvalidOperationException("You are not in that room.");
         if (string.IsNullOrWhiteSpace(kind) || kind.Length > 16 || kind == "voice") throw new ArgumentException("Choose another kind of stream.", nameof(kind));
-        return new MediaSource(this, CreateRootGroup(room, kind, name, signed, upstream, fanout ?? _options.MediaRootFanout, kbps, channel));
+        var group = CreateRootGroup(room, kind, name, signed, upstream, fanout ?? _options.MediaRootFanout, kbps, channel);
+        group.RootGrows = fanout == null;
+        return new MediaSource(this, group);
     }
 
     /// <summary>Starts receiving a stream someone shared (see <see cref="ChatRoom.MediaGroups"/>).</summary>
@@ -508,7 +514,13 @@ public sealed partial class ChatNode
     private bool TooBigForServer(MediaGroup g, PeerConnection conn) =>
         g.Info.Kbps > _options.MaxMeteredStreamKbps && IsOnSharedServer(conn);
 
-    private int FanoutOf(MediaGroup g) => g.IsRoot ? g.RootFanout : IsRelayCapable ? UploadPlan.Fanout(MeasuredUploadBytesPerSecond, g.Info.Kbps, _options.MediaFanout) : 0;
+    // The sharer sends its stream to each member directly under it, so how many places it has depends on its upload just as it does for
+    // everyone else: fewer than it was started with when its connection cannot carry that many copies, and more (up to six) when the number
+    // was left to the default and its connection can carry them, so that in a small room nobody has to watch through a friend's weaker line.
+    // Until the upload is measured nothing changes.
+    private int FanoutOf(MediaGroup g) => g.IsRoot
+        ? UploadPlan.RootFanout(MeasuredUploadBytesPerSecond, g.Info.Kbps, g.RootFanout, g.RootGrows)
+        : IsRelayCapable ? UploadPlan.Fanout(MeasuredUploadBytesPerSecond, g.Info.Kbps, _options.MediaFanout) : 0;
 
     // Gets us attached if we want to be: asks the root where to go, or goes where it said.
     private void AdvanceMedia(MediaGroup g)
@@ -770,7 +782,7 @@ public sealed partial class ChatNode
         lock (g.Gate)
         {
             var reach = (m.Reach ?? Array.Empty<string>()).Take(MaxReach).Where(IsValidPeerId).Select(x => new PeerId(x)).ToHashSet();
-            place = ChoosePlace(g, peer.Id, exclude, reach);
+            place = ChoosePlace(g, peer.Id, exclude, reach, FanoutOf(g));
             long now = Environment.TickCount64;
             g.JoinAsked[peer.Id] = (g.JoinAsked.TryGetValue(peer.Id, out var asked) ? asked.First : now, now);
             // No room, and the one asking can pass the stream on: if the sharer's own places are held by members who
@@ -793,7 +805,7 @@ public sealed partial class ChatNode
     // A member with a free place that the joiner is already connected to, and failing that any; the shallowest of those,
     // or the root itself. Never someone under the joiner, which would make a loop. A joiner that cannot be reached from
     // outside (behind a symmetric router) otherwise spends many seconds trying to connect to a parent it was never in touch with.
-    internal static PeerId? ChoosePlace(MediaGroup g, PeerId joiner, HashSet<PeerId> exclude, HashSet<PeerId>? reach = null)
+    internal static PeerId? ChoosePlace(MediaGroup g, PeerId joiner, HashSet<PeerId> exclude, HashSet<PeerId>? reach = null, int? rootPlaces = null)
     {
         var barred = new HashSet<PeerId> { joiner };
         for (bool grew = true; grew;)
@@ -825,7 +837,7 @@ public sealed partial class ChatNode
             if (best == null || key.CompareTo(bestKey) < 0) { best = id; bestKey = key; }
         }
 
-        Consider(g.Info.Root, 0, g.RootFanout);
+        Consider(g.Info.Root, 0, rootPlaces ?? g.RootFanout);
         foreach (var (id, node) in g.Map) Consider(id, DepthOf(id), node.Cap);
         return best;
     }

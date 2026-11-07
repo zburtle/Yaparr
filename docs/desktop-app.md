@@ -41,6 +41,8 @@ Help > "Connection guide" explains in plain words when the VPN and TURN options 
 
 Settings > About > "Copy diagnostics" puts the version, system, network state and check, how each person is reached, the voice settings and the last 300 log lines on the clipboard. Names of people and rooms are left out, ids and addresses are shortened (`LogScrubber`) and keys and passwords removed.
 
+While in a call or sharing, `CallQualityLog` writes a line to the log every minute that has something wrong in it, so that after a call with robotic voices or dropped frames the log says when and for whom: `call quality: voice from <person>: N packets in the last minute, L made up (x%), G gaps, M ms held back, <how they are reached>`, and for a share `call quality: sharing: <fps> of <wanted> fps, <kbit/s>, longest wait for a frame, packets sent again, dropped, how many watch directly, the encoder`. One line every ten quiet minutes shows it was watching. "Copy diagnostics" adds the voice quality of the call so far, and which connections dropped in the last three hours (how often and why), since a connection that drops and comes back for a few seconds is heard as a break in voice and a stall in a screen.
+
 Help > "Report a problem…" does that and then opens the bug report form on GitHub in your browser, with the version and system already filled in; the diagnostics are too long for a link, so they are on the clipboard to paste into the form's Diagnostics box (read them first). The repository's issue forms (bug report and feature request) are in `.github/ISSUE_TEMPLATE`, and a vulnerability is pointed to the private security report instead.
 
 ## Logs

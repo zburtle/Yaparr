@@ -22,6 +22,13 @@ public enum VoiceActivation
 /// Your presence in a room's voice channel. Audio devices are not part of the library: feed microphone samples to
 /// <see cref="PushCapture"/> and play what <see cref="PullPlayback"/> returns (48 kHz, mono, float).
 /// </summary>
+/// <summary>How the audio from one person has been arriving (see <see cref="VoiceSession.Quality"/>).</summary>
+public readonly record struct VoiceQuality(int Received, int Lost, int Underruns, int BufferMs)
+{
+    /// <summary>The share of packets that had to be made up, 0 to 1.</summary>
+    public double LossRate => Received + Lost == 0 ? 0 : (double)Lost / (Received + Lost);
+}
+
 public sealed class VoiceSession : IDisposable
 {
     public const int SampleRate = 48000;
@@ -222,6 +229,13 @@ public sealed class VoiceSession : IDisposable
     /// <summary>How many packets we got from a person, how many had to be concealed and how often we ran dry.</summary>
     public (int Received, int Lost, int Underruns) Stats(PeerId peer) =>
         _remotes.TryGetValue(peer, out var r) ? (r.Received, r.Lost, r.Underruns) : (0, 0, 0);
+
+    /// <summary>Everyone whose audio has arrived in this session so far.</summary>
+    public IReadOnlyList<PeerId> HeardFrom => _remotes.Keys.ToList();
+
+    /// <summary>How the audio from a person has been arriving: packets, how many had to be made up, how often the buffer ran dry, and how much is held back now.</summary>
+    public VoiceQuality Quality(PeerId peer) =>
+        _remotes.TryGetValue(peer, out var r) ? new VoiceQuality(r.Received, r.Lost, r.Underruns, r.BufferMs) : new VoiceQuality(0, 0, 0, 0);
 
     private RemoteVoice Remote(PeerId peer) => _remotes.GetOrAdd(peer, id =>
     {

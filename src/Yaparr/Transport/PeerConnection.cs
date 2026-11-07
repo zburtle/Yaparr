@@ -71,6 +71,9 @@ public sealed class PeerConnection : IDisposable
     private readonly Dictionary<byte, ReliableChannel> _channels = new();
     private readonly TaskCompletionSource<PeerConnection> _established = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+    // Most dials are fired and forgotten; one that times out is normal (a stale address), not a failed task for anyone to report.
+    private void ObserveEstablished() => _established.Task.ContinueWith(static t => _ = t.Exception, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+
     private SessionCrypto? _crypto;
     private byte[]? _remoteEph;
 
@@ -117,6 +120,7 @@ public sealed class PeerConnection : IDisposable
         _options = options;
         _ephPublic = _eph.ExportSubjectPublicKeyInfo();
         _startedAt = _lastReceived = Environment.TickCount64;
+        ObserveEstablished();
     }
 
     public IPEndPoint RemoteEndPoint { get; }
