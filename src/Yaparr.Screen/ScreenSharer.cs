@@ -383,13 +383,79 @@ public sealed class ScreenSharer : IDisposable
             lock (_gate) { _errors.Enqueue("GStreamer: " + e.Data); while (_errors.Count > 5) _errors.Dequeue(); }
         };
         gst.BeginErrorReadLine();
-        _ = Task.Run(async () =>
-        {
-            try { await gst.StandardOutput.BaseStream.CopyToAsync(ffmpeg.StandardInput.BaseStream).ConfigureAwait(false); }
-            catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException) { }
-            finally { try { ffmpeg.StandardInput.Close(); } catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException) { } }
-        });
+        _ = Task.Run(() => PaceAsync(gst.StandardOutput.BaseStream, ffmpeg.StandardInput.BaseStream, PortalPipeline.FrameSize(portal.Stream, _options), _options.Fps, () => { try { ffmpeg.StandardInput.Close(); } catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException) { } }));
     }
+
+    /// <summary>
+    /// Hands FFmpeg exactly <paramref name="fps"/> pictures a second whatever GStreamer does. GStreamer writes raw pictures of a known size; the newest
+    /// one is kept and written at each tick (a still screen gives the same picture again), and the ones in between are dropped. A desktop whose
+    /// stream makes GStreamer hand over a burst (many minutes of copies of one picture in a few seconds were seen from a KDE desktop) therefore cannot
+    /// make the encoder send many times the bitrate it was asked for, which is what left viewers with the first picture and nothing after it.
+    /// </summary>
+    public static async Task PaceAsync(Stream raw, Stream encoder, (int Width, int Height) size, int fps, Action done)
+    {
+        int bytes = size.Width * size.Height * 3 / 2;   // one picture of planar 4:2:0, which is what GStreamer is asked to write
+        var gate = new object();
+        var free = new Stack<byte[]>();      // pictures nobody holds, so a picture a frame is not a new array each time
+        byte[]? newest = null;
+        bool ended = false;
+
+        var reader = Task.Run(async () =>
+        {
+            try
+            {
+                while (true)
+                {
+                    byte[] buffer;
+                    lock (gate) buffer = free.Count > 0 ? free.Pop() : new byte[bytes];
+                    await raw.ReadExactlyAsync(buffer.AsMemory(0, bytes)).ConfigureAwait(false);
+                    lock (gate)
+                    {
+                        if (newest != null) free.Push(newest);   // never sent: dropped for a newer one
+                        newest = buffer;
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is EndOfStreamException or IOException or ObjectDisposedException or InvalidOperationException) { }
+            finally { lock (gate) ended = true; }
+        });
+
+        try
+        {
+            var interval = TimeSpan.FromSeconds(1.0 / Math.Max(1, fps));
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            var due = TimeSpan.Zero;
+            byte[]? sending = null;
+            while (true)
+            {
+                var wait = due - clock.Elapsed;
+                if (wait > TimeSpan.FromMilliseconds(1)) await Task.Delay(wait).ConfigureAwait(false);
+                due = Max(due + interval, clock.Elapsed - interval);   // a late tick does not make a burst afterwards
+                bool finished;
+                lock (gate)
+                {
+                    finished = ended;
+                    if (newest != null)
+                    {
+                        if (sending != null) free.Push(sending);
+                        sending = newest;
+                        newest = null;
+                    }
+                }
+                if (sending != null)
+                {
+                    await encoder.WriteAsync(sending.AsMemory(0, bytes)).ConfigureAwait(false);
+                    await encoder.FlushAsync().ConfigureAwait(false);
+                }
+                if (finished) break;
+            }
+        }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException) { }
+        finally { done(); }
+        await reader.ConfigureAwait(false);
+    }
+
+    private static TimeSpan Max(TimeSpan a, TimeSpan b) => a > b ? a : b;
 
     // Why FFmpeg is not producing frames any more, as plainly as it can be said.
     private Exception Stopped(Process process)
