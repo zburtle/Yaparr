@@ -24,6 +24,15 @@ public sealed partial class Line : Observable
         Attachment = source?.Attachment;
     }
 
+    /// <summary>The account that wrote the message (its picture is looked up by it).</summary>
+    public string? Account => Source?.From.Account.Value;
+
+    public IBrush WhoTint => AvatarBrushes.For(Account) ?? Theme.TintFor(Who);
+
+    public string WhoInitial => AvatarBrushes.For(Account) != null ? "" : Who.Length == 0 ? "?" : new System.Globalization.StringInfo(Who).SubstringByTextElements(0, 1).ToUpperInvariant();
+
+    public void AvatarChanged() { Raise(nameof(WhoTint)); Raise(nameof(WhoInitial)); }
+
     /// <summary>The key of the message this one answers, if it answers one.</summary>
     public string? ReplyKey { get; set; }
 

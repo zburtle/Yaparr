@@ -42,6 +42,29 @@ public sealed partial class Session : IDisposable
     /// <summary>The rooms and direct chats, the one with the newest message first.</summary>
     public ObservableCollection<Chat> Chats { get; } = new();
 
+    /// <summary>A profile picture arrived or changed (the account it belongs to; yours too).</summary>
+    public event Action<PeerId>? AvatarChanged;
+
+    private void OnAvatarChanged(PeerId account)
+    {
+        foreach (var chat in Chats.ToList())
+        {
+            if (chat.Direct?.PeerId == account) chat.AvatarChanged();
+            foreach (var line in chat.AllLines)
+                if (line.Account == account.Value) line.AvatarChanged();
+        }
+        AvatarChanged?.Invoke(account);
+    }
+
+    /// <summary>Your own picture, as an image file, or null.</summary>
+    public byte[]? MyAvatar => _node?.MyAvatar;
+
+    /// <summary>The account id of this phone, as the pictures are looked up by it.</summary>
+    public string? MyAccountId => _node?.AccountId.Value;
+
+    /// <summary>Sets your picture from any picture file (it is cropped to a square and shrunk), or takes it away (null).</summary>
+    public void SetAvatar(byte[]? file) => (_node ?? throw new InvalidOperationException("Not connected yet.")).SetAvatar(file == null ? null : ImageTools.Avatar(file));
+
     /// <summary>Something worth telling the person (a person not found, a room left on another device).</summary>
     public event Action<string>? Notice;
 
@@ -133,6 +156,7 @@ public sealed partial class Session : IDisposable
             BlockedPeers = _settings.BlockedPeers.Select(b => new PeerId(b.Id)).ToList(),
             Identity = identity,
             AccountStatePath = _data.AccountStatePath,
+            AvatarDirectory = _data.AvatarDirectory,
             AccountEntries = linked,
             HistoryStore = new FileHistoryStore(_data.HistoryDirectory, historyCipher),
             DirectHistoryDirectory = Path.Combine(_data.Directory, "direct"),
@@ -147,6 +171,8 @@ public sealed partial class Session : IDisposable
         });
         node.AttachmentChanged += update => UI(() => OnAttachmentChanged(update));
         node.BlockChanged += (id, blocked) => UI(() => OnBlockChanged(id, blocked));
+        node.AvatarChanged += account => UI(() => OnAvatarChanged(account));
+        AvatarBrushes.Source = account => _node?.AvatarOf(new PeerId(account));
         node.SyncedRoomChanged += OnSyncedRoomChanged;
         node.DisplayNameChanged += OnDisplayNameChanged;
         node.IncomingDirectChat += chat => UI(() => AddDirect(chat));

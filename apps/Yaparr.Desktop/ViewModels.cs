@@ -17,6 +17,31 @@ public abstract class Observable : INotifyPropertyChanged
 }
 
 /// <summary>Stable colours and initials for people and rooms, so the same name always looks the same.</summary>
+/// <summary>The profile pictures people chose, as brushes for the round avatars. Without one, an avatar is its coloured initial.</summary>
+public static class AvatarPictures
+{
+    /// <summary>Gives the picture file of a person (their account id), or null; set by the window.</summary>
+    public static Func<string, byte[]?>? Source { get; set; }
+
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<byte[], IBrush> Brushes = new();
+
+    /// <summary>The picture of a person as a brush, or null when they have none (or it cannot be read).</summary>
+    public static IBrush? For(string? account)
+    {
+        if (account == null || Source?.Invoke(account) is not { } bytes) return null;
+        if (Brushes.TryGetValue(bytes, out var known)) return known;
+        try
+        {
+            var brush = new ImageBrush(new Avalonia.Media.Imaging.Bitmap(new MemoryStream(bytes))) { Stretch = Stretch.UniformToFill };
+            Brushes.Add(bytes, brush);
+            return brush;
+        }
+        catch (Exception) { return null; }
+    }
+
+    public static bool Has(string? account) => For(account) != null;
+}
+
 public static class Avatars
 {
     private static readonly IBrush[] Palette =
@@ -288,6 +313,13 @@ public sealed class MessageVm : Observable
     public bool IsOther => !IsMine && !IsSystem;
     public IBrush SenderBrush => Avatars.BrushFor(Sender);
 
+    /// <summary>The account that wrote the message, to find their picture.</summary>
+    public string? Account { get; init; }
+
+    public IBrush SenderAvatar => AvatarPictures.For(Account) ?? Avatars.BrushFor(Sender);
+    public string SenderInitial => AvatarPictures.Has(Account) ? "" : Avatars.Initial(Sender);
+    public void AvatarChanged() { Raise(nameof(SenderAvatar)); Raise(nameof(SenderInitial)); }
+
     /// <summary>Delivery line under one of my messages; empty once it is simply delivered.</summary>
     public string Status => !IsMine || Delivery is not { } d ? "" : d.State switch
     {
@@ -310,8 +342,8 @@ public sealed class MessageVm : Observable
 public sealed record PeerVm(string Id, string Name, bool Online, DateTimeOffset LastSeen, bool IsRelayed = false, PeerLink Link = PeerLink.Offline, bool Blocked = false, RoomRole Role = RoomRole.Member, bool BannedHere = false)
 {
     public string Display => BannedHere ? Name + "  (banned)" : Role switch { RoomRole.Owner => Name + "  (owner)", RoomRole.Admin => Name + "  (admin)", _ => Name };
-    public string Initial => Avatars.Initial(Name);
-    public IBrush Avatar => Avatars.BrushFor(Name);
+    public string Initial => AvatarPictures.Has(Id) ? "" : Avatars.Initial(Name);
+    public IBrush Avatar => AvatarPictures.For(Id) ?? Avatars.BrushFor(Name);
     public bool Warn => Link is PeerLink.NotResponding or PeerLink.Reconnecting;
 
     public string StateText => BannedHere ? "banned from this room" : Blocked ? "blocked" : Link switch
@@ -533,8 +565,12 @@ public sealed class ConversationVm : Observable
         get => _membersText;
         set { if (_membersText == value) return; _membersText = value; Raise(); }
     }
-    public string Initial => Avatars.Initial(Name);
-    public IBrush Avatar => Avatars.BrushFor(Name);
+    public string Initial => AvatarPictures.Has(PeerId) ? "" : Avatars.Initial(Name);
+    public IBrush Avatar => AvatarPictures.For(PeerId) ?? Avatars.BrushFor(Name);
+
+    /// <summary>A picture arrived or changed for the person of a direct chat.</summary>
+    public void AvatarChanged() { Raise(nameof(Initial)); Raise(nameof(Avatar)); }
+
     public bool HasUnread => _unread > 0;
     public Func<string, Task<string>> Send { get; }
     public Action<string>? Retry { get; }

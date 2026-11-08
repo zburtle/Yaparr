@@ -278,6 +278,9 @@ public sealed class AppData
 
     public string AccountStatePath => Path.Combine(Directory, "account.json");
 
+    /// <summary>Profile pictures: yours and those of the people you have met.</summary>
+    public string AvatarDirectory => Path.Combine(Directory, "avatars");
+
     public void SaveIdentity(PeerIdentity identity) => SecretStore.WriteAllBytes(IdentityPath, identity.Export());
 
     public PeerIdentity LoadOrCreateIdentity()
