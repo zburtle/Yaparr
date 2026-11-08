@@ -17,6 +17,10 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Avalonia.Skia brings its own SkiaSharp and the native Linux library that goes with it. SkiaSharp here has to be the same version, or the
+    # Linux packages fail to start ("native libSkiaSharp is incompatible"); it is raised together with Avalonia, by hand.
+    ignore:
+      - dependency-name: SkiaSharp
     commit-message:
       prefix: fix
       prefix-development: chore
