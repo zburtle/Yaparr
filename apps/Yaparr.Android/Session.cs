@@ -888,9 +888,10 @@ public sealed partial class Session : IDisposable
         {
             _previewFetcher ??= new LinkPreviewFetcher();
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(4));
-            return await _previewFetcher.FetchAsync(link, cts.Token);
+            // A page that could not be read still gets a card with the name of its site.
+            return await _previewFetcher.FetchAsync(link, cts.Token) ?? LinkPreview.Basic(link);
         }
-        catch (OperationCanceledException) { return null; }
+        catch (OperationCanceledException) { return LinkPreview.Basic(link); }
         finally { chat.Status = before; }
     }
 

@@ -255,4 +255,26 @@ public class LinkPreviewTests
         Assert.Equal("Example page", message.Parts.Preview!.Title);
         Assert.Equal(words, message.Body);
     }
+
+    [Fact]
+    public void Every_web_address_in_the_words_is_found_where_it_is_without_the_punctuation_that_ends_a_sentence()
+    {
+        var text = "see https://a.example/x?y=1, and (http://b.example/page). Not ftp://c.example or www.d.example";
+        var links = LinkPreview.LinksIn(text);
+        Assert.Equal(new[] { "https://a.example/x?y=1", "http://b.example/page" }, links.Select(l => l.Url));
+        foreach (var l in links) Assert.Equal(l.Url, text.Substring(l.Start, l.Length));
+        Assert.Empty(LinkPreview.LinksIn("no links here"));
+        Assert.Equal(LinkPreview.FirstLink(text), links[0].Url);
+    }
+
+    [Fact]
+    public void A_page_that_could_not_be_read_still_gets_a_card_with_the_name_of_its_site()
+    {
+        var card = LinkPreview.Basic("https://www.thehill.com/homenews/x/")!;
+        Assert.Equal("thehill.com", card.Title);
+        Assert.Equal("https://www.thehill.com/homenews/x/", card.Url);
+        Assert.Null(LinkPreview.Basic("not a link"));
+        Assert.Null(LinkPreview.Basic("ftp://example.com/a"));
+        Assert.Null(LinkPreview.Basic("https://yaparr.com/join/abc"));
+    }
 }

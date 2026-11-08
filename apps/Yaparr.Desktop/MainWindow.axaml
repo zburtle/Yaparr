@@ -622,7 +622,7 @@
                                                 <Button IsVisible="{Binding NeedsAction}" Content="{Binding ActionText}" Classes="primary"
                                                         HorizontalAlignment="Center" VerticalAlignment="Center" Click="Download_Click" />
                                             </Grid>
-                                            <local:MessageText Classes="body" IsVisible="{Binding HasText}" Body="{Binding Text}" Marks="{Binding MentionMarks}" TextWrapping="Wrap" />
+                                            <local:MessageText Classes="body" IsVisible="{Binding HasText}" Body="{Binding Text}" Marks="{Binding MentionMarks}" TextWrapping="Wrap" LinkClicked="MessageLink_Clicked" />
                                             <Border Classes="linkpreview" IsVisible="{Binding HasPreview}" PointerReleased="PreviewCard_PointerReleased" ToolTip.Tip="{Binding Card.Url}">
                                                 <Grid ColumnDefinitions="Auto,*">
                                                     <Image Source="{Binding PreviewImage}" IsVisible="{Binding HasPreviewImage}" Width="64" Height="64" Margin="0,0,8,0" Stretch="UniformToFill" VerticalAlignment="Top" />
