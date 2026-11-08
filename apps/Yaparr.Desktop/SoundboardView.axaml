@@ -32,10 +32,14 @@
             <Setter Property="Opacity" Value="0.55" />
         </Style>
         <Style Selector="Button.tile TextBlock.name">
+            <Setter Property="FontSize" Value="12" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="TextWrapping" Value="Wrap" />
             <Setter Property="MaxLines" Value="2" />
             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+        <Style Selector="Button.tile TextBlock.small">
+            <Setter Property="FontSize" Value="10" />
         </Style>
     </UserControl.Styles>
 
