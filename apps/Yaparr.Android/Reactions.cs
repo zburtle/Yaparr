@@ -30,7 +30,7 @@ public sealed class ReactionChip : Observable
     public IBrush Edge => Mine && !IsAdd ? Theme.Brush("Accent") : Brushes.Transparent;
     // The button that adds another is not a chip: only a small grey circle with a plus in it.
     public IBrush Fill => IsAdd ? Brushes.Transparent : new SolidColorBrush(Mine ? Color.FromArgb(0x44, 0x80, 0x80, 0x80) : Color.FromArgb(0x26, 0x80, 0x80, 0x80));
-    public IBrush Ink => Owner.Ink;
+    public IBrush Ink => Theme.Brush("Ink");
 }
 
 public sealed partial class Line
