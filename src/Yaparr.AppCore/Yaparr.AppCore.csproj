@@ -23,7 +23,7 @@
     <PackageReference Include="NLayer" Version="3.0.0" />
     <PackageReference Include="NVorbis" Version="0.10.5" />
     <PackageReference Include="QRCoder" Version="1.8.1" />
-    <PackageReference Include="SkiaSharp" Version="3.119.4" />
+    <PackageReference Include="SkiaSharp" Version="4.155.0" />
     <PackageReference Include="SoundFlow" Version="1.4.2" />
   </ItemGroup>
 
