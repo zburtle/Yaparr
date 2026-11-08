@@ -71,8 +71,9 @@ public sealed class MessageVm : Observable
     /// <summary>A message that is not a notice can be reacted to (it has a key to point at).</summary>
     public bool CanReact => Key != null && !IsSystem;
 
-    /// <summary>Where the button that opens the picker sits: on the outer top corner of the bubble.</summary>
-    public Thickness ReactButtonMargin => IsMine ? new Thickness(0, -10, -8, 0) : new Thickness(-8, -10, 0, 0);
+    /// <summary>Where the button that opens the picker sits: on the outer top corner of the bubble, reaching a little outside it.</summary>
+    // (Not above the bubble: the row's edge would cut it off.)
+    public Thickness ReactButtonMargin => IsMine ? new Thickness(0, 0, -8, 0) : new Thickness(-8, 0, 0, 0);
 
     /// <summary>The reactions sit on the same side as the bubble.</summary>
     public HorizontalAlignment ReactionAlign => IsMine ? HorizontalAlignment.Right : HorizontalAlignment.Left;

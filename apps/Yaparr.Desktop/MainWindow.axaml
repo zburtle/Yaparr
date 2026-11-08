@@ -145,15 +145,14 @@
         </Style>
         <Style Selector="Button.addreact">
             <Setter Property="Opacity" Value="0" />
-            <Setter Property="Padding" Value="4,0" />
+            <Setter Property="Padding" Value="2" />
             <Setter Property="MinHeight" Value="0" />
             <Setter Property="MinWidth" Value="0" />
-            <Setter Property="FontSize" Value="13" />
-            <Setter Property="CornerRadius" Value="10" />
-            <Setter Property="Background" Value="{DynamicResource AppBg}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource Line}" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="FontFamily" Value="Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji, Twemoji Mozilla" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+        <Style Selector="Button.addreact:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
         </Style>
         <Style Selector="ListBoxItem:pointerover Button.addreact">
             <Setter Property="Opacity" Value="1" />
@@ -179,7 +178,8 @@
             <Setter Property="Background" Value="#33808080" />
             <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
         </Style>
-        <Style Selector="Border.card">
+        <!-- The preview under a link. Not named "card": that is the class of the window's panels (App.axaml), which this would restyle. -->
+        <Style Selector="Border.linkpreview">
             <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
             <Setter Property="BorderThickness" Value="3,0,0,0" />
             <Setter Property="Padding" Value="8,6,8,6" />
@@ -190,7 +190,7 @@
             <Setter Property="CornerRadius" Value="4" />
             <Setter Property="Cursor" Value="Hand" />
         </Style>
-        <Style Selector="Border.bubble.mine Border.card TextBlock">
+        <Style Selector="Border.bubble.mine Border.linkpreview TextBlock">
             <Setter Property="Foreground" Value="White" />
         </Style>
         <Style Selector="Border.bubble.failed">
@@ -589,7 +589,7 @@
                                                         HorizontalAlignment="Center" VerticalAlignment="Center" Click="Download_Click" />
                                             </Grid>
                                             <local:MessageText Classes="body" IsVisible="{Binding HasText}" Body="{Binding Text}" Marks="{Binding MentionMarks}" TextWrapping="Wrap" />
-                                            <Border Classes="card" IsVisible="{Binding HasPreview}" PointerReleased="PreviewCard_PointerReleased" ToolTip.Tip="{Binding Card.Url}">
+                                            <Border Classes="linkpreview" IsVisible="{Binding HasPreview}" PointerReleased="PreviewCard_PointerReleased" ToolTip.Tip="{Binding Card.Url}">
                                                 <Grid ColumnDefinitions="Auto,*">
                                                     <Image Source="{Binding PreviewImage}" IsVisible="{Binding HasPreviewImage}" Width="64" Height="64" Margin="0,0,8,0" Stretch="UniformToFill" VerticalAlignment="Top" />
                                                     <StackPanel Grid.Column="1" Spacing="1">
@@ -602,8 +602,12 @@
                                             <TextBlock Classes="time" Text="{Binding TimeText}" ToolTip.Tip="{Binding FullTime}" />
                                         </StackPanel>
                                     </Border>
-                                    <Button Classes="addreact" Content="&#x1F642;" IsVisible="{Binding CanReact}" HorizontalAlignment="{Binding ReactionAlign}" VerticalAlignment="Top"
-                                            Margin="{Binding ReactButtonMargin}" ToolTip.Tip="React" Click="AddReactionHover_Click" />
+                                    <Button Classes="addreact" IsVisible="{Binding CanReact}" AutomationProperties.Name="Add a reaction"
+                                            HorizontalAlignment="{Binding ReactionAlign}" VerticalAlignment="Top" Margin="{Binding ReactButtonMargin}" ToolTip.Tip="Add a reaction" Click="AddReactionHover_Click">
+                                        <Border Width="18" Height="18" CornerRadius="9" Background="#99C8C8C8">
+                                            <TextBlock Text="+" FontSize="14" FontWeight="Bold" Foreground="#E6333333" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-2,0,0" />
+                                        </Border>
+                                    </Button>
                                     </Panel>
                                     <ItemsControl ItemsSource="{Binding Reactions}" IsVisible="{Binding HasReactions}" MaxWidth="560"
                                                   HorizontalAlignment="{Binding ReactionAlign}" Margin="8,0,8,0">
