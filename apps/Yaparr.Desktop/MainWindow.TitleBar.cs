@@ -1,7 +1,6 @@
+using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Threading;
-using Avalonia.VisualTree;
 
 namespace Yaparr.Desktop;
 
@@ -12,8 +11,6 @@ public partial class MainWindow
 
     private const double TitleBarHeight = 32;
 
-    private bool _menuRowIsTitleBar;
-
     /// <summary>
     /// On Windows, the menu row doubles as the title bar: the window's own title strip goes, and the row takes its place with the buttons still the
     /// system's (so snapping and dragging work as usual). Elsewhere the desktop draws its own title bar, which stays.
@@ -21,73 +18,36 @@ public partial class MainWindow
     private void UseMenuRowAsTitleBar()
     {
         if (!OperatingSystem.IsWindows()) return;
-        _menuRowIsTitleBar = true;
         ExtendClientAreaToDecorationsHint = true;
         ExtendClientAreaTitleBarHeightHint = TitleBarHeight;
         TopBar.Height = TitleBarHeight;
         TopBar.Margin = new Thickness(0, 0, CaptionButtonsWidth, 0);
         TopBarIcon.IsVisible = true;
         TopBarTitle.IsVisible = true;
-        Opened += (_, _) => HideDrawnTitle();
-        PropertyChanged += (_, e) => { if (e.Property == TitleProperty) HideDrawnTitle(); };
+        Opened += (_, _) => HideSystemTitleText();
     }
 
-    // The title bar draws the window's title (the name of the app and of the person) at its left, over the menus. The name of the app goes in the middle
-    // of the row instead, so that text is hidden. The window keeps its title, which the taskbar shows.
-    private void HideDrawnTitle()
+    // Windows draws the window's title (the name of the app and of the person) at the left of the top row, over the menus. The name of the app goes in the
+    // middle of the row instead, so the system is told not to draw its title or icon. The window keeps its title, which the taskbar shows.
+    private void HideSystemTitleText()
     {
-        if (!_menuRowIsTitleBar) return;
-        // The title bar is built after the window opens (and may be rebuilt), so look a few times rather than once.
-        int tries = 0;
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
-        timer.Tick += (_, _) =>
-        {
-            tries++;
-            bool found = HideTitleText();
-            if (tries == 8) DescribeTopStrip();
-            if (tries >= 20 || (found && tries >= 4))
-            {
-                timer.Stop();
-                if (!found) _log.Write("title bar: the drawn title was not found among " + string.Join(" | ", this.GetVisualDescendants().Select(TextOf).Where(t => !string.IsNullOrEmpty(t)).Take(12)));
-            }
-        };
-        timer.Start();
+        if (TryGetPlatformHandle()?.Handle is not { } handle || handle == IntPtr.Zero) return;
+        var options = new ThemeOptions { Flags = NoDrawCaption | NoDrawIcon, Mask = NoDrawCaption | NoDrawIcon };
+        try { SetWindowThemeAttribute(handle, NonClientAttribute, ref options, (uint)Marshal.SizeOf<ThemeOptions>()); }
+        catch (Exception ex) { _log.Write("title bar: could not hide the system title: " + ex.Message); }
     }
 
-    // For finding out what draws the title: everything in the top strip of the window, by type, and how the window's decorations are set.
-    private void DescribeTopStrip()
+    private const int NonClientAttribute = 1;
+    private const uint NoDrawCaption = 0x1;
+    private const uint NoDrawIcon = 0x2;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ThemeOptions
     {
-        _log.Write($"title bar: extended={IsExtendedIntoWindowDecorations} decorations={WindowDecorations} margin={WindowDecorationMargin} title='{Title}'");
-        foreach (var visual in this.GetVisualDescendants())
-        {
-            if (visual is not Control control || control.Bounds.Height > 40 || control.Bounds.Width <= 0) continue;
-            var top = control.TranslatePoint(new Point(0, 0), this);
-            if (top is not { Y: < 34 }) continue;
-            _log.Write($"title bar: {visual.GetType().FullName} at {top.Value.X:0},{top.Value.Y:0} size {control.Bounds.Width:0}x{control.Bounds.Height:0} visible={control.IsVisible} text='{TextOf(visual)}' content={IsInsideContent(visual)}");
-        }
+        public uint Flags;
+        public uint Mask;
     }
 
-    private bool HideTitleText()
-    {
-        bool found = false;
-        foreach (var visual in this.GetVisualDescendants())
-            if (visual != TopBarTitle && !IsInsideContent(visual) && TextOf(visual) is { } text && text.StartsWith("Yaparr", StringComparison.Ordinal))
-            {
-                visual.IsVisible = false;
-                found = true;
-            }
-        return found;
-    }
-
-    // The words a control shows, if it is one that shows words.
-    private static string? TextOf(Visual visual) => visual switch
-    {
-        TextBlock block => block.Text,
-        Avalonia.Controls.Presenters.TextPresenter presenter => presenter.Text,
-        ContentControl { Content: string words } => words,
-        _ => null,
-    };
-
-    // Anything the window's own content shows, as opposed to what the title bar draws around it.
-    private bool IsInsideContent(Visual visual) => TopBar.IsVisualAncestorOf(visual) || (Content is Visual content && content.IsVisualAncestorOf(visual));
+    [DllImport("uxtheme.dll")]
+    private static extern int SetWindowThemeAttribute(IntPtr window, int attribute, ref ThemeOptions options, uint size);
 }
