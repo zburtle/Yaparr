@@ -21,6 +21,9 @@ public partial class MainWindow
         foreach (var conv in _roomConversations.Values.Concat(_directConversations.Values))
             foreach (var message in conv.AllMessages)
                 if (message.Account == id || message.IsMine && account == _node.AccountId) message.AvatarChanged();
+        foreach (var conv in _roomConversations.Values)
+            foreach (var member in conv.VoiceMembers)
+                if (member.Account == id) member.AvatarChanged();
     }
 
     // A click on your picture at the top left chooses a new one.
