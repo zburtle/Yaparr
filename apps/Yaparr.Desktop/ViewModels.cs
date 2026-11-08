@@ -873,8 +873,11 @@ public sealed class VoiceMemberVm : Observable
         set { if (_name == value) return; _name = value; Raise(); Raise(nameof(Initial)); Raise(nameof(Avatar)); }
     }
     public bool IsSelf { get; }
-    public string Initial => Avatars.Initial(Name);
-    public IBrush Avatar => Avatars.BrushFor(Name);
+    public string Initial => AvatarPictures.Has(Account) ? "" : Avatars.Initial(Name);
+    public IBrush Avatar => AvatarPictures.For(Account) ?? Avatars.BrushFor(Name);
+
+    /// <summary>A picture arrived or changed for this person.</summary>
+    public void AvatarChanged() { Raise(nameof(Initial)); Raise(nameof(Avatar)); }
 
     public bool Speaking
     {
@@ -906,7 +909,13 @@ public sealed class VoiceMemberVm : Observable
     public bool CanMuteSoundboard => !IsSelf;
 
     /// <summary>The account behind this device; the volume chosen for a person is kept by account.</summary>
-    public string Account { get; set; } = "";
+    private string _account = "";
+
+    public string Account
+    {
+        get => _account;
+        set { if (_account == value) return; _account = value; AvatarChanged(); }
+    }
 
     public bool CanSetVolume => !IsSelf;
 
