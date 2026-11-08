@@ -291,8 +291,12 @@
 
     <Grid>
     <DockPanel>
-        <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*">
-        <Menu Grid.Column="0" Margin="4,2,4,0">
+        <!-- On Windows the window's own title bar is gone and this row takes its place (the code sets that up): the icon and the menus at the left, and room
+             at the right for the window's buttons. Elsewhere it is just the menu bar under the system title bar. -->
+        <Grid x:Name="TopBar" DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,*">
+        <Image x:Name="TopBarIcon" Grid.Column="0" Width="16" Height="16" Margin="12,0,4,0" VerticalAlignment="Center" IsVisible="False"
+               Source="avares://Yaparr.Desktop/Assets/yaparr.png" />
+        <Menu Grid.Column="1" Margin="4,2,4,0">
             <MenuItem Header="_File">
                 <MenuItem Header="_Create room…" Click="CreateRoom_Click" />
                 <MenuItem Header="_Join with invite…" Click="JoinRoom_Click" />
@@ -313,7 +317,7 @@
 
         <!-- Shown while rooms are getting going, or while a linked computer looks for the device it was linked from. It sits at the right
              end of the menu bar, so that it appearing and going does not push everything below it down and up. -->
-        <Border x:Name="SyncBar" Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="8,2,12,0" Padding="10,3" CornerRadius="6"
+        <Border x:Name="SyncBar" Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="8,2,12,0" Padding="10,3" CornerRadius="6"
                 Background="{DynamicResource Surface}" IsVisible="False">
             <StackPanel Orientation="Horizontal" Spacing="10">
                 <TextBlock x:Name="SyncBarText" FontSize="12" Foreground="{DynamicResource Accent}" VerticalAlignment="Center" MaxWidth="420" TextTrimming="CharacterEllipsis" />
@@ -756,9 +760,9 @@
                         <DockPanel>
                             <Button x:Name="SendButton" DockPanel.Dock="Right" VerticalAlignment="Bottom" Content="Send" Classes="primary" CornerRadius="18" Padding="18,7"
                                     Margin="6,4,0,4" IsEnabled="False" Click="Send_Click" />
-                            <Button x:Name="AttachButton" DockPanel.Dock="Left" VerticalAlignment="Bottom" Content="📎" Padding="8,6" Margin="0,4,2,4" CornerRadius="18"
+                            <Button x:Name="AttachButton" DockPanel.Dock="Left" VerticalAlignment="Bottom" Content="📎" Width="36" Height="36" Padding="0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Margin="0,4,2,4" CornerRadius="18"
                                     Background="Transparent" IsEnabled="False" ToolTip.Tip="Send a picture or GIF" Click="Attach_Click" />
-                            <Button x:Name="ShelfButton" DockPanel.Dock="Left" VerticalAlignment="Bottom" Content="GIF" FontSize="11" FontWeight="SemiBold" Padding="8,6" Margin="0,4,2,4" CornerRadius="18"
+                            <Button x:Name="ShelfButton" DockPanel.Dock="Left" VerticalAlignment="Bottom" Content="GIF" FontSize="11" FontWeight="SemiBold" Width="36" Height="36" Padding="0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Margin="0,4,2,4" CornerRadius="18"
                                     Background="Transparent" IsEnabled="False" ToolTip.Tip="Your GIF shelf" Click="Shelf_Click" />
                             <TextBox x:Name="InputBox" Classes="composer" PlaceholderText="Write a message" IsEnabled="False" AcceptsReturn="True" TextWrapping="Wrap" MaxHeight="150"
                                      ToolTip.Tip="Enter sends the message; Shift+Enter starts a new line" />

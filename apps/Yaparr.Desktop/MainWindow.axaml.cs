@@ -35,6 +35,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        UseMenuRowAsTitleBar();
         // The box takes several lines (a pasted report, say), so Enter has to be caught before the box turns it into a new line; Shift+Enter is the new line.
         InputBox.AddHandler(KeyDownEvent, InputBox_KeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         DragDrop.SetAllowDrop(this, true);
@@ -1232,7 +1233,7 @@ public partial class MainWindow : Window
         var room = _roomConversations.FirstOrDefault(kv => kv.Value == conv).Key;
         if (room == null) return;
         int others = room.Members.Where(m => _node?.IsMyDevice(m.Id) != true).Select(m => m.Account).Distinct().Count();
-        conv.MembersText = (others == 0 ? "Only you so far" : $"You and {others} other{(others == 1 ? "" : "s")} online")
+        conv.MembersText = (others == 0 ? "Only you right now" : $"You and {others} other{(others == 1 ? "" : "s")} online")
             + (room.MyRole switch { RoomRole.Owner => "  ·  you own this room", RoomRole.Admin => "  ·  you are an admin", _ => "" });
         UpdateHeaderSubtitle();
     }
