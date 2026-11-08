@@ -71,11 +71,16 @@ public sealed class MessageVm : Observable
     /// <summary>A message that is not a notice can be reacted to (it has a key to point at).</summary>
     public bool CanReact => Key != null && !IsSystem;
 
-    /// <summary>Where the button that opens the picker sits: on the outer top corner of the bubble, reaching a little outside it.</summary>
-    // (Not above the bubble: the row's edge would cut it off.)
-    public Thickness ReactButtonMargin => IsMine ? new Thickness(0, 0, -8, 0) : new Thickness(-8, 0, 0, 0);
+    /// <summary>The bubble sits against its own side; the reactions and the buttons fill the room between it and the other side.</summary>
+    public Avalonia.Controls.Dock BubbleDock => IsMine ? Avalonia.Controls.Dock.Right : Avalonia.Controls.Dock.Left;
 
-    /// <summary>The reactions sit on the same side as the bubble.</summary>
+    /// <summary>Beside a bubble on the right, what is next to it starts at its right edge and grows toward the left.</summary>
+    public Avalonia.Media.FlowDirection ReactionFlow => IsMine ? Avalonia.Media.FlowDirection.RightToLeft : Avalonia.Media.FlowDirection.LeftToRight;
+
+    /// <summary>The reactions are wrapped onto every line they need, not kept to one row with the rest counted by "+N".</summary>
+    public bool ReactionsExpanded { get; set; }
+
+    /// <summary>Which side the reactions sit on: the bubble's.</summary>
     public HorizontalAlignment ReactionAlign => IsMine ? HorizontalAlignment.Right : HorizontalAlignment.Left;
 
     /// <summary>Shows what the message's reactions come to now. Nothing changes on screen when they are as they were.</summary>
@@ -91,7 +96,7 @@ public sealed class MessageVm : Observable
             var who = names.Count <= 8 ? string.Join(", ", names) : string.Join(", ", names.Take(8)) + " and " + (names.Count - 8) + " more";
             Reactions.Add(new ReactionChipVm(this, r.Emoji, r.Count, r.Accounts.Contains(me), who + "\n" + (EmojiData.Find(r.Emoji)?.Name ?? "")));
         }
-        if (reactions.Count > 0) Reactions.Add(ReactionChipVm.Add(this));
+        if (reactions.Count > 0) Reactions.Add(ReactionChipVm.More(this));
         Raise(nameof(HasReactions));
     }
 
@@ -168,7 +173,7 @@ public sealed class MessageVm : Observable
         if (_isMine) return;
         _isMine = true;
         _deviceNote = deviceNote;
-        foreach (var name in new[] { nameof(IsMine), nameof(ReactionAlign), nameof(ReactButtonMargin), nameof(ShowSender), nameof(IsOther), nameof(Kind), nameof(Status), nameof(HasStatus), nameof(IsFailed), nameof(CanRetry), nameof(DeviceNote), nameof(TimeText), nameof(Display), nameof(Highlight) })
+        foreach (var name in new[] { nameof(IsMine), nameof(ReactionAlign), nameof(BubbleDock), nameof(ReactionFlow), nameof(ShowSender), nameof(IsOther), nameof(Kind), nameof(Status), nameof(HasStatus), nameof(IsFailed), nameof(CanRetry), nameof(DeviceNote), nameof(TimeText), nameof(Display), nameof(Highlight) })
             Raise(name);
     }
 
@@ -330,7 +335,7 @@ public sealed record PeerVm(string Id, string Name, bool Online, DateTimeOffset 
     }) + "\n" + Id;
 }
 
-/// <summary>One emoji under a message: the emoji, how many put it there, whether you did, and who (for the tooltip). The button that adds another has <see cref="IsAdd"/>.</summary>
+/// <summary>One emoji under a message: the emoji, how many put it there, whether you did, and who (for the tooltip). The last chip, <see cref="IsMore"/>, counts the ones that did not fit in the row ("+4") and opens the rest.</summary>
 public sealed class ReactionChipVm : Observable
 {
     public ReactionChipVm(MessageVm owner, string emoji, int count, bool mine, string tooltip)
@@ -338,16 +343,28 @@ public sealed class ReactionChipVm : Observable
         Owner = owner; Emoji = emoji; Count = count; Mine = mine; Tooltip = tooltip;
     }
 
-    public static ReactionChipVm Add(MessageVm owner) => new(owner, "\u263A\uFE0F", 0, false, "Add a reaction") { IsAdd = true };
+    public static ReactionChipVm More(MessageVm owner) => new(owner, "", 0, false, "Show or hide the rest of the reactions") { IsMore = true };
 
     public MessageVm Owner { get; }
     public string Emoji { get; }
     public int Count { get; }
     public bool Mine { get; }
     public string Tooltip { get; }
-    public bool IsAdd { get; private init; }
-    public bool ShowCount => !IsAdd;
-    public bool ShowEmoji => !IsAdd;
+    public bool IsMore { get; private init; }
+    public bool ShowCount => !IsMore;
+    public bool ShowEmoji => !IsMore;
+
+    private int _hidden;
+
+    /// <summary>How many reactions the row left out (set by the row as it measures).</summary>
+    public int Hidden
+    {
+        get => _hidden;
+        set { if (_hidden == value) return; _hidden = value; Raise(nameof(MoreText)); }
+    }
+
+    public string MoreText => Owner.ReactionsExpanded ? "Show less" : "+" + _hidden;
+    public void RaiseMoreText() => Raise(nameof(MoreText));
     public string CountText => Count.ToString();
 }
 

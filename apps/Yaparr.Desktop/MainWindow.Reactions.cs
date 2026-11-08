@@ -66,7 +66,13 @@ public partial class MainWindow
     {
         e.Handled = true;
         if ((sender as Control)?.DataContext is not ReactionChipVm chip) return;
-        if (chip.IsAdd) { OpenReactionPicker(chip.Owner, sender as Control); return; }
+        if (chip.IsMore)
+        {
+            chip.Owner.ReactionsExpanded = !chip.Owner.ReactionsExpanded;
+            chip.RaiseMoreText();
+            if (sender is Visual v) ReactionStrip.Changed(v);
+            return;
+        }
         _ = ToggleReactionAsync(chip.Owner, chip.Emoji, on: !chip.Mine);
     }
 

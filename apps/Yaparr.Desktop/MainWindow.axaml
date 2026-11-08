@@ -143,36 +143,30 @@
         <Style Selector="Border.bubble.mine Border.quote TextBlock">
             <Setter Property="Foreground" Value="White" />
         </Style>
-        <Style Selector="Button.addreact">
+        <Style Selector="StackPanel.hoveract">
             <Setter Property="Opacity" Value="0" />
+        </Style>
+        <Style Selector="ListBoxItem:pointerover StackPanel.hoveract">
+            <Setter Property="Opacity" Value="1" />
+        </Style>
+        <Style Selector="StackPanel.hoveract Button">
             <Setter Property="Padding" Value="2" />
             <Setter Property="MinHeight" Value="0" />
             <Setter Property="MinWidth" Value="0" />
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
         </Style>
-        <Style Selector="Button.addreact:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Style Selector="StackPanel.hoveract Button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="Transparent" />
         </Style>
-        <Style Selector="ListBoxItem:pointerover Button.addreact">
-            <Setter Property="Opacity" Value="1" />
-        </Style>
         <Style Selector="Button.chip">
-            <Setter Property="Padding" Value="7,2" />
-            <Setter Property="MinHeight" Value="0" />
-            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="CornerRadius" Value="14" />
             <Setter Property="Background" Value="#22808080" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="BorderBrush" Value="Transparent" />
-        </Style>
-        <!-- The button that adds another reaction is only a small grey circle with a plus in it, not a chip. -->
-        <Style Selector="Button.chip.add">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Padding" Value="3,2" />
-        </Style>
-        <Style Selector="Button.chip.add:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="Transparent" />
         </Style>
         <Style Selector="Button.chip.mine">
             <Setter Property="Background" Value="#33808080" />
@@ -569,8 +563,9 @@
                                     <TextBlock Classes="sys" IsVisible="{Binding IsSystem}" Text="{Binding Text}" />
                                     <TextBlock IsVisible="{Binding ShowSender}" Text="{Binding Sender}" Foreground="{Binding SenderBrush}"
                                                FontSize="12" FontWeight="SemiBold" Margin="10,6,0,0" />
-                                    <Panel IsVisible="{Binding !IsSystem}">
-                                    <Border Classes="bubble"
+                                    <DockPanel IsVisible="{Binding !IsSystem}" LastChildFill="True">
+                                    <StackPanel DockPanel.Dock="{Binding BubbleDock}" Spacing="4">
+                                    <Border x:Name="Bubble" Classes="bubble"
                                             Classes.mine="{Binding IsMine}" Classes.other="{Binding IsOther}"
                                             Classes.missed="{Binding IsCatchUp}" Classes.failed="{Binding IsFailed}" Classes.mention="{Binding Highlight}">
                                         <StackPanel Spacing="2">
@@ -602,34 +597,42 @@
                                             <TextBlock Classes="time" Text="{Binding TimeText}" ToolTip.Tip="{Binding FullTime}" />
                                         </StackPanel>
                                     </Border>
-                                    <Button Classes="addreact" IsVisible="{Binding CanReact}" AutomationProperties.Name="Add a reaction"
-                                            HorizontalAlignment="{Binding ReactionAlign}" VerticalAlignment="Top" Margin="{Binding ReactButtonMargin}" ToolTip.Tip="Add a reaction" Click="AddReactionHover_Click">
-                                        <Border Width="18" Height="18" CornerRadius="9" Background="#99C8C8C8">
-                                            <TextBlock Text="+" FontSize="14" FontWeight="Bold" Foreground="#E6333333" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-2,0,0" />
-                                        </Border>
-                                    </Button>
-                                    </Panel>
-                                    <ItemsControl ItemsSource="{Binding Reactions}" IsVisible="{Binding HasReactions}" MaxWidth="560"
-                                                  HorizontalAlignment="{Binding ReactionAlign}" Margin="8,0,8,0">
+                                    <ItemsControl ItemsSource="{Binding Reactions}" IsVisible="{Binding HasReactions}" HorizontalAlignment="{Binding ReactionAlign}"
+                                                  FlowDirection="{Binding ReactionFlow}" MaxWidth="{Binding Bounds.Width, ElementName=Bubble}">
                                         <ItemsControl.ItemsPanel>
-                                            <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                                            <ItemsPanelTemplate><local:ReactionStrip /></ItemsPanelTemplate>
                                         </ItemsControl.ItemsPanel>
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate x:DataType="local:ReactionChipVm">
-                                                <Button Classes="chip" Classes.mine="{Binding Mine}" Classes.add="{Binding IsAdd}" Margin="0,0,4,4" ToolTip.Tip="{Binding Tooltip}" Click="ReactionChip_Click">
+                                                <Button Classes="chip" FlowDirection="LeftToRight" Classes.mine="{Binding Mine}" ToolTip.Tip="{Binding Tooltip}" Click="ReactionChip_Click">
                                                     <Panel>
                                                         <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding ShowEmoji}">
                                                             <TextBlock Text="{Binding Emoji}" FontFamily="Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji, Twemoji Mozilla" VerticalAlignment="Center" />
                                                             <TextBlock Text="{Binding CountText}" IsVisible="{Binding ShowCount}" FontSize="12" VerticalAlignment="Center" />
                                                         </StackPanel>
-                                                        <Border Width="18" Height="18" CornerRadius="9" Background="#99C8C8C8" IsVisible="{Binding IsAdd}">
-                                                        <TextBlock Text="+" FontSize="14" FontWeight="Bold" Foreground="#E6333333" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-2,0,0" />
-                                                    </Border>
+                                                        <TextBlock Text="{Binding MoreText}" IsVisible="{Binding IsMore}" FontSize="12" VerticalAlignment="Center" />
                                                     </Panel>
                                                 </Button>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
+                                    </StackPanel>
+                                    <Grid HorizontalAlignment="{Binding ReactionAlign}" VerticalAlignment="Center" Margin="6,0">
+                                        <StackPanel Classes="hoveract" Orientation="Horizontal" Spacing="4" Height="24" IsVisible="{Binding CanReact}"
+                                                    FlowDirection="{Binding ReactionFlow}">
+                                            <Button FlowDirection="LeftToRight" AutomationProperties.Name="Add a reaction" ToolTip.Tip="Add a reaction" Click="AddReactionHover_Click">
+                                                <Border Width="18" Height="18" CornerRadius="9" Background="#99C8C8C8">
+                                                    <TextBlock Text="+" FontSize="14" FontWeight="Bold" Foreground="#E6333333" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-2,0,0" />
+                                                </Border>
+                                            </Button>
+                                            <Button FlowDirection="LeftToRight" AutomationProperties.Name="Reply" ToolTip.Tip="Reply" Click="ReplyHover_Click">
+                                                <Border Width="18" Height="18" CornerRadius="9" Background="#99C8C8C8">
+                                                    <TextBlock Text="&#8617;" FontSize="12" FontWeight="Bold" Foreground="#E6333333" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                </Border>
+                                            </Button>
+                                        </StackPanel>
+                                    </Grid>
+                                    </DockPanel>
                                     <TextBlock Classes="status" Classes.failed="{Binding CanRetry}" IsVisible="{Binding HasStatus}" Text="{Binding Status}" ToolTip.Tip="{Binding DeliveryDetail}" />
                                 </StackPanel>
                             </DataTemplate>
