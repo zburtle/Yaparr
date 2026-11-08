@@ -37,6 +37,12 @@ public partial class MainWindow
         {
             channel.People = people.Count(p => p.Channel == channel.Id);
             channel.Mine = mine == channel.Id;
+            var wanted = people.Where(p => p.Channel == channel.Id).Select(p => conv.VoiceMembers.FirstOrDefault(m => m.Id == p.Peer.Id.Value)).OfType<VoiceMemberVm>().ToList();
+            if (!channel.Members.SequenceEqual(wanted))
+            {
+                channel.Members.Clear();
+                foreach (var member in wanted) channel.Members.Add(member);
+            }
         }
     }
 
