@@ -32,7 +32,7 @@ public partial class MainWindow
         StatusText.Text = "Getting a preview of the link…";
         try
         {
-            _previewFetcher ??= new LinkPreviewFetcher();
+            _previewFetcher ??= new LinkPreviewFetcher { Log = _log.Write };
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
             cts.CancelAfter(PreviewWait);
             return await _previewFetcher.FetchAsync(link, cts.Token);
