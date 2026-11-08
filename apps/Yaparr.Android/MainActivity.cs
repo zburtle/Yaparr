@@ -91,6 +91,13 @@ public class MainActivity : AvaloniaMainActivity
         ChatInbox.Offer(intent?.GetStringExtra(ChatInbox.ExtraChat));
     }
 
+    /// <summary>The activity came back to the front (from another app, or the lock screen).</summary>
+    public static event Action? Resumed;
+
+    /// <summary>Whether the on-screen keyboard is showing, as Android says (null when this version cannot say).</summary>
+    public bool? KeyboardShown =>
+        OperatingSystem.IsAndroidVersionAtLeast(30) ? Window?.DecorView?.RootWindowInsets?.IsVisible(WindowInsets.Type.Ime()) : null;
+
     /// <summary>The screen that is open, for what needs an activity (asking for the microphone, the audio service).</summary>
     public static MainActivity? Instance { get; private set; }
 
@@ -286,6 +293,7 @@ public class MainActivity : AvaloniaMainActivity
     {
         base.OnResume();
         AppHost.InForeground = true;
+        Resumed?.Invoke();
         if (OperatingSystem.IsAndroidVersionAtLeast(26)) Notifier.ClearAll(this);
         try
         {

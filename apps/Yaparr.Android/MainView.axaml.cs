@@ -54,6 +54,7 @@ public partial class MainView : UserControl
     {
         LinkInbox.Arrived -= OnLinkArrived;
         ChatInbox.Arrived -= OpenFromNotification;
+        _keyboardUndo?.Invoke();
         foreach (var undo in _unhooks) undo();
         _unhooks.Clear();
         foreach (var (chat, handler) in _watched) chat.Shown.CollectionChanged -= handler;
@@ -75,7 +76,19 @@ public partial class MainView : UserControl
         if (TopLevel.GetTopLevel(this) is not { } top) return;
         // The on-screen keyboard covers the bottom of the app, so the message box is lifted above it.
         if (top.InputPane is { } pane)
+        {
             pane.StateChanged += (_, e) => Root.Margin = new Avalonia.Thickness(0, 0, 0, e.NewState == InputPaneState.Open ? e.EndRect.Height : 0);
+            // Switching to another app with the keyboard open can close it without this ever being told, which left the space it took empty.
+            // So when the app comes back, and when going back to the list, what Android says about the keyboard decides.
+            void Sync()
+            {
+                if (MainActivity.Instance?.KeyboardShown == false || pane.State != InputPaneState.Open) Root.Margin = new Avalonia.Thickness(0);
+            }
+            Action resumed = () => { Sync(); DispatcherTimer.RunOnce(Sync, TimeSpan.FromMilliseconds(400)); };
+            MainActivity.Resumed += resumed;
+            _keyboardUndo = () => MainActivity.Resumed -= resumed;
+            _syncKeyboard = Sync;
+        }
         // The phone's back button goes one step back inside the app instead of leaving it.
         top.BackRequested += (_, e) => e.Handled = GoBack();
     }
@@ -738,8 +751,11 @@ public partial class MainView : UserControl
         ScrollToEnd();
     }
 
+    private Action? _syncKeyboard, _keyboardUndo;
+
     private void BackToList()
     {
+        _syncKeyboard?.Invoke();
         _session?.Close();
         _current = null;
         ClearReply();
