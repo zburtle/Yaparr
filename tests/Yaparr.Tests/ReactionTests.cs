@@ -301,4 +301,73 @@ public class ReactionNodeTests
         for (int i = 0; i < 700; i++) await ra.SendReactionAsync(key, i % 2 == 0 ? Thumbs : Heart, on: i % 4 < 2);
         Assert.Equal("the message", ra.GetHistory().Single().Body);
     }
+
+    [Fact]
+    public async Task A_reaction_from_a_linked_device_is_the_accounts_so_it_is_yours_and_taking_it_off_works()
+    {
+        var hub = new InMemoryDiscoveryHub();
+        using var firstId = Yaparr.Identity.PeerIdentity.Generate();
+        using var secondId = firstId.CreateDevice();
+        using var desktop = TestUtil.NewNode(hub, "zach", identity: firstId);
+        using var phone = TestUtil.NewNode(hub, "zach", identity: secondId);   // linked later: its id is not the account's
+        using var friend = TestUtil.NewNode(hub, "bob");
+        Assert.NotEqual(phone.Id, phone.AccountId);
+        var rd = await desktop.JoinRoomAsync("lobby");
+        var rp = await phone.JoinRoomAsync("lobby");
+        var rf = await friend.JoinRoomAsync("lobby");
+        await TestUtil.WaitFor(() => rd.Members.Count == 2 && rp.Members.Count == 2 && rf.Members.Count == 2);
+
+        var seen = new List<ChatMessage>();
+        rp.MessageReceived += seen.Add;
+        await rf.SendAsync("hello from bob");
+        await TestUtil.WaitFor(() => seen.Count == 1);
+        var key = seen[0].Key;
+
+        // Reacting from the linked phone: it is the account's reaction, so it is "mine" there.
+        await rp.SendReactionAsync(key, Thumbs, on: true);
+        Assert.True(rp.GetReactions().Has(key, Thumbs, phone.AccountId));
+        Assert.Equal(new[] { phone.AccountId }, rp.GetReactions().For(key).Single().Accounts);
+        // The computer and the friend see it as the same person's, whichever device sent it.
+        await TestUtil.WaitFor(() => rd.GetReactions().For(key).Count == 1 && rf.GetReactions().For(key).Count == 1);
+        Assert.Equal(new[] { desktop.AccountId }, rd.GetReactions().For(key).Single().Accounts);
+
+        // Putting the same emoji on from the computer too is still one person.
+        await rd.SendReactionAsync(key, Thumbs, on: true);
+        await Task.Delay(300);
+        Assert.Equal(1, rf.GetReactions().For(key).Single().Count);
+
+        // Taking it off from the phone (where it was put on) takes it off for everyone.
+        await rp.SendReactionAsync(key, Thumbs, on: false);
+        Assert.Empty(rp.GetReactions().For(key));
+        await TestUtil.WaitFor(() => rf.GetReactions().For(key).Count == 0 && rd.GetReactions().For(key).Count == 0);
+    }
+
+    [Fact]
+    public async Task Clicking_the_emoji_someone_else_put_on_adds_yours_to_the_count_and_clicking_yours_takes_it_off()
+    {
+        var hub = new InMemoryDiscoveryHub();
+        using var alice = TestUtil.NewNode(hub, "alice");
+        using var bob = TestUtil.NewNode(hub, "bob");
+        var ra = await alice.JoinRoomAsync("lobby");
+        var rb = await bob.JoinRoomAsync("lobby");
+        await TestUtil.WaitFor(() => ra.Members.Count == 1 && rb.Members.Count == 1);
+        var shown = new List<ChatMessage>();
+        rb.MessageReceived += shown.Add;
+        await ra.SendAsync("look");
+        await TestUtil.WaitFor(() => shown.Count == 1);
+        var key = shown[0].Key;
+
+        await ra.SendReactionAsync(key, Heart, on: true);                               // alice puts it on
+        await TestUtil.WaitFor(() => rb.GetReactions().For(key).Count == 1);
+        Assert.False(rb.GetReactions().Has(key, Heart, bob.AccountId));
+        await rb.SendReactionAsync(key, Heart, on: true);                               // bob clicks it: the count goes up
+        Assert.Equal(2, rb.GetReactions().For(key).Single().Count);
+        Assert.True(rb.GetReactions().Has(key, Heart, bob.AccountId));
+        await TestUtil.WaitFor(() => ra.GetReactions().For(key).Single().Count == 2);
+
+        await rb.SendReactionAsync(key, Heart, on: false);                              // bob clicks his own: back to one
+        Assert.Equal(1, rb.GetReactions().For(key).Single().Count);
+        await TestUtil.WaitFor(() => ra.GetReactions().For(key).Single().Count == 1);
+        Assert.True(ra.GetReactions().Has(key, Heart, alice.AccountId));
+    }
 }

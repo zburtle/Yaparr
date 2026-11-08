@@ -25,7 +25,7 @@ connections, relays, voice and delivery work per device; what is shared is the p
   holds your account key, so send it and the passphrase by different routes and delete it afterwards. It stops working
   after a day. In the library: `DeviceLink.Create` and `DeviceLink.Open`.
   For a phone there is a third way: **Show a QR code** shows the code and its passphrase together as one QR code for two minutes, and the
-  Android app scans it (**Link with a computer**). The QR code leaves your list of rooms out, because it would not fit; the rooms follow from
+  Android app scans it (**Yes, I already have an account** > **On my computer**). The QR code leaves your list of rooms out, because it would not fit; the rooms follow from
   the computer once the phone has connected to it. Show it only to someone next to you.
 - **Finding each other.** Devices of one account find each other without a room in common: each announces itself on the account's topic and
   every few seconds, while it is connected to none of its other devices, looks there and connects to what it finds (and less often when one is

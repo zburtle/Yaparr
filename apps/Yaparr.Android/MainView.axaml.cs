@@ -32,12 +32,12 @@ public partial class MainView : UserControl
         InitializeComponent();
         // The box takes several lines (a pasted report, say); Enter still sends, so it is caught before the box turns it into a new line.
         InputBox.AddHandler(KeyDownEvent, InputKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
-        _screens = new Control[] { StartPanel, LinkPanel, ListPanel, ChatPanel, SettingsPanel };
+        _screens = new Control[] { WelcomePanel, NamePanel, ExistingPanel, LinkPanel, ListPanel, ChatPanel, SettingsPanel };
         _settings = _data.LoadSettings();
         NameBox.Text = _settings.DisplayName ?? "";
         ApplyTheme();
-        // Linking is for a phone that has no account yet.
-        LinkStartButton.IsVisible = RestoreStartButton.IsVisible = !_data.HasIdentity;
+        // A phone that has an account but no name (it was made, then closed before the name was typed) only needs the name; there is nothing to go back to.
+        if (_data.HasIdentity) { NameBackButton.IsVisible = false; ShowOnly(NamePanel); }
         AttachedToVisualTree += (_, _) => OnAttached();
         LinkInbox.Arrived += () => _ = HandleLinksAsync();
         // Messages are not picked from the list: a press does something (a long press opens the actions), and nothing stays highlighted.
@@ -83,10 +83,27 @@ public partial class MainView : UserControl
         if (SettingsPanel.IsVisible) { SettingsBackClicked(null, new RoutedEventArgs()); return true; }
         if (ChatPanel.IsVisible) { BackToList(); return true; }
         if (LinkPanel.IsVisible) { LinkBackClicked(null, new RoutedEventArgs()); return true; }
+        if (ExistingPanel.IsVisible || (NamePanel.IsVisible && NameBackButton.IsVisible)) { WelcomeBackClicked(null, new RoutedEventArgs()); return true; }
         return false;
     }
 
     // ---- first start ----
+    // A short wizard: "have you used Yaparr before?" -> a new person gives a name; someone who has brings their account from a computer or a backup.
+
+    private void NewHereClicked(object? sender, RoutedEventArgs e)
+    {
+        StartStatus.Text = "";
+        ShowOnly(NamePanel);
+        NameBox.Focus();
+    }
+
+    private void HaveAccountClicked(object? sender, RoutedEventArgs e)
+    {
+        ExistingStatus.Text = "";
+        ShowOnly(ExistingPanel);
+    }
+
+    private void WelcomeBackClicked(object? sender, RoutedEventArgs e) => ShowOnly(WelcomePanel);
 
     private async void StartClicked(object? sender, RoutedEventArgs e)
     {
@@ -136,7 +153,7 @@ public partial class MainView : UserControl
         LinkStatus.Text = "";
     }
 
-    private void LinkBackClicked(object? sender, RoutedEventArgs e) => ShowOnly(StartPanel);
+    private void LinkBackClicked(object? sender, RoutedEventArgs e) => ShowOnly(ExistingPanel);
 
     private async void ScanClicked(object? sender, RoutedEventArgs e)
     {
@@ -178,7 +195,6 @@ public partial class MainView : UserControl
             _linkedEntries = linked.Entries;
             NameBox.Text = linked.DisplayName;
             CodeBox.Text = PassphraseBox.Text = "";
-            LinkStartButton.IsVisible = RestoreStartButton.IsVisible = false;
             // The rooms of the account come from the computer once this phone has connected to it.
             await BeginAsync(linked.DisplayName);
             _session?.BeginDeviceSearch();
@@ -472,23 +488,23 @@ public partial class MainView : UserControl
     {
         if (MainActivity.Instance is not { } activity || _data.HasIdentity) return;
         var path = await activity.PickFileAsync("application/zip");
-        if (path == null) { StartStatus.Text = "No backup chosen."; return; }
+        if (path == null) { ExistingStatus.Text = "No backup chosen."; return; }
         try
         {
             string staging;
             try { staging = await Task.Run(() => _data.StageProfile(path)); }
             catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
             {
-                StartStatus.Text = ex.Message;
+                ExistingStatus.Text = ex.Message;
                 return;
             }
             try { await Task.Run(() => _data.ApplyStagedProfile(staging)); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                StartStatus.Text = "Restoring failed: " + ex.Message;
+                ExistingStatus.Text = "Restoring failed: " + ex.Message;
                 return;
             }
-            StartStatus.Text = "Your account is back. Yaparr is starting again.";
+            ExistingStatus.Text = "Your account is back. Yaparr is starting again.";
             await Task.Delay(1200);
             activity.RestartApp();
         }

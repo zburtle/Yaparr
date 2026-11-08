@@ -166,6 +166,15 @@
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="BorderBrush" Value="Transparent" />
         </Style>
+        <!-- The button that adds another reaction is only a small grey circle with a plus in it, not a chip. -->
+        <Style Selector="Button.chip.add">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="3,2" />
+        </Style>
+        <Style Selector="Button.chip.add:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
         <Style Selector="Button.chip.mine">
             <Setter Property="Background" Value="#33808080" />
             <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
@@ -603,11 +612,16 @@
                                         </ItemsControl.ItemsPanel>
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate x:DataType="local:ReactionChipVm">
-                                                <Button Classes="chip" Classes.mine="{Binding Mine}" Margin="0,0,4,4" ToolTip.Tip="{Binding Tooltip}" Click="ReactionChip_Click">
-                                                    <StackPanel Orientation="Horizontal" Spacing="4">
-                                                        <TextBlock Text="{Binding Emoji}" FontFamily="Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji, Twemoji Mozilla" VerticalAlignment="Center" />
-                                                        <TextBlock Text="{Binding CountText}" IsVisible="{Binding ShowCount}" FontSize="12" VerticalAlignment="Center" />
-                                                    </StackPanel>
+                                                <Button Classes="chip" Classes.mine="{Binding Mine}" Classes.add="{Binding IsAdd}" Margin="0,0,4,4" ToolTip.Tip="{Binding Tooltip}" Click="ReactionChip_Click">
+                                                    <Panel>
+                                                        <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding ShowEmoji}">
+                                                            <TextBlock Text="{Binding Emoji}" FontFamily="Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji, Twemoji Mozilla" VerticalAlignment="Center" />
+                                                            <TextBlock Text="{Binding CountText}" IsVisible="{Binding ShowCount}" FontSize="12" VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                        <Border Width="18" Height="18" CornerRadius="9" Background="#99C8C8C8" IsVisible="{Binding IsAdd}">
+                                                        <TextBlock Text="+" FontSize="14" FontWeight="Bold" Foreground="#E6333333" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-2,0,0" />
+                                                    </Border>
+                                                    </Panel>
                                                 </Button>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>

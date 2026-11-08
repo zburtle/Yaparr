@@ -19,7 +19,9 @@ The project is not in `Yaparr.slnx`, so `dotnet build` and `dotnet test` at the 
 
 ## Linking to your computer
 
-On a new phone, "Already have Yaparr on a computer? Link with it" takes the account over from a computer: your name, and the account, so people see you as one person. On the computer open Settings, Devices, Link another device and choose Show a QR code (it closes by itself after two minutes); on the phone choose Scan the QR code. If scanning does not work, paste the link code and passphrase instead.
+**The first start is a short wizard.** The first screen asks "Have you used Yaparr before?". **No, I'm new here** goes to "What should people call you?" (the name others see next to your messages; it can be changed in Settings) and then to the rooms. **Yes, I already have an account** goes to "Bring your account here", which asks where the account is now: **On my computer** or **In a backup file**. A phone that already has an account but no name (it was closed before the name was typed) goes straight to the name. The back button, or Back, steps back through the wizard.
+
+**On my computer** takes the account over from a computer: your name, and the account, so people see you as one person. On the computer open Settings, Devices, Link another device and choose Show a QR code (it closes by itself after two minutes); on the phone choose Scan the QR code. If scanning does not work, paste the link code and passphrase instead.
 
 The QR code leaves out your list of rooms, because a code with many rooms is too big for a QR code. Rooms follow from the computer once the phone has connected to it, as they do for any linked device. Scanning uses the phone's camera through CameraX (part of Android's own support libraries) and ZXing to read the code, all on the phone: nothing goes through Google Play services, so it works on any Android phone with a camera. Yaparr asks for the camera permission the first time you scan, and only for this; if you refuse, paste the code instead.
 
@@ -41,7 +43,7 @@ Not there yet: @everyone, and asking the other members for an original message t
 
 ## Reactions
 
-**React…** in a message's long-press menu opens a panel with the thirteen quick emoji (👍 💯 ❤️ 😂 😭 🔥 🙏 😍 🎉 👀 🤔 😮 👎), a search box and the rest of the emoji by group. The emoji shows under the message with how many put it there; tap one to add yours or take it back, and tap the smiley next to them to add another. Rooms and direct chats; see [Rooms and messages](rooms-and-messages.md#reactions). Not there yet: seeing who put an emoji there.
+**React…** in a message's long-press menu opens a panel with the thirteen quick emoji (👍 💯 ❤️ 😂 😭 🔥 🙏 😍 🎉 👀 🤔 😮 👎), a search box and the rest of the emoji by group. The emoji shows under the message with how many put it there; tap one to add yours (the count goes up by one) or, if it is yours, to take it back (it goes down by one), and tap the small grey circle with a plus next to them to add another emoji. Rooms and direct chats; see [Rooms and messages](rooms-and-messages.md#reactions). Not there yet: seeing who put an emoji there.
 
 ## Link previews
 
@@ -101,7 +103,7 @@ Not there yet: choosing which part of a long file to keep, renaming a sound, pre
 - **Backup:** saves a copy of your account, room keys and message history as a zip file; Android asks where to put it (the system's "save as", so the app needs no permission for your files). Keep the file private: anyone who has it can pretend to be you and read your rooms.
 - **About:** the version, and a button that copies who the phone is connected to and what it has been doing, for a report of a problem.
 
-**Restore a backup** is on the first screen of a phone that has no account yet (so nothing is replaced): choose the zip file and Yaparr brings the account, the rooms and the history back and starts again. To use your account on a second device at the same time, link it instead of restoring; two devices running the same backup would clash.
+**In a backup file** is on the first screens of a phone that has no account yet (so nothing is replaced): choose the zip file and Yaparr brings the account, the rooms and the history back and starts again. To use your account on a second device at the same time, link it instead of restoring; two devices running the same backup would clash.
 
 Not there yet: choosing the microphone or speakers (the route button in a call picks where the sound goes), and the network options (the check is there, the settings are not).
 

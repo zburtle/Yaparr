@@ -5,26 +5,68 @@
              x:DataType="local:MainView">
     <Grid x:Name="Root" Background="{DynamicResource AppBg}">
 
-        <!-- First start: who you are. -->
-        <ScrollViewer x:Name="StartPanel">
+        <!-- First start, step 1: has this person used Yaparr before? Someone who has brings their account here instead of making a new one. -->
+        <ScrollViewer x:Name="WelcomePanel">
             <StackPanel Margin="20,56,20,24" Spacing="12" MaxWidth="480">
-                <TextBlock Text="Yaparr" FontSize="30" FontWeight="Bold" Foreground="{DynamicResource Ink}" />
-                <TextBlock Text="Chat with no server. Make a room and send its invite to the people you want in it."
+                <TextBlock Text="Welcome to Yaparr" FontSize="30" FontWeight="Bold" Foreground="{DynamicResource Ink}" />
+                <TextBlock Text="Chat and voice with no server. Make a room and send its invite to the people you want in it."
                            TextWrapping="Wrap" Foreground="{DynamicResource Muted}" />
-                <TextBlock Text="Your name" Margin="0,12,0,0" Foreground="{DynamicResource Muted}" />
-                <TextBox x:Name="NameBox" MaxLength="40" />
-                <Button x:Name="StartButton" Classes="primary" HorizontalAlignment="Stretch" Margin="0,8,0,0" Click="StartClicked" Content="Continue" />
+                <TextBlock Text="Have you used Yaparr before?" FontSize="18" FontWeight="SemiBold" Margin="0,28,0,4" Foreground="{DynamicResource Ink}" />
+                <Button x:Name="NewHereButton" Classes="primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="18,14" Click="NewHereClicked">
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="No, I'm new here" FontSize="17" FontWeight="SemiBold" />
+                        <TextBlock Text="Make a new account on this phone." FontSize="13" Opacity="0.85" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Button>
+                <Button x:Name="HaveAccountButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="18,14" Click="HaveAccountClicked">
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Yes, I already have an account" FontSize="17" FontWeight="SemiBold" />
+                        <TextBlock Text="Bring it to this phone, from your computer or from a backup. People then see you as one person." FontSize="13" Opacity="0.75" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Step 2 for someone new: the name people see next to the messages. -->
+        <ScrollViewer x:Name="NamePanel" IsVisible="False">
+            <StackPanel Margin="20,56,20,24" Spacing="12" MaxWidth="480">
+                <TextBlock Text="What should people call you?" FontSize="26" FontWeight="Bold" TextWrapping="Wrap" Foreground="{DynamicResource Ink}" />
+                <TextBlock Text="This is the name others see next to your messages. You can change it later in Settings."
+                           TextWrapping="Wrap" Foreground="{DynamicResource Muted}" />
+                <TextBox x:Name="NameBox" MaxLength="40" Margin="0,12,0,0" PlaceholderText="Your name" />
+                <Button x:Name="StartButton" Classes="primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="0,8,0,0" Click="StartClicked" Content="Continue" />
                 <TextBlock x:Name="StartStatus" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" />
-                <Button x:Name="LinkStartButton" Content="Already have Yaparr on a computer? Link with it" HorizontalAlignment="Stretch"
-                        Margin="0,16,0,0" Click="LinkStartClicked" />
-                <Button x:Name="RestoreStartButton" Content="Restore a backup" HorizontalAlignment="Stretch" Click="RestoreClicked" />
+                <Button x:Name="NameBackButton" Content="Back" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="WelcomeBackClicked" />
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Step 2 for someone who has used Yaparr: where the account is now. -->
+        <ScrollViewer x:Name="ExistingPanel" IsVisible="False">
+            <StackPanel Margin="20,56,20,24" Spacing="12" MaxWidth="480">
+                <TextBlock Text="Bring your account here" FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Ink}" />
+                <TextBlock Text="Your name, your rooms and the people you blocked come with it. Where is your account now?"
+                           TextWrapping="Wrap" Foreground="{DynamicResource Muted}" />
+                <Button x:Name="LinkStartButton" Classes="primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="18,14" Margin="0,12,0,0" Click="LinkStartClicked">
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="On my computer" FontSize="17" FontWeight="SemiBold" />
+                        <TextBlock Text="Link this phone to it by scanning a QR code. Both stay signed in as you." FontSize="13" Opacity="0.85" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Button>
+                <Button x:Name="RestoreStartButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="18,14" Click="RestoreClicked">
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="In a backup file" FontSize="17" FontWeight="SemiBold" />
+                        <TextBlock Text="Use a backup made in Settings, Backup. For a new phone; if your old one is still in use, link instead." FontSize="13" Opacity="0.75" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Button>
+                <TextBlock x:Name="ExistingStatus" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" />
+                <Button Content="Back" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="WelcomeBackClicked" />
             </StackPanel>
         </ScrollViewer>
 
         <!-- Taking an account over from a computer: scan its QR code, or paste the code and passphrase. -->
         <ScrollViewer x:Name="LinkPanel" IsVisible="False">
             <StackPanel Margin="20,56,20,24" Spacing="12" MaxWidth="480">
-                <TextBlock Text="Link with a computer" FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Ink}" />
+                <TextBlock Text="Link with your computer" FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Ink}" />
                 <TextBlock Text="On the computer, open Settings, Devices, Link another device, and choose Show a QR code. Then scan it here."
                            TextWrapping="Wrap" Foreground="{DynamicResource Muted}" />
                 <Button x:Name="ScanButton" Classes="primary" HorizontalAlignment="Stretch" Content="Scan the QR code" Click="ScanClicked" />
@@ -230,6 +272,25 @@
             </ScrollViewer>
 
             <ListBox x:Name="Messages" Grid.Row="2" Background="Transparent" Padding="8,8" ItemsSource="{Binding Shown}">
+                <!-- A message is not "picked" from the list (a press does something: a long press opens the actions, a tap on an emoji reacts), so the list's own highlight
+                     of the row under a finger, or of the one just pressed, is switched off. -->
+                <ListBox.Styles>
+                    <Style Selector="ListBoxItem">
+                        <Setter Property="Background" Value="Transparent" />
+                    </Style>
+                    <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+                        <Setter Property="Background" Value="Transparent" />
+                    </Style>
+                    <Style Selector="ListBoxItem:pressed /template/ ContentPresenter#PART_ContentPresenter">
+                        <Setter Property="Background" Value="Transparent" />
+                    </Style>
+                    <Style Selector="ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+                        <Setter Property="Background" Value="Transparent" />
+                    </Style>
+                    <Style Selector="ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+                        <Setter Property="Background" Value="Transparent" />
+                    </Style>
+                </ListBox.Styles>
                 <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="local:Line">
                         <Border HorizontalAlignment="{Binding Align}" MaxWidth="320" Padding="12,8" CornerRadius="16" Background="{Binding Fill}" Holding="MessageHeld">
@@ -267,10 +328,15 @@
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="local:ReactionChip">
                                             <Border Background="{Binding Fill}" BorderBrush="{Binding Edge}" BorderThickness="1" CornerRadius="12" Padding="8,3" Margin="0,2,4,2" Tapped="ReactionChipTapped">
-                                                <StackPanel Orientation="Horizontal" Spacing="4">
-                                                    <TextBlock Text="{Binding Emoji}" FontSize="15" FontFamily="Roboto" VerticalAlignment="Center" />
-                                                    <TextBlock Text="{Binding CountText}" IsVisible="{Binding ShowCount}" FontSize="12" VerticalAlignment="Center" Foreground="{Binding Ink}" />
-                                                </StackPanel>
+                                                <Panel>
+                                                    <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding ShowEmoji}">
+                                                        <TextBlock Text="{Binding Emoji}" FontSize="15" FontFamily="Roboto" VerticalAlignment="Center" />
+                                                        <TextBlock Text="{Binding CountText}" IsVisible="{Binding ShowCount}" FontSize="12" VerticalAlignment="Center" Foreground="{Binding Ink}" />
+                                                    </StackPanel>
+                                                    <Border Width="22" Height="22" CornerRadius="11" Background="#99C8C8C8" IsVisible="{Binding IsAdd}">
+                                                        <TextBlock Text="+" FontSize="17" FontWeight="Bold" Foreground="#E6333333" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-2,0,0" />
+                                                    </Border>
+                                                </Panel>
                                             </Border>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>

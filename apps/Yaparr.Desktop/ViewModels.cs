@@ -346,6 +346,7 @@ public sealed class ReactionChipVm : Observable
     public string Tooltip { get; }
     public bool IsAdd { get; private init; }
     public bool ShowCount => !IsAdd;
+    public bool ShowEmoji => !IsAdd;
     public string CountText => Count.ToString();
 }
 
