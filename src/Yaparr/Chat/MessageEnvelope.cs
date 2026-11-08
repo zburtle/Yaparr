@@ -86,11 +86,17 @@ public static class MessageEnvelope
     /// The text to send for putting <paramref name="emoji"/> on the message with key <paramref name="target"/> (<see cref="ChatMessage.Key"/>), or taking it off
     /// again. It is a message of its own that is not shown as one (see <see cref="ReactionEvent"/>); the words are only for versions that do not know it.
     /// </summary>
-    public static string WrapReaction(string target, string emoji, bool on)
+    public static string WrapReaction(string target, string emoji, bool on, byte[]? accountKey = null, byte[]? deviceCertificate = null)
     {
         if (!IsKey(target)) throw new ArgumentException("That is not the key of a message.", nameof(target));
         if (!EmojiData.TryNormalize(emoji, out var standard)) throw new ArgumentException("That is not an emoji that can be used as a reaction.", nameof(emoji));
-        var header = JsonSerializer.Serialize(new Header { X = new HeaderReaction { T = target.ToLowerInvariant(), E = standard, O = on ? null : 0 } }, Json);
+        var header = JsonSerializer.Serialize(new Header { X = new HeaderReaction
+        {
+            T = target.ToLowerInvariant(), E = standard, O = on ? null : 0,
+            // From a linked device: the proof of whose it is, so that every device can tell the reaction is the account's even if it has never met this one.
+            A = accountKey != null && deviceCertificate != null ? Convert.ToBase64String(accountKey) : null,
+            C = accountKey != null && deviceCertificate != null ? Convert.ToBase64String(deviceCertificate) : null,
+        } }, Json);
         return Marker + header + End + (on ? "reacted " : "took back ") + standard;
     }
 
@@ -150,7 +156,7 @@ public static class MessageEnvelope
 
     // A reaction from the header: a message key and an emoji of the set, or nothing.
     private static ReactionEvent? ReadReaction(HeaderReaction? x) =>
-        x?.T != null && IsKey(x.T) && EmojiData.TryNormalize(x.E, out var emoji) ? new ReactionEvent(x.T.ToLowerInvariant(), emoji, x.O != 0) : null;
+        x?.T != null && IsKey(x.T) && EmojiData.TryNormalize(x.E, out var emoji) ? new ReactionEvent(x.T.ToLowerInvariant(), emoji, x.O != 0, x.A is { Length: <= 200 } ? x.A : null, x.C is { Length: <= 400 } ? x.C : null) : null;
 
     // A message key (SignedMessage.KeyOf): 32 hexadecimal digits.
     internal static bool IsKey(string s) => s.Length == 32 && s.All(Uri.IsHexDigit);
@@ -178,6 +184,8 @@ public static class MessageEnvelope
         public string? T { get; set; }
         public string? E { get; set; }
         public int? O { get; set; }   // 0 when it is taken off
+        public string? A { get; set; }   // the account key of a linked device
+        public string? C { get; set; }   // the account's certificate for that device
     }
 
     private sealed class HeaderPreview

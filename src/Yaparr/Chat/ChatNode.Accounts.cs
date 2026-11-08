@@ -42,6 +42,33 @@ public sealed partial class ChatNode
         return true;
     }
 
+    /// <summary>The account key of this device, when it is a linked one (it then proves itself in what it sends, see <see cref="MessageEnvelope.WrapReaction"/>).</summary>
+    internal byte[]? LinkedDeviceKey => _identity.DeviceCertificate != null ? _identity.AccountPublicKey : null;
+
+    internal byte[]? LinkedDeviceCertificate => _identity.DeviceCertificate;
+
+    /// <summary>
+    /// Learns that a device belongs to a person from a message of the device that carries the person's certificate for it, so a reaction from a
+    /// linked device that is no longer (or was never) connected still counts as that person's.
+    /// </summary>
+    internal void LearnAccount(StoredMessage message, ReactionEvent reaction)
+    {
+        if (reaction.Account == null || reaction.Certificate == null) return;
+        try
+        {
+            var pub = Convert.FromBase64String(message.Pub);
+            var accountKey = Convert.FromBase64String(reaction.Account);
+            if (!PeerIdentity.VerifyDevice(accountKey, pub, Convert.FromBase64String(reaction.Certificate))) return;
+            var device = PeerId.FromPublicKey(pub);
+            var account = PeerId.FromPublicKey(accountKey);
+            if (device.Value != message.From || device == account) return;
+            if (_accounts.TryGetValue(device, out var known) && known == account) return;
+            _accounts[device] = account;
+            AccountLearned?.Invoke(device);
+        }
+        catch (FormatException) { }
+    }
+
     private void LearnAccount(PeerConnection conn)
     {
         if (conn.RemoteId is { } device && conn.RemoteAccount is { } account && account != device

@@ -350,7 +350,7 @@ public sealed class ChatRoom
     /// </summary>
     public Task<string> SendReactionAsync(string messageKey, string emoji, bool on, string? channelId = null)
     {
-        var id = _node.SendRoomMessage(this, MessageEnvelope.WrapReaction(messageKey, emoji, on), channelId);
+        var id = _node.SendRoomMessage(this, MessageEnvelope.WrapReaction(messageKey, emoji, on, _node.LinkedDeviceKey, _node.LinkedDeviceCertificate), channelId);
         ReactionsChanged?.Invoke(messageKey);
         return Task.FromResult(id);
     }

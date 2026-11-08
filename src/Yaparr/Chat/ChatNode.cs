@@ -1092,10 +1092,15 @@ public sealed partial class ChatNode : IDisposable
         room.History.Snapshot().Where(m => !MessageEnvelope.IsReactionText(m.Text) && !IsBlocked(new PeerId(m.From)) && !IsBannedIn(room, new PeerId(m.From)) && !IsMessageDeleted(room, m)).Select(m => ToChatMessage(room, m, catchUp: false)).ToList();
 
     /// <summary>The reactions on the messages of a room, as its history comes to now (people you blocked or the room banned do not count).</summary>
-    internal ReactionSet GetReactions(ChatRoom room) =>
-        ReactionTally.Build(room.History.Snapshot().Where(m => MessageEnvelope.IsReactionText(m.Text)).Select(m => (SignedMessage.Key(m), m.From, m.Ts, m.Text)),
+    internal ReactionSet GetReactions(ChatRoom room)
+    {
+        var reactions = room.History.Snapshot().Where(m => MessageEnvelope.IsReactionText(m.Text)).ToList();
+        foreach (var m in reactions)
+            if (MessageEnvelope.TryReadReaction(m.Text, out var reaction) && reaction.Account != null) LearnAccount(m, reaction);
+        return ReactionTally.Build(reactions.Select(m => (SignedMessage.Key(m), m.From, m.Ts, m.Text)),
             // Your own device is yours even when it is a linked one (its id is not the account's, and nothing says so until a certificate is seen).
             from => IsMyDevice(new PeerId(from)) ? AccountId : AccountOf(new PeerId(from)), account => IsBlocked(account) || IsBannedIn(room, account));
+    }
 
     private ChatMessage ToChatMessage(ChatRoom room, StoredMessage m, bool catchUp)
     {

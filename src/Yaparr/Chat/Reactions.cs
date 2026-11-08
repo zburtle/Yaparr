@@ -7,7 +7,9 @@ namespace Yaparr.Chat;
 /// so it is signed, passed on, kept in the history and handed to a device that was away like any message; it is not shown as one.
 /// </summary>
 /// <param name="Target">The <see cref="ChatMessage.Key"/> of the message it is on.</param>
-public sealed record ReactionEvent(string Target, string Emoji, bool On);
+/// <param name="Account">From a linked device: the account key it belongs to.</param>
+/// <param name="Certificate">From a linked device: the account's certificate for it, which proves that.</param>
+public sealed record ReactionEvent(string Target, string Emoji, bool On, string? Account = null, string? Certificate = null);
 
 /// <summary>One emoji on a message, and who put it there (accounts: a person with several devices counts once).</summary>
 public sealed record ReactionSummary(string Emoji, IReadOnlyList<PeerId> Accounts)
