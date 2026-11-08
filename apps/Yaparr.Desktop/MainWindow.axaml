@@ -290,6 +290,10 @@
     </Window.Styles>
 
     <Grid>
+    <!-- On Windows the name of the app sits in the middle of the top row (the title bar's own text is hidden by the code). It is drawn first, so anything
+         that grows across the row (the sync bar) is on top of it. -->
+    <TextBlock x:Name="TopBarTitle" Text="Yaparr" HorizontalAlignment="Center" VerticalAlignment="Top" Height="32" FontSize="12" Foreground="{DynamicResource Muted}"
+               TextAlignment="Center" Padding="0,8,0,0" IsHitTestVisible="False" IsVisible="False" />
     <DockPanel>
         <!-- On Windows the window's own title bar is gone and this row takes its place (the code sets that up): the icon and the menus at the left, and room
              at the right for the window's buttons. Elsewhere it is just the menu bar under the system title bar. -->
