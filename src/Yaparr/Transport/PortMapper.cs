@@ -85,7 +85,8 @@ public sealed class PortMapper : IDisposable
                 .Select(g => g.Address)
                 .FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork && !a.Equals(IPAddress.Any));
         }
-        catch (NetworkInformationException) { return null; }
+        // Android does not let an app read the gateways of an interface (PlatformNotSupportedException): then there is no mapping to ask the router for.
+        catch (Exception ex) when (ex is NetworkInformationException or PlatformNotSupportedException) { return null; }
     }
 
     private static IPAddress LocalAddressToward(IPAddress target)

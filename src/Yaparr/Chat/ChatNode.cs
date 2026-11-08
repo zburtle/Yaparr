@@ -550,11 +550,20 @@ public sealed partial class ChatNode : IDisposable
             _turn?.Dispose();
             _turn = null;
             string? vpn = _tunnel is { State: VpnState.Connected } ? $"VPN {_tunnel.Describe()}" : null;
+            _networkSetupError = null;
             if (traversal.PortMapping && _tunnel == null)
             {
-                _mapper = new PortMapper(_mux.LocalPort, log: _options.Log);
-                mapping = await _mapper.MapAsync(ct).ConfigureAwait(false);
-                if (mapping != null) _mux.AdvertisedPort = mapping.ExternalEndPoint.Port;
+                // The router not being asked (or not answering) must not stop finding out what the network is like.
+                try
+                {
+                    _mapper = new PortMapper(_mux.LocalPort, log: _options.Log);
+                    mapping = await _mapper.MapAsync(ct).ConfigureAwait(false);
+                    if (mapping != null) _mux.AdvertisedPort = mapping.ExternalEndPoint.Port;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _options.Log?.Invoke($"port mapping failed: {ex.Message}");
+                }
             }
 
             var nat = await NatProbe.RunAsync(_mux, traversal.StunServers, ct).ConfigureAwait(false);
@@ -574,6 +583,7 @@ public sealed partial class ChatNode : IDisposable
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            _networkSetupError = ex.Message;
             _options.Log?.Invoke($"network setup failed: {ex.Message}");
         }
     }

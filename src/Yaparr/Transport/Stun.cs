@@ -328,6 +328,6 @@ public static class NatProbe
                 .SelectMany(n => n.GetIPProperties().UnicastAddresses.Select(a => a.Address))
                 .ToList();
         }
-        catch (NetworkInformationException) { return new(); }
+        catch (Exception ex) when (ex is NetworkInformationException or PlatformNotSupportedException) { return new(); }
     }
 }

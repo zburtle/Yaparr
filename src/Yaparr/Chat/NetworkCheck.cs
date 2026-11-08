@@ -62,7 +62,24 @@ public sealed partial class ChatNode
 {
     private long _lastFoundAt;
 
+    // Why looking at the network failed the last time, when it did (the check then cannot say what the network is like).
+    private volatile string? _networkSetupError;
+
     private static string Capitalise(string text) => text.Length == 0 ? text : char.ToUpperInvariant(text[0]) + text[1..];
+
+    /// <summary>
+    /// What the check says when the probe of the network found nothing: that the internet cannot be reached only when no STUN server answered at all
+    /// (one answer is enough to know the address, so that is not it), and that the check itself failed when it did, which says nothing about the
+    /// internet. Null when there is nothing of the kind to say.
+    /// </summary>
+    internal static CheckItem? NoRepliesItem(NatReport nat, bool vpnUp, string? setupError)
+    {
+        if (nat.Type != NatType.Unknown || nat.PublicEndPoint != null || vpnUp) return null;
+        if (setupError != null)
+            return new CheckItem(CheckLevel.Warning, "Could not look at the network", "Looking at the network failed here: " + setupError + " That does not mean the internet cannot be reached.");
+        return new CheckItem(CheckLevel.Problem, "Cannot reach the internet",
+            "No reply from the STUN servers. Check that you are online and that your firewall allows Yaparr to use UDP.");
+    }
 
     /// <summary>How Yaparr currently reaches one person.</summary>
     public PeerLink GetLink(PeerId peer)
@@ -97,10 +114,9 @@ public sealed partial class ChatNode
         {
             items.Add(new(CheckLevel.Info, "Network checks are off", "Port mapping and NAT detection are disabled in network.json."));
         }
-        else if (status.Nat.Type == NatType.Unknown && !vpnUp)
+        else if (NoRepliesItem(status.Nat, vpnUp, _networkSetupError) is { } none)
         {
-            items.Add(new(CheckLevel.Problem, "Cannot reach the internet",
-                "No reply from the STUN servers. Check that you are online and that your firewall allows Yaparr to use UDP."));
+            items.Add(none);
         }
         else
         {

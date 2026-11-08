@@ -9,6 +9,7 @@ Peers behind home routers have to punch through their NATs. Yaparr does this in 
 2. **STUN.** The node asks public STUN servers what address and port they see, from the same socket the DHT uses. If
    two servers see different ports the NAT is symmetric, and direct connections to strangers are unlikely. The result
    is shown in the status bar.
+   One answer is enough to know your public address, so the connection check only says "Cannot reach the internet" when no server answered at all. Some systems refuse to say what the router or the interfaces are (Android raises `PlatformNotSupportedException` for the gateway of an interface); that only means no port mapping is tried, it does not stop this step, and when looking at the network fails for another reason the check says "Could not look at the network" with the reason rather than blaming the internet.
 3. **TURN (your own relay, off until you set one up).** Yaparr ships with no relay and no relay password. Set up a TURN server of your own (any will do; [coturn](https://github.com/coturn/coturn) is a common one), or import one that someone shared with you, under **Settings > Network > TURN relay** in the Desktop app (or fill in the `turn` block of `network.json` and set `"enabled": true`). When enabled, if the NAT is symmetric (or `always` is set), the node allocates a relay
    address, announces that address to the DHT through the relay, and mirrors handshake packets through it. Data
    switches to the relay only for peers that cannot be reached directly. A TURN server is the one piece of
