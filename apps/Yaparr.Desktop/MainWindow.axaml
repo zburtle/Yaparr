@@ -290,14 +290,12 @@
     </Window.Styles>
 
     <Grid>
-    <!-- On Windows the name of the app sits in the middle of the top row (the title bar's own text is hidden by the code). It is drawn first, so anything
-         that grows across the row (the sync bar) is on top of it. -->
+    <!-- On Windows the name of the app sits in the middle of the top row (the window itself has no title there). -->
     <TextBlock x:Name="TopBarTitle" Text="Yaparr" HorizontalAlignment="Center" VerticalAlignment="Top" Height="32" FontSize="12" Foreground="{DynamicResource Muted}"
                TextAlignment="Center" Padding="0,8,0,0" IsHitTestVisible="False" IsVisible="False" />
     <DockPanel>
-        <!-- On Windows the window's own title bar is gone and this row takes its place (the code sets that up): the icon and the menus at the left, and room
-             at the right for the window's buttons. Elsewhere it is just the menu bar under the system title bar. -->
-        <Grid x:Name="TopBar" DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,*">
+        <!-- On Windows the window's own title bar is gone and this row takes its place (the code sets that up): the icon and the menus at the left. Elsewhere it is just the menu bar under the system title bar. -->
+        <Grid x:Name="TopBar" DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto">
         <Image x:Name="TopBarIcon" Grid.Column="0" Width="16" Height="16" Margin="12,3,4,0" VerticalAlignment="Center" IsVisible="False"
                Source="avares://Yaparr.Desktop/Assets/yaparr.png" />
         <Menu Grid.Column="1" Margin="4,2,4,0">
@@ -318,16 +316,6 @@
                 <MenuItem Header="_About Yaparr" Click="About_Click" />
             </MenuItem>
         </Menu>
-
-        <!-- Shown while rooms are getting going, or while a linked computer looks for the device it was linked from. It sits at the right
-             end of the menu bar, so that it appearing and going does not push everything below it down and up. -->
-        <Border x:Name="SyncBar" Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="8,2,12,0" Padding="10,3" CornerRadius="6"
-                Background="{DynamicResource Surface}" IsVisible="False">
-            <StackPanel Orientation="Horizontal" Spacing="10">
-                <TextBlock x:Name="SyncBarText" FontSize="12" Foreground="{DynamicResource Accent}" VerticalAlignment="Center" MaxWidth="420" TextTrimming="CharacterEllipsis" />
-                <ProgressBar x:Name="SyncProgress" Width="72" Height="3" MinHeight="3" IsIndeterminate="True" Maximum="1" VerticalAlignment="Center" />
-            </StackPanel>
-        </Border>
         </Grid>
 
         <!-- Shown while the connection is lost and Yaparr is trying again. -->

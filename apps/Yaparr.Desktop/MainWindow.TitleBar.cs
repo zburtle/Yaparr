@@ -5,9 +5,6 @@ namespace Yaparr.Desktop;
 
 public partial class MainWindow
 {
-    // Windows draws its full screen, minimise, maximise and close buttons over the top right of the window; this is the room the top row leaves for them.
-    private const double CaptionButtonsWidth = 190;
-
     private const double TitleBarHeight = 32;
 
     /// <summary>True where the menu row is the title bar (Windows), and the app's name is drawn in the middle of it instead of as the window's title.</summary>
@@ -25,7 +22,6 @@ public partial class MainWindow
         ExtendClientAreaToDecorationsHint = true;
         ExtendClientAreaTitleBarHeightHint = TitleBarHeight;
         TopBar.Height = TitleBarHeight;
-        TopBar.Margin = new Thickness(0, 0, CaptionButtonsWidth, 0);
         TopBarIcon.IsVisible = true;
         TopBarTitle.IsVisible = true;
         Title = "";
