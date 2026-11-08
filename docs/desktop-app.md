@@ -21,7 +21,7 @@ Type **@** at the start of a word in a room to choose someone from the people of
 
 ## Reactions
 
-Point at a message and click the small smiley at its corner, or right-click it and choose **React…**: a picker opens with the thirteen quick emoji (👍 💯 ❤️ 😂 😭 🔥 🙏 😍 🎉 👀 🤔 😮 👎), a search box (type a name such as "party" or "thumbs") and the rest of the emoji by group. The emoji then shows under the message with how many put it there; yours has an outline. Click one under a message to add yours or take it back; point at it to see who. The smiley next to them adds another. Reactions work in rooms and direct chats and are kept with the history. How it works: [Rooms and messages](rooms-and-messages.md#reactions).
+Point at a message and click the small smiley at its corner, or right-click it and choose **React…**: a picker opens with the thirteen quick emoji (👍 💯 ❤️ 😂 😭 🔥 🙏 😍 🎉 👀 🤔 😮 👎), a search box (type a name such as "party" or "thumbs") and the rest of the emoji by group. The emoji then shows under the message with how many put it there; yours has an outline. Click one under a message to add yours (the count goes up by one) or, if it is yours, to take it back (it goes down by one); point at it to see who. The small grey circle with a plus next to them adds another emoji. Reactions work in rooms and direct chats and are kept with the history. How it works: [Rooms and messages](rooms-and-messages.md#reactions).
 
 ## Link previews
 
