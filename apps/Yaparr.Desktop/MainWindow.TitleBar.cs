@@ -7,6 +7,9 @@ public partial class MainWindow
 {
     private const double TitleBarHeight = 32;
 
+    // Windows draws its full screen, minimise, maximise and close buttons over the top right of the window; this is the room they take.
+    private const double CaptionButtonsWidth = 190;
+
     /// <summary>True where the menu row is the title bar (Windows), and the app's name is drawn in the middle of it instead of as the window's title.</summary>
     private bool MenuRowIsTitleBar { get; set; }
 
@@ -25,5 +28,6 @@ public partial class MainWindow
         TopBarIcon.IsVisible = true;
         TopBarTitle.IsVisible = true;
         Title = "";
+        SyncIcon.Margin = new Thickness(0, 0, CaptionButtonsWidth + 4, 0);
     }
 }

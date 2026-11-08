@@ -277,6 +277,14 @@
         <Style Selector="StackPanel.person.offline, Border.avatar.offline">
             <Setter Property="Opacity" Value="0.55" />
         </Style>
+        <Style Selector="Path.spinner">
+            <Style.Animations>
+                <Animation Duration="0:0:1" IterationCount="Infinite">
+                    <KeyFrame Cue="0%"><Setter Property="RotateTransform.Angle" Value="0" /></KeyFrame>
+                    <KeyFrame Cue="100%"><Setter Property="RotateTransform.Angle" Value="360" /></KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
         <Style Selector="TextBlock.state">
             <Setter Property="FontSize" Value="12" />
             <Setter Property="Foreground" Value="{DynamicResource Muted}" />
@@ -822,6 +830,12 @@
             </Border>
         </Grid>
     </DockPanel>
+    <!-- A small turning icon while rooms are getting going; it sits left of the window's buttons on Windows (the code places it). -->
+    <Border x:Name="SyncIcon" HorizontalAlignment="Right" VerticalAlignment="Top" Width="28" Height="32" Margin="0,0,12,0" Background="Transparent" IsVisible="False"
+            ToolTip.Tip="Syncing">
+        <Path Classes="spinner" Data="M8,1 A7,7 0 1 1 1,8" Stroke="{DynamicResource Accent}" StrokeThickness="2" StrokeLineCap="Round" Width="16" Height="16"
+              HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransform="rotate(0deg)" />
+    </Border>
 
     <!-- The settings: sections on the left, the section's controls on the right, over the window. Escape, the cross or a click outside closes it. -->
     <Border x:Name="SettingsOverlay" IsVisible="False" Background="#D8000000" Padding="24" Focusable="True"
