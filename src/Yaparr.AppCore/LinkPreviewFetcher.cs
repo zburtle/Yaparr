@@ -16,20 +16,23 @@ internal sealed partial class LinkPreviewFetcher
     public const int MaxPageBytes = 512 * 1024;
     public const int MaxPictureBytes = 2 * 1024 * 1024;
 
+    // Asked first, openly: sites that serve their tags to link previews (chat apps, social networks) let this through, and some turn away a program
+    // that only pretends to be a browser. If the site refuses it, the page is asked for again like a browser, since it is a page the person just linked.
+    private const string PreviewUserAgent = "Mozilla/5.0 (compatible; Yaparr link preview; +https://yaparr.com)";
     private const string BrowserUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
 
     private readonly HttpClient _http;
+    private readonly bool _chooseAgent;
+
+    /// <summary>Told why a card could not be made (for the log).</summary>
+    public Action<string>? Log { get; set; }
 
     /// <param name="http">For tests; the app uses a client that refuses addresses inside the local network (<see cref="PublicWeb"/>).</param>
     public LinkPreviewFetcher(HttpClient? http = null)
     {
         _http = http ?? new HttpClient(PublicWeb.CreateHandler()) { Timeout = TimeSpan.FromSeconds(10) };
-        if (http == null)
-        {
-            // Sent like a browser: many news sites turn away anything that says it is a program, even for one page the person just linked.
-            _http.DefaultRequestHeaders.UserAgent.ParseAdd(BrowserUserAgent);
-            _http.DefaultRequestHeaders.AcceptLanguage.ParseAdd("en-US,en;q=0.9");
-        }
+        _chooseAgent = http == null;
+        if (http == null) _http.DefaultRequestHeaders.AcceptLanguage.ParseAdd("en-US,en;q=0.9");
     }
 
     /// <summary>The card for a link, or null when there is none to make (the page has nothing to show, is not a page, or could not be reached in time).</summary>
@@ -40,17 +43,19 @@ internal sealed partial class LinkPreviewFetcher
         if (uri.Host.EndsWith("yaparr.com", StringComparison.OrdinalIgnoreCase)) return null;
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-            request.Headers.Accept.ParseAdd("text/html,application/xhtml+xml;q=0.9,*/*;q=0.1");
-            using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode) return null;
-            var type = response.Content.Headers.ContentType?.MediaType ?? "";
-            if (!type.Equals("text/html", StringComparison.OrdinalIgnoreCase) && !type.Equals("application/xhtml+xml", StringComparison.OrdinalIgnoreCase)) return null;
-
-            var html = await ReadPageAsync(response, ct).ConfigureAwait(false);
-            var final = response.RequestMessage?.RequestUri ?? uri;
-            var found = Read(html, final);
-            if (found.Title.Length == 0 && found.Description.Length == 0) return null;
+            Page? found = null;
+            var final = uri;
+            foreach (var agent in _chooseAgent ? new[] { PreviewUserAgent, BrowserUserAgent } : new string?[] { null })
+            {
+                var got = await GetPageAsync(uri, agent, ct).ConfigureAwait(false);
+                if (got == null) continue;
+                final = got.Value.Final;
+                found = Read(got.Value.Html, final);
+                if (found.Title.Length > 0 || found.Description.Length > 0) break;
+                Log?.Invoke($"the page {uri.Host} had no title or description for a preview{(agent == null ? "" : $" (asked as {(agent == PreviewUserAgent ? "a link preview" : "a browser")})")}");
+                found = null;
+            }
+            if (found == null) return null;
 
             byte[]? thumbnail = null;
             if (found.Image != null) thumbnail = await FetchPictureAsync(found.Image, ct).ConfigureAwait(false);
@@ -59,8 +64,27 @@ internal sealed partial class LinkPreviewFetcher
         catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidOperationException
                                        or TaskCanceledException or OperationCanceledException)
         {
+            Log?.Invoke($"could not get a preview of {uri.Host}: {(ex is OperationCanceledException ? "it took too long" : ex.Message)}");
             return null;
         }
+    }
+
+    // One request for the page as the given agent (null: as the client is set up). Null when the site refused, or it is not a web page.
+    private async Task<(string Html, Uri Final)?> GetPageAsync(Uri uri, string? agent, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+        request.Headers.Accept.ParseAdd("text/html,application/xhtml+xml;q=0.9,*/*;q=0.1");
+        if (agent != null) request.Headers.UserAgent.ParseAdd(agent);
+        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            Log?.Invoke($"{uri.Host} answered {(int)response.StatusCode} to the request for a preview{(agent == null ? "" : $" (asked as {(agent == PreviewUserAgent ? "a link preview" : "a browser")})")}");
+            return null;
+        }
+        var type = response.Content.Headers.ContentType?.MediaType ?? "";
+        if (!type.Equals("text/html", StringComparison.OrdinalIgnoreCase) && !type.Equals("application/xhtml+xml", StringComparison.OrdinalIgnoreCase)) return null;
+        var html = await ReadPageAsync(response, ct).ConfigureAwait(false);
+        return (html, response.RequestMessage?.RequestUri ?? uri);
     }
 
     private static async Task<string> ReadPageAsync(HttpResponseMessage response, CancellationToken ct)
@@ -70,7 +94,13 @@ internal sealed partial class LinkPreviewFetcher
         var buffer = new byte[16 * 1024];
         int n;
         while (ms.Length < MaxPageBytes && (n = await stream.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+        {
+            int before = (int)ms.Length;
             ms.Write(buffer, 0, (int)Math.Min(n, MaxPageBytes - ms.Length));
+            // The tags are in the head: the rest of a long page is not read.
+            var fresh = ms.GetBuffer().AsSpan(Math.Max(0, before - 7), (int)ms.Length - Math.Max(0, before - 7));
+            if (fresh.IndexOf("</head>"u8) >= 0 || fresh.IndexOf("</HEAD>"u8) >= 0) break;
+        }
         var encoding = Encoding.UTF8;
         try { if (response.Content.Headers.ContentType?.CharSet is { Length: > 0 } charset) encoding = Encoding.GetEncoding(charset.Trim('"')); }
         catch (ArgumentException) { }
