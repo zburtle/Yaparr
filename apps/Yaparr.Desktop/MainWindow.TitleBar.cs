@@ -37,12 +37,29 @@ public partial class MainWindow
     private void HideDrawnTitle()
     {
         if (!_menuRowIsTitleBar) return;
-        Dispatcher.UIThread.Post(() =>
+        // The title bar is built after the window opens (and may be rebuilt), so look a few times rather than once.
+        int tries = 0;
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+        timer.Tick += (_, _) =>
         {
-            var title = Title;
-            foreach (var text in this.GetVisualDescendants().OfType<TextBlock>())
-                if (text != TopBarTitle && text.Text == title && !IsInsideContent(text)) text.IsVisible = false;
-        }, DispatcherPriority.Loaded);
+            tries++;
+            bool found = HideTitleText();
+            if (tries >= 20 || (found && tries >= 4))
+            {
+                timer.Stop();
+                if (!found) _log.Write("title bar: the drawn title was not found among " + string.Join(" | ", this.GetVisualDescendants().OfType<TextBlock>().Select(t => t.Text).Where(t => !string.IsNullOrEmpty(t)).Take(12)));
+            }
+        };
+        timer.Start();
+    }
+
+    private bool HideTitleText()
+    {
+        var title = Title;
+        bool found = false;
+        foreach (var text in this.GetVisualDescendants().OfType<TextBlock>())
+            if (text != TopBarTitle && text.Text == title && !IsInsideContent(text)) { text.IsVisible = false; found = true; }
+        return found;
     }
 
     // Anything the window's own content shows, as opposed to what the title bar draws around it.
