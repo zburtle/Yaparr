@@ -47,7 +47,7 @@ public partial class MainWindow
             if (tries >= 20 || (found && tries >= 4))
             {
                 timer.Stop();
-                if (!found) _log.Write("title bar: the drawn title was not found among " + string.Join(" | ", this.GetVisualDescendants().OfType<TextBlock>().Select(t => t.Text).Where(t => !string.IsNullOrEmpty(t)).Take(12)));
+                if (!found) _log.Write("title bar: the drawn title was not found among " + string.Join(" | ", this.GetVisualDescendants().Select(TextOf).Where(t => !string.IsNullOrEmpty(t)).Take(12)));
             }
         };
         timer.Start();
@@ -55,12 +55,24 @@ public partial class MainWindow
 
     private bool HideTitleText()
     {
-        var title = Title;
         bool found = false;
-        foreach (var text in this.GetVisualDescendants().OfType<TextBlock>())
-            if (text != TopBarTitle && text.Text == title && !IsInsideContent(text)) { text.IsVisible = false; found = true; }
+        foreach (var visual in this.GetVisualDescendants())
+            if (visual != TopBarTitle && !IsInsideContent(visual) && TextOf(visual) is { } text && text.StartsWith("Yaparr", StringComparison.Ordinal))
+            {
+                visual.IsVisible = false;
+                found = true;
+            }
         return found;
     }
+
+    // The words a control shows, if it is one that shows words.
+    private static string? TextOf(Visual visual) => visual switch
+    {
+        TextBlock block => block.Text,
+        Avalonia.Controls.Presenters.TextPresenter presenter => presenter.Text,
+        ContentControl { Content: string words } => words,
+        _ => null,
+    };
 
     // Anything the window's own content shows, as opposed to what the title bar draws around it.
     private bool IsInsideContent(Visual visual) => TopBar.IsVisualAncestorOf(visual) || (Content is Visual content && content.IsVisualAncestorOf(visual));
