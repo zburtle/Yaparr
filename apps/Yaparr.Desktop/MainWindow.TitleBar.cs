@@ -44,6 +44,7 @@ public partial class MainWindow
         {
             tries++;
             bool found = HideTitleText();
+            if (tries == 8) DescribeTopStrip();
             if (tries >= 20 || (found && tries >= 4))
             {
                 timer.Stop();
@@ -51,6 +52,19 @@ public partial class MainWindow
             }
         };
         timer.Start();
+    }
+
+    // For finding out what draws the title: everything in the top strip of the window, by type, and how the window's decorations are set.
+    private void DescribeTopStrip()
+    {
+        _log.Write($"title bar: extended={IsExtendedIntoWindowDecorations} decorations={WindowDecorations} margin={WindowDecorationMargin} title='{Title}'");
+        foreach (var visual in this.GetVisualDescendants())
+        {
+            if (visual is not Control control || control.Bounds.Height > 40 || control.Bounds.Width <= 0) continue;
+            var top = control.TranslatePoint(new Point(0, 0), this);
+            if (top is not { Y: < 34 }) continue;
+            _log.Write($"title bar: {visual.GetType().FullName} at {top.Value.X:0},{top.Value.Y:0} size {control.Bounds.Width:0}x{control.Bounds.Height:0} visible={control.IsVisible} text='{TextOf(visual)}' content={IsInsideContent(visual)}");
+        }
     }
 
     private bool HideTitleText()
