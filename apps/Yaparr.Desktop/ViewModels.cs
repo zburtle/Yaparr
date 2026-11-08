@@ -448,6 +448,12 @@ public sealed class ConversationVm : Observable
     // ---- voice channel ----
 
     public ObservableCollection<VoiceMemberVm> VoiceMembers { get; } = new();
+
+    /// <summary>The people in voice are listed under their channel in the room's list of channels; when that list is not showing, in a row above the messages.</summary>
+    public bool ShowVoiceMembersInRow => HasVoiceMembers && _showChannels && !_channelsOpen;
+
+    /// <summary>A room without channels has one voice channel, listed in the room list only while someone is in it.</summary>
+    public bool ShowLegacyVoice => IsRoom && !_showChannels;
     public bool HasVoiceMembers => VoiceMembers.Count > 0;
     // Rooms with channels join voice by clicking a voice channel; the button is only for older rooms that have just the one.
     private string _pushToTalkHint = "";
@@ -522,10 +528,10 @@ public sealed class ConversationVm : Observable
     public string DeafenTip => _deafened ? "Undeafen" : "Deafen";
     public string MuteText => _muted ? "🔇 Unmute" : "🎤 Mute";
     public string DeafenText => _deafened ? "🎧 Undeafen" : "🎧 Deafen";
-    public void VoiceMembersChanged() { Raise(nameof(HasVoiceMembers)); Raise(nameof(ShowVoiceRow)); }
+    public void VoiceMembersChanged() { Raise(nameof(HasVoiceMembers)); Raise(nameof(ShowVoiceMembersInRow)); Raise(nameof(ShowVoiceRow)); }
 
     /// <summary>The row of people in voice and shared screens, shown only when there is something in it.</summary>
-    public bool ShowVoiceRow => IsRoom && (HasVoiceMembers || HasShares);
+    public bool ShowVoiceRow => IsRoom && (ShowVoiceMembersInRow || HasShares);
 
     private string _membersText = "";
     public string MembersText
@@ -651,7 +657,7 @@ public sealed class ConversationVm : Observable
     public bool ChannelsOpen
     {
         get => _channelsOpen;
-        set { if (_channelsOpen == value) return; _channelsOpen = value; Raise(); Raise(nameof(ShowChannelList)); Raise(nameof(OpenGlyph)); }
+        set { if (_channelsOpen == value) return; _channelsOpen = value; Raise(); Raise(nameof(ShowChannelList)); Raise(nameof(OpenGlyph)); Raise(nameof(ShowVoiceMembersInRow)); Raise(nameof(ShowVoiceRow)); }
     }
 
     public bool ShowChannelList => _showChannels && _channelsOpen;
@@ -661,7 +667,7 @@ public sealed class ConversationVm : Observable
     public bool ShowChannels
     {
         get => _showChannels;
-        set { if (_showChannels == value) return; _showChannels = value; Raise(); Raise(nameof(CanJoinVoice)); Raise(nameof(ShowChannelList)); }
+        set { if (_showChannels == value) return; _showChannels = value; Raise(); Raise(nameof(CanJoinVoice)); Raise(nameof(ShowChannelList)); Raise(nameof(ShowLegacyVoice)); Raise(nameof(ShowVoiceMembersInRow)); Raise(nameof(ShowVoiceRow)); }
     }
 
     public bool CanManageChannels
@@ -929,7 +935,13 @@ public sealed class ChannelVm : Observable
     public ChannelVm(ChannelInfo info)
     {
         Id = info.Id; _name = info.Name; Kind = info.Kind; IsDefault = info.IsDefault;
+        Members.CollectionChanged += (_, _) => Raise(nameof(HasMembers));
     }
+
+    public bool HasMembers => Members.Count > 0;
+
+    /// <summary>Who is in a voice channel, listed under it.</summary>
+    public ObservableCollection<VoiceMemberVm> Members { get; } = new();
 
     public string Id { get; }
     public ChannelKind Kind { get; }

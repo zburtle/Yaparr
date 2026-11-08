@@ -4,7 +4,43 @@
         x:Class="Yaparr.Desktop.MainWindow"
         Title="Yaparr" Icon="avares://Yaparr.Desktop/Assets/yaparr.png" Width="1080" Height="680" MinWidth="800" MinHeight="440"
         Background="{DynamicResource AppBg}">
+    <Window.Resources>
+<DataTemplate x:Key="VoiceMemberRow" x:DataType="local:VoiceMemberVm">
+                                            <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,14,4">
+                                                <Border Width="28" Height="28" CornerRadius="14" Background="{Binding Avatar}"
+                                                        BorderBrush="{Binding Ring}" BorderThickness="3">
+                                                    <TextBlock Text="{Binding Initial}" Foreground="White" FontSize="12" FontWeight="SemiBold"
+                                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                </Border>
+                                                <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                                                <TextBlock Text="{Binding Status}" Classes="muted small" VerticalAlignment="Center" />
+                                                <TextBlock Text="{Binding Where}" Classes="muted small where" VerticalAlignment="Center" />
+                                                <Button Content="🔊" Classes="ghost" IsVisible="{Binding CanSetVolume}" Padding="4,0" FontSize="11"
+                                                        VerticalAlignment="Center" ToolTip.Tip="{Binding VolumeText, StringFormat='Volume {0}'}">
+                                                    <Button.Flyout>
+                                                        <Flyout Placement="BottomEdgeAlignedLeft">
+                                                            <StackPanel Width="220" Spacing="6">
+                                                                <TextBlock Classes="label" Text="VOLUME" />
+                                                                <Slider Minimum="0" Maximum="200" SmallChange="5" LargeChange="20" TickFrequency="50" TickPlacement="BottomRight"
+                                                                        Value="{Binding Volume, Mode=TwoWay}" />
+                                                                <Grid ColumnDefinitions="*,Auto">
+                                                                    <TextBlock Text="{Binding VolumeText}" VerticalAlignment="Center" />
+                                                                    <Button Grid.Column="1" Content="Reset" Click="ResetVolume_Click" />
+                                                                </Grid>
+                                                            </StackPanel>
+                                                        </Flyout>
+                                                    </Button.Flyout>
+                                                </Button>
+                                                <Button Content="{Binding SoundboardGlyph}" IsVisible="{Binding CanMuteSoundboard}" Click="SoundboardMute_Click"
+                                                        ToolTip.Tip="{Binding SoundboardTip}" Classes="ghost" Padding="4,0" FontSize="11" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </DataTemplate>
+    </Window.Resources>
     <Window.Styles>
+        <!-- Under its voice channel a person does not need the channel named again. -->
+        <Style Selector="ItemsControl.undervoice TextBlock.where">
+            <Setter Property="IsVisible" Value="False" />
+        </Style>
         <!-- Expandable headers: a flat toggle with a chevron that turns when open. -->
         <Style Selector="ToggleButton.expander">
             <Setter Property="Background" Value="Transparent" />
@@ -348,12 +384,34 @@
                                         <ItemsControl ItemsSource="{Binding VoiceChannels}">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate x:DataType="local:ChannelVm">
-                                                    <Button Content="{Binding Label}" Classes="ghost" Classes.primary="{Binding Highlight}" HorizontalAlignment="Stretch" BorderThickness="0"
-                                                            HorizontalContentAlignment="Left" Padding="8,3" Click="Channel_Click" ContextRequested="Channel_ContextRequested" />
+                                                    <StackPanel>
+                                                        <Button Content="{Binding Label}" Classes="ghost" Classes.primary="{Binding Highlight}" HorizontalAlignment="Stretch" BorderThickness="0"
+                                                                HorizontalContentAlignment="Left" Padding="8,3" Click="Channel_Click" ContextRequested="Channel_ContextRequested" />
+                                                        <ItemsControl Classes="undervoice" ItemsSource="{Binding Members}" IsVisible="{Binding HasMembers}" Margin="22,2,0,2">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <StaticResource ResourceKey="VoiceMemberRow" />
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </StackPanel>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
                                         </ItemsControl>
                                     </StackPanel>
+                                    <!-- A room without channels has only its one voice channel: it gets a line only while someone is in it. -->
+                                    <ItemsControl ItemsSource="{Binding VoiceChannels}" IsVisible="{Binding ShowLegacyVoice}" Margin="48,6,0,2">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="local:ChannelVm">
+                                                <StackPanel IsVisible="{Binding HasMembers}">
+                                                    <TextBlock Text="{Binding Label}" Classes="muted" Margin="8,3" />
+                                                    <ItemsControl Classes="undervoice" ItemsSource="{Binding Members}" Margin="22,2,0,2">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <StaticResource ResourceKey="VoiceMemberRow" />
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
                                 </StackPanel>
                             </DataTemplate>
                     </DockPanel.Resources>
@@ -497,41 +555,12 @@
                         </Border>
                         <Border x:Name="VoicePanel" x:DataType="local:ConversationVm" IsVisible="{Binding ShowVoiceRow}" Margin="14,8,14,0">
                             <Grid ColumnDefinitions="*,Auto">
-                                <ItemsControl ItemsSource="{Binding VoiceMembers}" IsVisible="{Binding HasVoiceMembers}" VerticalAlignment="Center">
+                                <ItemsControl ItemsSource="{Binding VoiceMembers}" IsVisible="{Binding ShowVoiceMembersInRow}" VerticalAlignment="Center">
                                     <ItemsControl.ItemsPanel>
                                         <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
                                     </ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="local:VoiceMemberVm">
-                                            <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,14,4">
-                                                <Border Width="28" Height="28" CornerRadius="14" Background="{Binding Avatar}"
-                                                        BorderBrush="{Binding Ring}" BorderThickness="3">
-                                                    <TextBlock Text="{Binding Initial}" Foreground="White" FontSize="12" FontWeight="SemiBold"
-                                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                </Border>
-                                                <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
-                                                <TextBlock Text="{Binding Status}" Classes="muted small" VerticalAlignment="Center" />
-                                                <TextBlock Text="{Binding Where}" Classes="muted small" VerticalAlignment="Center" />
-                                                <Button Content="🔊" Classes="ghost" IsVisible="{Binding CanSetVolume}" Padding="4,0" FontSize="11"
-                                                        VerticalAlignment="Center" ToolTip.Tip="{Binding VolumeText, StringFormat='Volume {0}'}">
-                                                    <Button.Flyout>
-                                                        <Flyout Placement="BottomEdgeAlignedLeft">
-                                                            <StackPanel Width="220" Spacing="6">
-                                                                <TextBlock Classes="label" Text="VOLUME" />
-                                                                <Slider Minimum="0" Maximum="200" SmallChange="5" LargeChange="20" TickFrequency="50" TickPlacement="BottomRight"
-                                                                        Value="{Binding Volume, Mode=TwoWay}" />
-                                                                <Grid ColumnDefinitions="*,Auto">
-                                                                    <TextBlock Text="{Binding VolumeText}" VerticalAlignment="Center" />
-                                                                    <Button Grid.Column="1" Content="Reset" Click="ResetVolume_Click" />
-                                                                </Grid>
-                                                            </StackPanel>
-                                                        </Flyout>
-                                                    </Button.Flyout>
-                                                </Button>
-                                                <Button Content="{Binding SoundboardGlyph}" IsVisible="{Binding CanMuteSoundboard}" Click="SoundboardMute_Click"
-                                                        ToolTip.Tip="{Binding SoundboardTip}" Classes="ghost" Padding="4,0" FontSize="11" VerticalAlignment="Center" />
-                                            </StackPanel>
-                                        </DataTemplate>
+                                        <StaticResource ResourceKey="VoiceMemberRow" />
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
                                 <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
