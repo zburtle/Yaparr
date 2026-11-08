@@ -39,8 +39,9 @@ public partial class MainWindow
     {
         Title = $"Yaparr — {name}";
         NameText.Text = name;
-        ProfileInitial.Text = Avatars.Initial(name);
-        ProfileAvatar.Background = Avatars.BrushFor(name);
+        var picture = _node == null ? null : AvatarPictures.For(_node.AccountId.Value);
+        ProfileInitial.Text = picture != null ? "" : Avatars.Initial(name);
+        ProfileAvatar.Background = picture ?? Avatars.BrushFor(name);
     }
 
     private void OnPeerRenamed(Yaparr.Chat.PeerInfo peer)

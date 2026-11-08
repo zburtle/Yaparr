@@ -97,4 +97,30 @@ internal static class ImageTools
         }
         return null;
     }
+
+    /// <summary>
+    /// A profile picture from any picture file: the middle square, shrunk to fit <see cref="ChatNode.MaxAvatarBytes"/> (128, then 96, then 64 pixels), as a JPEG.
+    /// Throws <see cref="ArgumentException"/> when the file is not a picture.
+    /// </summary>
+    public static byte[] Avatar(byte[] input)
+    {
+        if (input.Length > 40 * 1024 * 1024 || !ImageSniffer.TryRead(input, out _)) throw new ArgumentException("That file is not a PNG, JPEG, GIF or WebP picture.");
+        using var source = SKBitmap.Decode(input) ?? throw new ArgumentException("That picture could not be read.");
+        int side = Math.Min(source.Width, source.Height);
+        var crop = new SKRectI((source.Width - side) / 2, (source.Height - side) / 2, (source.Width - side) / 2 + side, (source.Height - side) / 2 + side);
+        foreach (int size in new[] { 128, 96, 64 })
+        {
+            using var surface = SKSurface.Create(new SKImageInfo(size, size, SKColorType.Rgba8888, SKAlphaType.Premul));
+            surface.Canvas.Clear(SKColors.White);
+            using var image = SKImage.FromBitmap(source);
+            surface.Canvas.DrawImage(image, crop, new SKRect(0, 0, size, size), new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear));
+            using var small = surface.Snapshot();
+            foreach (int quality in new[] { 85, 70, 50 })
+            {
+                using var data = small.Encode(SKEncodedImageFormat.Jpeg, quality);
+                if (data.Size <= ChatNode.MaxAvatarBytes) return data.ToArray();
+            }
+        }
+        throw new ArgumentException("That picture could not be made small enough.");
+    }
 }

@@ -182,6 +182,7 @@ public partial class MainView : UserControl
         On<System.Collections.Specialized.NotifyCollectionChangedEventHandler>(h => session.Chats.CollectionChanged += h, h => session.Chats.CollectionChanged -= h,
             (_, _) => EmptyHint.IsVisible = session.Started && session.Chats.Count == 0);
         On<Action<string>>(h => session.Notice += h, h => session.Notice -= h, text => ListStatus.Text = text);
+        On<Action<PeerId>>(h => session.AvatarChanged += h, h => session.AvatarChanged -= h, _ => ShowMyPicture());
         On<Action<Chat>>(h => session.SoundsChanged += h, h => session.SoundsChanged -= h, c => { if (SoundPanel.IsVisible && c == _current) ShowSounds(); });
         On<Action<Chat>>(h => session.GifsChanged += h, h => session.GifsChanged -= h, async c => { if (ShelfPanel.IsVisible && _shelfShowsRoom && c == _current) await FillShelfAsync(); });
         On<Action<string>>(h => session.ConnectionChanged += h, h => session.ConnectionChanged -= h, text => ListStatus.Text = text);
@@ -419,6 +420,7 @@ public partial class MainView : UserControl
         _loadingSettings = true;
         SettingsName.Text = _settings.DisplayName ?? "";
         SettingsNote.Text = "";
+        ShowMyPicture();
         AlwaysOnCheck.IsChecked = _settings.VoiceAlwaysOn;
         SensitivitySlider.Value = _settings.VoiceSensitivity;
         VolumeSlider.Value = _settings.VoiceOutputVolume;
@@ -449,6 +451,37 @@ public partial class MainView : UserControl
     {
         _data.SaveSettings(_settings);
         ShowOnly(ListPanel);
+    }
+
+    // Your picture in the settings: the picture itself, or your coloured initial.
+    private void ShowMyPicture()
+    {
+        var name = _settings.DisplayName ?? "";
+        var picture = _session?.MyAvatar != null ? AvatarBrushes.For(_session.MyAccountId) : null;
+        MyPicture.Background = picture ?? Yaparr.AndroidApp.Theme.TintFor(name);
+        MyPictureInitial.Text = picture != null || name.Length == 0 ? "" : new System.Globalization.StringInfo(name).SubstringByTextElements(0, 1).ToUpperInvariant();
+        RemovePictureButton.IsVisible = _session?.MyAvatar != null;
+    }
+
+    private async void ChoosePictureClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_session == null || MainActivity.Instance is not { } activity) { SettingsNote.Text = "Wait until Yaparr is connected."; return; }
+        var picked = await activity.PickPictureAsync();
+        if (picked is not { } file) return;
+        try
+        {
+            _session.SetAvatar(file.Bytes);
+            SettingsNote.Text = "Your picture is set.";
+        }
+        catch (ArgumentException ex) { SettingsNote.Text = ex.Message; }
+        ShowMyPicture();
+    }
+
+    private void RemovePictureClicked(object? sender, RoutedEventArgs e)
+    {
+        _session?.SetAvatar(null);
+        SettingsNote.Text = "Your picture is removed.";
+        ShowMyPicture();
     }
 
     private void SaveNameClicked(object? sender, RoutedEventArgs e)

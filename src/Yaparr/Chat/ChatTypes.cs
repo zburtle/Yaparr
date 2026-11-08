@@ -136,6 +136,13 @@ internal sealed class Wire
     /// <summary>Set when <see cref="Dm"/> holds older messages being caught up on rather than a new one.</summary>
     public bool? Cu { get; set; }
 
+    /// <summary>Claims of which profile picture a person uses, a request for pictures by their hashes, and pictures in answer.</summary>
+    public StoredAvatar[]? Avs { get; set; }
+    public string[]? AvIds { get; set; }
+    public AvatarBlob[]? AvBlobs { get; set; }
+
+    public const string Avatar = "av", AvatarGet = "avget", AvatarData = "avdata";
+
     public const string Direct = "dm", DirectSync = "dmsync";
 
     public const string Caps = "caps", Rename = "name", Account = "acct", Media = "media", Sound = "snd", Gif = "gif", Play = "play", Roles = "roles", Moderate = "mod", Channels = "chan", Rekey = "rekey", Takeover = "takeover", Speed = "speed";

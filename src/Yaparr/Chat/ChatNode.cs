@@ -52,6 +52,9 @@ public sealed class ChatNodeOptions
     /// </summary>
     public string? AccountStatePath { get; init; }
 
+    /// <summary>Where profile pictures (yours and those you have seen) are kept between runs. Without it they are only remembered while the app runs.</summary>
+    public string? AvatarDirectory { get; init; }
+
     /// <summary>Settings to start with, for example those that came with a device being linked.</summary>
     public IReadOnlyList<AccountEntry> AccountEntries { get; init; } = Array.Empty<AccountEntry>();
 
@@ -370,6 +373,7 @@ public sealed partial class ChatNode : IDisposable
         _ownsIdentity = _options.Identity == null;
         _identity = _options.Identity ?? PeerIdentity.Generate();
         LoadAccountState();
+        LoadAvatars();
         foreach (var blocked in _options.BlockedPeers) _blocked[blocked] = 0;
         // Blocks that came with the settings, in case the app's own list does not have them yet.
         lock (_acctGate)
@@ -1516,9 +1520,22 @@ public sealed partial class ChatNode : IDisposable
                 if (first && !EnforceCap(peer)) break;
                 if (first) PeerConnected?.Invoke(peer.Info);
                 if (first && IsSibling(peer)) { SendAccountState(peer); SendDirectSync(peer); }
+                if (first) SendAvatars(peer);
                 foreach (var room in _rooms.Values)
                     if (peer.Declares(RefFrom(room, peer))) OnPeerEntersRoom(peer, room);
                 OfferRekeyTo(peer);
+                break;
+
+            case Wire.Avatar when wire.Avs != null:
+                OnAvatarClaims(peer, wire.Avs);
+                break;
+
+            case Wire.AvatarGet when wire.AvIds != null:
+                OnAvatarGet(peer, wire.AvIds);
+                break;
+
+            case Wire.AvatarData when wire.AvBlobs != null:
+                OnAvatarData(wire.AvBlobs);
                 break;
 
             case Wire.Account when wire.Entries != null:

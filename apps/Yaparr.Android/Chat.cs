@@ -81,9 +81,14 @@ public sealed class Chat : Observable
         set { if (_title == value) return; _title = value; Raise(); Raise(nameof(Initial)); Raise(nameof(Tint)); }
     }
 
-    public string Initial => Title.Length == 0 ? "?" : new System.Globalization.StringInfo(Title).SubstringByTextElements(0, 1).ToUpperInvariant();
+    private string? Account => Direct?.PeerId.Value;
 
-    public IBrush Tint => Theme.TintFor(Title);
+    public string Initial => AvatarBrushes.For(Account) != null ? "" : Title.Length == 0 ? "?" : new System.Globalization.StringInfo(Title).SubstringByTextElements(0, 1).ToUpperInvariant();
+
+    public IBrush Tint => AvatarBrushes.For(Account) ?? Theme.TintFor(Title);
+
+    /// <summary>The picture of the other person arrived or changed.</summary>
+    public void AvatarChanged() { Raise(nameof(Initial)); Raise(nameof(Tint)); }
 
     /// <summary>The last message, for the list.</summary>
     public string Preview

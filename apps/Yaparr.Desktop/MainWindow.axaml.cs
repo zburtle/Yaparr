@@ -380,6 +380,7 @@ public partial class MainWindow : Window
             BlockedPeers = _settings.BlockedPeers.Select(b => new PeerId(b.Id)).ToList(),
             Identity = identity,
             AccountStatePath = _data.AccountStatePath,
+            AvatarDirectory = _data.AvatarDirectory,
             AccountEntries = _linkedEntries,
             HistoryStore = new FileHistoryStore(_data.HistoryDirectory, historyCipher),
             DirectHistoryDirectory = Path.Combine(_data.Directory, "direct"),
@@ -404,6 +405,8 @@ public partial class MainWindow : Window
         _node.VpnStateChanged += _ => UI(UpdateStatus);
         _node.BlockChanged += (id, blocked) => UI(() => OnBlockChanged(id, blocked));
         _node.PeerRenamed += p => UI(() => OnPeerRenamed(p));
+        _node.AvatarChanged += account => UI(() => OnAvatarChanged(account));
+        AvatarPictures.Source = account => _node?.AvatarOf(new PeerId(account));
         _node.AccountLearned += _ => UI(ClaimOwnMessages);
         _node.SyncedRoomChanged += OnSyncedRoomChanged;
         _node.DisplayNameChanged += OnDisplayNameChanged;
@@ -846,7 +849,7 @@ public partial class MainWindow : Window
         var parts = m.Parts;
         var vm = new MessageVm(m.Timestamp, m.From.DisplayName, parts.Body, m.IsCatchUp, isMine: mine, id: m.Id, attachment: m.Attachment)
         {
-            Source = m, Key = m.Key, ReplyKey = parts.ReplyTo, Mentions = parts.Mentions, Card = parts.Preview,
+            Source = m, Account = m.From.Account.Value, Key = m.Key, ReplyKey = parts.ReplyTo, Mentions = parts.Mentions, Card = parts.Preview,
             MentionsMe = _node != null && NamesMe(m),
             Channel = m.Channel, DeviceNote = mine && _node!.Id != m.From.Id ? "from your other device " + m.From.Id.Short : "",
         };

@@ -145,6 +145,18 @@
             <ScrollViewer Grid.Row="1">
                 <StackPanel Margin="16,12,16,32" Spacing="10" MaxWidth="520">
                     <TextBlock Text="You" FontWeight="SemiBold" Foreground="{DynamicResource Muted}" />
+                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                        <Border x:Name="MyPicture" Width="64" Height="64" CornerRadius="32" Background="{DynamicResource Accent}">
+                            <TextBlock x:Name="MyPictureInitial" Foreground="White" FontWeight="SemiBold" FontSize="26" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center">
+                            <TextBlock Text="Your picture. The people you are connected to see it next to your messages, and your other devices use it too." TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Content="Choose picture" Click="ChoosePictureClicked" />
+                                <Button x:Name="RemovePictureButton" Content="Remove" Click="RemovePictureClicked" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Grid>
                     <TextBlock Text="Your name, as people see it. It changes on your other devices too." TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />
                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                         <TextBox x:Name="SettingsName" MaxLength="40" />
@@ -311,8 +323,12 @@
                         <StackPanel>
                         <Border HorizontalAlignment="{Binding Align}" MaxWidth="320" Padding="12,8" CornerRadius="16" Background="{Binding Fill}" Holding="MessageHeld">
                             <StackPanel Spacing="2">
-                                <TextBlock Text="{Binding Who}" FontSize="11" FontWeight="SemiBold" Opacity="0.75"
-                                           Foreground="{Binding Ink}" IsVisible="{Binding !Mine}" />
+                                <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding !Mine}">
+                                    <Border Width="20" Height="20" CornerRadius="10" Background="{Binding WhoTint}">
+                                        <TextBlock Text="{Binding WhoInitial}" Foreground="White" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </Border>
+                                    <TextBlock Text="{Binding Who}" FontSize="11" FontWeight="SemiBold" Opacity="0.75" Foreground="{Binding Ink}" VerticalAlignment="Center" />
+                                </StackPanel>
                                 <Border IsVisible="{Binding HasReply}" Background="#22000000" CornerRadius="8" Padding="8,4" Tapped="QuoteTapped">
                                     <StackPanel>
                                         <TextBlock Text="{Binding ReplyWho}" FontSize="11" FontWeight="SemiBold" Foreground="{Binding Ink}" />
