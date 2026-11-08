@@ -37,7 +37,8 @@ public partial class MainWindow
     // Your name appears in the title bar and in the profile header at the top left, with its coloured initial.
     private void ShowOwnName(string name)
     {
-        Title = $"Yaparr — {name}";
+        // Where the menu row is the title bar, the name of the app is shown in the middle of it, and the window has no title of its own to draw.
+        Title = MenuRowIsTitleBar ? "" : $"Yaparr — {name}";
         NameText.Text = name;
         var picture = _node == null ? null : AvatarPictures.For(_node.AccountId.Value);
         ProfileInitial.Text = picture != null ? "" : Avatars.Initial(name);
