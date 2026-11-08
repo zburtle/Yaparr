@@ -23,6 +23,10 @@ using Avalonia.Android;
 [assembly: UsesPermission("android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION")]
 [assembly: UsesPermission(Android.Manifest.Permission.PostNotifications)]
 
+// "Stay connected in the background" keeps the connection in a foreground service of the remote messaging kind (and the microphone kind during a call).
+[assembly: UsesPermission("android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING")]
+[assembly: UsesPermission("android.permission.FOREGROUND_SERVICE_MICROPHONE")]
+
 // The camera is only for reading a link QR code, and the app works without one.
 [assembly: UsesPermission(Android.Manifest.Permission.Camera)]
 [assembly: UsesFeature("android.hardware.camera", Required = false)]
@@ -59,10 +63,24 @@ public class MainActivity : AvaloniaMainActivity
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         Instance = this;
+        AppHost.ScreenOpen = true;
         App.Scanner = new QrScanner(this);
         base.OnCreate(savedInstanceState);
-        // Opened by a link; not again when the activity is made anew after a turn of the screen.
-        if (savedInstanceState == null) LinkInbox.Offer(Intent?.DataString);
+        // Opened by a link or a notification; not again when the activity is made anew after a turn of the screen.
+        if (savedInstanceState == null)
+        {
+            LinkInbox.Offer(Intent?.DataString);
+            ChatInbox.Offer(Intent?.GetStringExtra(ChatInbox.ExtraChat));
+        }
+    }
+
+    protected override void OnDestroy()
+    {
+        AppHost.ScreenOpen = false;
+        if (ReferenceEquals(Instance, this)) Instance = null;
+        // The screen is gone for good (swiped away, not turned): with nothing asking to stay connected, the connection ends.
+        if (IsFinishing && !AppHost.KeepRunning) AppHost.Shutdown();
+        base.OnDestroy();
     }
 
     // Already open when a link is tapped: the same activity gets it.
@@ -70,6 +88,7 @@ public class MainActivity : AvaloniaMainActivity
     {
         base.OnNewIntent(intent);
         LinkInbox.Offer(intent?.DataString);
+        ChatInbox.Offer(intent?.GetStringExtra(ChatInbox.ExtraChat));
     }
 
     /// <summary>The screen that is open, for what needs an activity (asking for the microphone, the audio service).</summary>
@@ -236,6 +255,27 @@ public class MainActivity : AvaloniaMainActivity
     {
         base.OnRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == MicrophoneRequest) s_micRequest?.TrySetResult(grantResults.Length > 0 && grantResults[0] == Permission.Granted);
+        if (requestCode == NotificationsRequest) s_notifications?.TrySetResult(grantResults.Length > 0 && grantResults[0] == Permission.Granted);
+    }
+
+    private static TaskCompletionSource<bool>? s_notifications;
+
+    /// <summary>Asks to be allowed to show notifications (Android 13 and newer ask; older ones allow them). False if the person says no or has turned them off for the app.</summary>
+    public async Task<bool> RequestNotificationsAsync()
+    {
+        if (!OperatingSystem.IsAndroidVersionAtLeast(33) || CheckSelfPermission(Android.Manifest.Permission.PostNotifications) == Permission.Granted)
+            return (GetSystemService(NotificationService) as NotificationManager)?.AreNotificationsEnabled() ?? false;
+        s_notifications?.TrySetResult(false);
+        var request = s_notifications = new TaskCompletionSource<bool>();
+        RequestPermissions(new[] { Android.Manifest.Permission.PostNotifications }, NotificationsRequest);
+        return await request.Task;
+    }
+
+    /// <summary>Opens Android's list of apps that are not limited in the background, where the person can let Yaparr stay connected on a phone that stops apps.</summary>
+    public void OpenBatterySettings()
+    {
+        try { StartActivity(new Intent(Android.Provider.Settings.ActionIgnoreBatteryOptimizationSettings)); }
+        catch (ActivityNotFoundException) { }
     }
 
     private Android.Net.Wifi.WifiManager.MulticastLock? _multicast;
@@ -245,6 +285,8 @@ public class MainActivity : AvaloniaMainActivity
     protected override void OnResume()
     {
         base.OnResume();
+        AppHost.InForeground = true;
+        if (OperatingSystem.IsAndroidVersionAtLeast(26)) Notifier.ClearAll(this);
         try
         {
             if (GetSystemService(WifiService) is Android.Net.Wifi.WifiManager wifi)
@@ -259,6 +301,7 @@ public class MainActivity : AvaloniaMainActivity
 
     protected override void OnPause()
     {
+        AppHost.InForeground = false;
         try { if (_multicast is { IsHeld: true }) _multicast.Release(); }
         catch (Java.Lang.RuntimeException) { }
         base.OnPause();

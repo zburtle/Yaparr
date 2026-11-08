@@ -12,19 +12,19 @@ using Yaparr.Identity;
 namespace Yaparr.AndroidApp;
 
 /// <summary>
-/// The whole app: first start (a name, or linking to a computer), the list of rooms and direct chats, and a chat. It only works
-/// while the app is open: there are no notifications and no background service yet.
+/// The whole app: first start (a name, or linking to a computer), the list of rooms and direct chats, and a chat. The connection itself
+/// (<see cref="Session"/>) belongs to the process (<see cref="AppHost"/>), not to this screen, so it can go on with the screen closed.
 /// </summary>
 public partial class MainView : UserControl
 {
-    private readonly AppData _data = new(AppData.DefaultDirectory);
-    private readonly AppSettings _settings;
-    private readonly HashSet<Chat> _watched = new();
+    private AppData _data => AppHost.Data;
+    private AppSettings _settings => AppHost.Settings;
+    private readonly Dictionary<Chat, System.Collections.Specialized.NotifyCollectionChangedEventHandler> _watched = new();
+    private readonly List<Action> _unhooks = new();
     private readonly Control[] _screens;
     private Session? _session;
     private Chat? _current;
     private Func<Task>? _confirmed;
-    private IReadOnlyList<AccountEntry> _linkedEntries = Array.Empty<AccountEntry>();
     private bool _linksReady, _handlingLinks;
 
     public MainView()
@@ -33,17 +33,41 @@ public partial class MainView : UserControl
         // The box takes several lines (a pasted report, say); Enter still sends, so it is caught before the box turns it into a new line.
         InputBox.AddHandler(KeyDownEvent, InputKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         _screens = new Control[] { WelcomePanel, NamePanel, ExistingPanel, LinkPanel, ListPanel, ChatPanel, SettingsPanel };
-        _settings = _data.LoadSettings();
         NameBox.Text = _settings.DisplayName ?? "";
         ApplyTheme();
         // A phone that has an account but no name (it was made, then closed before the name was typed) only needs the name; there is nothing to go back to.
         if (_data.HasIdentity) { NameBackButton.IsVisible = false; ShowOnly(NamePanel); }
         AttachedToVisualTree += (_, _) => OnAttached();
-        LinkInbox.Arrived += () => _ = HandleLinksAsync();
+        LinkInbox.Arrived += OnLinkArrived;
+        ChatInbox.Arrived += OpenFromNotification;
+        DetachedFromVisualTree += (_, _) => Unhook();
         // Messages are not picked from the list: a press does something (a long press opens the actions), and nothing stays highlighted.
         Messages.SelectionChanged += (_, _) => Messages.SelectedItem = null;
         // A phone that has been used before opens straight onto its rooms.
         if (_data.HasIdentity && !string.IsNullOrWhiteSpace(_settings.DisplayName)) _ = BeginAsync(_settings.DisplayName);
+    }
+
+    private void OnLinkArrived() => _ = HandleLinksAsync();
+
+    // The screen is gone: what it listened to on the process's session and inboxes no longer reaches it.
+    private void Unhook()
+    {
+        LinkInbox.Arrived -= OnLinkArrived;
+        ChatInbox.Arrived -= OpenFromNotification;
+        foreach (var undo in _unhooks) undo();
+        _unhooks.Clear();
+        foreach (var (chat, handler) in _watched) chat.Shown.CollectionChanged -= handler;
+        _watched.Clear();
+    }
+
+    // A notification was tapped: its chat opens, over whatever was open. Waits for the session to be ready.
+    private void OpenFromNotification()
+    {
+        if (_session is not { Started: true } session || ChatInbox.Take() is not { } key) return;
+        if (session.FindChat(key) is not { } chat) return;
+        for (int i = 0; AnyOverlay && i < 20 && GoBack(); i++) { }
+        if (ChatPanel.IsVisible) BackToList();
+        OpenChat(chat);
     }
 
     private void OnAttached()
@@ -117,32 +141,45 @@ public partial class MainView : UserControl
     private async Task BeginAsync(string name)
     {
         ShowOnly(ListPanel);
-        var session = _session = new Session(_data, _settings);
+        // The session may already be there (the screen was closed and opened again while it stayed connected).
+        var session = _session = AppHost.GetOrCreateSession();
+        HookSession(session);
         ChatList.ItemsSource = session.Chats;
-        session.Chats.CollectionChanged += (_, _) => EmptyHint.IsVisible = session.Started && session.Chats.Count == 0;
-        session.Notice += text => ListStatus.Text = text;
-        session.SoundsChanged += c => { if (SoundPanel.IsVisible && c == _current) ShowSounds(); };
-        session.GifsChanged += async c => { if (ShelfPanel.IsVisible && _shelfShowsRoom && c == _current) await FillShelfAsync(); };
-        session.ConnectionChanged += text => ListStatus.Text = text;
-        session.SyncChanged += (text, progress) =>
-        {
-            SyncBanner.IsVisible = text != null;
-            SyncText.Text = text ?? "";
-            SyncBar.IsIndeterminate = progress == null;
-            SyncBar.Value = progress ?? 0;
-        };
-        ListStatus.Text = "Connecting...";
+        ListStatus.Text = session.Started && session.ConnectionText.Length > 0 ? session.ConnectionText : "Connecting...";
         try
         {
-            await session.StartAsync(name, _linkedEntries);
+            await AppHost.StartAsync(name);
             EmptyHint.IsVisible = session.Chats.Count == 0;
             _linksReady = true;
+            OpenFromNotification();
             await HandleLinksAsync();
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ListStatus.Text = "Could not start: " + ex.Message;
         }
+    }
+
+    // What this screen shows of the session; undone when the screen goes (the session does not).
+    private void HookSession(Session session)
+    {
+        foreach (var undo in _unhooks) undo();
+        _unhooks.Clear();
+        void On<T>(Action<T> add, Action<T> remove, T handler) { add(handler); _unhooks.Add(() => remove(handler)); }
+        On<System.Collections.Specialized.NotifyCollectionChangedEventHandler>(h => session.Chats.CollectionChanged += h, h => session.Chats.CollectionChanged -= h,
+            (_, _) => EmptyHint.IsVisible = session.Started && session.Chats.Count == 0);
+        On<Action<string>>(h => session.Notice += h, h => session.Notice -= h, text => ListStatus.Text = text);
+        On<Action<Chat>>(h => session.SoundsChanged += h, h => session.SoundsChanged -= h, c => { if (SoundPanel.IsVisible && c == _current) ShowSounds(); });
+        On<Action<Chat>>(h => session.GifsChanged += h, h => session.GifsChanged -= h, async c => { if (ShelfPanel.IsVisible && _shelfShowsRoom && c == _current) await FillShelfAsync(); });
+        On<Action<string>>(h => session.ConnectionChanged += h, h => session.ConnectionChanged -= h, text => ListStatus.Text = text);
+        On<Action<string?, double?>>(h => session.SyncChanged += h, h => session.SyncChanged -= h, (text, progress) =>
+        {
+            SyncBanner.IsVisible = text != null;
+            SyncText.Text = text ?? "";
+            SyncBar.IsIndeterminate = progress == null;
+            SyncBar.Value = progress ?? 0;
+        });
+        On<Action>(h => session.WatchEnded += h, h => session.WatchEnded -= h, () => Dispatcher.UIThread.Post(() => { if (WatchPanel.IsVisible) CloseWatch(); }));
     }
 
     // ---- linking to a computer ----
@@ -192,7 +229,7 @@ public partial class MainView : UserControl
             linked.Identity.Dispose();
             _settings.DisplayName = linked.DisplayName;
             _data.SaveSettings(_settings);
-            _linkedEntries = linked.Entries;
+            AppHost.LinkedEntries = linked.Entries;
             NameBox.Text = linked.DisplayName;
             CodeBox.Text = PassphraseBox.Text = "";
             // The rooms of the account come from the computer once this phone has connected to it.
@@ -374,6 +411,11 @@ public partial class MainView : UserControl
         VolumeSlider.Value = _settings.VoiceOutputVolume;
         AutoVolumeCheck.IsChecked = _settings.VoiceAutomaticVolume;
         LinkPreviewCheck.IsChecked = _settings.LinkPreviews;
+        NotifyCheck.IsChecked = _settings.NotifyMessages;
+        BackgroundCheck.IsChecked = _settings.BackgroundConnection;
+        bool canService = OperatingSystem.IsAndroidVersionAtLeast(26);
+        BackgroundCheck.IsVisible = BackgroundNote.IsVisible = BatteryButton.IsVisible = canService;
+        NotificationNote.Text = "";
         VersionText.Text = "Yaparr " + AppVersion();
         _loadingSettings = false;
         ShowTheme();
@@ -417,6 +459,36 @@ public partial class MainView : UserControl
         ApplyTheme();
         ShowTheme();
     }
+
+    // Android 13 and newer must be asked before a notification can show; the person can still say no (or have turned them off), which is said.
+    private async Task<bool> EnsureNotificationsAsync()
+    {
+        if (!OperatingSystem.IsAndroidVersionAtLeast(26) || MainActivity.Instance is not { } activity) return false;
+        bool allowed = await activity.RequestNotificationsAsync();
+        if (!allowed) NotificationNote.Text = "Android is not letting Yaparr show notifications. Turn them on for Yaparr in the phone's settings.";
+        return allowed;
+    }
+
+    private async void NotificationSettingChanged(object? sender, RoutedEventArgs e)
+    {
+        if (_loadingSettings) return;
+        _settings.NotifyMessages = NotifyCheck.IsChecked == true;
+        _settings.BackgroundConnection = BackgroundCheck.IsChecked == true;
+        _data.SaveSettings(_settings);
+        NotificationNote.Text = "";
+        if (_settings.NotifyMessages || _settings.BackgroundConnection) await EnsureNotificationsAsync();
+        if (MainActivity.Instance is { } activity) AppHost.UpdateService(activity);
+    }
+
+    private async void TestNotificationClicked(object? sender, RoutedEventArgs e)
+    {
+        if (!OperatingSystem.IsAndroidVersionAtLeast(26)) { NotificationNote.Text = "Notifications need Android 8 or newer."; return; }
+        if (!await EnsureNotificationsAsync()) return;
+        NotificationNote.Text = "Sent. Put the phone to sleep or leave the app to see it on the lock screen too.";
+        Notifier.Test(Android.App.Application.Context);
+    }
+
+    private void BatteryClicked(object? sender, RoutedEventArgs e) => MainActivity.Instance?.OpenBatterySettings();
 
     private void LinkPreviewChanged(object? sender, RoutedEventArgs e)
     {
@@ -656,7 +728,12 @@ public partial class MainView : UserControl
         ChatPanel.DataContext = chat;
         MenuButton.Flyout = BuildMenu(chat);
         // New messages scroll the list down, once for each chat.
-        if (_watched.Add(chat)) chat.Shown.CollectionChanged += (_, _) => { if (_current == chat) ScrollToEnd(); };
+        if (!_watched.ContainsKey(chat))
+        {
+            System.Collections.Specialized.NotifyCollectionChangedEventHandler handler = (_, _) => { if (_current == chat) ScrollToEnd(); };
+            _watched[chat] = handler;
+            chat.Shown.CollectionChanged += handler;
+        }
         ShowOnly(ChatPanel);
         ScrollToEnd();
     }
@@ -692,6 +769,15 @@ public partial class MainView : UserControl
         {
             Add("People", PeopleClicked);
             Add("Rename the room", RenameClicked);
+            if (_session != null)
+                Add(_session.NotifiesAll(chat) ? "Notify only for mentions and replies" : "Notify for every message", (_, _) =>
+                {
+                    bool all = !_session!.NotifiesAll(chat);
+                    _session.SetNotifiesAll(chat, all);
+                    MenuButton.Flyout = BuildMenu(chat);
+                    ShowChatNote(chat, all ? "You will be notified of every message here" : "You will be notified of mentions and replies here");
+                    if (all) _ = EnsureNotificationsAsync();
+                });
             Add("Blocked and banned", BlockedClicked);
             Add("Copy invite link", CopyInviteLinkClicked);
             Add("Copy invite", CopyInviteClicked);
@@ -821,7 +907,6 @@ public partial class MainView : UserControl
             WatchHost.SurfaceReady += surface => Dispatcher.UIThread.Post(() => BeginWatching(surface));
             WatchHost.SurfaceLost += () => _session?.StopWatching();
             WatchArea.SizeChanged += (_, _) => FitWatchHost();
-            _session.WatchEnded += () => Dispatcher.UIThread.Post(() => { if (WatchPanel.IsVisible) CloseWatch(); });
         }
         WatchPanel.IsVisible = true;
         // The surface of an earlier time is still there when the panel was only hidden; the first time Android makes it a moment after the panel shows.

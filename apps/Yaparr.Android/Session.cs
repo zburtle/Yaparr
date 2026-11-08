@@ -48,6 +48,12 @@ public sealed partial class Session : IDisposable
     /// <summary>Who this phone is connected to, as a sentence; said again whenever it changes.</summary>
     public event Action<string>? ConnectionChanged;
 
+    /// <summary>The last sentence <see cref="ConnectionChanged"/> said (empty before the first).</summary>
+    public string ConnectionText { get; private set; } = "";
+
+    /// <summary>The phone joined or left a voice call (what <see cref="VoiceChat"/> says changed).</summary>
+    public event Action? CallChanged;
+
     /// <summary>What the banner above the room list says now (null: hide it), and how far along it is (0 to 1, or null when that cannot be told).</summary>
     public event Action<string?, double?>? SyncChanged;
 
@@ -103,6 +109,7 @@ public sealed partial class Session : IDisposable
         string text = peers.Count == 0
             ? "Not connected to anyone yet. Looking for your devices and people..."
             : $"Connected to {peers.Count} device{(peers.Count == 1 ? "" : "s")}" + (mine > 0 ? $", {mine} of them yours" : "");
+        ConnectionText = text;
         ConnectionChanged?.Invoke(text);
     }
 
@@ -287,6 +294,7 @@ public sealed partial class Session : IDisposable
         chat.Muted = chat.Deafened = false;
         chat.RouteLabel = AudioRoutes.Label(call.Route);
         RefreshVoice(chat);
+        CallChanged?.Invoke();
     }
 
     // ---- soundboard ----
@@ -378,6 +386,7 @@ public sealed partial class Session : IDisposable
             // Leaving the call ends a share that was going into it, unless another of your devices is still in it.
             if (_shareChat == chat && chat.Room is { CanShareScreen: false }) StopScreenShare();
         }
+        if (chat != null) CallChanged?.Invoke();
     }
 
     public void ToggleMute()
@@ -661,6 +670,40 @@ public sealed partial class Session : IDisposable
         if (shown) MarkRead(chat);
         else if (!line.Mine) chat.NoteUnread(m.Channel);
         Resort(chat);
+        Notify(chat, line, m);
+    }
+
+    // ---- notifications ----
+
+    /// <summary>The key a notification carries to say which chat to open: the room's id, or the other person's id.</summary>
+    public static string KeyOf(Chat chat) => chat.Room?.RoomId ?? chat.Direct?.PeerId.Value ?? "";
+
+    /// <summary>The chat a notification was for, or null (it was left or removed).</summary>
+    public Chat? FindChat(string key) => key.Length == 0 ? null : Chats.FirstOrDefault(c => KeyOf(c) == key);
+
+    /// <summary>Whether a room notifies for every message, not only mentions and replies.</summary>
+    public bool NotifiesAll(Chat chat) => chat.Room is { } room && _settings.NotifyAllRooms.Contains(room.RoomId);
+
+    public void SetNotifiesAll(Chat chat, bool all)
+    {
+        if (chat.Room is not { } room) return;
+        if (all) { if (!_settings.NotifyAllRooms.Contains(room.RoomId)) _settings.NotifyAllRooms.Add(room.RoomId); }
+        else _settings.NotifyAllRooms.Remove(room.RoomId);
+        try { _data.SaveSettings(_settings); }
+        catch (IOException) { }
+    }
+
+    private void Notify(Chat chat, Line line, ChatMessage m)
+    {
+        if (!_settings.NotifyMessages) return;
+        bool replyToMe = line.ReplyKey is { } key && chat.FindByKey(key) is { Mine: true };
+        var facts = new NotificationPolicy.Message(!chat.IsRoom, line.Mine, line.MentionsMe, replyToMe, NotifiesAll(chat), DateTimeOffset.UtcNow - m.Timestamp);
+        if (!NotificationPolicy.ShouldNotify(facts, AppHost.InForeground, _settings.NotifyMessages)) return;
+        if (!OperatingSystem.IsAndroidVersionAtLeast(26)) return;
+        bool gif = line.Attachment?.Mime == "image/gif";
+        var body = NotificationPolicy.Body(line.Text, line.Attachment != null, gif);
+        if (body.Length == 0) body = "New message";
+        Notifier.Message(Android.App.Application.Context, KeyOf(chat), chat.Title, line.Who, body, !chat.IsRoom);
     }
 
     // ---- pictures ----
@@ -842,6 +885,7 @@ public sealed partial class Session : IDisposable
     {
         _open = chat;
         MarkRead(chat);
+        if (OperatingSystem.IsAndroidVersionAtLeast(26)) Notifier.Clear(Android.App.Application.Context, KeyOf(chat));
     }
 
     public void Close()
