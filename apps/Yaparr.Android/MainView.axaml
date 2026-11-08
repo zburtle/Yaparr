@@ -342,7 +342,7 @@
                                         <TextBlock Text="{Binding PictureStatus}" IsVisible="{Binding HasPictureStatus}" FontSize="12" Foreground="{Binding Ink}" />
                                     </StackPanel>
                                 </Border>
-                                <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Foreground="{Binding Ink}" IsVisible="{Binding HasText}" />
+                                <local:LinkText Body="{Binding Text}" TextWrapping="Wrap" Foreground="{Binding Ink}" IsVisible="{Binding HasText}" LinkTapped="MessageLinkTapped" />
                                 <Border IsVisible="{Binding HasCard}" Background="#22000000" CornerRadius="8" Padding="8" Margin="0,2,0,0" Tapped="CardTapped">
                                     <Grid ColumnDefinitions="Auto,*">
                                         <Image Source="{Binding CardImage}" IsVisible="{Binding HasCardImage}" Width="56" Height="56" Margin="0,0,8,0" Stretch="UniformToFill" VerticalAlignment="Top" />

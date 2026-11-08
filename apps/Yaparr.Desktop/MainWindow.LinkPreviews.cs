@@ -35,13 +35,14 @@ public partial class MainWindow
             _previewFetcher ??= new LinkPreviewFetcher { Log = _log.Write };
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
             cts.CancelAfter(PreviewWait);
-            return await _previewFetcher.FetchAsync(link, cts.Token);
+            // A page that could not be read still gets a card with the name of its site.
+            return await _previewFetcher.FetchAsync(link, cts.Token) ?? LinkPreview.Basic(link);
         }
-        catch (OperationCanceledException) { return null; }
+        catch (OperationCanceledException) { return LinkPreview.Basic(link); }
         catch (Exception ex)
         {
             _log.Write("could not get a link preview: " + ex.Message);
-            return null;
+            return LinkPreview.Basic(link);
         }
         finally { StatusText.Text = ""; }
     }
@@ -51,12 +52,20 @@ public partial class MainWindow
     {
         if ((sender as Control)?.DataContext is not MessageVm { Card: { } card } || e.InitialPressMouseButton != MouseButton.Left) return;
         e.Handled = true;
-        if (!Uri.TryCreate(card.Url, UriKind.Absolute, out var uri)) return;
-        if (!await Dialogs.ConfirmAsync(this, "Open this link?", card.Url + "\n\nIt opens in your browser, and the site will see your address.", "Open", "Cancel")) return;
+        await OpenLinkAsync(card.Url);
+    }
+
+    // A link in the words of a message was clicked.
+    private async void MessageLink_Clicked(object? sender, LinkClickedEventArgs e) => await OpenLinkAsync(e.Url);
+
+    private async Task OpenLinkAsync(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")) return;
+        if (!await Dialogs.ConfirmAsync(this, "Open this link?", url + "\n\nIt opens in your browser, and the site will see your address.", "Open", "Cancel")) return;
         try
         {
             if (!await Launcher.LaunchUriAsync(uri))
-                await Dialogs.MessageAsync(this, "Open link", "Open " + card.Url + " in a browser.");
+                await Dialogs.MessageAsync(this, "Open link", "Open " + url + " in a browser.");
         }
         catch (Exception ex) { StatusText.Text = "Couldn't open the link: " + ex.Message; }
     }

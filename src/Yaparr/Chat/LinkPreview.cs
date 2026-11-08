@@ -38,6 +38,31 @@ public sealed partial record LinkPreview(string Url, string Title, string Descri
         return null;
     }
 
+    /// <summary>A web address in some words: where it starts, how long it is, and the address.</summary>
+    public readonly record struct Span(int Start, int Length, string Url);
+
+    /// <summary>Every web address in some words, as <see cref="FirstLink"/> reads them, so the apps can make each one clickable.</summary>
+    public static IReadOnlyList<Span> LinksIn(string text)
+    {
+        var found = new List<Span>();
+        foreach (Match m in LinkPattern().Matches(text))
+        {
+            var candidate = m.Value.TrimEnd('.', ',', ';', ':', '!', '?', ')', ']', '}', '\'', '*');
+            if (candidate.Length is > 0 and <= MaxUrl && IsWebAddress(candidate)) found.Add(new Span(m.Index, candidate.Length, candidate));
+        }
+        return found;
+    }
+
+    /// <summary>
+    /// The card for a link whose page could not be read (the site turned the request away, or was too slow): just the name of the site, so the link still
+    /// has a card. Null for a link that is not a web address, and for Yaparr's own invitations.
+    /// </summary>
+    public static LinkPreview? Basic(string url)
+    {
+        if (!IsWebAddress(url) || !Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Host.EndsWith("yaparr.com", StringComparison.OrdinalIgnoreCase)) return null;
+        return new LinkPreview(url, new LinkPreview(url, "").Host).Normalized();
+    }
+
     public static bool IsWebAddress(string url) =>
         Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https" && uri.Host.Length > 0 && string.IsNullOrEmpty(uri.UserInfo);
 

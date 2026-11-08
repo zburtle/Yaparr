@@ -546,9 +546,21 @@ public partial class MainView : UserControl
     // Opening a link is a choice: the card is the sender's description, so the address it really goes to is shown first.
     private void CardTapped(object? sender, TappedEventArgs e)
     {
-        if ((sender as Control)?.DataContext is not Line { Card: { } card } || !Uri.TryCreate(card.Url, UriKind.Absolute, out var uri)) return;
+        if ((sender as Control)?.DataContext is not Line { Card: { } card }) return;
         e.Handled = true;
-        Ask(card.Url + "\n\nIt opens in your browser, and the site will see your address.", "Open", async () =>
+        OpenLink(card.Url);
+    }
+
+    // A web address in the words of a message was tapped.
+    private void MessageLinkTapped(object? sender, LinkTappedEventArgs e)
+    {
+        OpenLink(e.Url);
+    }
+
+    private void OpenLink(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")) return;
+        Ask(url + "\n\nIt opens in your browser, and the site will see your address.", "Open", async () =>
         {
             if (TopLevel.GetTopLevel(this)?.Launcher is { } launcher) await launcher.LaunchUriAsync(uri);
         });
