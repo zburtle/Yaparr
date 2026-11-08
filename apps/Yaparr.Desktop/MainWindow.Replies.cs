@@ -37,6 +37,12 @@ public partial class MainWindow
         if (MessageList.SelectedItem is MessageVm { Key: not null, IsSystem: false } message) StartReply(message);
     }
 
+    private void ReplyHover_Click(object? sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if ((sender as Control)?.DataContext is MessageVm { Key: not null, IsSystem: false } message) StartReply(message);
+    }
+
     private void StartReply(MessageVm message)
     {
         _replyTo = message;
