@@ -170,6 +170,15 @@
                     <TextBlock Text="Looks at how this phone can be reached and why connecting to someone may fail." TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />
                     <Button HorizontalAlignment="Stretch" Content="Check the connection" Click="NetworkClicked" />
 
+                    <TextBlock Text="Notifications" FontWeight="SemiBold" Margin="0,14,0,0" Foreground="{DynamicResource Muted}" />
+                    <CheckBox x:Name="NotifyCheck" Content="Notify me of messages" Click="NotificationSettingChanged" />
+                    <TextBlock Text="Direct messages, mentions and replies to you. In a room's menu you can turn on every message. The lock screen shows who wrote and where, never the words." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
+                    <CheckBox x:Name="BackgroundCheck" Content="Stay connected in the background" Click="NotificationSettingChanged" />
+                    <TextBlock x:Name="BackgroundNote" Text="Keeps Yaparr connected when you leave it, so messages arrive and notify. Android shows a notification while it is on, and it uses some battery." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
+                    <Button HorizontalAlignment="Stretch" Content="Send a test notification" Click="TestNotificationClicked" />
+                    <Button x:Name="BatteryButton" HorizontalAlignment="Stretch" Content="Let Yaparr run in the background" Click="BatteryClicked" />
+                    <TextBlock x:Name="NotificationNote" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
+
                     <TextBlock Text="Link previews" FontWeight="SemiBold" Margin="0,14,0,0" Foreground="{DynamicResource Muted}" />
                     <CheckBox x:Name="LinkPreviewCheck" Content="Show a preview under the links I send" Click="LinkPreviewChanged" />
                     <TextBlock Text="When you send a web link, this phone reads the page's title, description and picture and sends them with the message. The people who read it never contact the site, so it does not see their address, but it does see yours. Turn this off to send only the link." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
