@@ -10,7 +10,8 @@ using Yaparr.Chat;
 namespace Yaparr.Desktop;
 
 // The GIF shelf: pictures kept to send again with one click. "My shelf" is a folder on this computer (see GifShelf); nothing is looked up online.
-// "This room" is the room's shared shelf, which every member can add to and see (see ChatRoom.Gifs); it is fetched when the tab is opened.
+// "This room" is the room's shared shelf, which every member can see and send from (see ChatRoom.Gifs); it is fetched when the tab is opened. Pictures are
+// added to it and taken off it in the room's settings (MainWindow.RoomSettings.cs), not here.
 public partial class MainWindow
 {
     private GifShelf? _shelf;
@@ -68,36 +69,13 @@ public partial class MainWindow
         int version = ++_shelfVersion;
         var room = SelectedRoom;
         bool roomTab = _shelfShowsRoom && room != null;
-        ShelfAddButton.Content = roomTab ? "Add to room…" : "Add…";
+        // The room's pictures are only sent from here; they are added and taken down in the room's settings.
+        ShelfAddButton.IsVisible = !roomTab;
         int total;
         if (roomTab)
         {
-            var gifs = await Task.Run(() => room!.Gifs);
-            if (version != _shelfVersion) return;
-            total = gifs.Count;
-            ShelfEmpty.Text = "Nothing here yet. Add a GIF or picture and everyone in this room can send it.";
-            ShelfGrid.Children.Clear();
-            ShelfEmpty.IsVisible = total == 0;
-            ShelfCount.Text = Count(total);
-            foreach (var chunk in gifs.Chunk(24))
-            {
-                var loaded = await Task.Run(() => chunk.Select(gif =>
-                {
-                    byte[]? preview = null;
-                    if (gif.Available)
-                    {
-                        lock (_roomPreviews)
-                            if (!_roomPreviews.TryGetValue(gif.Hash, out preview))
-                            {
-                                preview = room!.GetGif(gif.Id) is { } file ? GifShelf.PreviewOf(file) : null;
-                                _roomPreviews[gif.Hash] = preview;
-                            }
-                    }
-                    return (gif, preview, bitmap: preview == null ? null : new Bitmap(new MemoryStream(preview)));
-                }).ToList());
-                if (version != _shelfVersion) { foreach (var (_, _, bitmap) in loaded) bitmap?.Dispose(); return; }
-                foreach (var (gif, preview, bitmap) in loaded) ShelfGrid.Children.Add(RoomTile(room!, gif, preview, bitmap));
-            }
+            ShelfEmpty.Text = "Nothing here yet. Pictures are added in the room's settings (the ⋯ menu, then Room settings).";
+            await FillRoomTilesAsync(room!, ShelfGrid, ShelfEmpty, ShelfCount, () => version != _shelfVersion, editing: false);
             return;
         }
 
@@ -121,11 +99,41 @@ public partial class MainWindow
         }
     }
 
+    // Fills a grid with the room's pictures. In the picker a click sends one; in the room's settings (editing) a click opens its options (add it to
+    // my shelf, remove it, take it down).
+    private async Task FillRoomTilesAsync(ChatRoom room, Panel grid, TextBlock empty, TextBlock count, Func<bool> stale, bool editing)
+    {
+        var gifs = await Task.Run(() => room.Gifs);
+        if (stale()) return;
+        grid.Children.Clear();
+        empty.IsVisible = gifs.Count == 0;
+        count.Text = Count(gifs.Count);
+        foreach (var chunk in gifs.Chunk(24))
+        {
+            var loaded = await Task.Run(() => chunk.Select(gif =>
+            {
+                byte[]? preview = null;
+                if (gif.Available)
+                {
+                    lock (_roomPreviews)
+                        if (!_roomPreviews.TryGetValue(gif.Hash, out preview))
+                        {
+                            preview = room.GetGif(gif.Id) is { } file ? GifShelf.PreviewOf(file) : null;
+                            _roomPreviews[gif.Hash] = preview;
+                        }
+                }
+                return (gif, preview, bitmap: preview == null ? null : new Bitmap(new MemoryStream(preview)));
+            }).ToList());
+            if (stale()) { foreach (var (_, _, bitmap) in loaded) bitmap?.Dispose(); return; }
+            foreach (var (gif, preview, bitmap) in loaded) grid.Children.Add(RoomTile(room, gif, preview, bitmap, editing));
+        }
+    }
+
     private static string Count(int n) => n == 0 ? "" : n == 1 ? "1 picture" : n + " pictures";
 
     // A tile for a picture. A GIF plays while its tile is on screen: the file is read when the tile scrolls into view and let go when it scrolls
     // out, so a long shelf keeps only what is visible in memory.
-    private Button Tile(bool isGif, byte[]? preview, Bitmap? bitmap, string id, string tip, Func<byte[]?> read, Func<Task>? send, params (string Header, Func<Task> Action)[] menu)
+    private Button Tile(bool isGif, byte[]? preview, Bitmap? bitmap, string id, string tip, Func<byte[]?> read, Func<Task>? send, bool menuOnly, params (string Header, Func<Task> Action)[] menu)
     {
         PictureView? player = null;
         Control content;
@@ -141,7 +149,7 @@ public partial class MainWindow
         {
             Width = 104, Height = 104, Padding = new Thickness(0), Margin = new Thickness(3), Background = Avalonia.Media.Brushes.Transparent,
             ClipToBounds = true, CornerRadius = new CornerRadius(8), Tag = id,
-            Content = content, IsEnabled = send != null,
+            Content = content, IsEnabled = send != null || menuOnly,
             HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center, VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center,
             ContextMenu = new ContextMenu(),
         };
@@ -166,30 +174,20 @@ public partial class MainWindow
             button.ContextMenu.Items.Add(item);
         }
         if (send != null) button.Click += async (_, _) => await send();
+        else if (menuOnly) button.Click += (_, _) => button.ContextMenu.Open(button);
         return button;
     }
 
     private Button MyTile(ShelfItem item, byte[]? preview, Bitmap? bitmap)
     {
         var menu = new List<(string, Func<Task>)>();
-        if (SelectedRoom is { } room)
-            menu.Add(("_Share with this room", async () =>
-            {
-                try
-                {
-                    var data = await Task.Run(() => Shelf.Read(item.Id));
-                    if (data != null) await Task.Run(() => room.AddGif(data));
-                    StatusText.Text = "Added to the room's GIF shelf.";
-                }
-                catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { StatusText.Text = ex.Message; }
-            }));
         menu.Add(("_Remove from my shelf", async () => { Shelf.Remove(item.Id); await FillShelfAsync(); }));
         return Tile(item.IsGif, preview, bitmap, item.Id,
             $"{(item.IsGif ? "GIF" : "Picture")}, {FormatSize(item.Bytes)}. Click to send it, right-click for more.",
-            () => Shelf.Read(item.Id), () => SendFromShelfAsync(item), menu.ToArray());
+            () => Shelf.Read(item.Id), () => SendFromShelfAsync(item), false, menu.ToArray());
     }
 
-    private Button RoomTile(ChatRoom room, GifInfo gif, byte[]? preview, Bitmap? bitmap)
+    private Button RoomTile(ChatRoom room, GifInfo gif, byte[]? preview, Bitmap? bitmap, bool editing)
     {
         var menu = new List<(string, Func<Task>)>();
         if (gif.Available)
@@ -199,22 +197,22 @@ public partial class MainWindow
                 catch (Exception ex) when (ex is ArgumentException or IOException) { StatusText.Text = ex.Message; }
             }));
         bool mine = _node != null && gif.Owner == _node.Id;
-        if (mine)
+        if (editing && mine)
             menu.Add(("_Remove from the room's shelf", async () =>
             {
                 try { room.RemoveGif(gif.Id); } catch (Exception ex) when (ex is InvalidOperationException or KeyNotFoundException) { StatusText.Text = ex.Message; }
-                await FillShelfAsync();
+                await FillRoomShelfAsync();
             }));
-        else if (room.MyRole >= RoomRole.Admin)
+        else if (editing && room.MyRole >= RoomRole.Admin)
             menu.Add(("_Take down for everyone", async () =>
             {
-                ShelfPopup.IsOpen = false;
                 if (!await Dialogs.ConfirmAsync(this, "Yaparr", $"Take this picture, added by {gif.OwnerName}, off the room's GIF shelf for everyone?", "Take down")) return;
                 try { room.DeleteGif(gif.Id); } catch (Exception ex) when (ex is InvalidOperationException or KeyNotFoundException) { StatusText.Text = ex.Message; }
             }));
+        var added = gif.Available ? $"Added by {gif.OwnerName}, {FormatSize(gif.Size)}." : $"Added by {gif.OwnerName}. Still downloading…";
         return Tile(gif.IsGif, preview, bitmap, gif.Id,
-            gif.Available ? $"Added by {gif.OwnerName}, {FormatSize(gif.Size)}. Click to send it, right-click for more." : $"Added by {gif.OwnerName}. Still downloading…",
-            () => room.GetGif(gif.Id), gif.Available ? () => SendFromRoomAsync(room, gif) : null, menu.ToArray());
+            editing ? added + " Click for options." : gif.Available ? added + " Click to send it, right-click for more." : added,
+            () => room.GetGif(gif.Id), !editing && gif.Available ? () => SendFromRoomAsync(room, gif) : null, editing, menu.ToArray());
     }
 
     private static string FormatSize(long bytes) => bytes >= 1024 * 1024 ? $"{bytes / (1024.0 * 1024):0.#} MB" : $"{Math.Max(1, bytes / 1024)} KB";
@@ -239,10 +237,16 @@ public partial class MainWindow
 
     private async void ShelfAdd_Click(object? sender, RoutedEventArgs e)
     {
-        var room = _shelfShowsRoom ? SelectedRoom : null;
+        await AddPicturesAsync("Add to the GIF shelf", bytes => Shelf.Add(bytes));
+        if (ShelfPopup.IsOpen) await FillShelfAsync();
+    }
+
+    // Asks for pictures and gives each to <paramref name="add"/> (the person's own shelf, or the room's), then says how it went.
+    private async Task AddPicturesAsync(string title, Action<byte[]> add)
+    {
         var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = room != null ? "Add to the room's GIF shelf" : "Add to the GIF shelf",
+            Title = title,
             AllowMultiple = true,
             FileTypeFilter = new[] { new FilePickerFileType("Pictures") { Patterns = new[] { "*.gif", "*.png", "*.jpg", "*.jpeg", "*.webp" } } },
         });
@@ -256,14 +260,13 @@ public partial class MainWindow
                 using var copy = new MemoryStream();
                 await stream.CopyToAsync(copy);
                 var bytes = copy.ToArray();
-                if (room != null) await Task.Run(() => room.AddGif(bytes)); else await Task.Run(() => Shelf.Add(bytes));
+                await Task.Run(() => add(bytes));
                 added++;
             }
             catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IOException or UnauthorizedAccessException) { problem = file.Name + ": " + ex.Message; }
         }
         if (problem != null) StatusText.Text = problem;
         else if (added > 0) StatusText.Text = added == 1 ? "Added to the GIF shelf." : $"Added {added} pictures to the GIF shelf.";
-        if (ShelfPopup.IsOpen) await FillShelfAsync();
     }
 
     // From a picture in the chat, exactly as it was sent.

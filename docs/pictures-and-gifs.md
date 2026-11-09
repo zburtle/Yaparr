@@ -22,7 +22,7 @@ There is no GIF search service, so there is nothing to look up and nobody learns
 
 ### A room's shelf
 
-Every room also has a shared GIF shelf, the **This room** tab next to **My shelf**. Any member can add a picture to it (**Add to room…**, or **Share with this room** in the menu of a picture on their own shelf) and everyone in the room can send what is on it; **Add to my shelf** in a picture's menu keeps one for yourself. Your own shelf stays private.
+Every room also has a shared GIF shelf, the **This room** tab next to **My shelf**. Everyone in the room can send what is on it; **Add to my shelf** in a picture's menu keeps one for yourself. On the computer the tab only sends: pictures are added and taken off in the room's settings (the **⋯** menu, then **Room settings**, then **GIF shelf**), where any member can **Add…**, remove their own, and the owner and admins can take any down. On Android, any member can add from the tab. Your own shelf stays private.
 
 - **Who can remove.** The person who added a picture removes it (**Remove from the room's shelf**); the owner and admins of the room can take any down for everyone (**Take down for everyone**, a signed order like deleting a message). Pictures from people you have blocked or who are banned are hidden.
 - **Limits.** There is no limit on how many pictures a room's shelf holds. A picture can be as big as one sent in a message (8 MB, `GifLimits.MaxBytes`), checked on what other members announce as well. A shelf with no cap means every member may be asked for every file, which is why the files are only fetched when the shelf is opened; if a room's shelf is ever abused, a cap like the soundboard's (100 entries) is the thing to add. The same picture added twice is one entry.

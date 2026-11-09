@@ -164,6 +164,27 @@ public class ModerationTests
     }
 
     [Fact]
+    public async Task An_admin_can_rename_anyones_sound_and_the_owner_of_it_can_rename_it_again()
+    {
+        var t = await Trio();
+        using var _ = t.Owner; using var __ = t.B; using var ___ = t.C;
+        var clip = SoundClip.FromPcm(Enumerable.Range(0, 48000).Select(i => (float)(0.4 * Math.Sin(2 * Math.PI * 440 * i / 48000))).ToArray());
+        var added = t.Rc.AddSound("airhorn", clip);
+        await TestUtil.WaitFor(() => t.Ro.Sounds.Any(s => s.Name == "airhorn") && t.Rb.Sounds.Any(s => s.Name == "airhorn"), 20_000);
+
+        // A plain member cannot rename a sound that is not theirs; the owner of the room can.
+        Assert.Throws<InvalidOperationException>(() => t.Rb.RenameSound(added.Id, "mine now"));
+        t.Ro.RenameSound(added.Id, "air horn");
+        await TestUtil.WaitFor(() => t.Rb.Sounds.Any(s => s.Name == "air horn") && t.Rc.Sounds.Any(s => s.Name == "air horn"), 20_000);
+        Assert.DoesNotContain(t.Rb.Sounds, s => s.Name == "airhorn");
+
+        // The one who added it can name it again, and that is the newer word.
+        await Task.Delay(50);
+        t.Rc.RenameSound(added.Id, "honk");
+        await TestUtil.WaitFor(() => t.Ro.Sounds.Any(s => s.Name == "honk") && t.Rb.Sounds.Any(s => s.Name == "honk"), 20_000);
+    }
+
+    [Fact]
     public async Task The_bans_are_remembered_across_a_restart()
     {
         var dir = Path.Combine(Path.GetTempPath(), "yaparr-mod-" + Guid.NewGuid().ToString("N"));

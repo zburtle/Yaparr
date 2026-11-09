@@ -294,7 +294,7 @@ public sealed class ChatRoom
     /// <summary>Adds a sound to the soundboard (see <see cref="SoundClip.FromPcm"/> and <see cref="SoundClip.FromWav"/>).</summary>
     public SoundInfo AddSound(string name, SoundClip clip) => _node.AddSound(this, name, clip);
 
-    /// <summary>Renames a sound you added.</summary>
+    /// <summary>Renames a sound you added; the owner and the admins of the room can rename any.</summary>
     public void RenameSound(string id, string name) => _node.RenameSound(this, id, name);
 
     /// <summary>Removes a sound you added.</summary>

@@ -55,7 +55,6 @@
                 </StackPanel>
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                <Button Content="＋ Add a sound" Classes="primary" Click="Add_Click" />
                 <Button x:Name="DockButton" Classes="ghost" Content="⧉ Pop out" Click="Dock_Click" />
                 <Button x:Name="CloseButton" Classes="ghost" Content="✕" AutomationProperties.Name="Close the soundboard" ToolTip.Tip="Close (Esc)" Click="Close_Click" />
             </StackPanel>
@@ -97,7 +96,7 @@
                 </Border>
                 <TextBlock x:Name="EmptyTitle" Text="No sounds yet" FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" />
                 <TextBlock x:Name="EmptyText" Classes="muted" TextWrapping="Wrap" TextAlignment="Center"
-                           Text="Add one and everyone in the room can play it while they are in voice." />
+                           Text="Sounds are added in the room's settings (the ⋯ menu, then Room settings). Everyone in the room can play them while they are in voice." />
             </StackPanel>
         </Grid>
 

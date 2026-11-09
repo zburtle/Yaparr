@@ -568,12 +568,11 @@ public partial class MainWindow : Window
 
     private void CheckNetwork_Click(object? sender, RoutedEventArgs e) => ShowSettings("network");
 
-    private async void RenameRoom_Click(object? sender, RoutedEventArgs e)
+    // The name only this person sees for a room (a label kept in the settings); the room's own name and key do not change.
+    private void RenameRoom(ConversationVm conv, string label)
     {
-        if (_selected is not { IsRoom: true } conv) return;
-        var current = conv.Title.StartsWith(PrivatePrefix) ? conv.Title[PrivatePrefix.Length..] : conv.Title;
-        var label = await PromptDialog.AskAsync(this, "A new name for this room (only you see it):", current);
-        if (string.IsNullOrWhiteSpace(label) || label == current) return;
+        label = label.Trim();
+        if (label.Length == 0 || label == RoomLabel(conv)) return;
 
         conv.Title = PrivatePrefix + label;
         HeaderText.Text = conv.Name;
@@ -583,6 +582,8 @@ public partial class MainWindow : Window
             _data.SaveSettings(_settings);
         }
     }
+
+    private static string RoomLabel(ConversationVm conv) => conv.Title.StartsWith(PrivatePrefix) ? conv.Title[PrivatePrefix.Length..] : conv.Title;
 
     private async void LeaveRoom_Click(object? sender, RoutedEventArgs e)
     {

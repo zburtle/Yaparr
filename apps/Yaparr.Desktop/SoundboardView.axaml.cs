@@ -31,6 +31,12 @@ public sealed class SoundVm : Observable
 
     public SoundInfo Info { get; }
     public bool Mine { get; }
+
+    /// <summary>In the room's settings: this person may delete the sound for everyone (they added it, or they are an admin).</summary>
+    public bool CanDelete { get; init; }
+
+    /// <summary>In the room's settings: this person may rename the sound (they added it, or they are an admin).</summary>
+    public bool CanRename { get; init; }
     public string Id => Info.Id;
     public string Name => Info.Name;
     public bool Available => Info.Available;
@@ -92,8 +98,6 @@ public partial class SoundboardView : UserControl
     private Action _save = () => { };
     private Func<VoiceSession?> _voice = () => null;
     private Func<string?> _output = () => null;
-    private Func<string, bool> _isPersonMuted = _ => false;
-    private Action<string, bool> _setPersonMuted = (_, _) => { };
     private Action _togglePlace = () => { };
     private Action _close = () => { };
     private readonly ObservableCollection<SoundVm> _tiles = new();
@@ -109,10 +113,10 @@ public partial class SoundboardView : UserControl
 
     /// <summary>Starts showing a room's sounds. <paramref name="togglePlace"/> moves the board between the window and a window of its own.</summary>
     internal void Attach(ChatRoom room, PeerId me, AppSettings settings, Action save, Func<VoiceSession?> voice, Func<string?> output,
-        Func<string, bool> isPersonMuted, Action<string, bool> setPersonMuted, Action togglePlace, Action close)
+        Action togglePlace, Action close)
     {
         _room = room; _me = me; _settings = settings; _save = save; _voice = voice; _output = output;
-        _isPersonMuted = isPersonMuted; _setPersonMuted = setPersonMuted; _togglePlace = togglePlace; _close = close;
+        _togglePlace = togglePlace; _close = close;
         RoomText.Text = room.Name;
         Tiles.ItemsSource = _tiles;
 
@@ -195,7 +199,7 @@ public partial class SoundboardView : UserControl
         {
             EmptyGlyph.Text = "♪";
             EmptyTitle.Text = "No sounds yet";
-            EmptyText.Text = "Add one and everyone in the room can play it while they are in voice.";
+            EmptyText.Text = "Sounds are added in the room's settings (the ⋯ menu, then Room settings). Everyone in the room can play them while they are in voice.";
         }
         else
         {
@@ -238,14 +242,12 @@ public partial class SoundboardView : UserControl
         }
         else
         {
-            string owner = tile.Info.Owner.Value;
-            bool muted = _isPersonMuted(owner);
-            var mute = new MenuItem { Header = muted ? $"Unmute {tile.Info.OwnerName}'s soundboard" : $"Mute {tile.Info.OwnerName}'s soundboard" };
-            mute.Click += (_, _) => _setPersonMuted(owner, !muted);
-            items.Add(new Separator());
-            items.Add(mute);
             if (_room.MyRole >= RoomRole.Admin)
             {
+                items.Add(new Separator());
+                var renameAny = new MenuItem { Header = "Rename… (admin)" };
+                renameAny.Click += async (_, _) => await RenameAsync(tile);
+                items.Add(renameAny);
                 var delete = new MenuItem { Header = "Delete (admin)" };
                 delete.Click += async (_, _) => await AdminDeleteAsync(tile);
                 items.Add(delete);
@@ -282,19 +284,6 @@ public partial class SoundboardView : UserControl
         if (Owner is not { } owner || !await Dialogs.ConfirmAsync(owner, "Delete sound", $"Remove \"{tile.Name}\" from the soundboard for everyone?", "Delete", "Keep")) return;
         try { _room.RemoveSound(tile.Id); }
         catch (Exception ex) when (ex is InvalidOperationException or KeyNotFoundException) { Say(ex.Message); }
-    }
-
-    private async void Add_Click(object? sender, RoutedEventArgs e)
-    {
-        if (Owner is not { } owner) return;
-        var dialog = new AddSoundDialog(_output);
-        if (!await dialog.ShowDialog<bool>(owner) || dialog.NewSound == null || dialog.SoundName == null) return;
-        try
-        {
-            _room.AddSound(dialog.SoundName, dialog.NewSound);
-            Say($"Added {dialog.SoundName}.");
-        }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { Say(ex.Message); }
     }
 
     private void Dock_Click(object? sender, RoutedEventArgs e) => _togglePlace();

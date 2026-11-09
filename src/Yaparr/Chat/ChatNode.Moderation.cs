@@ -102,6 +102,11 @@ public sealed partial class ChatNode
             if (m.Kind is not (SignedMod.DeleteMessage or SignedMod.DeleteSound or SignedMod.DeleteGif) || SignerRole(m) < RoomRole.Admin) continue;
             (m.Kind == SignedMod.DeleteMessage ? view.Messages : m.Kind == SignedMod.DeleteGif ? view.Gifs : view.Sounds).Add(m.Target);
         }
+        foreach (var m in all)
+        {
+            if (m.Kind != SignedMod.RenameSound || m.Label.Length == 0 || SignerRole(m) < RoomRole.Admin) continue;
+            if (!view.SoundNames.TryGetValue(m.Target, out var have) || have.Ts < m.Ts) view.SoundNames[m.Target] = (m.Label, m.Ts);
+        }
         return view;
     }
 
@@ -166,6 +171,20 @@ public sealed partial class ChatNode
         lock (room.SoundGate) known = room.SoundEntries.ContainsKey(id);
         if (!known) throw new KeyNotFoundException("There is no such sound.");
         PublishMod(room, SignedMod.DeleteSound, id, "");
+    }
+
+    // An owner or admin gives a sound that someone else added another name. The sound itself, signed by whoever added it, is not touched: the
+    // order is read next to it, and whichever is newer (this, or its owner's own rename) decides the name.
+    internal void RenameSoundAsAdmin(ChatRoom room, string id, string name)
+    {
+        RequireAdmin(room);
+        name = name.Trim();
+        if (name.Length == 0) throw new ArgumentException("A sound needs a name.");
+        if (name.Length > 64) throw new ArgumentException("That name is too long.");
+        StoredSound? s;
+        lock (room.SoundGate) room.SoundEntries.TryGetValue(id, out s);
+        if (s == null || s.Deleted) throw new KeyNotFoundException("There is no such sound.");
+        PublishMod(room, SignedMod.RenameSound, id, name);
     }
 
     internal void DeleteGif(ChatRoom room, string id)
