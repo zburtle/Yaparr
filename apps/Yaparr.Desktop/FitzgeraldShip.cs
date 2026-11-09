@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Threading;
 
@@ -7,8 +8,9 @@ namespace Yaparr.Desktop;
 
 /// <summary>
 /// A lake freighter that crosses the empty chat screen on November 10th, the day the SS Edmund Fitzgerald was lost on Lake Superior
-/// in 1975 with all 29 of her crew. She is a quiet silhouette that fades in and out of the dark and rides the swell; nothing about it
-/// makes a sound or can be clicked. It draws only while it is visible, so the rest of the year it costs nothing.
+/// in 1975 with all 29 of her crew. She is a quiet silhouette that fades in and out of the dark and rides the swell, and makes no sound.
+/// Clicking the ship raises <see cref="ShipClicked"/> (the window offers to open Gordon Lightfoot's song in the browser). It draws only
+/// while it is visible, so the rest of the year it costs nothing.
 /// </summary>
 internal sealed class FitzgeraldShip : Control
 {
@@ -21,8 +23,19 @@ internal sealed class FitzgeraldShip : Control
 
     public FitzgeraldShip()
     {
-        IsHitTestVisible = false;
+        Cursor = new Cursor(StandardCursorType.Hand);
         _timer.Tick += (_, _) => InvalidateVisual();
+    }
+
+    /// <summary>The ship itself was clicked (not the water or the empty space around her).</summary>
+    public event Action? ShipClicked;
+
+    protected override void OnPointerReleased(PointerReleasedEventArgs e)
+    {
+        base.OnPointerReleased(e);
+        if (e.InitialPressMouseButton != MouseButton.Left) return;
+        e.Handled = true;
+        ShipClicked?.Invoke();
     }
 
     /// <summary>True on November 10th, by the computer's own calendar. YAPARR_FITZ=1 shows it on any day, to look at it.</summary>
@@ -71,6 +84,10 @@ internal sealed class FitzgeraldShip : Control
         // Fade in as she comes out of the dark at one side, and out at the other.
         double edge = Math.Min(progress, 1 - progress);
         double fade = Math.Clamp(edge / 0.12, 0, 1);
+
+        // Only where the ship is can be clicked: a clear rectangle over her, so the water and the space around her let clicks through.
+        // She cannot be clicked while she is still fading in or out at the edge.
+        if (fade > 0.3) context.DrawRectangle(Brushes.Transparent, null, new Rect(x, waterline - 30 * scale, length, 32 * scale));
 
         using (context.PushOpacity(0.55 * fade))
         {

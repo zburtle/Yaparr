@@ -699,8 +699,8 @@
                     </ListBox>
 
                     <!-- November 10th only: a freighter crossing the empty screen, in memory of the Edmund Fitzgerald (see FitzgeraldShip). -->
-                    <StackPanel x:Name="ShipPanel" Grid.Row="1" VerticalAlignment="Bottom" IsVisible="False" IsHitTestVisible="False" Margin="0,0,0,14">
-                        <local:FitzgeraldShip Height="110" />
+                    <StackPanel x:Name="ShipPanel" Grid.Row="1" VerticalAlignment="Bottom" IsVisible="False" Margin="0,0,0,14">
+                        <local:FitzgeraldShip x:Name="Ship" Height="110" ToolTip.Tip="Click to hear the song (it opens in your browser)" />
                         <TextBlock Classes="muted small" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" Margin="12,6,12,0"
                                    Text="In memory of the 29 crew of the SS Edmund Fitzgerald, lost on Lake Superior, November 10, 1975." />
                     </StackPanel>
