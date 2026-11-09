@@ -15,6 +15,9 @@
     <!-- Google's WebRTC audio processing (BSD-3-Clause) through SoundFlow's wrapper (MIT). It ships a native library for
          Windows and Linux; on Linux that library needs glibc 2.38 or newer, so loading it can fail on older systems. -->
     <PackageReference Include="SoundFlow.Extensions.WebRtc.Apm" Version="1.4.2" />
+    <!-- Mozilla and Xiph's RNNoise (BSD-3-Clause), a small neural network that takes noise out of speech, through Yellow Dog Man Studios' wrapper (MIT).
+         It ships a native library for Windows (x64, x86) and Linux (x64, arm64). -->
+    <PackageReference Include="YellowDogMan.RRNoise.NET" Version="0.1.9" />
   </ItemGroup>
 
 </Project>

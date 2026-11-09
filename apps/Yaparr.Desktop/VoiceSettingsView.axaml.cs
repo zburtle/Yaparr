@@ -25,9 +25,10 @@ public partial class VoiceSettingsView : UserControl
     {
         InitializeComponent();
         NoiseBox.ItemsSource = Enum.GetNames<NoiseSuppression>();
+        SuppressorBox.ItemsSource = Suppressors.Select(s => s.Label).ToList();
         if (!WebRtcVoiceProcessor.IsAvailable(out var unavailable))
         {
-            EchoBox.IsEnabled = NoiseBox.IsEnabled = false;
+            EchoBox.IsEnabled = NoiseBox.IsEnabled = SuppressorBox.IsEnabled = false;
             ProcessingNote.Text = "Not available on this system, so your microphone is sent as it is: " + unavailable;
         }
 
@@ -36,6 +37,7 @@ public partial class VoiceSettingsView : UserControl
         OutputVolumeBox.PropertyChanged += (_, e) => { if (e.Property == RangeBase.ValueProperty) Commit(); };
         SensitivityBox.PropertyChanged += (_, e) => { if (e.Property == RangeBase.ValueProperty) Commit(); };
         NoiseBox.SelectionChanged += (_, _) => Commit();
+        SuppressorBox.SelectionChanged += (_, _) => { ShowSuppressor(); Commit(); };
         EchoBox.IsCheckedChanged += (_, _) => Commit();
         LevelSpeakersBox.IsCheckedChanged += (_, _) => Commit();
         AutomaticVolumeBox.IsCheckedChanged += (_, _) => Commit();
@@ -66,6 +68,31 @@ public partial class VoiceSettingsView : UserControl
         Load();
     }
 
+    // The noise suppressors to choose from, as the person reads them and as they are kept in the settings.
+    private sealed record SuppressorChoice(string Key, string Label, string Note);
+
+    private static readonly SuppressorChoice[] Suppressors =
+    {
+        new(nameof(NoiseSuppressor.YaparrCustom), "Yaparr Custom", "WebRTC's noise suppression, the one Yaparr has always used. Pick how strong it is."),
+        new(nameof(NoiseSuppressor.RNNoise), "RNNoise", "A small neural network trained on speech. It has no strength to set, and takes out more than steady noise (keys and voices in the background too), at the cost of a little more processing."),
+    };
+
+    /// <summary>The suppressor kept in the settings; Yaparr Custom for anything that is not one of them.</summary>
+    internal static NoiseSuppressor SuppressorOf(string? key) => Enum.TryParse<NoiseSuppressor>(key, out var s) ? s : NoiseSuppressor.YaparrCustom;
+
+    // The strength only means something for Yaparr Custom, so it is shown only then; each choice says what it is.
+    private void ShowSuppressor()
+    {
+        var choice = Suppressors.FirstOrDefault(s => s.Label == SuppressorBox.SelectedItem as string) ?? Suppressors[0];
+        bool custom = choice.Key == nameof(NoiseSuppressor.YaparrCustom);
+        NoiseLevelLabel.IsVisible = NoiseBox.IsVisible = custom;
+        // RNNoise takes out clicks itself, so the two are not run together; the choice is kept for when Yaparr Custom is picked again.
+        ClickBox.IsVisible = ClickNote.IsVisible = custom;
+        SuppressorNote.Text = choice.Note;
+        if (!custom && !WebRtcVoiceProcessor.IsRnnoiseAvailable(out var reason))
+            SuppressorNote.Text += " Not available on this system, so Yaparr Custom is used instead: " + reason;
+    }
+
     // Reads the settings into the controls, and the devices again (they come and go).
     internal void Load()
     {
@@ -80,6 +107,8 @@ public partial class VoiceSettingsView : UserControl
             _pushToTalkKey = _settings.VoicePushToTalkKey;
             PushToTalkSoundBox.IsChecked = _settings.VoicePushToTalkSound;
             NoiseBox.SelectedItem = Enum.TryParse<NoiseSuppression>(_settings.VoiceNoiseSuppression, out var noise) ? noise.ToString() : nameof(NoiseSuppression.Moderate);
+            SuppressorBox.SelectedItem = Suppressors.First(s => s.Key == SuppressorOf(_settings.VoiceNoiseSuppressor).ToString()).Label;
+            ShowSuppressor();
             EchoBox.IsChecked = _settings.VoiceEchoCancellation;
             ClickBox.IsChecked = _settings.VoiceClickSuppression;
             LevelSpeakersBox.IsChecked = _settings.VoiceLevelSpeakers;
@@ -111,6 +140,7 @@ public partial class VoiceSettingsView : UserControl
         _settings.VoiceLevelSpeakers = LevelSpeakersBox.IsChecked == true;
         _settings.VoiceAutomaticVolume = AutomaticVolumeBox.IsChecked == true;
         _settings.VoiceNoiseSuppression = NoiseBox.SelectedItem as string ?? nameof(NoiseSuppression.Moderate);
+        _settings.VoiceNoiseSuppressor = Suppressors.FirstOrDefault(s => s.Label == SuppressorBox.SelectedItem as string)?.Key ?? nameof(NoiseSuppressor.YaparrCustom);
         _settings.VoiceSensitivity = (int)SensitivityBox.Value;
         _changed?.Invoke(devices);
     }

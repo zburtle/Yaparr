@@ -35,10 +35,11 @@ switch (args.FirstOrDefault())
 
     case "analyze":
         if (args.Length < 2 || !File.Exists(args[1])) { Console.Error.WriteLine("Give the recording to analyze."); return 2; }
-        return Analyze(args[1], Enum.TryParse<NoiseSuppression>(Opt("--noise"), true, out var noise) ? noise : NoiseSuppression.Moderate);
+        return Analyze(args[1], Enum.TryParse<NoiseSuppression>(Opt("--noise"), true, out var noise) ? noise : NoiseSuppression.Moderate,
+            Enum.TryParse<NoiseSuppressor>(Opt("--suppressor"), true, out var suppressor) ? suppressor : NoiseSuppressor.YaparrCustom);
 
     default:
-        Console.Error.WriteLine("Yaparr.VoiceProbe list | record [--seconds N] [--device NAME] [--out FILE] | analyze FILE [--noise LEVEL]");
+        Console.Error.WriteLine("Yaparr.VoiceProbe list | record [--seconds N] [--device NAME] [--out FILE] | analyze FILE [--noise LEVEL] [--suppressor YaparrCustom|RNNoise]");
         return 2;
 }
 
@@ -72,10 +73,10 @@ int Record(int seconds, string? device, string path)
     lock (gate) all = samples.ToArray();
     WriteWav(path, all);
     Console.WriteLine($"Saved {all.Length / (double)Rate:0.0} s to {Path.GetFullPath(path)}");
-    return Analyze(path, NoiseSuppression.Moderate);
+    return Analyze(path, NoiseSuppression.Moderate, NoiseSuppressor.YaparrCustom);
 }
 
-int Analyze(string path, NoiseSuppression noise)
+int Analyze(string path, NoiseSuppression noise, NoiseSuppressor suppressor)
 {
     var raw = ReadWav(path);
     Console.WriteLine($"{Path.GetFileName(path)}: {raw.Length / (double)Rate:0.0} s");
@@ -83,7 +84,7 @@ int Analyze(string path, NoiseSuppression noise)
 
     float[] processed = (float[])raw.Clone();
     {
-        if (WebRtcVoiceProcessor.TryCreate(new VoiceProcessing(EchoCancellation: false, Noise: noise), out var p, out var err))
+        if (WebRtcVoiceProcessor.TryCreate(new VoiceProcessing(EchoCancellation: false, Noise: noise, Suppressor: suppressor), out var p, out var err))
         {
             using (p!) for (int at = 0; at + Frame <= processed.Length; at += Frame) p!.ProcessCapture(processed.AsSpan(at, Frame));
         }
@@ -92,7 +93,7 @@ int Analyze(string path, NoiseSuppression noise)
 
     Console.WriteLine();
     Report("As recorded", raw);
-    Report($"After noise suppression ({noise})", processed);
+    Report($"After noise suppression ({(suppressor == NoiseSuppressor.RNNoise ? "RNNoise" : "Yaparr Custom, " + noise)})", processed);
 
     Console.WriteLine();
     Console.WriteLine("The leveller on the cleaned recording (talking = frames it takes for speech; levels are RMS in dB below full scale):");

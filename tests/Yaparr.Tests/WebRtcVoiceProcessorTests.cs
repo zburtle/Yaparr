@@ -161,6 +161,53 @@ public class WebRtcVoiceProcessorTests
     }
 
     [Fact]
+    public void The_RNNoise_library_loads_on_this_system()
+    {
+        Assert.True(WebRtcVoiceProcessor.IsRnnoiseAvailable(out var reason), reason);
+    }
+
+    // The made-up voice is a buzz, which a network trained on real speech need not keep, so only what it must do is asserted: the hiss between
+    // the bursts comes down, and nothing is broken. How it sounds on real voices is what the settings are for.
+    [Fact]
+    public void RNNoise_takes_steady_background_noise_out()
+    {
+        var voice = Speech(12, 120, 2, 0.3);
+        var mic = Mix(voice, Hiss(12, 0.02, 5));
+        using var processor = Make(new VoiceProcessing(EchoCancellation: false, Noise: NoiseSuppression.Moderate, Suppressor: NoiseSuppressor.RNNoise));
+        Assert.Null(processor.RnnoiseProblem);
+        var o = Run(processor, new float[mic.Length], mic);
+
+        double quietIn = 0, quietOut = 0; int quiet = 0;
+        for (int at = 300 * Frame / 2; at + Frame <= mic.Length; at += Frame)
+            if (Rms(voice, at, at + Frame) < 1e-4) { quietIn += Math.Pow(Rms(mic, at, at + Frame), 2); quietOut += Math.Pow(Rms(o, at, at + Frame), 2); quiet++; }
+        Assert.True(quiet > 20);
+        Assert.True(Db(Math.Sqrt(quietOut / quiet) / Math.Sqrt(quietIn / quiet)) < -7, "background noise was not reduced enough");
+        Assert.All(o, v => Assert.True(float.IsFinite(v)));
+    }
+
+    [Fact]
+    public void The_noise_suppressor_can_be_changed_while_running()
+    {
+        var mic = Mix(Speech(8, 120, 2, 0.3), Hiss(8, 0.02, 5));
+        var none = new float[mic.Length];
+        using var processor = Make(new VoiceProcessing(EchoCancellation: true, Noise: NoiseSuppression.Off));
+        var off = Run(processor, none, mic);
+        processor.Reconfigure(new VoiceProcessing(EchoCancellation: true, Noise: NoiseSuppression.Off, Suppressor: NoiseSuppressor.RNNoise));
+        var rnnoise = Run(processor, none, mic);
+        processor.Reconfigure(new VoiceProcessing(EchoCancellation: true, Noise: NoiseSuppression.High, Suppressor: NoiseSuppressor.YaparrCustom));
+        var custom = Run(processor, none, mic);
+        Assert.True(Rms(rnnoise, 5 * Rate, 8 * Rate) < Rms(off, 5 * Rate, 8 * Rate), "RNNoise changed nothing");
+        Assert.True(Rms(custom, 5 * Rate, 8 * Rate) < Rms(off, 5 * Rate, 8 * Rate), "going back to Yaparr Custom changed nothing");
+    }
+
+    [Fact]
+    public void RNNoise_alone_is_not_nothing_to_do()
+    {
+        Assert.True(new VoiceProcessing(false, NoiseSuppression.Off).IsOff);
+        Assert.False(new VoiceProcessing(false, NoiseSuppression.Off, NoiseSuppressor.RNNoise).IsOff);
+    }
+
+    [Fact]
     public void Your_voice_survives_the_other_side_talking_at_the_same_time()
     {
         var far = Speech(20, 130, 1, 0.4);
