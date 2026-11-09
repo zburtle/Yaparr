@@ -4,10 +4,12 @@ name: Release installer
 # version (android-v1.2.3), in release-android.yml. Each looks only at the commits that concern it (.github/release/track-filter.js).
 #
 # It runs only when started by hand (Actions, Run workflow, on master), so that many merged changes go out as one release, with the version the
-# commits since the last tag call for. A run that finds nothing to release does nothing.
+# commits since the last tag call for. A run that finds nothing to release does nothing. "Release all" (release-all.yml) runs this and the Android release
+# together.
 
 on:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: write
