@@ -27,6 +27,10 @@ using Avalonia.Android;
 [assembly: UsesPermission("android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING")]
 [assembly: UsesPermission("android.permission.FOREGROUND_SERVICE_MICROPHONE")]
 
+// Updating the app from its own releases hands the downloaded package to Android's installer, which asks for the person's confirmation. Android asks
+// them once to allow Yaparr to install packages.
+[assembly: UsesPermission(Android.Manifest.Permission.RequestInstallPackages)]
+
 // The camera is only for reading a link QR code, and the app works without one.
 [assembly: UsesPermission(Android.Manifest.Permission.Camera)]
 [assembly: UsesFeature("android.hardware.camera", Required = false)]

@@ -130,6 +130,10 @@ The Android app is released on its own, with its own version and tags (`android-
 
 Every build is signed with the same key, `apps/Yaparr.Android/yaparr-debug.keystore`, so a new build installs over the old one (`adb install -r`, or opening the file on the phone) and keeps your chats and account. The version number is the CI run number, so each build from CI is newer than the last. A build from before this key was added was signed with a key of its own, so it has to be uninstalled once; after that, updates work.
 
+### Updating from inside the app
+
+A release build looks for a newer release when it opens (a few seconds after the start, and it can be turned off in Settings) and offers it once for each version; Settings has a button that looks on demand. It reads the repository's releases, takes the newest `android-v` one that has a `.apk` with a published SHA-256 checksum from the repository's own release downloads, downloads it into the app's private cache, checks the checksum, and gives it to Android's `PackageInstaller`. Android shows its own confirmation, and only accepts a package signed with the same key as the installed app, so a package from anywhere else cannot replace it. The first time, Android sends the person to the page where Yaparr is allowed to install packages (`REQUEST_INSTALL_PACKAGES`); they come back and tap the button again. It uses nothing from Google Play services. A build tried on a phone (the debug key) is not updated this way, since a release is signed with another key and could not replace it; it shows a note instead. The checking is `Yaparr.Updates.AndroidReleases` (tested), the rest `apps/Yaparr.Android/AppUpdater.cs` and `MainView.Updates.cs`. Not tried on a phone or emulator against a real release yet.
+
 The key is only for builds that are tried on a phone. It is in the repository, so it proves nothing about who made a package. A release for other people has to be signed with a key kept secret (pass its path and passwords as `AndroidSigningKeyStore` and so on, which win over the project's), and Google Play needs its own signing setup.
 
 ## What is stored

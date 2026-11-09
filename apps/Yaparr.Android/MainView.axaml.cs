@@ -38,6 +38,8 @@ public partial class MainView : UserControl
         // A phone that has an account but no name (it was made, then closed before the name was typed) only needs the name; there is nothing to go back to.
         if (_data.HasIdentity) { NameBackButton.IsVisible = false; ShowOnly(NamePanel); }
         AttachedToVisualTree += (_, _) => OnAttached();
+        AppUpdater.InstallFailed += OnUpdateInstallFailed;
+        _ = CheckForUpdateAtStartAsync();
         LinkInbox.Arrived += OnLinkArrived;
         ChatInbox.Arrived += OpenFromNotification;
         DetachedFromVisualTree += (_, _) => Unhook();
@@ -54,6 +56,7 @@ public partial class MainView : UserControl
     {
         LinkInbox.Arrived -= OnLinkArrived;
         ChatInbox.Arrived -= OpenFromNotification;
+        AppUpdater.InstallFailed -= OnUpdateInstallFailed;
         _keyboardUndo?.Invoke();
         foreach (var undo in _unhooks) undo();
         _unhooks.Clear();
@@ -432,6 +435,8 @@ public partial class MainView : UserControl
         BackgroundCheck.IsVisible = BackgroundNote.IsVisible = BatteryButton.IsVisible = canService;
         NotificationNote.Text = "";
         VersionText.Text = "Yaparr " + AppVersion();
+        UpdateCheck.IsChecked = _settings.CheckForUpdates;
+        ShowUpdateState();
         _loadingSettings = false;
         ShowTheme();
         ShowOnly(SettingsPanel);
