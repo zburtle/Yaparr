@@ -698,6 +698,13 @@
                         </ListBox.ContextMenu>
                     </ListBox>
 
+                    <!-- November 10th only: a freighter crossing the empty screen, in memory of the Edmund Fitzgerald (see FitzgeraldShip). -->
+                    <StackPanel x:Name="ShipPanel" Grid.Row="1" VerticalAlignment="Bottom" IsVisible="False" IsHitTestVisible="False" Margin="0,0,0,14">
+                        <local:FitzgeraldShip Height="110" />
+                        <TextBlock Classes="muted small" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" Margin="12,6,12,0"
+                                   Text="In memory of the 29 crew of the SS Edmund Fitzgerald, lost on Lake Superior, November 10, 1975." />
+                    </StackPanel>
+
                     <StackPanel x:Name="EmptyPanel" Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="6" MaxWidth="360">
                         <Image Source="avares://Yaparr.Desktop/Assets/yaparr.png" Width="96" Height="96" HorizontalAlignment="Center" />
                         <TextBlock Text="No conversation open" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,8,0,0" />

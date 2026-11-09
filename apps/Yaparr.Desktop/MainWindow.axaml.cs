@@ -35,6 +35,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        ShipPanel.IsVisible = EmptyPanel.IsVisible && FitzgeraldShip.IsHerDay(DateTime.Now);
         UseMenuRowAsTitleBar();
         // The box takes several lines (a pasted report, say), so Enter has to be caught before the box turns it into a new line; Shift+Enter is the new line.
         InputBox.AddHandler(KeyDownEvent, InputBox_KeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
@@ -1211,6 +1212,7 @@ public partial class MainWindow : Window
         HeaderText.Text = _selected?.Name ?? "Welcome to Yaparr";
         HeaderSubtitle.Text = _selected?.Subtitle ?? "Serverless chat between friends";
         EmptyPanel.IsVisible = !has;
+        ShipPanel.IsVisible = !has && FitzgeraldShip.IsHerDay(DateTime.Now);
         DetailsPanel.DataContext = _selected;
         VoicePanel.DataContext = _selected;
         VoiceBar.DataContext = _selected;
