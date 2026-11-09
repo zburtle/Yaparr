@@ -3,8 +3,8 @@ using Avalonia.Threading;
 
 namespace Yaparr.Desktop;
 
-// Shows that rooms are getting going: a bar above the lists ("Syncing 2 of 5 rooms…", or that this device is looking for the one it was
-// linked from) and a line under each room that is not ready yet. SyncStatus decides the words; this only asks once a second.
+// Shows that rooms are getting going: a line under each room that is not ready yet, and a small turning icon at the top (or that this device is looking
+// for the one it was linked from). SyncStatus decides when; this only asks once a second.
 public partial class MainWindow
 {
     private readonly DispatcherTimer _syncTimer = new() { Interval = TimeSpan.FromSeconds(1) };
@@ -23,11 +23,6 @@ public partial class MainWindow
         if (_node is not { } node) return;
         var states = new List<RoomSyncState>();
         foreach (var (room, conv) in _roomConversations.ToList()) states.Add(conv.UpdateSync(room));
-        var text = SyncStatus.Banner(_deviceSearch.Update(node), states, out var progress);
-        SyncBar.IsVisible = text != null;
-        SyncBarText.Text = text ?? "";
-        Avalonia.Controls.ToolTip.SetTip(SyncBar, text);
-        SyncProgress.IsIndeterminate = progress == null;
-        SyncProgress.Value = progress ?? 0;
+        SyncIcon.IsVisible = SyncStatus.Banner(_deviceSearch.Update(node), states, out _) != null;
     }
 }
