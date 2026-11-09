@@ -207,6 +207,10 @@
 
                     <TextBlock Text="About" FontWeight="SemiBold" Margin="0,14,0,0" Foreground="{DynamicResource Muted}" />
                     <TextBlock x:Name="VersionText" FontSize="13" Foreground="{DynamicResource Ink}" />
+                    <TextBlock x:Name="UpdateText" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Accent}" />
+                    <Button x:Name="UpdateButton" HorizontalAlignment="Stretch" Content="Check for updates" Click="UpdateClicked" />
+                    <CheckBox x:Name="UpdateCheck" Content="Look for updates when Yaparr opens" Click="UpdateCheckChanged" />
+                    <TextBlock Text="An update is downloaded from Yaparr's releases on GitHub, which sees this phone's address, and is checked against the checksum published with it. Android asks you to confirm before it is installed, and only accepts a package signed with the same key as this app." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
                     <Button HorizontalAlignment="Stretch" Content="Copy what this phone is connected to" Click="DiagnosticsClicked" />
                     <TextBlock Text="Copies who this phone is connected to and what it has been doing, for a report of a problem." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
                 </StackPanel>
