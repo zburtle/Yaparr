@@ -112,8 +112,7 @@ public partial class MainWindow
         else if (WindowsToast.Available && TryGetPlatformHandle()?.Handle is { } window)
             WindowsToast.Show(window, who, text, () => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
-                if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
-                Activate();
+                ShowFromTray();
                 SelectConversation(conv);
             }));
     }

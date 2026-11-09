@@ -27,6 +27,9 @@ public sealed class AppSettings
     /// <summary>When a message you send has a web link, fetch the page's title, description and picture and send them along as a card under the link. The readers never contact the site.</summary>
     public bool LinkPreviews { get; set; } = true;
 
+    /// <summary>The computer app: closing the window leaves Yaparr running behind an icon in the notification area (the Exit menu item and the icon's Exit end it).</summary>
+    public bool CloseToTray { get; set; } = true;
+
     /// <summary>The phone app looks for a newer version when it opens and offers it. This contacts GitHub, which sees the phone's address.</summary>
     public bool CheckForUpdates { get; set; } = true;
 

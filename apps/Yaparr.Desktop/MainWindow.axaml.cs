@@ -82,7 +82,11 @@ public partial class MainWindow : Window
             _ = CheckForUpdateAsync();
             await StartAsync();
         };
-        Closing += (_, _) => Shutdown();
+        Closing += (_, e) =>
+        {
+            if (KeepRunningOnClose(e)) { e.Cancel = true; HideToTray(); return; }
+            Shutdown();
+        };
     }
 
     // The sidebar shows the rooms and the direct chats in lists of their own, kept in step with the one list of all conversations.
@@ -157,7 +161,7 @@ public partial class MainWindow : Window
         (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
     }
 
-    private void Exit_Click(object? sender, RoutedEventArgs e) => Close();
+    private void Exit_Click(object? sender, RoutedEventArgs e) => Quit();
 
     private async void CheckUpdates_Click(object? sender, RoutedEventArgs e) => await CheckForUpdateAsync(manual: true);
 
@@ -355,6 +359,7 @@ public partial class MainWindow : Window
         Updater.Log = _log.Write;
         SetUpNotifications();
         SetUpLinkPreviews();
+        SetUpTray();
         VoiceView.Attach(_settings, OnVoiceSettingChanged, () => _voice?.InputLevel);
         NetworkView.Attach(() => _node);
         VpnPanel.Attach(_vpn);

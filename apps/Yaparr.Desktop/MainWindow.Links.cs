@@ -40,8 +40,7 @@ public partial class MainWindow
             while (_waitingLinks.Count > 0 && _node != null)
             {
                 var link = _waitingLinks.Dequeue();
-                if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
-                Activate();
+                ShowFromTray();
                 if (link.Kind == DeepLinkKind.Join) await JoinWithKeyAsync(RoomKey.Parse(link.Value), fromLink: true);
                 else await ChatFromLinkAsync(new PeerId(link.Value));
             }

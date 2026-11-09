@@ -901,6 +901,7 @@
                         </StackPanel>
                         <StackPanel x:Name="SectionNotifications" Spacing="10" IsVisible="False">
                             <TextBlock Text="Notifications" FontSize="15" FontWeight="SemiBold" />
+                            <CheckBox x:Name="CloseToTrayItem" Content="Keep Yaparr running in the notification area when I close the window" />
                             <CheckBox x:Name="SoundsItem" Content="Play sounds" />
                             <CheckBox x:Name="FlashItem" Content="Flash the taskbar button" />
                             <CheckBox x:Name="TaskbarCountItem" Content="Show the unread count on the taskbar" />
