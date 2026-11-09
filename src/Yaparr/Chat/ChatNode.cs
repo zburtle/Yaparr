@@ -373,6 +373,7 @@ public sealed partial class ChatNode : IDisposable
         _ownsIdentity = _options.Identity == null;
         _identity = _options.Identity ?? PeerIdentity.Generate();
         LoadAccountState();
+        LoadOwnDevices();
         LoadAvatars();
         foreach (var blocked in _options.BlockedPeers) _blocked[blocked] = 0;
         // Blocks that came with the settings, in case the app's own list does not have them yet.

@@ -21,7 +21,8 @@ public partial class MainWindow
         if (Program.StartupLink is { } first) _waitingLinks.Enqueue(first);
         _links = LinkChannel.Listen(LinkChannel.NameFor(_data.Directory), line =>
         {
-            if (DeepLink.Parse(line) is { } link) UI(() => { QueueLink(link); });
+            if (line == LinkChannel.ShowLine) UI(ShowFromTray);
+            else if (DeepLink.Parse(line) is { } link) UI(() => { QueueLink(link); });
         });
     }
 

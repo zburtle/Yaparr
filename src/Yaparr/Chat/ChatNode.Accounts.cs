@@ -38,6 +38,7 @@ public sealed partial class ChatNode
         if (!SignedPresence.TryGetAccount(beacon, out var device, out var account)) return false;
         if (_accounts.TryGetValue(device, out var known) && known == account) return false;
         _accounts[device] = account;
+        RememberOwnDevices(account);
         AccountLearned?.Invoke(device);
         return true;
     }
@@ -64,6 +65,7 @@ public sealed partial class ChatNode
             if (device.Value != message.From || device == account) return;
             if (_accounts.TryGetValue(device, out var known) && known == account) return;
             _accounts[device] = account;
+            RememberOwnDevices(account);
             AccountLearned?.Invoke(device);
         }
         catch (FormatException) { }
@@ -75,7 +77,39 @@ public sealed partial class ChatNode
             && (!_accounts.TryGetValue(device, out var known) || known != account))
         {
             _accounts[device] = account;
+            RememberOwnDevices(account);
             AccountLearned?.Invoke(device);
+        }
+    }
+
+    // Which devices are yours is kept between runs. Without it, what one of them sent while this device was closed shows as someone else's until that
+    // device is next seen (its certificate only arrives with it).
+    private string? OwnDevicesPath => _options.PeerCachePath is { Length: > 0 } cache ? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(cache))!, "own-devices.json") : null;
+
+    private readonly object _ownDevicesGate = new();
+
+    private void LoadOwnDevices()
+    {
+        if (OwnDevicesPath is not { } path || !File.Exists(path)) return;
+        try
+        {
+            foreach (var id in System.Text.Json.JsonSerializer.Deserialize<List<string>>(File.ReadAllText(path)) ?? new())
+                if (IsValidPeerId(id) && new PeerId(id) != AccountId) _accounts[new PeerId(id)] = AccountId;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException) { _options.Log?.Invoke("own devices: could not read " + path + ": " + ex.Message); }
+    }
+
+    private void RememberOwnDevices(PeerId account)
+    {
+        if (account != AccountId || OwnDevicesPath is not { } path) return;
+        lock (_ownDevicesGate)
+        {
+            try
+            {
+                var ids = _accounts.Where(kv => kv.Value == AccountId).Select(kv => kv.Key.Value).OrderBy(v => v, StringComparer.Ordinal).ToList();
+                File.WriteAllText(path, System.Text.Json.JsonSerializer.Serialize(ids));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { _options.Log?.Invoke("own devices: could not save: " + ex.Message); }
         }
     }
 
