@@ -44,6 +44,7 @@ public partial class MainWindow
         try
         {
             var invite = room.RotateSecret(people.Select(p => p.Account).ToList());
+            if (RoomSettingsOverlay.IsVisible) ShowRoomKey(conv, invite);
             var copied = await Dialogs.CopyAsync(this, invite);
             StatusText.Text = copied
                 ? $"The room has a new key, for {people.Count} {(people.Count == 1 ? "person" : "people")}. The new invite was copied; send it to anyone new, or anyone away for more than a month."

@@ -62,8 +62,11 @@ public sealed partial class ChatNode
     {
         List<StoredSound> live;
         lock (room.SoundGate) live = room.SoundEntries.Values.Where(s => !s.Deleted).ToList();
+        // A name an owner or admin gave a sound that was not theirs counts until the sound's own owner renames it again.
+        var names = Moderation(room).SoundNames;
         return live.Where(s => IsValidPeerId(s.From) && !IsBlocked(new PeerId(s.From)) && !IsBannedIn(room, new PeerId(s.From)) && !IsSoundDeleted(room, s.Id))
-            .OrderBy(s => s.Name, StringComparer.CurrentCultureIgnoreCase).ThenBy(s => s.Id, StringComparer.Ordinal).Select(ToInfo).ToList();
+            .Select(s => names.TryGetValue(s.Id, out var renamed) && renamed.Ts > s.Ts ? ToInfo(s) with { Name = renamed.Name } : ToInfo(s))
+            .OrderBy(s => s.Name, StringComparer.CurrentCultureIgnoreCase).ThenBy(s => s.Id, StringComparer.Ordinal).ToList();
     }
 
     internal SoundClip? ReadSound(ChatRoom room, string id)
@@ -91,6 +94,14 @@ public sealed partial class ChatNode
     {
         name = name.Trim();
         if (name.Length == 0) throw new ArgumentException("A sound needs a name.");
+        // Someone else's sound can be renamed by the owner and the admins of the room.
+        StoredSound? existing;
+        lock (room.SoundGate) room.SoundEntries.TryGetValue(id, out existing);
+        if (existing is { Deleted: false } && existing.From != Id.Value)
+        {
+            RenameSoundAsAdmin(room, id, name);
+            return;
+        }
         var own = OwnSound(room, id);
         PublishSound(room, SignedSound.Create(_identity, room.Key, id, name, own.OwnerName, own.Hash, own.Size, own.Ms, NextTimestamp(), deleted: false));
     }

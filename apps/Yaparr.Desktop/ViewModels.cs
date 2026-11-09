@@ -951,8 +951,11 @@ public sealed class VoiceMemberVm : Observable
     public bool SoundboardMuted
     {
         get => _soundboardMuted;
-        set { if (_soundboardMuted == value) return; _soundboardMuted = value; Raise(); Raise(nameof(SoundboardGlyph)); Raise(nameof(SoundboardTip)); }
+        set { if (_soundboardMuted == value) return; _soundboardMuted = value; Raise(); Raise(nameof(SoundboardGlyph)); Raise(nameof(SoundboardTip)); Raise(nameof(SoundboardMenuText)); }
     }
+
+    /// <summary>The right-click menu item: mutes (or brings back) every sound this person plays from the soundboard.</summary>
+    public string SoundboardMenuText => _soundboardMuted ? "Unmute soundboard for this person" : "Mute soundboard for this person";
 
     public string SoundboardGlyph => _soundboardMuted ? "🔕" : "🔔";
     public string SoundboardTip => _soundboardMuted ? "Their soundboard sounds are muted. Click to unmute." : "Mute only their soundboard sounds";

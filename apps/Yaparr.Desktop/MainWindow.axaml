@@ -6,7 +6,12 @@
         Background="{DynamicResource AppBg}">
     <Window.Resources>
 <DataTemplate x:Key="VoiceMemberRow" x:DataType="local:VoiceMemberVm">
-                                            <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,14,4">
+                                            <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,14,4" Background="Transparent">
+                                                <StackPanel.ContextMenu>
+                                                    <ContextMenu Opening="VoiceMemberMenu_Opening">
+                                                        <MenuItem Header="{Binding SoundboardMenuText}" Click="SoundboardMute_Click" />
+                                                    </ContextMenu>
+                                                </StackPanel.ContextMenu>
                                                 <Border Width="28" Height="28" CornerRadius="14" Background="{Binding Avatar}"
                                                         BorderBrush="{Binding Ring}" BorderThickness="3">
                                                     <TextBlock Text="{Binding Initial}" Foreground="White" FontSize="12" FontWeight="SemiBold"
@@ -471,7 +476,7 @@
                                      SelectionChanged="ConversationList_SelectionChanged">
                             <ListBox.ContextMenu>
                                 <ContextMenu Opening="ConversationMenu_Opening">
-                                    <MenuItem Header="_Rename…" Click="RenameRoom_Click" />
+                                    <MenuItem Header="Room _settings…" Click="RoomSettings_Click" />
                                     <MenuItem Header="_Leave room" Click="LeaveRoom_Click" />
                                 </ContextMenu>
                             </ListBox.ContextMenu>
@@ -486,7 +491,7 @@
                                      SelectionChanged="ConversationList_SelectionChanged">
                             <ListBox.ContextMenu>
                                 <ContextMenu Opening="ConversationMenu_Opening">
-                                    <MenuItem Header="_Rename…" Click="RenameRoom_Click" />
+                                    <MenuItem Header="Room _settings…" Click="RoomSettings_Click" />
                                     <MenuItem Header="_Leave room" Click="LeaveRoom_Click" />
                                 </ContextMenu>
                             </ListBox.ContextMenu>
@@ -528,9 +533,8 @@
                                         <MenuFlyout Placement="BottomEdgeAlignedRight">
                                             <MenuItem Header="Voice settings…" Click="VoiceSettings_Click" />
                                             <MenuItem Header="Copy invite" Click="CopyInvite_Click" IsVisible="{Binding HasInvite}" />
-                                            <MenuItem Header="Replace the room key…" Click="RotateKey_Click" IsVisible="{Binding IsOwner}" />
                                             <Separator />
-                                            <MenuItem Header="Rename…" Click="RenameRoom_Click" />
+                                            <MenuItem Header="Room settings…" Click="RoomSettings_Click" />
                                             <MenuItem Header="Leave room" Click="LeaveRoom_Click" />
                                         </MenuFlyout>
                                     </Button.Flyout>
@@ -838,6 +842,100 @@
     </Border>
 
     <!-- The settings: sections on the left, the section's controls on the right, over the window. Escape, the cross or a click outside closes it. -->
+    <!-- Room settings: the room's name, key and GIF shelf, in a panel over the window like the settings. -->
+    <Border x:Name="RoomSettingsOverlay" IsVisible="False" Background="#D8000000" Padding="24" Focusable="True"
+            AutomationProperties.Name="Room settings"
+            PointerPressed="RoomSettingsOverlay_PointerPressed" KeyDown="RoomSettingsOverlay_KeyDown">
+        <Border Classes="card" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" MaxWidth="780" MaxHeight="760" Padding="0"
+                KeyboardNavigation.TabNavigation="Cycle">
+            <Grid RowDefinitions="Auto,*" ColumnDefinitions="200,*">
+                <StackPanel Margin="18,14,0,10" VerticalAlignment="Center">
+                    <TextBlock Text="Room settings" FontSize="17" FontWeight="SemiBold" />
+                    <TextBlock x:Name="RoomSettingsName" Classes="muted small" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <Button Grid.Column="1" Classes="ghost" Content="✕" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,8,12,0"
+                        AutomationProperties.Name="Close room settings" ToolTip.Tip="Close (Esc)" Click="CloseRoomSettings_Click" />
+                <ListBox x:Name="RoomSettingsList" Grid.Row="1" Classes="flat" Margin="8,0,0,8" AutomationProperties.Name="Room settings sections"
+                         SelectionChanged="RoomSettingsList_SelectionChanged">
+                    <ListBoxItem Content="Name" Tag="name" />
+                    <ListBoxItem Content="Room key" Tag="key" />
+                    <ListBoxItem Content="GIF shelf" Tag="shelf" />
+                    <ListBoxItem Content="Soundboard" Tag="sounds" />
+                </ListBox>
+                <ScrollViewer Grid.Row="1" Grid.Column="1" VerticalScrollBarVisibility="Auto">
+                    <Panel Margin="18,4,18,18">
+                        <StackPanel x:Name="RoomSectionName" Spacing="10">
+                            <TextBlock Text="Name" FontSize="15" FontWeight="SemiBold" />
+                            <TextBox x:Name="RoomNameBox" MaxLength="60" KeyDown="RoomNameBox_KeyDown" TextChanged="RoomNameBox_TextChanged" AutomationProperties.Name="Room name" />
+                            <Button x:Name="RoomNameSave" Content="Save" Classes="primary" HorizontalAlignment="Left" IsEnabled="False" Click="RoomNameSave_Click" />
+                            <TextBlock Classes="muted small" TextWrapping="Wrap" Text="Only you see this name. Other people in the room keep their own names for it." />
+                        </StackPanel>
+                        <StackPanel x:Name="RoomSectionKey" Spacing="10" IsVisible="False">
+                            <TextBlock Text="Room key" FontSize="15" FontWeight="SemiBold" />
+                            <TextBlock x:Name="RoomKeyNone" Classes="muted" TextWrapping="Wrap" IsVisible="False" Text="This room has no key to share." />
+                            <StackPanel x:Name="RoomKeyShown" Spacing="10">
+                                <SelectableTextBlock x:Name="RoomKeyText" Classes="mono" TextWrapping="Wrap" />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Content="Copy key" Click="CopyInvite_Click" />
+                                    <Button Content="Copy link" ToolTip.Tip="Copy a link that opens Yaparr and joins this room" Click="CopyInviteLink_Click" />
+                                </StackPanel>
+                                <TextBlock Classes="muted small" TextWrapping="Wrap" Text="Anyone who has the key or the link can join the room. Share it carefully." />
+                            </StackPanel>
+                            <StackPanel x:Name="RoomKeyReplace" Spacing="10" Margin="0,8,0,0">
+                                <TextBlock Text="Replace the key" FontWeight="SemiBold" />
+                                <TextBlock x:Name="RoomKeyReplaceNote" Classes="muted small" TextWrapping="Wrap"
+                                           Text="Gives the room a new key and hands it to everyone Yaparr has seen in it. Banned people, and anyone who only kept the old invite, can no longer find the room or talk in it." />
+                                <Button x:Name="RoomKeyReplaceButton" Content="Replace the room key…" HorizontalAlignment="Left" Click="RotateKey_Click" />
+                            </StackPanel>
+                        </StackPanel>
+                        <StackPanel x:Name="RoomSectionShelf" Spacing="10" IsVisible="False">
+                            <Grid ColumnDefinitions="*,Auto,Auto">
+                                <TextBlock Text="GIF shelf" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                <TextBlock x:Name="RoomShelfCount" Grid.Column="1" Classes="muted small" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                <Button Grid.Column="2" Content="Add…" Padding="10,3" CornerRadius="14" Click="RoomShelfAdd_Click" />
+                            </Grid>
+                            <TextBlock Classes="muted small" TextWrapping="Wrap"
+                                       Text="Pictures every member of this room can send from the GIF button. Anyone can add; you can remove your own, and the person who made the room (and its admins) can take down any. Click a picture for its options." />
+                            <TextBlock x:Name="RoomShelfEmpty" Classes="muted" TextWrapping="Wrap" IsVisible="False"
+                                       Text="Nothing here yet. Add a GIF or picture and everyone in this room can send it." />
+                            <WrapPanel x:Name="RoomShelfGrid" />
+                        </StackPanel>
+                        <StackPanel x:Name="RoomSectionSounds" Spacing="10" IsVisible="False">
+                            <TextBlock Text="Soundboard" FontSize="15" FontWeight="SemiBold" />
+                            <TextBlock Classes="muted small" TextWrapping="Wrap"
+                                       Text="Short sounds that everyone in the room can play into a voice call from the Soundboard button. Add a WAV, MP3 or OGG file; a longer one is cut to 20 seconds. The soundboard itself is where sounds are played, renamed and deleted." />
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock x:Name="RoomSoundCount" Classes="muted" VerticalAlignment="Center" />
+                                <Button Grid.Column="1" Content="Add a sound…" Classes="primary" Click="RoomSoundAdd_Click" />
+                            </Grid>
+                            <ItemsControl x:Name="RoomSoundList">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="local:SoundVm">
+                                        <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,3">
+                                            <Border Width="36" Height="36" CornerRadius="10" Margin="0,0,10,0" VerticalAlignment="Center" Background="{Binding TintBack}">
+                                                <TextBlock Text="{Binding Initial}" Foreground="{Binding Tint}" FontSize="17" FontWeight="Bold"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                            </Border>
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="{Binding Caption}" Classes="muted small" TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                                                <Button Classes="ghost" Content="▶ Preview" IsEnabled="{Binding Available}" ToolTip.Tip="Only you hear it" Click="RoomSoundPreview_Click" />
+                                                <Button Classes="ghost" Content="Rename…" IsVisible="{Binding CanRename}" Click="RoomSoundRename_Click" />
+                                                <Button Classes="ghost" Content="Delete" Foreground="{DynamicResource Bad}" IsVisible="{Binding CanDelete}" Click="RoomSoundDelete_Click" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Panel>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+    </Border>
+
     <Border x:Name="SettingsOverlay" IsVisible="False" Background="#D8000000" Padding="24" Focusable="True"
             AutomationProperties.Name="Settings" SizeChanged="SettingsOverlay_SizeChanged"
             PointerPressed="SettingsOverlay_PointerPressed" KeyDown="SettingsOverlay_KeyDown">

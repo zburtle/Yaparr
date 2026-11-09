@@ -19,7 +19,7 @@ A room made by this version names its owner (the account that made it) inside th
 
 ## Bans and admin deletions
 
-Bans and admin deletions of messages, sounds and pictures on the room's GIF shelf (`ChatNode.Moderation.cs`) are signed orders from the owner or an admin, passed around the room, checked by every client against the current admins, so an order lapses when its admin is removed; an admin cannot ban an admin or the owner, and the owner's word on a person beats an admin's. A banned person leaves the member list, voice and everything sent, and their messages are hidden; they keep the room key, so this is soft.
+Bans, admin deletions of messages, sounds and pictures on the room's GIF shelf, and admin renames of sounds (`ChatNode.Moderation.cs`) are signed orders from the owner or an admin, passed around the room, checked by every client against the current admins, so an order lapses when its admin is removed; an admin cannot ban an admin or the owner, and the owner's word on a person beats an admin's. A banned person leaves the member list, voice and everything sent, and their messages are hidden; they keep the room key, so this is soft.
 
 ## Replacing the room secret
 

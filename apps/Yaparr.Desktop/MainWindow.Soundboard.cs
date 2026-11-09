@@ -27,7 +27,7 @@ public partial class MainWindow
         _soundboardRoom = room.Name;
         var view = new SoundboardView();
         view.Attach(room, _node.Id, _settings, () => _data.SaveSettings(_settings), () => _voice, () => _settings.VoiceOutput,
-            IsPersonSoundboardMuted, SetPersonSoundboardMute, ToggleSoundboardPlace, CloseSoundboard);
+            ToggleSoundboardPlace, CloseSoundboard);
         _soundboard = view;
         if (_settings.SoundboardInWindow) PopOutSoundboard(); else DockSoundboard();
     }
@@ -134,9 +134,16 @@ public partial class MainWindow
             foreach (var member in conv.VoiceMembers.Where(m => m.Id == id)) member.SoundboardMuted = muted;
     }
 
+    // The bell next to a person and the item in their right-click menu do the same: whatever sound they play from the soundboard is not heard by
+    // you, however they chose it (their own upload or anyone's), and their voice is not affected.
     private void SoundboardMute_Click(object? sender, RoutedEventArgs e)
     {
         if (sender is Avalonia.Controls.Control { DataContext: VoiceMemberVm member } && !member.IsSelf)
             SetPersonSoundboardMute(member.Id, !member.SoundboardMuted);
+    }
+
+    private void VoiceMemberMenu_Opening(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        if (sender is not Avalonia.Controls.ContextMenu { DataContext: VoiceMemberVm { IsSelf: false } }) e.Cancel = true;
     }
 }
