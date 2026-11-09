@@ -114,7 +114,8 @@ public partial class MainWindow
         session.Sensitivity = _settings.VoiceSensitivity / 1000f;
         session.OutputGain = Math.Clamp(_settings.VoiceOutputVolume, 0, 300) / 100f;
         session.AutomaticVolume = _settings.VoiceAutomaticVolume;
-        session.ClickSuppression = _settings.VoiceClickSuppression;
+        // RNNoise takes out clicks as part of what it does, so the click remover is not run with it.
+        session.ClickSuppression = _settings.VoiceClickSuppression && VoiceSettingsView.SuppressorOf(_settings.VoiceNoiseSuppressor) == NoiseSuppressor.YaparrCustom;
         session.LevelSpeakers = _settings.VoiceLevelSpeakers;
     }
 
@@ -179,7 +180,8 @@ public partial class MainWindow
 
     private VoiceProcessing ProcessingSettings => new(
         _settings.VoiceEchoCancellation,
-        Enum.TryParse<NoiseSuppression>(_settings.VoiceNoiseSuppression, out var noise) ? noise : NoiseSuppression.Moderate);
+        Enum.TryParse<NoiseSuppression>(_settings.VoiceNoiseSuppression, out var noise) ? noise : NoiseSuppression.Moderate,
+        VoiceSettingsView.SuppressorOf(_settings.VoiceNoiseSuppressor));
 
     // Echo cancellation and noise suppression on the microphone. If the library cannot load here, voice works without it.
     private void ApplyProcessing(VoiceSession session)
@@ -196,12 +198,14 @@ public partial class MainWindow
         {
             _processor.Reconfigure(wanted);
             session.Processor = _processor;
+            WarnIfRnnoiseMissing(_processor);
             return;
         }
         if (WebRtcVoiceProcessor.TryCreate(wanted, out var processor, out var error))
         {
             _processor = processor;
             session.Processor = processor;
+            WarnIfRnnoiseMissing(processor!);
         }
         else if (!_processingWarned)
         {
@@ -210,6 +214,17 @@ public partial class MainWindow
             StatusText.Text = "Echo cancellation and noise suppression are not available on this system, so your microphone is sent as it is.";
         }
     }
+
+    // RNNoise was chosen but its library cannot load here; the WebRTC noise suppression is used instead, and the person is told once.
+    private void WarnIfRnnoiseMissing(WebRtcVoiceProcessor processor)
+    {
+        if (processor.RnnoiseProblem is not { } problem || _rnnoiseWarned) return;
+        _rnnoiseWarned = true;
+        _log.Write("RNNoise is not available: " + problem);
+        StatusText.Text = "RNNoise is not available on this system, so Yaparr Custom noise suppression is used instead.";
+    }
+
+    private bool _rnnoiseWarned;
 
     private void JoinVoice_Click(object? sender, RoutedEventArgs e)
     {
