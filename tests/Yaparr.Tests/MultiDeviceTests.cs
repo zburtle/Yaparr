@@ -105,6 +105,30 @@ public class MultiDeviceTests
     }
 
     [Fact]
+    public async Task Your_other_devices_are_still_yours_after_a_restart()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "yaparr-own-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var cache = Path.Combine(dir, "peers.json");
+        try
+        {
+            using var d = await Devices.StartAsync();
+            using (var before = TestUtil.NewNode(d.Hub, "alice", identity: d.FirstId, peerCachePath: cache))
+            {
+                await before.JoinRoomAsync("lobby");
+                await TestUtil.WaitFor(() => before.IsMyDevice(d.Second.Id));
+            }
+
+            // A new run, with the other device nowhere to be seen: what it sent while this one was closed is still known to be yours.
+            var hub = new InMemoryDiscoveryHub();
+            using var after = TestUtil.NewNode(hub, "alice", identity: d.FirstId, peerCachePath: cache);
+            Assert.True(after.IsMyDevice(d.Second.Id));
+            Assert.False(after.IsMyDevice(d.Other.Id));
+        }
+        finally { try { Directory.Delete(dir, true); } catch (IOException) { } }
+    }
+
+    [Fact]
     public async Task Everyone_sees_both_devices_as_one_person_and_the_devices_find_each_other()
     {
         using var d = await Devices.StartAsync();

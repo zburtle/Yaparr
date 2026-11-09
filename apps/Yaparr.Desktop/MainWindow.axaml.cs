@@ -157,7 +157,11 @@ public partial class MainWindow : Window
         _restarting = true;
         var args = Environment.GetCommandLineArgs().Skip(1).Where(a => !a.StartsWith(DeepLink.Scheme, StringComparison.OrdinalIgnoreCase)).Select(a => $"\"{a}\"");
         if (Environment.ProcessPath is { } exe)
-            Process.Start(new ProcessStartInfo(exe, string.Join(' ', args)) { UseShellExecute = false });
+        {
+            var start = new ProcessStartInfo(exe, string.Join(' ', args)) { UseShellExecute = false };
+            start.Environment[Program.RestartVariable] = "1";
+            Process.Start(start);
+        }
         (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
     }
 
@@ -330,7 +334,11 @@ public partial class MainWindow : Window
                 return;
             }
             if (!OperatingSystem.IsWindows() && Environment.ProcessPath is { } exe)
-                Process.Start(new ProcessStartInfo(exe) { UseShellExecute = false });
+            {
+                var start = new ProcessStartInfo(exe) { UseShellExecute = false };
+                start.Environment[Program.RestartVariable] = "1";
+                Process.Start(start);
+            }
             (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
         }
         catch (OperationCanceledException) { }

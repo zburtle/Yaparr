@@ -12,6 +12,9 @@ namespace Yaparr.Desktop;
 /// </summary>
 internal sealed class LinkChannel : IDisposable
 {
+    /// <summary>What a second launch with no link sends: bring the window to the front.</summary>
+    public const string ShowLine = "show";
+
     private const int MaxLine = 1024;
     private readonly CancellationTokenSource _stop = new();
     private readonly Action<string> _onLine;
