@@ -7,8 +7,11 @@ name: Release Android
 #
 # Its release is never the "latest" one: the computer app updates itself from the latest release, and yaparr.com looks there for the installers,
 # so the Android releases are kept out of that and the site looks for the newest Android release on its own.
+#
+# "Release all" (release-all.yml) runs this and the computer release together.
 on:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: write
