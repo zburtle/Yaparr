@@ -3,8 +3,6 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Org.BouncyCastle.Crypto.Parameters;
-using Org.BouncyCastle.Crypto.Signers;
 using Yaparr.AppCore;
 using Yaparr.Identity;
 
@@ -12,7 +10,6 @@ namespace Yaparr.Tests;
 
 public sealed class BackupServerClientTests : IDisposable
 {
-    private const string Password = "correct horse battery";
     private static readonly Uri Server = new("https://backup.example.org");
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "yaparr-bsc-" + Guid.NewGuid().ToString("N"));
 
@@ -20,17 +17,22 @@ public sealed class BackupServerClientTests : IDisposable
     public void Dispose() { try { Directory.Delete(_dir, true); } catch (IOException) { } }
 
     /// <summary>
-    /// A backup server in memory. It checks signatures with its own code (not the client's), so a client that signs something the server would
-    /// not accept fails here. It follows how a real one answers: 401 for an unknown name or a bad signature, 428 without If-Match, 409 when stale.
+    /// A backup server in memory, answering as a real one does: 401 without a token it gave out, 428 without If-Match, 409 when stale, and a
+    /// sign-in code that is traded for a token only with the verifier its challenge was made from.
     /// </summary>
     private sealed class FakeServer : HttpMessageHandler
     {
-        public readonly Dictionary<string, byte[]> Keys = new();
+        public readonly Dictionary<string, string> Tokens = new();                          // token -> username
+        public readonly Dictionary<string, (string User, string Challenge)> Codes = new();
         public readonly List<byte[]> Versions = new();
-        public Func<DateTimeOffset> Now = () => DateTimeOffset.UtcNow;
         public bool Down;
 
-        public void Add(string user, byte[] seed) => Keys[user] = new Ed25519PrivateKeyParameters(seed, 0).GeneratePublicKey().GetEncoded();
+        public string SignIn(string user)
+        {
+            var token = "ycl_" + Guid.NewGuid().ToString("N");
+            Tokens[token] = user;
+            return token;
+        }
 
         private static HttpResponseMessage Json(HttpStatusCode status, object body) =>
             new(status) { Content = new StringContent(JsonSerializer.Serialize(body, new JsonSerializerOptions(JsonSerializerDefaults.Web)), Encoding.UTF8, "application/json") };
@@ -38,31 +40,37 @@ public sealed class BackupServerClientTests : IDisposable
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancel)
         {
             if (Down) throw new HttpRequestException("connection refused");
-            string? H(string name) => request.Headers.TryGetValues(name, out var v) ? v.Single() : null;
             var path = request.RequestUri!.PathAndQuery;
             var body = request.Content == null ? Array.Empty<byte>() : await request.Content.ReadAsByteArrayAsync(cancel);
 
-            var user = H("X-Yaparr-User");
-            if (user == null || !Keys.TryGetValue(user, out var key)) return Json(HttpStatusCode.Unauthorized, new { error = "The username or password is wrong." });
-            var time = long.Parse(H("X-Yaparr-Time")!);
-            if (Math.Abs(Now().ToUnixTimeSeconds() - time) > 300) return Json(HttpStatusCode.Unauthorized, new { error = "The clock of this device is too far from the server's." });
-            var hash = H("X-Yaparr-Content-Sha256")!;
-            var verifier = new Ed25519Signer();
-            verifier.Init(false, new Ed25519PublicKeyParameters(key, 0));
-            var text = Encoding.UTF8.GetBytes($"YAPSVC2\n{user}\n{request.Method.Method}\n{path}\n{time}\n{hash}");
-            verifier.BlockUpdate(text, 0, text.Length);
-            if (!verifier.VerifySignature(Base64Url.DecodeFromChars(H("X-Yaparr-Sig")!))) return Json(HttpStatusCode.Unauthorized, new { error = "The username or password is wrong." });
-            if (Convert.ToHexStringLower(SHA256.HashData(body)) != hash) return Json(HttpStatusCode.BadRequest, new { error = "What arrived is not what was signed." });
+            if (path == "/v1/token" && request.Method == HttpMethod.Post)
+            {
+                var asked = JsonDocument.Parse(body).RootElement;
+                var code = asked.GetProperty("code").GetString()!;
+                var verifier = asked.GetProperty("verifier").GetString()!;
+                if (!Codes.Remove(code, out var pending) || Base64Url.EncodeToString(SHA256.HashData(Encoding.ASCII.GetBytes(verifier))) != pending.Challenge)
+                    return Json(HttpStatusCode.BadRequest, new { error = "That sign-in has expired or was already used. Sign in again." });
+                return Json(HttpStatusCode.OK, new { token = SignIn(pending.User), username = pending.User });
+            }
+
+            var token = request.Headers.Authorization is { Scheme: "Bearer" } auth ? auth.Parameter : null;
+            if (token == null || !Tokens.TryGetValue(token, out var user)) return Json(HttpStatusCode.Unauthorized, new { error = "This device is not signed in. Sign in again." });
+
+            if (path == "/v1/token" && request.Method == HttpMethod.Delete)
+            {
+                Tokens.Remove(token);
+                return new HttpResponseMessage(HttpStatusCode.NoContent);
+            }
 
             if (path == "/v1/backup/versions" && request.Method == HttpMethod.Get)
-                return Json(HttpStatusCode.OK, Versions.Select((_, i) => new { version = i + 1, size = Versions[i].Length, at = DateTimeOffset.UtcNow }).Reverse());
+                return Json(HttpStatusCode.OK, new { username = user, versions = Versions.Select((v, i) => new { version = i + 1, size = v.Length, at = DateTimeOffset.UtcNow }).Reverse() });
 
             if (path == "/v1/backup" && request.Method == HttpMethod.Put)
             {
                 if (request.Headers.IfMatch.Count == 0) return Json((HttpStatusCode)428, new { error = "Say which version this is based on." });
                 var basedOn = int.Parse(request.Headers.IfMatch.Single().Tag.Trim('"'));
                 if (basedOn != Versions.Count) return Json(HttpStatusCode.Conflict, new { error = "A newer backup exists.", version = Versions.Count });
-                if (!body.AsSpan().StartsWith("YAPBAK1\n"u8)) return Json(HttpStatusCode.BadRequest, new { error = "Only a backup locked with a passphrase is accepted." });
+                if (!body.AsSpan().StartsWith("YAPBAK1\n"u8)) return Json(HttpStatusCode.BadRequest, new { error = "Only a locked backup is accepted." });
                 Versions.Add(body);
                 return Json(HttpStatusCode.Created, new { version = Versions.Count, size = body.Length });
             }
@@ -83,36 +91,23 @@ public sealed class BackupServerClientTests : IDisposable
                 Versions.Clear();
                 return new HttpResponseMessage(HttpStatusCode.NoContent);
             }
-
-            if (path == "/v1/account/key" && request.Method == HttpMethod.Put)
-            {
-                Keys[user] = Base64Url.DecodeFromChars(JsonDocument.Parse(body).RootElement.GetProperty("publicKey").GetString()!);
-                return new HttpResponseMessage(HttpStatusCode.NoContent);
-            }
             return Json(HttpStatusCode.NotFound, new { error = "Not found." });
         }
     }
 
-    // A client with the small settings (quicker for tests than the real ones); how it signs is the real code.
-    private static BackupServerClient Client(FakeServer server, string user = "sam", string password = Password) =>
-        new(Server, user, BackupServerClient.SigningSeed(user, password, 8 * 1024, 1), new HttpClient(server), () => DateTimeOffset.UtcNow);
+    private static BackupServerClient Client(FakeServer server, string? token = null) => new(Server, token ?? server.SignIn("sam"), new HttpClient(server));
 
-    private string LockedBackup(string name = "backup.yapbak")
+    private string LockedBackup(string code, string name = "backup.yapbak")
     {
         var data = new AppData(Path.Combine(_dir, "profile"));
-        using (var identity = PeerIdentity.Generate()) data.SaveIdentity(identity);
+        if (!data.HasIdentity) { using var identity = PeerIdentity.Generate(); data.SaveIdentity(identity); }
         data.SaveSettings(new AppSettings { DisplayName = "Zed" });
         var path = Path.Combine(_dir, name);
-        data.ExportProfile(path, Password);
+        data.ExportProfile(path, code);
         return path;
     }
 
-    private FakeServer ServerWith(string user = "sam", string password = Password)
-    {
-        var server = new FakeServer();
-        server.Add(user, BackupServerClient.SigningSeed(user, password, 8 * 1024, 1));
-        return server;
-    }
+    // ---- the address and the recovery code ----
 
     [Theory]
     [InlineData("backup.example.org", "https://backup.example.org/")]
@@ -127,69 +122,160 @@ public sealed class BackupServerClientTests : IDisposable
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    [InlineData("http://backup.example.org")]   // not over the internet in the clear
+    [InlineData("http://backup.example.org")]   // a password is typed into it: not over the internet in the clear
     [InlineData("ftp://backup.example.org")]
     [InlineData("https://")]
     public void An_address_that_cannot_be_used_is_refused(string? typed) => Assert.Null(BackupServerClient.ParseServerAddress(typed));
 
+    [Fact]
+    public void A_recovery_code_is_long_random_and_easy_to_read_out()
+    {
+        var code = RecoveryCode.Generate();
+        Assert.Matches("^[A-HJ-NP-Z2-9]{4}(-[A-HJ-NP-Z2-9]{4}){5}$", code);   // six groups of four, without I, O, 0 or 1
+        Assert.NotEqual(code, RecoveryCode.Generate());
+        Assert.Null(ProfileCipher.CheckPassphrase(code));                      // long enough to lock a backup
+        Assert.Equal(200, Enumerable.Range(0, 200).Select(_ => RecoveryCode.Generate()).Distinct().Count());
+    }
+
     [Theory]
-    [InlineData("sam", "sam")]
-    [InlineData("  Sam ", "sam")]
-    [InlineData("a.b-c_d", "a.b-c_d")]
-    [InlineData("ab", null)]
-    [InlineData("-sam", null)]
-    [InlineData("sam smith", null)]
-    [InlineData("", null)]
-    public void A_username_is_kept_as_the_server_keeps_it(string typed, string? expected) => Assert.Equal(expected, BackupServerClient.NormalizeUsername(typed));
+    [InlineData("K7QD-M3XF-9PLR-2WTE-HV8N-C4YB")]
+    [InlineData("k7qd-m3xf-9plr-2wte-hv8n-c4yb")]
+    [InlineData("K7QDM3XF9PLR2WTEHV8NC4YB")]
+    [InlineData("  k7qd m3xf 9plr 2wte hv8n c4yb  ")]
+    public void A_recovery_code_is_understood_however_it_is_typed(string typed) =>
+        Assert.Equal("K7QD-M3XF-9PLR-2WTE-HV8N-C4YB", RecoveryCode.Normalize(typed));
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("K7QD-M3XF-9PLR-2WTE-HV8N")]            // a group short
+    [InlineData("K7QD-M3XF-9PLR-2WTE-HV8N-C4YB-AAAA")]  // a group too many
+    [InlineData("K7QD-M3XF-9PLR-2WTE-HV8N-C4Y0")]       // a zero is not in a code
+    [InlineData("correct horse battery staple")]
+    public void Something_that_is_not_a_recovery_code_is_refused(string? typed) => Assert.Null(RecoveryCode.Normalize(typed));
 
     [Fact]
-    public void The_same_name_and_password_make_the_same_key_and_nothing_else_does()
+    public void What_this_device_remembers_is_kept_apart_from_the_settings_and_out_of_a_backup()
     {
-        byte[] Seed(string user, string pw) => BackupServerClient.SigningSeed(user, pw, 8 * 1024, 1);
-        Assert.Equal(Seed("sam", Password), Seed("  SAM", Password));
-        Assert.NotEqual(Seed("sam", Password), Seed("alex", Password));
-        Assert.NotEqual(Seed("sam", Password), Seed("sam", Password + "!"));
-        Assert.Throws<ArgumentException>(() => Seed("sam", "short"));
-        Assert.Throws<ArgumentException>(() => Seed("no spaces", Password));
+        var data = new AppData(Path.Combine(_dir, "state"));
+        Assert.False(data.LoadBackupServer().SignedIn);
+        data.SaveBackupServer(new BackupServerState { Url = "https://backup.example.org", Username = "sam", Token = "ycl_secret-token", RecoveryCode = "K7QD-M3XF-9PLR-2WTE-HV8N-C4YB", Version = 4 });
+
+        var loaded = data.LoadBackupServer();
+        Assert.True(loaded.SignedIn);
+        Assert.Equal("sam", loaded.Username);
+        Assert.Equal("ycl_secret-token", loaded.Token);
+        Assert.Equal("K7QD-M3XF-9PLR-2WTE-HV8N-C4YB", loaded.RecoveryCode);
+        Assert.Equal(4, loaded.Version);
+
+        // A backup (even a plain one) does not carry the token or the code that locks it.
+        using (var identity = PeerIdentity.Generate()) data.SaveIdentity(identity);
+        data.SaveSettings(new AppSettings());
+        var zip = Path.Combine(_dir, "plain.zip");
+        data.ExportProfile(zip);
+        using var archive = System.IO.Compression.ZipFile.OpenRead(zip);
+        Assert.DoesNotContain(archive.Entries, e => e.FullName.Contains("backup-server", StringComparison.OrdinalIgnoreCase));
+        Assert.False(AppData.IsProfilePath("backup-server.json"));
+    }
+
+    // ---- signing in through the browser ----
+
+    [Fact]
+    public void The_challenge_is_the_standard_one()
+    {
+        // The example from the standard (RFC 7636, appendix B), so any server that follows it accepts what the app sends.
+        Assert.Equal("E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", BrowserSignIn.Challenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"));
+    }
+
+    private static Dictionary<string, string> QueryOf(Uri uri) =>
+        uri.Query.TrimStart('?').Split('&').Select(p => p.Split('=', 2)).ToDictionary(p => p[0], p => Uri.UnescapeDataString(p[1]));
+
+    [Fact]
+    public async Task Signing_in_opens_the_servers_page_and_trades_the_code_the_browser_brings_back()
+    {
+        var server = new FakeServer();
+        using var signIn = new BrowserSignIn(Server, "Sam's laptop");
+
+        // What the browser is sent to.
+        Assert.Equal("backup.example.org", signIn.LoginUrl.Host);
+        Assert.Equal("/login", signIn.LoginUrl.AbsolutePath);
+        var asked = QueryOf(signIn.LoginUrl);
+        Assert.Equal(signIn.CallbackUrl.ToString(), asked["redirect_uri"]);
+        Assert.StartsWith("http://127.0.0.1:", asked["redirect_uri"]);
+        Assert.Equal("Sam's laptop", asked["device"]);
+        Assert.Equal(43, asked["code_challenge"].Length);
+
+        var waiting = signIn.WaitAsync(new HttpClient(server));
+
+        // The person signs in on the server's page, which sends the browser back to the app with a code.
+        server.Codes["the-code"] = ("sam", asked["code_challenge"]);
+        using var browser = new HttpClient();
+        Assert.Equal(HttpStatusCode.NotFound, (await browser.GetAsync(new Uri(signIn.CallbackUrl, "/favicon.ico"))).StatusCode);            // a browser asks for this too
+        Assert.Equal(HttpStatusCode.NotFound, (await browser.GetAsync(signIn.CallbackUrl + "?code=the-code&state=someone-elses")).StatusCode); // not this sign-in
+        Assert.False(waiting.IsCompleted);
+        var page = await browser.GetAsync(signIn.CallbackUrl + "?code=the-code&state=" + asked["state"]);
+        Assert.Equal(HttpStatusCode.OK, page.StatusCode);
+        Assert.Contains("go back to Yaparr", await page.Content.ReadAsStringAsync());
+
+        var (token, username) = await waiting;
+        Assert.Equal("sam", username);
+        Assert.Equal("sam", server.Tokens[token]);
+
+        // And the token works.
+        using var client = new BackupServerClient(Server, token, new HttpClient(server));
+        Assert.Empty(await client.VersionsAsync());
     }
 
     [Fact]
-    public void Signing_is_the_same_as_the_server_expects_down_to_the_byte()
+    public async Task A_code_the_server_refuses_fails_the_sign_in_with_the_servers_words()
     {
-        // A fixed key, name and time make a fixed signature, which the code of the server checks too, so the two cannot drift apart unnoticed.
-        var seed = Enumerable.Range(1, 32).Select(i => (byte)i).ToArray();
-        var headers = BackupServerClient.Sign(seed, "sam", "get", "/v1/backup/versions", 1_700_000_000,
-            Convert.ToHexStringLower(SHA256.HashData(Array.Empty<byte>())));
-        Assert.Equal("sam", headers["X-Yaparr-User"]);
-        Assert.Equal("1700000000", headers["X-Yaparr-Time"]);
-        Assert.Equal("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", headers["X-Yaparr-Content-Sha256"]);
-        Assert.Equal("aRyonQ8cTcTj5OsOnHVrdNM4o77gdFZsgazLs5vwzInhgp-_7pffD2G-XbHvg_jbZK0-YMxfPbgymje_4QopAA", headers["X-Yaparr-Sig"]);
+        var server = new FakeServer();
+        using var signIn = new BrowserSignIn(Server, "x");
+        var waiting = signIn.WaitAsync(new HttpClient(server));
+        using var browser = new HttpClient();
+        await browser.GetAsync(signIn.CallbackUrl + "?code=never-issued&state=" + QueryOf(signIn.LoginUrl)["state"]);
+        var ex = await Assert.ThrowsAsync<BackupServerException>(() => waiting);
+        Assert.Contains("Sign in again", ex.Message);
     }
 
     [Fact]
-    public void The_key_made_from_a_name_and_password_is_the_one_the_server_makes_for_an_account()
+    public async Task Waiting_for_the_browser_can_be_cancelled_and_gives_up_after_a_while()
     {
-        // The public key the server's own "accounts add sam --password ..." stores for this name and password, with the real settings. If this
-        // fails, an account made on the server would not accept the login of the app.
-        var seed = BackupServerClient.SigningSeed("sam", Password, 64 * 1024, 3);
-        Assert.Equal("6Kn/wTntFsynrBg8OrBKkovzDHVWJXOG/H1c1JugIFA=", Convert.ToBase64String(BackupServerClient.PublicKeyOf(seed)));
+        using (var signIn = new BrowserSignIn(Server, "x"))
+        {
+            using var cancel = new CancellationTokenSource();
+            var waiting = signIn.WaitAsync(new HttpClient(new FakeServer()), cancel: cancel.Token);
+            cancel.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiting);
+        }
+        using (var signIn = new BrowserSignIn(Server, "x"))
+        {
+            var ex = await Assert.ThrowsAsync<BackupServerException>(() => signIn.WaitAsync(new HttpClient(new FakeServer()), timeout: TimeSpan.FromMilliseconds(100)));
+            Assert.Contains("Nobody signed in", ex.Message);
+        }
     }
 
+    // ---- backups ----
+
     [Fact]
-    public async Task A_backup_is_saved_and_comes_back_and_restores_with_the_password()
+    public async Task A_backup_is_saved_and_comes_back_and_restores_with_the_recovery_code()
     {
-        var server = ServerWith();
+        var server = new FakeServer();
         using var client = Client(server);
         Assert.Empty(await client.VersionsAsync());
 
-        var file = LockedBackup();
+        var code = RecoveryCode.Generate();
+        var file = LockedBackup(code);
         Assert.Equal(1, await client.UploadAsync(file, basedOn: 0));
-        Assert.Equal(new byte[] { 1 }, (await client.VersionsAsync()).Select(v => (byte)v.Version).ToArray());
-        Assert.Equal(File.ReadAllBytes(file), server.Versions[0]);   // what the server holds is the locked file, as it left
+        Assert.Equal(new[] { 1 }, (await client.VersionsAsync()).Select(v => v.Version).ToArray());
+        Assert.Equal(File.ReadAllBytes(file), server.Versions[0]);                                     // what the server holds is the locked file, as it left
+        Assert.DoesNotContain(code, Encoding.ASCII.GetString(server.Versions[0]));                    // and the code is nowhere in it
 
         var back = Path.Combine(_dir, "downloaded.yapbak");
         Assert.Equal(1, await client.DownloadAsync(back));
-        var staging = new AppData(Path.Combine(_dir, "restored")).StageProfile(back, Password);
+        Assert.True(BackupServerClient.CodeOpens(back, code));
+        Assert.False(BackupServerClient.CodeOpens(back, RecoveryCode.Generate()));                    // another code does not open it
+        var staging = new AppData(Path.Combine(_dir, "restored")).StageProfile(back, code);
         try { Assert.True(File.Exists(Path.Combine(staging, "identity.key"))); }
         finally { Directory.Delete(staging, true); }
     }
@@ -197,9 +283,9 @@ public sealed class BackupServerClientTests : IDisposable
     [Fact]
     public async Task A_save_over_a_newer_backup_is_refused_and_says_which_is_newest()
     {
-        var server = ServerWith();
+        var server = new FakeServer();
         using var client = Client(server);
-        var file = LockedBackup();
+        var file = LockedBackup(RecoveryCode.Generate());
         await client.UploadAsync(file, 0);
         await client.UploadAsync(file, 1);
         var conflict = await Assert.ThrowsAsync<BackupServerConflictException>(() => client.UploadAsync(file, 1));
@@ -210,51 +296,49 @@ public sealed class BackupServerClientTests : IDisposable
     [Fact]
     public async Task A_plain_backup_is_never_sent()
     {
-        var server = ServerWith();
+        var server = new FakeServer();
         using var client = Client(server);
+        var data = new AppData(Path.Combine(_dir, "profile2"));
+        using (var identity = PeerIdentity.Generate()) data.SaveIdentity(identity);
+        data.SaveSettings(new AppSettings());
         var plain = Path.Combine(_dir, "plain.zip");
-        new AppData(Path.Combine(_dir, "profile2")).Also(d => { using var id = PeerIdentity.Generate(); d.SaveIdentity(id); d.SaveSettings(new AppSettings()); d.ExportProfile(plain); });
+        data.ExportProfile(plain);
         await Assert.ThrowsAsync<InvalidOperationException>(() => client.UploadAsync(plain, 0));
         Assert.Empty(server.Versions);
     }
 
     [Fact]
-    public async Task A_wrong_password_and_an_unknown_name_say_the_same_thing()
+    public async Task A_device_the_server_no_longer_knows_is_told_to_sign_in_again()
     {
-        var server = ServerWith();
-        using var wrong = Client(server, "sam", "not the right password");
-        using var stranger = Client(server, "alex");
-        var a = await Assert.ThrowsAsync<BackupServerException>(() => wrong.VersionsAsync());
-        var b = await Assert.ThrowsAsync<BackupServerException>(() => stranger.VersionsAsync());
-        Assert.Equal(HttpStatusCode.Unauthorized, a.Status);
-        Assert.Equal(a.Message, b.Message);
-        Assert.Contains("username or password", a.Message);
-    }
+        var server = new FakeServer();
+        using var stranger = Client(server, "ycl_never-given-out");
+        var ex = await Assert.ThrowsAsync<BackupServerException>(() => stranger.VersionsAsync());
+        Assert.True(ex.SignedOut);
+        Assert.Contains("Sign in again", ex.Message);
 
-    [Fact]
-    public async Task A_clock_that_is_far_off_is_said_so()
-    {
-        var server = ServerWith();
-        server.Now = () => DateTimeOffset.UtcNow.AddHours(3);
-        using var client = Client(server);
-        var ex = await Assert.ThrowsAsync<BackupServerException>(() => client.VersionsAsync());
-        Assert.Contains("clock", ex.Message);
+        // Signing out makes the token stop working, and signing out twice is quiet.
+        var token = server.SignIn("sam");
+        using var client = Client(server, token);
+        await client.SignOutAsync();
+        Assert.DoesNotContain(token, server.Tokens.Keys);
+        Assert.True((await Assert.ThrowsAsync<BackupServerException>(() => client.VersionsAsync())).SignedOut);
+        await client.SignOutAsync();
     }
 
     [Fact]
     public async Task A_server_that_cannot_be_reached_is_reported_plainly()
     {
-        var server = ServerWith();
-        server.Down = true;
-        using var client = Client(server);
+        var server = new FakeServer { Down = true };
+        using var client = Client(server, "ycl_x");
         var ex = await Assert.ThrowsAsync<BackupServerException>(() => client.VersionsAsync());
         Assert.StartsWith("Couldn't reach the backup server", ex.Message);
+        Assert.False(ex.SignedOut);
     }
 
     [Fact]
     public async Task Fetching_when_there_is_no_backup_says_so_and_leaves_no_file()
     {
-        using var client = Client(ServerWith());
+        using var client = Client(new FakeServer());
         var path = Path.Combine(_dir, "none.yapbak");
         var ex = await Assert.ThrowsAsync<BackupServerException>(() => client.DownloadAsync(path));
         Assert.Contains("no backup", ex.Message);
@@ -262,64 +346,17 @@ public sealed class BackupServerClientTests : IDisposable
     }
 
     [Fact]
-    public async Task Changing_the_password_replaces_the_key_on_the_server()
-    {
-        var server = ServerWith();
-        using (var client = Client(server)) await client.UploadAsync(LockedBackup(), 0);
-
-        var newKey = BackupServerClient.SigningSeed("sam", "a brand new password", 8 * 1024, 1);
-        // The real client makes the new key with the real (slow) settings; the fake accepts any key, so this checks the request and that it is signed.
-        using (var client = Client(server)) await client.ChangePasswordAsync("a brand new password");
-        Assert.NotEqual(BackupServerClient.PublicKeyOf(BackupServerClient.SigningSeed("sam", Password, 8 * 1024, 1)), server.Keys["sam"]);
-        Assert.Equal(32, server.Keys["sam"].Length);
-        _ = newKey;
-    }
-
-    [Fact]
     public async Task Deleting_the_backup_removes_it_and_a_second_delete_is_quiet()
     {
-        var server = ServerWith();
+        var server = new FakeServer();
         using var client = Client(server);
-        await client.UploadAsync(LockedBackup(), 0);
+        await client.UploadAsync(LockedBackup(RecoveryCode.Generate()), 0);
         await client.DeleteAsync();
         Assert.Empty(server.Versions);
         await client.DeleteAsync();
     }
 
     [Fact]
-    public void The_form_checks_each_field_and_says_which_is_wrong()
-    {
-        var good = Yaparr.Desktop.BackupServerForm.Read(" backup.example.org ", " Sam ", Password, out var none);
-        Assert.NotNull(good);
-        Assert.Equal("", none);
-        Assert.Equal("https://backup.example.org/", good!.Server.ToString());
-        Assert.Equal("sam", good.Username);
-        Assert.Equal(Password, good.Password);
-
-        Assert.Null(Yaparr.Desktop.BackupServerForm.Read("", "sam", Password, out var address));
-        Assert.Contains("address", address);
-        Assert.Null(Yaparr.Desktop.BackupServerForm.Read("http://backup.example.org", "sam", Password, out address));
-        Assert.Contains("https://", address);
-        Assert.Null(Yaparr.Desktop.BackupServerForm.Read("backup.example.org", "no spaces", Password, out var user));
-        Assert.Contains("username", user);
-        Assert.Null(Yaparr.Desktop.BackupServerForm.Read("backup.example.org", "sam", "short", out var password));
-        Assert.Contains("password", password);
-    }
-
-    [Fact]
-    public void A_backup_server_setting_survives_a_save_and_load()
-    {
-        var data = new AppData(Path.Combine(_dir, "settings"));
-        data.SaveSettings(new AppSettings { BackupServerUrl = "https://backup.example.org", BackupServerUser = "sam", BackupServerVersion = 4 });
-        var loaded = data.LoadSettings();
-        Assert.Equal("https://backup.example.org", loaded.BackupServerUrl);
-        Assert.Equal("sam", loaded.BackupServerUser);
-        Assert.Equal(4, loaded.BackupServerVersion);
-        Assert.DoesNotContain("password", File.ReadAllText(Path.Combine(_dir, "settings", "settings.json")), StringComparison.OrdinalIgnoreCase);
-    }
-}
-
-internal static class TestExtensions
-{
-    public static T Also<T>(this T value, Action<T> action) { action(value); return value; }
+    public void The_password_page_is_on_the_server() =>
+        Assert.Equal("https://backup.example.org/account/password", BackupServerClient.PasswordPage(Server).ToString());
 }

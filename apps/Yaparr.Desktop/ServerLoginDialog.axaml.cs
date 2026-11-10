@@ -1,60 +1,75 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using Yaparr.AppCore;
 
 namespace Yaparr.Desktop;
 
-/// <summary>What was typed into <see cref="ServerLoginDialog"/>, checked: a usable address and username, and a long enough password.</summary>
-public sealed record ServerLoginForm(Uri Server, string Username, string Password);
+/// <summary>A device signed in to a backup server, with the recovery code that opens its backup.</summary>
+public sealed record ServerRestoreLogin(Uri Server, string Username, string Token, string RecoveryCode);
 
-// One form for the server, the name and the password, for the first-start screen where there is no settings page yet.
+// For the first-start screen, where there is no settings page yet: the server's address and the recovery code, then the sign-in in the browser.
 public partial class ServerLoginDialog : Window
 {
+    private CancellationTokenSource? _waiting;
+
     public ServerLoginDialog() => InitializeComponent();
 
-    public static async Task<ServerLoginForm?> AskAsync(Window? owner)
+    public static async Task<ServerRestoreLogin?> AskAsync(Window? owner)
     {
         var dialog = new ServerLoginDialog();
         dialog.Opened += (_, _) => dialog.UrlBox.Focus();
+        dialog.Closed += (_, _) => dialog._waiting?.Cancel();
         if (owner is { IsVisible: true })
-            return await dialog.ShowDialog<ServerLoginForm?>(owner);
+            return await dialog.ShowDialog<ServerRestoreLogin?>(owner);
 
         dialog.WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        var done = new TaskCompletionSource<ServerLoginForm?>();
+        var done = new TaskCompletionSource<ServerRestoreLogin?>();
         dialog.Closed += (_, _) => done.TrySetResult(dialog.Result);
         dialog.Show();
         return await done.Task;
     }
 
-    private ServerLoginForm? Result { get; set; }
+    private ServerRestoreLogin? Result { get; set; }
 
-    private void Ok_Click(object? sender, RoutedEventArgs e)
+    private void Say(string text, bool problem = false)
     {
-        var form = BackupServerForm.Read(UrlBox.Text, UserBox.Text, PasswordBox.Text, out var problem);
-        if (form == null)
-        {
-            Problem.Text = problem;
-            Problem.IsVisible = true;
-            return;
-        }
-        Result = form;
-        Close(form);
+        Status.Text = text;
+        Status.IsVisible = text.Length > 0;
+        Status.Foreground = this.TryFindResource(problem ? "Bad" : "Muted", ActualThemeVariant, out var found) && found is IBrush brush ? brush : Brushes.Gray;
     }
 
-    private void Cancel_Click(object? sender, RoutedEventArgs e) => Close(null);
-}
-
-/// <summary>Checks what was typed for a backup server, with a message that says what to fix.</summary>
-public static class BackupServerForm
-{
-    public static ServerLoginForm? Read(string? address, string? username, string? password, out string problem)
+    private async void Ok_Click(object? sender, RoutedEventArgs e)
     {
-        problem = "";
-        var server = BackupServerClient.ParseServerAddress(address);
-        if (server == null) { problem = "The server address is missing or cannot be used. It has to start with https:// (http:// only works for a server on this computer)."; return null; }
-        var name = BackupServerClient.NormalizeUsername(username);
-        if (name == null) { problem = "A username is 3 to 32 letters, digits, dots, dashes or underscores."; return null; }
-        if (BackupServerClient.CheckPassword(password) is { } why) { problem = why; return null; }
-        return new ServerLoginForm(server, name, password!);
+        var server = BackupServerClient.ParseServerAddress(UrlBox.Text);
+        if (server == null) { Say("The server address is missing or cannot be used. It has to start with https:// (http:// only works for a server on this computer).", problem: true); return; }
+        var code = RecoveryCode.Normalize(CodeBox.Text);
+        if (code == null) { Say("That is not a recovery code. It is six groups of four letters and digits, like K7QD-M3XF-9PLR-2WTE-HV8N-C4YB.", problem: true); return; }
+
+        OkButton.IsEnabled = UrlBox.IsEnabled = CodeBox.IsEnabled = false;
+        _waiting = new CancellationTokenSource();
+        try
+        {
+            using var signIn = new BrowserSignIn(server, Environment.MachineName);
+            if (!await GetTopLevel(this)!.Launcher.LaunchUriAsync(signIn.LoginUrl))
+            {
+                Say("Couldn't open your browser.", problem: true);
+                return;
+            }
+            Say("Waiting for you to sign in in your browser…");
+            var (token, username) = await signIn.WaitAsync(cancel: _waiting.Token);
+            Result = new ServerRestoreLogin(server, username, token, code);
+            Close(Result);
+        }
+        catch (OperationCanceledException) { }
+        catch (BackupServerException ex) { Say(ex.Message, problem: true); }
+        finally { OkButton.IsEnabled = UrlBox.IsEnabled = CodeBox.IsEnabled = true; }
+    }
+
+    private void Cancel_Click(object? sender, RoutedEventArgs e)
+    {
+        _waiting?.Cancel();
+        Close(null);
     }
 }

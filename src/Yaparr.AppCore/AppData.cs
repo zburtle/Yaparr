@@ -78,12 +78,6 @@ public sealed class AppSettings
     public int VoiceBitrateKbps { get; set; } = 64;
     /// <summary>The video format last picked when sharing a screen: true for AV1, false for Automatic. The computer app.</summary>
     public bool ScreenShareAv1 { get; set; }
-    /// <summary>The backup server last used (its address, without a path), so it is not typed again. Empty if none.</summary>
-    public string BackupServerUrl { get; set; } = "";
-    /// <summary>The username on that server. Never the password.</summary>
-    public string BackupServerUser { get; set; } = "";
-    /// <summary>The version of the backup this computer last saved to, or restored from, that server (0 if none), to tell when another computer has saved a newer one.</summary>
-    public int BackupServerVersion { get; set; }
     /// <summary>Bring everyone you hear to a similar loudness (on top of each person's own volume).</summary>
     public bool VoiceLevelSpeakers { get; set; }
 
@@ -154,7 +148,7 @@ public sealed class AppData
 
     // Files with keys in them: sealed so only this Windows user can read them, and closed to other users elsewhere.
     // Files from earlier versions are plain until this runs.
-    private static readonly string[] SecretFiles = { "identity.key", "settings.json", "account.json", "vpn.conf", "history.key" };
+    private static readonly string[] SecretFiles = { "identity.key", "settings.json", "account.json", "vpn.conf", "history.key", "backup-server.json" };
 
     private void ProtectSecrets()
     {
@@ -210,6 +204,21 @@ public sealed class AppData
     }
 
     public void SaveSettings(AppSettings settings) => SecretStore.WriteAllText(SettingsPath, JsonSerializer.Serialize(settings, Json));
+
+    private string BackupServerPath => Path.Combine(Directory, "backup-server.json");
+
+    /// <summary>What this device remembers about its backup server. It is sealed like the other files with secrets, and is not part of a backup.</summary>
+    public BackupServerState LoadBackupServer()
+    {
+        try { return JsonSerializer.Deserialize<BackupServerState>(SecretStore.ReadAllText(BackupServerPath)) ?? new(); }
+        catch (Exception ex) when (ex is IOException or JsonException or System.Security.Cryptography.CryptographicException) { return new(); }
+    }
+
+    public void SaveBackupServer(BackupServerState state)
+    {
+        SecretStore.WriteAllText(BackupServerPath, JsonSerializer.Serialize(state, Json));
+        MakePrivate(BackupServerPath);
+    }
 
     /// <summary>
     /// Saves a backup of the profile. With a passphrase the file is locked (see <see cref="ProfileCipher"/>) and can be kept anywhere; without one it is a
