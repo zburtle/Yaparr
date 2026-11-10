@@ -597,7 +597,9 @@
                         <Border Height="1" Margin="0,10,0,0" Background="{DynamicResource Line}" />
                     </StackPanel>
 
-                    <ListBox x:Name="MessageList" Grid.Row="1" Classes="chat" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <!-- No scrolling to the selected message: a message is selected by a right click or by the reaction button, and bringing it into view moved the chat
+                         under the pointer. Jumps that are wanted (the end of the chat, the message a reply or a notification points at) scroll by themselves. -->
+                    <ListBox x:Name="MessageList" Grid.Row="1" Classes="chat" ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutoScrollToSelectedItem="False">
                         <ListBox.ItemTemplate>
                             <DataTemplate x:DataType="local:MessageVm">
                                 <StackPanel Spacing="2">
