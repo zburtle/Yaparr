@@ -21,37 +21,37 @@ public sealed record FfmpegPackage(string Version, Uri Url, string Sha256, long 
     /// x264; see https://github.com/zburtle/Yaparr.FFmpeg) of commit 17a4a474f4 of FFmpeg's development branch, N-128212 of
     /// 30 October 2026, which has the Graphics Capture fixes of 24 October 2026. No numbered release has those fixes yet (8.1.3
     /// and 9.0.2 capture one frame and stop). It was checked with the FfmpegIntegration tests and the demo. Move to a numbered
-    /// release when one includes the fixes. The file is the asset of the Yaparr.FFmpeg release ffmpeg-4 (the same FFmpeg and options as ffmpeg-3, built in its own repository),
-    /// which also holds the exact source; see README.md next to this file.
+    /// release when one includes the fixes. The file is the asset of the Yaparr.FFmpeg release ffmpeg-6 (the same FFmpeg as ffmpeg-3 and later, with AV1 added from ffmpeg-6: the graphics cards' AV1 encoders
+    /// and the dav1d decoder), which also holds the exact source; see README.md next to this file.
     /// </summary>
     public static FfmpegPackage Default { get; } = new(
-        "g17a4a474f4-yaparr-4-win64",
-        new Uri("https://github.com/zburtle/Yaparr.FFmpeg/releases/download/ffmpeg-4/ffmpeg-yaparr-g17a4a474f4-win64.zip"),
-        "749b247944493ca3e4d69088aafea2fc74acb1b737cfd79bd49c11b8c2adc938",
-        3_411_118,
+        "g17a4a474f4-yaparr-6-win64",
+        new Uri("https://github.com/zburtle/Yaparr.FFmpeg/releases/download/ffmpeg-6/ffmpeg-yaparr-g17a4a474f4-win64.zip"),
+        "6d92d97c263da3f71e923215258969d361709f09dc12abef677a6b4eb37dd07a",
+        4_171_419,
         "ffmpeg-yaparr-g17a4a474f4-win64/bin/ffmpeg.exe",
         "ffmpeg-yaparr-g17a4a474f4-win64/LICENSE.txt",
         "ffmpeg-yaparr-g17a4a474f4-win64");
 
     /// <summary>
-    /// Yaparr's own Linux x86-64 build, the asset of the Yaparr.FFmpeg release ffmpeg-5 (the same FFmpeg commit as the Windows
+    /// Yaparr's own Linux x86-64 build, the asset of the Yaparr.FFmpeg release ffmpeg-6 (the same FFmpeg commit as the Windows
     /// one; see https://github.com/zburtle/Yaparr.FFmpeg). It runs on glibc 2.35 or newer and needs the computer's own libva.
     /// </summary>
     public static FfmpegPackage LinuxX64 { get; } = new(
-        "g17a4a474f4-yaparr-5-linux-x64",
-        new Uri("https://github.com/zburtle/Yaparr.FFmpeg/releases/download/ffmpeg-5/ffmpeg-yaparr-g17a4a474f4-linux-x64.zip"),
-        "075f1d4adc17fcaeda0ac11f004291105bdfab28dc0f74c49be309c3997e6fae",
-        2_065_460,
+        "g17a4a474f4-yaparr-6-linux-x64",
+        new Uri("https://github.com/zburtle/Yaparr.FFmpeg/releases/download/ffmpeg-6/ffmpeg-yaparr-g17a4a474f4-linux-x64.zip"),
+        "22c7fdad9d24fe6edeaadcc61203100e8a972f8dfc0893e66da0468bebbb1649",
+        2_889_626,
         "ffmpeg-yaparr-g17a4a474f4-linux-x64/bin/ffmpeg",
         "ffmpeg-yaparr-g17a4a474f4-linux-x64/LICENSE.txt",
         "ffmpeg-yaparr-g17a4a474f4-linux-x64");
 
     /// <summary>Yaparr's own Linux arm64 build, from the same release as <see cref="LinuxX64"/>.</summary>
     public static FfmpegPackage LinuxArm64 { get; } = new(
-        "g17a4a474f4-yaparr-5-linux-arm64",
-        new Uri("https://github.com/zburtle/Yaparr.FFmpeg/releases/download/ffmpeg-5/ffmpeg-yaparr-g17a4a474f4-linux-arm64.zip"),
-        "f85116f9ac0bb90683c010c6a28529555053c6428d461f32f6c74a2bed402421",
-        2_059_921,
+        "g17a4a474f4-yaparr-6-linux-arm64",
+        new Uri("https://github.com/zburtle/Yaparr.FFmpeg/releases/download/ffmpeg-6/ffmpeg-yaparr-g17a4a474f4-linux-arm64.zip"),
+        "61968695bf0f356306c66062a078d2e27f4f9b21a04d9425e0632fb11daa270d",
+        2_436_218,
         "ffmpeg-yaparr-g17a4a474f4-linux-arm64/bin/ffmpeg",
         "ffmpeg-yaparr-g17a4a474f4-linux-arm64/LICENSE.txt",
         "ffmpeg-yaparr-g17a4a474f4-linux-arm64");
