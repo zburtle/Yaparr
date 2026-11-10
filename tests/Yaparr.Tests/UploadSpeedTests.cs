@@ -29,6 +29,33 @@ public class UploadSpeedTests
     }
 
     [Fact]
+    public void A_frame_is_spread_out_no_faster_than_the_line_can_take_it()
+    {
+        const double MbitInBytes = 125_000;
+
+        // Not measured: three times the stream, as before (at least 256 KB/s).
+        Assert.Equal(6000 * 125.0 * 3, UploadPlan.FramePaceBytesPerSecond(null, 6000, 1));
+        Assert.Equal(256 * 1024, UploadPlan.FramePaceBytesPerSecond(null, 64, 1));
+
+        // A friend's 6 Mbit/s screen on a line measured at 7.6 Mbit/s went out at 18 Mbit/s and lost packets by the thousand. Now the burst stays
+        // under the line (and over the stream, so frames still keep up): 7.2 Mbit/s, not 18.
+        double pace = UploadPlan.FramePaceBytesPerSecond((long)(7.6 * MbitInBytes), 6000, 1);
+        Assert.InRange(pace, 6000 * 125.0 * 1.2 - 1, 7.6 * MbitInBytes);
+
+        // A 2 Mbit/s screen on a 8.9 Mbit/s line was healthy at 6 Mbit/s: unchanged.
+        Assert.Equal(2000 * 125.0 * 3, UploadPlan.FramePaceBytesPerSecond((long)(8.9 * MbitInBytes), 2000, 1));
+
+        // A fast line keeps the full pace.
+        Assert.Equal(6000 * 125.0 * 3, UploadPlan.FramePaceBytesPerSecond(25_000_000, 6000, 1));
+
+        // Several viewers sent to directly share the line: each copy goes slower.
+        double one = UploadPlan.FramePaceBytesPerSecond(500_000, 1000, 1), three = UploadPlan.FramePaceBytesPerSecond(500_000, 1000, 3);
+        Assert.True(three < one);
+        // But never under a fifth more than the stream itself.
+        Assert.True(three >= 1000 * 125.0 * 1.2 - 1);
+    }
+
+    [Fact]
     public void The_sharer_sends_to_as_many_members_as_its_own_upload_carries()
     {
         // Not measured: the places it was started with.

@@ -131,7 +131,9 @@ public sealed class MediaSource : IDisposable
         uint id = Interlocked.Increment(ref _frameId);
         // Fast enough for a key frame to go out in a fraction of a second, slow enough not to overflow the buffers on the way or to fill a
         // home connection's queue, where a burst makes voice packets wait behind it.
-        double rate = Math.Max(256 * 1024, _group.Info.Kbps * 125.0 * 3);
+        int copies;
+        lock (_group.Gate) copies = _group.Children.Count;
+        double rate = UploadPlan.FramePaceBytesPerSecond(_node.MeasuredUploadBytesPerSecond, _group.Info.Kbps, copies);
         long started = System.Diagnostics.Stopwatch.GetTimestamp();
         long sent = 0;
         for (int i = 0; i < count; i++)
