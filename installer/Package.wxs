@@ -30,7 +30,11 @@
 
     <StandardDirectory Id="ProgramMenuFolder">
       <Component Id="StartMenuShortcut" Guid="*">
-        <Shortcut Id="AppShortcut" Name="Yaparr" Description="Peer-to-peer chat" Icon="AppIcon.ico"
+        <!-- No Icon attribute on purpose: the shortcut then takes the icon of the program it starts (Yaparr.Desktop.exe has it built in). With the icon
+             from the installer's own table, Windows keeps that file in a folder named for the version's product code and deletes it when an upgrade removes
+             the old version, so a shortcut that still pointed there (one pinned to the taskbar or copied to the desktop, or the Start menu one while the
+             new one is not written yet) was left with the blank "page" icon. -->
+        <Shortcut Id="AppShortcut" Name="Yaparr" Description="Peer-to-peer chat"
                   Target="[INSTALLFOLDER]Yaparr.Desktop.exe" WorkingDirectory="INSTALLFOLDER" />
         <RegistryValue Root="HKCU" Key="Software\Yaparr" Name="Installed" Type="integer" Value="1" KeyPath="yes" />
         <!-- yaparr:// links (shared as https://yaparr.com/join#... pages) open in this app. -->
