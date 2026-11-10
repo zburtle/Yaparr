@@ -257,7 +257,18 @@ public sealed class AppData
             var identity = Path.Combine(staging, "identity.key");
             if (!File.Exists(identity) || !File.Exists(Path.Combine(staging, "settings.json")))
                 throw new InvalidDataException("This is not a Yaparr profile export.");
-            try { PeerIdentity.Import(File.ReadAllBytes(identity)); }
+            try
+            {
+                // A restored backup becomes another device of the account, not a second copy of the one it came from: the account is kept, and this
+                // computer gets a device key of its own, vouched for by the account key, exactly as when a device is linked. So restoring the same
+                // backup on two computers, or while the original is still in use, gives separate devices of one person and nothing clashes.
+                using var restored = PeerIdentity.Import(File.ReadAllBytes(identity));
+                if (restored.CanLinkDevices)
+                {
+                    using var fresh = restored.CreateDevice();
+                    File.WriteAllBytes(identity, fresh.Export());
+                }
+            }
             catch (System.Security.Cryptography.CryptographicException) { throw new InvalidDataException("The identity key in this archive is not valid."); }
             return staging;
         }

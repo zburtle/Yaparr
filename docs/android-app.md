@@ -112,7 +112,7 @@ Not there yet: choosing which part of a long file to keep, renaming a sound, pre
 - **Backup:** saves a copy of your account, room keys and message history as a zip file; Android asks where to put it (the system's "save as", so the app needs no permission for your files). Keep the file private: anyone who has it can pretend to be you and read your rooms.
 - **About:** the version, and a button that copies who the phone is connected to and what it has been doing, for a report of a problem.
 
-**In a backup file** is on the first screens of a phone that has no account yet (so nothing is replaced): choose the zip file and Yaparr brings the account, the rooms and the history back and starts again. To use your account on a second device at the same time, link it instead of restoring; two devices running the same backup would clash.
+**In a backup file** is on the first screens of a phone that has no account yet (so nothing is replaced): choose the zip file and Yaparr brings the account, the rooms and the history back and starts again. The phone joins the account as another device (it gets a device key of its own, as when it is linked), so the device the backup came from can stay in use.
 
 Not there yet: choosing the microphone or speakers (the route button in a call picks where the sound goes), and the network options (the check is there, the settings are not).
 
