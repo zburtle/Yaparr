@@ -698,7 +698,7 @@
                         </ListBox.ContextMenu>
                     </ListBox>
 
-                    <!-- November 10th only: a freighter crossing the empty screen, in memory of the Edmund Fitzgerald (see FitzgeraldShip). -->
+                    <!-- around November 10th: a freighter crossing the empty screen, in memory of the Edmund Fitzgerald (see FitzgeraldShip). -->
                     <StackPanel x:Name="ShipPanel" Grid.Row="1" VerticalAlignment="Bottom" IsVisible="False" Margin="0,0,0,14">
                         <local:FitzgeraldShip x:Name="Ship" Height="110" ToolTip.Tip="Click to hear the song (it opens in your browser)" />
                         <TextBlock Classes="muted small" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" Margin="12,6,12,0"
@@ -778,13 +778,13 @@
                             <Grid>
                                 <TextBox x:Name="InputBox" Classes="composer" PlaceholderText="Write a message" IsEnabled="False" AcceptsReturn="True" TextWrapping="Wrap" MaxHeight="150"
                                          ToolTip.Tip="Enter sends the message; Shift+Enter starts a new line" />
-                                <!-- November 10th only: the same freighter sails along the message box while it is empty and not being typed in. -->
+                                <!-- around November 10th: the same freighter sails along the message box while it is empty and not being typed in. -->
                                 <local:FitzgeraldShip x:Name="InputShip" Compact="True" IsVisible="False"
                                                       ToolTip.Tip="Click to hear the song (it opens in your browser)" />
                             </Grid>
                         </DockPanel>
                     </Border>
-                    <!-- November 10th only, while a chat is open: what the ship in the box is for. -->
+                    <!-- around November 10th, while a chat is open: what the ship in the box is for. -->
                     <TextBlock x:Name="MemorialText" Classes="muted small" IsVisible="False" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
                                Margin="14,-8,14,10" Text="In memory of the 29 crew of the SS Edmund Fitzgerald, lost on Lake Superior, November 10, 1975." />
                     </StackPanel>

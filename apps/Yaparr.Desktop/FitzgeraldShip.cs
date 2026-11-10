@@ -7,7 +7,7 @@ using Avalonia.Threading;
 namespace Yaparr.Desktop;
 
 /// <summary>
-/// A lake freighter that crosses the empty chat screen, and the message box while it is empty and not being typed in, on November 10th, the day the SS Edmund Fitzgerald was lost on Lake Superior
+/// A lake freighter that crosses the empty chat screen, and the message box while it is empty and not being typed in, around November 10th, the day the SS Edmund Fitzgerald was lost on Lake Superior
 /// in 1975 with all 29 of her crew. She is a quiet silhouette that fades in and out of the dark and rides the swell, and makes no sound.
 /// Clicking the ship raises <see cref="ShipClicked"/> (the window offers to open Gordon Lightfoot's song in the browser). It draws only
 /// while it is visible, so the rest of the year it costs nothing.
@@ -45,9 +45,17 @@ internal sealed class FitzgeraldShip : Control
     /// <summary>Gordon Lightfoot's song, which clicking the ship offers to open.</summary>
     public const string SongUrl = "https://youtu.be/FuzTkGyxkYI";
 
-    /// <summary>True on November 10th, by the computer's own calendar. YAPARR_FITZ=1 shows it on any day, to look at it.</summary>
-    public static bool IsHerDay(DateTime today) =>
-        (today.Month == 11 && today.Day == 10) || Environment.GetEnvironmentVariable("YAPARR_FITZ") == "1";
+    /// <summary>
+    /// True for the 48 hours around November 10th by the computer's own clock: from noon on the 9th until noon on the 11th, 12 hours either
+    /// side of the day itself. YAPARR_FITZ=1 shows it at any time, to look at it.
+    /// </summary>
+    public static bool IsHerDay(DateTime now)
+    {
+        if (Environment.GetEnvironmentVariable("YAPARR_FITZ") == "1") return true;
+        var from = new DateTime(now.Year, 11, 9, 12, 0, 0);
+        var until = new DateTime(now.Year, 11, 11, 12, 0, 0);
+        return now >= from && now < until;
+    }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
