@@ -129,7 +129,7 @@ public partial class MainWindow : Window
         }, RoutingStrategies.Tunnel);
 
     // A backup is a copy of everything Yaparr keeps for you. It is restored on a computer that has no account yet, from the
-    // first-start screen. To use the same account on a second computer at the same time, link it instead.
+    // first-start screen, and that computer becomes another device of your account (the original can stay in use).
     private async void BackupProfile_Click(object? sender, RoutedEventArgs e) => await BackupProfileAsync();
 
     private async Task BackupProfileAsync()
@@ -138,9 +138,8 @@ public partial class MainWindow : Window
         var proceed = await Dialogs.ConfirmAsync(this, "Back up profile",
             "A backup holds your private identity key, your room keys and your message history. " +
             "Anyone with the file can impersonate you and read your rooms, so keep it somewhere safe.\n\n" +
-            "Restore it from the first-start screen if you lose this computer or move to a new one. " +
-            "To use your account on a second computer at the same time, use Link another device instead: " +
-            "two computers running the same backup would clash.\n\nContinue?",
+            "To use it, choose Restore a backup on the first-start screen of a computer that has no account yet. " +
+            "That computer becomes another device of your account, so this one can carry on being used alongside it.\n\nContinue?",
             "Continue", "Cancel");
         if (!proceed) return;
 

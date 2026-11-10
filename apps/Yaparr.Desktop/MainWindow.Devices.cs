@@ -18,7 +18,7 @@ public partial class MainWindow
         var start = await Dialogs.ChoiceAsync(this, "Welcome to Yaparr",
             "Do you already have a Yaparr account?\n\n" +
             "Link this device: join the account of a device you still use. Your name, rooms and blocks carry over, and people see you as one person.\n\n" +
-            "Restore a backup: bring back an account from a backup file, for a new or reinstalled computer. Don't restore one while the old computer is still in use; link instead.\n\n" +
+            "Restore a backup: bring back an account from a backup file, for a new or reinstalled computer. It joins your account as another device, so the old computer can stay in use.\n\n" +
             "Start fresh: make a new account.",
             "Link this device", "Restore a backup", "Start fresh");
         if (start == "Restore a backup") { await RestoreBackupAsync(); return; }
@@ -31,7 +31,11 @@ public partial class MainWindow
         {
             code ??= await AskForLinkCodeAsync(initial);
             if (string.IsNullOrWhiteSpace(code)) return;
-            var passphrase = await PromptDialog.AskAsync(this, "Type the passphrase that came with it (like K7QD-M3XF-9PLR-2WTE-HV8N):");
+            // A link file (and a QR code) carries its own passphrase; an older code or a pasted one still asks for it.
+            bool carried = LinkQr.TryParse(code, out var carriedCode, out var carriedPassphrase);
+            string? passphrase;
+            if (carried) { code = carriedCode; passphrase = carriedPassphrase; }
+            else passphrase = await PromptDialog.AskAsync(this, "Type the passphrase that came with it (like K7QD-M3XF-9PLR-2WTE-HV8N):");
             if (string.IsNullOrWhiteSpace(passphrase)) return;
             try
             {
@@ -46,8 +50,9 @@ public partial class MainWindow
             }
             catch (CryptographicException ex)
             {
-                // A wrong passphrase: keep the code and ask for the passphrase again.
+                // A wrong passphrase: keep the code and ask for the passphrase again. (A file that carried its own is damaged: start again.)
                 await Dialogs.MessageAsync(this, "Yaparr", ex.Message);
+                if (carried) code = null;
             }
             catch (Exception ex) when (ex is FormatException or InvalidOperationException)
             {
@@ -106,7 +111,7 @@ public partial class MainWindow
             return;
         }
         _log.Write("restored a backup");
-        await Dialogs.MessageAsync(this, "Restore a backup", "Your account is back. Yaparr will restart now.");
+        await Dialogs.MessageAsync(this, "Restore a backup", "Your account is back on this computer, as another device of it. Yaparr will restart now.");
         RestartApp();
     }
 
@@ -119,9 +124,9 @@ public partial class MainWindow
             return;
         }
         var go = await Dialogs.ConfirmAsync(this, "Link another device",
-            "This makes a code for a new device. It holds your account key, so anyone who gets both the code and its passphrase can act as you. " +
-            "Send them by different routes, and delete the code afterwards. It stops working in a day. (A QR code carries both: show it only to someone next to you.)",
-            yes: "Make a code", no: "Cancel");
+            "This sets up another device of yours as you, with your account, your name and your rooms. Only do it for a device that is yours. " +
+            "It can be done with a QR code (quickest for a phone) or with a file you carry to the other device.",
+            yes: "Continue", no: "Cancel");
         if (!go) return;
 
         var node = _node;
@@ -131,8 +136,8 @@ public partial class MainWindow
 
         var choice = await Dialogs.ChoiceAsync(this, "Link another device",
             "How do you want to move it to the new device? A QR code is quickest for a phone: the phone scans it and your rooms follow once it is connected. " +
-            "A file or a code to paste carries your rooms along with it.",
-            "Show a QR code", "Save to a file…", "Copy to clipboard", "Cancel");
+            "A file carries your rooms along with it, and is for moving to a computer.",
+            "Show a QR code", "Save to a file…", "Cancel");
         if (choice == "Show a QR code")
         {
             // The code for a QR leaves the room list out: it would not fit. The rooms come from this device once the phone is connected.
@@ -140,38 +145,32 @@ public partial class MainWindow
             await LinkQrDialog.ShowAsync(this, LinkQr.Payload(qrCode, passphrase));
             return;
         }
-        if (choice is not ("Save to a file…" or "Copy to clipboard")) return;
+        if (choice != "Save to a file…") return;
+
+        // The file has everything in it and nothing locks it, so the person is told what that means before it is made.
+        var understood = await Dialogs.ConfirmAsync(this, "Keep this file secure",
+            "This file is all that is needed to sign in as you on another device, and nothing protects it. Anyone who gets a copy can get into your rooms and act as you, " +
+            "and there is no way to take that back afterwards.\n\n" +
+            "So please:\n" +
+            "•  Move it straight to your own device, for example on a USB stick. Don't email it, put it in cloud storage or send it in a chat.\n" +
+            "•  Delete it as soon as the device is linked, and empty the recycle bin.\n\n" +
+            "It stops working after a day.",
+            yes: "I understand, save the file", no: "Cancel");
+        if (!understood) return;
 
         var entries = node.AccountEntries;
         var code = await Task.Run(() => DeviceLink.Create(identity, name, entries, passphrase));
-
-        string where, step;
-        if (choice == "Save to a file…")
+        var path = await Dialogs.PickSaveAsync(this, "Save the link file", "yaparr-link.ylnk", Dialogs.LinkFile);
+        if (path == null) return;
+        try { await File.WriteAllTextAsync(path, LinkQr.Payload(code, passphrase) + Environment.NewLine); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            var path = await Dialogs.PickSaveAsync(this, "Save the link file", "yaparr-link.ylnk", Dialogs.LinkFile);
-            if (path == null) return;
-            try { await File.WriteAllTextAsync(path, code + Environment.NewLine); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                await Dialogs.MessageAsync(this, "Link another device", "Couldn't save the file: " + ex.Message);
-                return;
-            }
-            where = "The link file was saved to " + path + ". Copy it to the new device, for example on a USB stick.";
-            step = "open the link file";
+            await Dialogs.MessageAsync(this, "Link another device", "Couldn't save the file: " + ex.Message);
+            return;
         }
-        else if (choice == "Copy to clipboard")
-        {
-            if (!await Dialogs.CopyAsync(this, code))
-            {
-                await Dialogs.MessageAsync(this, "Link another device", "Couldn't copy: another program is using the clipboard. Try again, or save to a file.");
-                return;
-            }
-            where = "The code was copied to the clipboard.";
-            step = "paste the code";
-        }
-        else return;
         await Dialogs.MessageAsync(this, "Link another device",
-            $"{where}\n\nOn the new device, start Yaparr, choose \"Link this device\", {step}, and type this passphrase:\n\n{passphrase}");
+            $"The link file was saved to {path}.\n\nOn the new device, start Yaparr, choose \"Link this device\" and open the file. " +
+            "That is all it needs.\n\nDelete the file once the device is linked.");
     }
 
     // Removes the account from this computer and goes back to the first-start screen. The other devices of the account are not touched.

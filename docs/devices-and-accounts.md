@@ -18,19 +18,19 @@ meets can tell it belongs to the same person (`PeerInfo.Account`, `ChatNode.Acco
 certificate and see another device as another person with the same name. Each device is an ordinary peer, so
 connections, relays, voice and delivery work per device; what is shared is the person.
 
-- **Linking.** On a device you already use choose **Settings > Devices > Link another device…**. It makes a code, encrypted with a
-  passphrase (about 100 bits, shown once), that holds a new identity for the other device plus your name, rooms and
-  blocks. You can save it as a link file (`.ylnk`, a text file holding the code) to carry to the new device, or copy it. On
-  the new device choose **Link this device** at first start, open the link file (or paste the code) and type the passphrase. The code
-  holds your account key, so send it and the passphrase by different routes and delete it afterwards. It stops working
-  after a day. In the library: `DeviceLink.Create` and `DeviceLink.Open`.
-  For a phone there is a third way: **Show a QR code** shows the code and its passphrase together as one QR code for two minutes, and the
-  Android app scans it (**Yes, I already have an account** > **On my computer**). The QR code leaves your list of rooms out, because it would not fit; the rooms follow from
-  the computer once the phone has connected to it. Show it only to someone next to you.
+- **Linking.** On a device you already use choose **Settings > Devices > Link another device…** and pick a QR code or a file. Either way the device makes a code
+  that holds a new identity for the other device plus your name, rooms and blocks, encrypted with a passphrase (about 100 bits) that is made for it and travels with it,
+  so the person types nothing. **Show a QR code** (for a phone) shows the code and its passphrase together as one QR code for two minutes, and the Android app scans it
+  (**Yes, I already have an account** > **On my computer**). The QR code leaves your list of rooms out, because it would not fit; the rooms follow from the computer once the
+  phone has connected to it. **Save to a file…** makes one self-contained link file (`.ylnk`, a text file with the code and its passphrase), with the rooms in it. Because nothing
+  locks the file, a **Keep this file secure** warning comes first: it says that anyone who gets a copy can get into your rooms and act as you with no way to take that back, to move it
+  straight to your own device (a USB stick, not email, cloud storage or chat), to delete it once the device is linked, and that it stops working after a day. On the new device choose
+  **Link this device** at first start and open the file (or paste a code; an older code, made without its passphrase, still asks for one). The code stops working after a day. Show a QR code
+  only to someone next to you. In the library: `DeviceLink.Create` and `DeviceLink.Open`, and `LinkQr.Payload` and `LinkQr.TryParse` for the code with its passphrase.
 - **Finding each other.** Devices of one account find each other without a room in common: each announces itself on the account's topic and
   every few seconds, while it is connected to none of its other devices, looks there and connects to what it finds (and less often when one is
   connected). A phone that was just linked and has no rooms yet therefore still meets your computers, and receives the name, blocks and rooms.
-- **Backup and restore.** **Settings > Backup > Back up profile…** saves a zip of everything Yaparr keeps for you: your identity key, rooms, message history, pictures and settings. To restore it, choose **Restore a backup** on the first-start screen of a computer that has no account yet. There is no restore for a computer that already has an account, so nothing is replaced by accident. A backup is for losing or replacing a computer: two computers running the same backup would clash, so to use your account on a second computer at the same time, link it.
+- **Backup and restore.** **Settings > Backup > Back up profile…** saves a zip of everything Yaparr keeps for you: your identity key, rooms, message history, pictures and settings. To restore it, choose **Restore a backup** on the first-start screen of a computer that has no account yet. There is no restore for a computer that already has an account, so nothing is replaced by accident. A restored backup becomes another device of the account, not a copy of the one it came from: `AppData.StageProfile` keeps the account key and gives the computer a device key of its own, vouched for by the account key, exactly as when a device is linked. So a backup can be restored on a second computer while the original is still in use, or on several, and each is a separate device of one person (friends see the same account id); nothing clashes. The device the backup came from keeps its own key. Restore, a QR code and a link file are three ways of adding a device to your account.
 - **Logging out.** **Settings > Devices > Log out…** removes the account from this computer (identity key, rooms and room keys, history, pictures and settings; the FFmpeg program, updates and logs stay) and restarts Yaparr at the first-start screen, where you can start fresh, link, or restore a backup. It offers a backup first. The running app does not delete anything itself: `AppData.RequestLogOut` leaves a note (`logout.pending`) holding its process id, and at the next start `AppData.CompleteLogOut` waits for that process to exit and then removes the profile, so open files and late settings saves cannot bring it back. Your other devices are not touched. Computer app only so far.
 - **Sharing your id.** Give people your account id (**Copy my ID**), which is the same on every device. A direct chat
   with a person reaches all of their devices, and counts as delivered when every connected device confirmed it.

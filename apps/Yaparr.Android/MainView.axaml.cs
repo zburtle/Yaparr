@@ -598,7 +598,7 @@ public partial class MainView : UserControl
     {
         if (MainActivity.Instance is not { } activity) return;
         Ask("A backup holds your private identity key, your room keys and your message history. Anyone with the file can pretend to be you and read your rooms, so keep it somewhere safe.\n\n" +
-            "To bring it back, choose Restore a backup on the first screen of a phone with no account. To use your account on a second device at the same time, link it instead: two devices running the same backup would clash.",
+            "To bring it back, choose Restore a backup on the first screen of a phone with no account. That phone becomes another device of your account, so this one can carry on being used alongside it.",
             "Back up", async () =>
             {
                 string temp = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "yaparr-backup-" + Guid.NewGuid().ToString("N") + ".zip");
