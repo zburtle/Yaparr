@@ -779,7 +779,7 @@
                                 <TextBox x:Name="InputBox" Classes="composer" PlaceholderText="Write a message" IsEnabled="False" AcceptsReturn="True" TextWrapping="Wrap" MaxHeight="150"
                                          ToolTip.Tip="Enter sends the message; Shift+Enter starts a new line" />
                                 <!-- November 10th only: the same freighter sails along the message box while it is empty and not being typed in. -->
-                                <local:FitzgeraldShip x:Name="InputShip" Compact="True" IsVisible="False" Margin="4,0"
+                                <local:FitzgeraldShip x:Name="InputShip" Compact="True" IsVisible="False"
                                                       ToolTip.Tip="Click to hear the song (it opens in your browser)" />
                             </Grid>
                         </DockPanel>

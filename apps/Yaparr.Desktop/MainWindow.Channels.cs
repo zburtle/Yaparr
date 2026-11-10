@@ -49,8 +49,12 @@ public partial class MainWindow
     // The message box says where a message will go.
     private void UpdateComposer()
     {
-        InputBox.PlaceholderText = _selected is { IsRoom: true, ShowChannels: true } conv ? $"Message #{conv.CurrentChannelName}" : "Write a message";
+        // The words stay out of the way of the November 10th ship while she sails along the box.
+        InputBox.PlaceholderText = InputShip.IsVisible ? "" : ComposerPlaceholder();
     }
+
+    private string ComposerPlaceholder() =>
+        _selected is { IsRoom: true, ShowChannels: true } conv ? $"Message #{conv.CurrentChannelName}" : "Write a message";
 
     private (ConversationVm Conv, ChatRoom Room)? OpenRoom()
     {

@@ -1197,8 +1197,11 @@ public partial class MainWindow : Window
     }
 
     // The ship sails along the message box only while there is a chat to write in, nothing is typed, and the box is not being used.
-    private void ShowInputShip() =>
+    private void ShowInputShip()
+    {
         InputShip.IsVisible = InputBox.IsEnabled && string.IsNullOrEmpty(InputBox.Text) && !InputBox.IsFocused && FitzgeraldShip.IsHerDay(DateTime.Now);
+        UpdateComposer();
+    }
 
     private void ConversationList_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {

@@ -24,6 +24,7 @@ internal sealed class FitzgeraldShip : Control
     public FitzgeraldShip()
     {
         Cursor = new Cursor(StandardCursorType.Hand);
+        ClipToBounds = true;
         _timer.Tick += (_, _) => InvalidateVisual();
     }
 
@@ -89,7 +90,8 @@ internal sealed class FitzgeraldShip : Control
 
         // Fade in as she comes out of the dark at one side, and out at the other.
         double edge = Math.Min(progress, 1 - progress);
-        double fade = Math.Clamp(edge / 0.12, 0, 1);
+        // In the message box she comes out from behind the GIF button and goes in behind Send, so she does not fade: the box cuts her off.
+        double fade = Compact ? 1 : Math.Clamp(edge / 0.12, 0, 1);
 
         // Only where the ship is can be clicked: a clear rectangle over her, so the water and the space around her let clicks through.
         // She cannot be clicked while she is still fading in or out at the edge.
