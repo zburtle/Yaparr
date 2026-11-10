@@ -60,9 +60,10 @@ public partial class ShareDialog : Window
         if (current != null)
         {
             Title = "Change what is shared";
-            QualityLabel.IsVisible = QualityBox.IsVisible = SoundNote.IsVisible = SoundBox.IsVisible = Note.IsVisible = false;
+            QualityLabel.IsVisible = QualityBox.IsVisible = FormatLabel.IsVisible = FormatBox.IsVisible = SoundNote.IsVisible = SoundBox.IsVisible = Note.IsVisible = false;
             ShareButton.Content = "Switch";
         }
+        ApplyAv1Check();
         FillChoices(selectFirst: true);
         foreach (var q in Qualities) QualityBox.Items.Add(q.Label);
         // The best quality that this connection can send to three people at once, or the lowest when none can (or the upload is not known yet).
@@ -71,6 +72,31 @@ public partial class ShareDialog : Window
             for (int i = 0; i < Qualities.Length; i++)
                 if (Yaparr.Chat.ChatNode.DirectViewersAt(_upload, Qualities[i].Kbps) >= 3) best = i;
         QualityBox.SelectedIndex = best;
+    }
+
+    // When the start-up check found that no graphics card here makes AV1, it is not offered: choosing it would only end in H.264 anyway. While the check is
+    // still running (or FFmpeg was only just downloaded) it stays available.
+    private void ApplyAv1Check()
+    {
+        if (Av1Support.Latest is not { CanEncode: false } report) return;
+        if (FormatBox.Items[1] is ComboBoxItem item) { item.IsEnabled = false; item.Content = "AV1 (no graphics card here can make it)"; }
+        FormatHint.Text = "This computer's graphics card cannot make AV1 live" + (report.Refused.Count > 0 ? $" ({string.Join("; ", report.Refused.Select(r => r.Value))})" : "") + ". Sharing uses H.264.";
+        FormatHint.IsVisible = true;
+    }
+
+    /// <summary>Starts with the video format picked last time (AV1 only if it is on offer here).</summary>
+    public void PreferAv1(bool prefer)
+    {
+        if (prefer && FormatBox.Items[1] is ComboBoxItem { IsEnabled: true }) FormatBox.SelectedIndex = 1;
+    }
+
+    /// <summary>Whether AV1 was picked in the dialog that was just answered.</summary>
+    public bool Av1Picked => Result?.Codec == ScreenCodec.Av1;
+
+    private void FormatBox_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        // Raised while the window is still being built (the box starts with its first choice selected), before the hint exists.
+        if (FormatHint != null && Av1Support.Latest is not { CanEncode: false }) FormatHint.IsVisible = FormatBox.SelectedIndex == 1;
     }
 
     private void QualityBox_SelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -152,6 +178,7 @@ public partial class ShareDialog : Window
             Display = what >= 0 && what < _displays.Count ? _displays[what] : null,
             WindowHandle = window?.Handle,
             MaxWidth = q.Width, MaxHeight = q.Height, Fps = q.Fps, Kbps = q.Kbps,
+            Codec = FormatBox.SelectedIndex == 1 ? ScreenCodec.Av1 : ScreenCodec.Auto,
             ShareSound = ScreenSound.IsSupported,
             SoundProgram = PickedProgram(),
         };

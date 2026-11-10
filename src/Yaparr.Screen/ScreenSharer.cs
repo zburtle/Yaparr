@@ -270,7 +270,7 @@ public sealed class ScreenSharer : IDisposable
                     catch (Exception) when (_switch) { break; }   // stopped on purpose to share something else
                     catch (Exception ex) when (!ct.IsCancellationRequested && i < attempts.Count - 1 && Interlocked.Read(ref _frames) == before && !WindowGone)
                     {
-                        string? who = card is { } known ? HardwareEncoders.Maker(known) + (onCard ? " (scaling on the card)" : "") : null;
+                        string? who = card is { } known ? (attempt == ScreenCodec.Av1 ? "AV1 " : "") + HardwareEncoders.Maker(known) + (onCard ? " (scaling on the card)" : "") : null;
                         reasons.Add(who != null ? $"{who}: {ex.Message}" : ex.Message);
                         _fallback = string.Join("; ", reasons);
                     }
@@ -287,8 +287,13 @@ public sealed class ScreenSharer : IDisposable
     public static List<(ScreenCodec Codec, HardwareEncoder? Encoder)> Plan(ScreenOptions options)
     {
         var plan = new List<(ScreenCodec, HardwareEncoder?)>();
-        if (options.Codec != ScreenCodec.Vp8)
-            foreach (var card in options.Encoder is { } only ? new[] { only } : HardwareEncoders.InOrder) plan.Add((ScreenCodec.H264, card));
+        var cards = options.Encoder is { } only ? new[] { only } : HardwareEncoders.InOrder.ToArray();
+        // AV1 is only tried when it was asked for, on every card in turn, and then what Auto would have done, so a computer without a card that
+        // does AV1 still shares (H.264, or VP8 in software at last).
+        if (options.Codec == ScreenCodec.Av1)
+            foreach (var card in cards) plan.Add((ScreenCodec.Av1, card));
+        if (options.Codec is not ScreenCodec.Vp8)
+            foreach (var card in cards) plan.Add((ScreenCodec.H264, card));
         if (options.Codec != ScreenCodec.H264) plan.Add((ScreenCodec.Vp8, null));
         return plan;
     }

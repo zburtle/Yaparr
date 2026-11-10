@@ -168,7 +168,7 @@ public sealed class ScreenViewer : IDisposable
             {
                 var stdin = _process.StandardInput.BaseStream;
                 bool h264 = Codec == ScreenCodec.H264;
-                if (!h264) await stdin.WriteAsync(new IvfHeader("VP80", Width, Height).ToBytes(), ct).ConfigureAwait(false);
+                if (!h264) await stdin.WriteAsync(new IvfHeader(Codec == ScreenCodec.Av1 ? "AV01" : "VP80", Width, Height).ToBytes(), ct).ConfigureAwait(false);
                 long pts = 0;
                 await foreach (var frame in _input.Reader.ReadAllAsync(ct).ConfigureAwait(false))
                 {

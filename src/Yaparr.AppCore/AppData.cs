@@ -76,6 +76,8 @@ public sealed class AppSettings
     public bool VoiceAutomaticVolume { get; set; }
     /// <summary>How much data your voice takes: 32, 48 or 64 kilobits a second (64 unless chosen otherwise; it was 32 in older versions).</summary>
     public int VoiceBitrateKbps { get; set; } = 64;
+    /// <summary>The video format last picked when sharing a screen: true for AV1, false for Automatic. The computer app.</summary>
+    public bool ScreenShareAv1 { get; set; }
     /// <summary>Bring everyone you hear to a similar loudness (on top of each person's own volume).</summary>
     public bool VoiceLevelSpeakers { get; set; }
 
