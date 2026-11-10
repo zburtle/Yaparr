@@ -31,6 +31,7 @@ connections, relays, voice and delivery work per device; what is shared is the p
   every few seconds, while it is connected to none of its other devices, looks there and connects to what it finds (and less often when one is
   connected). A phone that was just linked and has no rooms yet therefore still meets your computers, and receives the name, blocks and rooms.
 - **Backup and restore.** **Settings > Backup > Back up profile…** saves a zip of everything Yaparr keeps for you: your identity key, rooms, message history, pictures and settings. To restore it, choose **Restore a backup** on the first-start screen of a computer that has no account yet. There is no restore for a computer that already has an account, so nothing is replaced by accident. A backup is for losing or replacing a computer: two computers running the same backup would clash, so to use your account on a second computer at the same time, link it.
+- **Logging out.** **Settings > Devices > Log out…** removes the account from this computer (identity key, rooms and room keys, history, pictures and settings; the FFmpeg program, updates and logs stay) and restarts Yaparr at the first-start screen, where you can start fresh, link, or restore a backup. It offers a backup first. The running app does not delete anything itself: `AppData.RequestLogOut` leaves a note (`logout.pending`) holding its process id, and at the next start `AppData.CompleteLogOut` waits for that process to exit and then removes the profile, so open files and late settings saves cannot bring it back. Your other devices are not touched. Computer app only so far.
 - **Sharing your id.** Give people your account id (**Copy my ID**), which is the same on every device. A direct chat
   with a person reaches all of their devices, and counts as delivered when every connected device confirmed it.
 - **What stays in step.** Your name, blocks and the list of rooms follow you between devices
@@ -46,6 +47,6 @@ connections, relays, voice and delivery work per device; what is shared is the p
 
 - **Screen sharing.** A linked device that is not in a voice call can share its screen into the call another of your devices is in (see [Sharing a screen](screen-sharing.md#sharing-from-a-linked-device)); with none of your devices in the call it cannot.
 
-Limit: every linked device holds the account key, so there is no way to take a lost device away from the account (it would need a new identity). Details are in the [backlog](../BACKLOG.md).
+Limit: every linked device holds the account key, so there is no way to take a lost device away from the account (it would need a new identity). Logging out removes the data from a computer but does not cancel what it could do with a copy of it. Details are in the [backlog](../BACKLOG.md).
 
 Why it works this way: this replaced the first plan (one key on every device, with connections keyed by peer and device ID), which would have meant reworking every table keyed by peer ID and made older clients fight over the one slot.

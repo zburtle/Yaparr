@@ -1011,6 +1011,9 @@
                             <TextBlock Classes="muted small" TextWrapping="Wrap"
                                        Text="Your other devices show here while they are on and connected to this one. A message you sent from another device says so next to its time." />
                             <Button Content="Link another device…" HorizontalAlignment="Left" Click="LinkDevice_Click" />
+                            <TextBlock Classes="muted small" TextWrapping="Wrap" Margin="0,8,0,0"
+                                       Text="Log out removes your account, rooms, history and settings from this computer and takes you back to the first-start screen. Your other devices keep the account." />
+                            <Button Content="Log out…" HorizontalAlignment="Left" Foreground="{DynamicResource Bad}" Click="LogOut_Click" />
                         </StackPanel>
                         <StackPanel x:Name="SectionNotifications" Spacing="10" IsVisible="False">
                             <TextBlock Text="Notifications" FontSize="15" FontWeight="SemiBold" />
