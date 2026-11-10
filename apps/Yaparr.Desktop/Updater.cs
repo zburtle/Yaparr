@@ -149,8 +149,8 @@ public static class Updater
 
     /// <summary>
     /// Starts the installer. On Windows msiexec replaces the app after this process exits, so the caller should shut
-    /// down. On Linux the package is installed first (asking for the password through the desktop), and the result says
-    /// whether it worked; the caller then restarts the app.
+    /// down. On Linux a helper installs the package once the app has closed (asking for the password through the desktop) and starts
+    /// the app again, so the caller only shuts down; a copy started after an install that failed is told so (<see cref="Program.UpdateFailed"/>).
     /// </summary>
     public static async Task<bool> InstallAsync(string path, string sha256, CancellationToken ct = default)
     {
@@ -168,13 +168,18 @@ public static class Updater
 
         // apt resolves dependencies and treats this as an upgrade; pkexec shows the usual graphical password prompt. What runs as root copies
         // the package where only root can change it, checks it again there and installs that copy (see UpdateVerifier.LinuxInstallScript).
-        var psi = new ProcessStartInfo(File.Exists("/usr/bin/pkexec") ? "pkexec" : "/bin/sh") { UseShellExecute = false };
-        if (psi.FileName == "pkexec") psi.ArgumentList.Add("/bin/sh");
+        // The app has to be closed while the package is installed, or files would be replaced under a running program. So the installer is
+        // started by a helper that waits for this process to be gone, installs, and starts the app again; the caller closes the app now.
+        var exe = Environment.ProcessPath ?? throw new InvalidOperationException("Could not find the program to start again.");
+        var installer = File.Exists("/usr/bin/pkexec") ? new[] { "pkexec", "/bin/sh" } : new[] { "/bin/sh" };
+        var psi = new ProcessStartInfo("/bin/sh") { UseShellExecute = false };
+        foreach (var arg in new[] { "-c", UpdateVerifier.LinuxUpdateRunnerScript, "yaparr-update-runner", Environment.ProcessId.ToString(), exe })
+            psi.ArgumentList.Add(arg);
+        foreach (var arg in installer) psi.ArgumentList.Add(arg);
         foreach (var arg in new[] { "-c", UpdateVerifier.LinuxInstallScript, "yaparr-update", path, sha256, "/var/tmp" }) psi.ArgumentList.Add(arg);
         using var process = Process.Start(psi) ?? throw new InvalidOperationException("Could not start the installer.");
-        await process.WaitForExitAsync(ct);
-        Log?.Invoke("update: the package installer finished with code " + process.ExitCode);
-        return process.ExitCode == 0;
+        Log?.Invoke("update: the installer will run once Yaparr has closed, and Yaparr then starts again");
+        return true;
     }
 
     /// <summary>

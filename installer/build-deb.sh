@@ -62,6 +62,23 @@ Description: Serverless peer-to-peer chat
  signed by their senders and rooms need an invite to join.
 EOF
 
+# Refuses to replace the files of a Yaparr that is running (a program whose files change under it can fail in odd ways). The app's own updater closes
+# it first; installing by hand with dpkg, apt or the software centre gets this message instead of a half-replaced program.
+cat > "$stage/DEBIAN/preinst" <<'PREINST'
+#!/bin/sh
+set -e
+case "$1" in
+  install|upgrade)
+    if command -v pgrep >/dev/null 2>&1 && pgrep -f '^/opt/yaparr/Yaparr\.Desktop' >/dev/null 2>&1; then
+      echo "Yaparr is still running. Close it first (use Exit from its icon in the notification area, or from the menu), then install again." >&2
+      exit 1
+    fi
+    ;;
+esac
+exit 0
+PREINST
+chmod 755 "$stage/DEBIAN/preinst"
+
 deb="$out/yaparr_${version}_${arch}.deb"
 dpkg-deb --root-owner-group --build "$stage" "$deb"
 rm -rf "$stage"
