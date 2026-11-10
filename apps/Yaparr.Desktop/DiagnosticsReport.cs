@@ -70,7 +70,7 @@ public static class DiagnosticsReport
 
         Line("Voice");
         Line($"  Microphone: {settings.VoiceInput ?? "default"}; speakers: {settings.VoiceOutput ?? "default"}");
-        Line($"  Echo cancellation {OnOff(settings.VoiceEchoCancellation)}, noise suppressor {settings.VoiceNoiseSuppressor}{(settings.VoiceNoiseSuppressor == "RNNoise" ? "" : " (" + settings.VoiceNoiseSuppression + ")")}, click suppression {(settings.VoiceNoiseSuppressor == "RNNoise" ? "not used with RNNoise" : OnOff(settings.VoiceClickSuppression))}, automatic volume {OnOff(settings.VoiceAutomaticVolume)}, leveling people {OnOff(settings.VoiceLevelSpeakers)}, {(settings.VoiceAlwaysOn ? "always sending" : "sending when talking")}");
+        Line($"  Voice quality {Yaparr.Voice.VoiceSession.NormalizeBitrate(settings.VoiceBitrateKbps)} kbit/s, echo cancellation {OnOff(settings.VoiceEchoCancellation)}, noise suppressor {settings.VoiceNoiseSuppressor}{(settings.VoiceNoiseSuppressor == "RNNoise" ? "" : " (" + settings.VoiceNoiseSuppression + ")")}, click suppression {(settings.VoiceNoiseSuppressor == "RNNoise" ? "not used with RNNoise" : OnOff(settings.VoiceClickSuppression))}, automatic volume {OnOff(settings.VoiceAutomaticVolume)}, leveling people {OnOff(settings.VoiceLevelSpeakers)}, {(settings.VoiceAlwaysOn ? "always sending" : "sending when talking")}");
         Line();
 
         if (voice != null)

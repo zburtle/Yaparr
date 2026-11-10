@@ -27,6 +27,9 @@
         <CheckBox x:Name="ClickBox" Margin="0,6,0,0" Content="Take out keyboard and mouse clicks" />
         <TextBlock x:Name="ClickNote" Classes="muted small" TextWrapping="Wrap"
                    Text="Removes short, sharp clicks such as keys and mouse buttons, which noise suppression does not. Adds about 10 ms of delay to your voice." />
+        <TextBlock Text="Voice quality" FontWeight="SemiBold" Margin="0,8,0,0" />
+        <ComboBox x:Name="QualityBox" HorizontalAlignment="Stretch" AutomationProperties.Name="Voice quality" />
+        <TextBlock x:Name="QualityNote" Classes="muted small" TextWrapping="Wrap" />
         <CheckBox x:Name="AlwaysBox" Margin="0,10,0,0" Content="Always send my microphone (no voice activation)" />
         <CheckBox x:Name="PushToTalkBox" Margin="0,4,0,0" Content="Push to talk: send only while I hold a key or mouse button" />
         <StackPanel Orientation="Horizontal" Spacing="8" Margin="24,0,0,0">

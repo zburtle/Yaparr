@@ -40,6 +40,7 @@ internal sealed class VoiceCall : IDisposable
         session.Sensitivity = Math.Clamp(settings.VoiceSensitivity, 1, 100) / 1000f;
         session.OutputGain = Math.Clamp(settings.VoiceOutputVolume, 0, 300) / 100f;
         session.AutomaticVolume = settings.VoiceAutomaticVolume;
+        session.BitrateKbps = settings.VoiceBitrateKbps;
         session.LevelSpeakers = true;
     }
 

@@ -33,6 +33,15 @@ public sealed class VoiceSession : IDisposable
 {
     public const int SampleRate = 48000;
     public const int FrameSamples = RemoteVoice.FrameSamples;
+
+    /// <summary>The bitrates a voice can be sent at, in kilobits a second: the least data, a middle, and the fullest sound.</summary>
+    public static readonly int[] BitrateChoices = { 32, 48, 64 };
+
+    /// <summary>The bitrate used unless another is chosen. It was 32 until 64 was made the default.</summary>
+    public const int DefaultBitrateKbps = 64;
+
+    /// <summary>A bitrate from the settings made into one of <see cref="BitrateChoices"/>; the default for anything else.</summary>
+    public static int NormalizeBitrate(int kbps) => Array.IndexOf(BitrateChoices, kbps) >= 0 ? kbps : DefaultBitrateKbps;
     private const int PreRollFrames = 2, HangoverFrames = 10;
 
     private readonly ChatNode _node;
@@ -76,7 +85,8 @@ public sealed class VoiceSession : IDisposable
             ? Convert.FromHexString(room.Key)
             : System.Security.Cryptography.SHA256.HashData(Convert.FromHexString(room.Key + channel)));
         _encoder = OpusCodecFactory.CreateEncoder(SampleRate, 1, OpusApplication.OPUS_APPLICATION_VOIP);
-        _encoder.Bitrate = 32000;
+        _encoder.Bitrate = DefaultBitrateKbps * 1000;
+        _appliedBitrateKbps = DefaultBitrateKbps;
         _encoder.Complexity = 6;
         _encoder.UseInbandFEC = true;
         _encoder.PacketLossPercent = 10;
@@ -139,6 +149,18 @@ public sealed class VoiceSession : IDisposable
     public IReadOnlyCollection<PeerId> Speaking => _remotes.Values.Where(r => r.Speaking).Select(r => r.Id).ToList();
 
     private volatile bool _automaticVolume, _levelSpeakers, _clickSuppression;
+    private volatile int _bitrateKbps = DefaultBitrateKbps;
+    private int _appliedBitrateKbps;   // only on the encoding thread
+
+    /// <summary>
+    /// How much data your voice takes, in kilobits a second (one of <see cref="BitrateChoices"/>; anything else becomes <see cref="DefaultBitrateKbps"/>). More sounds
+    /// fuller and costs more upload while you talk, a copy for each person you send to; what you hear from others is whatever they chose. Can change during a call.
+    /// </summary>
+    public int BitrateKbps
+    {
+        get => _bitrateKbps;
+        set => _bitrateKbps = NormalizeBitrate(value);
+    }
     private readonly SpeechLeveler _micLeveler = new();
     private ClickSuppressor? _clicks;   // only on the microphone's thread
 
@@ -334,6 +356,9 @@ public sealed class VoiceSession : IDisposable
 
     private void Send(CapturedFrame captured, bool marker, byte[] buffer, byte[] opus)
     {
+        // A change of bitrate is taken up here, on the encoding thread, between two frames.
+        int wanted = _bitrateKbps;
+        if (wanted != _appliedBitrateKbps) { _encoder.Bitrate = wanted * 1000; _appliedBitrateKbps = wanted; }
         int length = _encoder.Encode(captured.Samples, FrameSamples, opus, opus.Length);
         int total = VoicePacket.Write(buffer, _tag, _seq++, _timestamp, marker, opus.AsSpan(0, length), captured.Level);
         _timestamp += FrameSamples;

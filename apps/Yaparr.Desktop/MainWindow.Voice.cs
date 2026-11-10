@@ -114,6 +114,7 @@ public partial class MainWindow
         session.Sensitivity = _settings.VoiceSensitivity / 1000f;
         session.OutputGain = Math.Clamp(_settings.VoiceOutputVolume, 0, 300) / 100f;
         session.AutomaticVolume = _settings.VoiceAutomaticVolume;
+        session.BitrateKbps = _settings.VoiceBitrateKbps;
         // RNNoise takes out clicks as part of what it does, so the click remover is not run with it.
         session.ClickSuppression = _settings.VoiceClickSuppression && VoiceSettingsView.SuppressorOf(_settings.VoiceNoiseSuppressor) == NoiseSuppressor.YaparrCustom;
         session.LevelSpeakers = _settings.VoiceLevelSpeakers;

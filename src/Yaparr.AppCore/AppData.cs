@@ -74,6 +74,8 @@ public sealed class AppSettings
     public bool VoiceClickSuppression { get; set; }
     /// <summary>Raise a quiet microphone and lower a loud one towards a normal speaking level before it is sent.</summary>
     public bool VoiceAutomaticVolume { get; set; }
+    /// <summary>How much data your voice takes: 32, 48 or 64 kilobits a second (64 unless chosen otherwise; it was 32 in older versions).</summary>
+    public int VoiceBitrateKbps { get; set; } = 64;
     /// <summary>Bring everyone you hear to a similar loudness (on top of each person's own volume).</summary>
     public bool VoiceLevelSpeakers { get; set; }
 
