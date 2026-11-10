@@ -19,6 +19,7 @@ public partial class MainWindow
     // Opens the settings on a section: "devices", "notifications", "voice", "network", "vpn", "turn", "blocked", "backup" or "about".
     internal void ShowSettings(string section = "devices")
     {
+        section = section.ToLowerInvariant();   // the sections are found by their lower-case names; "Voice" used to land on the first one
         if (!SettingsOverlay.IsVisible) _settingsOpener = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement();
         AboutText.Text = $"Yaparr {Updater.CurrentVersion}\nServerless peer-to-peer chat over the BitTorrent DHT.";
         SettingsOverlay.IsVisible = true;
