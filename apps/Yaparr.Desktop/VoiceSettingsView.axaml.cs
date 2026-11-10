@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
+using Yaparr.Voice;
 using Yaparr.Voice.WebRtc;
 
 namespace Yaparr.Desktop;
@@ -26,6 +27,7 @@ public partial class VoiceSettingsView : UserControl
         InitializeComponent();
         NoiseBox.ItemsSource = Enum.GetNames<NoiseSuppression>();
         SuppressorBox.ItemsSource = Suppressors.Select(s => s.Label).ToList();
+        QualityBox.ItemsSource = Qualities.Select(q => q.Label).ToList();
         if (!WebRtcVoiceProcessor.IsAvailable(out var unavailable))
         {
             EchoBox.IsEnabled = NoiseBox.IsEnabled = SuppressorBox.IsEnabled = false;
@@ -38,6 +40,7 @@ public partial class VoiceSettingsView : UserControl
         SensitivityBox.PropertyChanged += (_, e) => { if (e.Property == RangeBase.ValueProperty) Commit(); };
         NoiseBox.SelectionChanged += (_, _) => Commit();
         SuppressorBox.SelectionChanged += (_, _) => { ShowSuppressor(); Commit(); };
+        QualityBox.SelectionChanged += (_, _) => { ShowQuality(); Commit(); };
         EchoBox.IsCheckedChanged += (_, _) => Commit();
         LevelSpeakersBox.IsCheckedChanged += (_, _) => Commit();
         AutomaticVolumeBox.IsCheckedChanged += (_, _) => Commit();
@@ -67,6 +70,21 @@ public partial class VoiceSettingsView : UserControl
         _level = level;
         Load();
     }
+
+    // The voice qualities to choose from: the bitrate, what to call it, and what it costs. The wire figures are about what one listener receives
+    // (the sound plus the headers of each packet, 50 a second).
+    private sealed record QualityChoice(int Kbps, string Label, string Note);
+
+    private static readonly QualityChoice[] Qualities =
+    {
+        new(64, "Best: 64 kbit/s (default)", "The fullest sound. Takes about 90 kbit/s of upload for each person you talk to, while you are talking."),
+        new(48, "Balanced: 48 kbit/s", "Most of the fullness for less data: about 70 kbit/s of upload for each person you talk to, while you are talking."),
+        new(32, "Least data: 32 kbit/s", "Clear speech for the least data: about 55 kbit/s of upload for each person you talk to, while you are talking. What Yaparr used before."),
+    };
+
+    private void ShowQuality() =>
+        QualityNote.Text = (Qualities.FirstOrDefault(q => q.Label == QualityBox.SelectedItem as string) ?? Qualities[0]).Note
+            + " Each person hears you at the quality you choose; you hear them at theirs.";
 
     // The noise suppressors to choose from, as the person reads them and as they are kept in the settings.
     private sealed record SuppressorChoice(string Key, string Label, string Note);
@@ -109,6 +127,8 @@ public partial class VoiceSettingsView : UserControl
             NoiseBox.SelectedItem = Enum.TryParse<NoiseSuppression>(_settings.VoiceNoiseSuppression, out var noise) ? noise.ToString() : nameof(NoiseSuppression.Moderate);
             SuppressorBox.SelectedItem = Suppressors.First(s => s.Key == SuppressorOf(_settings.VoiceNoiseSuppressor).ToString()).Label;
             ShowSuppressor();
+            QualityBox.SelectedItem = Qualities.First(q => q.Kbps == VoiceSession.NormalizeBitrate(_settings.VoiceBitrateKbps)).Label;
+            ShowQuality();
             EchoBox.IsChecked = _settings.VoiceEchoCancellation;
             ClickBox.IsChecked = _settings.VoiceClickSuppression;
             LevelSpeakersBox.IsChecked = _settings.VoiceLevelSpeakers;
@@ -141,6 +161,7 @@ public partial class VoiceSettingsView : UserControl
         _settings.VoiceAutomaticVolume = AutomaticVolumeBox.IsChecked == true;
         _settings.VoiceNoiseSuppression = NoiseBox.SelectedItem as string ?? nameof(NoiseSuppression.Moderate);
         _settings.VoiceNoiseSuppressor = Suppressors.FirstOrDefault(s => s.Label == SuppressorBox.SelectedItem as string)?.Key ?? nameof(NoiseSuppressor.YaparrCustom);
+        _settings.VoiceBitrateKbps = (Qualities.FirstOrDefault(q => q.Label == QualityBox.SelectedItem as string) ?? Qualities[0]).Kbps;
         _settings.VoiceSensitivity = (int)SensitivityBox.Value;
         _changed?.Invoke(devices);
     }
