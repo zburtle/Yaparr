@@ -350,12 +350,8 @@ public partial class MainWindow : Window
                 StatusText.Text = "The update was not installed.";
                 return;
             }
-            if (!OperatingSystem.IsWindows() && Environment.ProcessPath is { } exe)
-            {
-                var start = new ProcessStartInfo(exe) { UseShellExecute = false };
-                start.Environment[Program.RestartVariable] = "1";
-                Process.Start(start);
-            }
+            // Windows: the installer is already open and the app ends here. Linux: a helper waits for the app to end, installs, and starts it again.
+            _quitting = true;
             (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
         }
         catch (OperationCanceledException) { }

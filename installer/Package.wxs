@@ -9,6 +9,11 @@
            InstallerVersion="500">
 
     <MajorUpgrade DowngradeErrorMessage="A newer version of Yaparr is already installed." />
+
+    <!-- A running Yaparr (even one hidden in the notification area) is asked to quit before its files are replaced, as an upgrade or an uninstall
+         begins. It is asked as Windows asks a program to end its session (WM_QUERYENDSESSION), which the app takes as a real quit; a plain close
+         message would only hide it. If it is still there afterwards, the usual "files in use" prompt of the installer follows. -->
+    <util:CloseApplication Id="CloseYaparr" Target="Yaparr.Desktop.exe" EndSessionMessage="yes" CloseMessage="no" RebootPrompt="no" Timeout="15" />
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
     <Icon Id="AppIcon.ico" SourceFile="$(sys.SOURCEFILEDIR)..\assets\logo\yaparr.ico" />
     <Property Id="ARPPRODUCTICON" Value="AppIcon.ico" />

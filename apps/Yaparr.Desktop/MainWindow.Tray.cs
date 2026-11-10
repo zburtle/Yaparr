@@ -12,8 +12,27 @@ public partial class MainWindow
     private TrayIcon? _tray;
     private bool _quitting;
 
+    // Windows tells a program when an installer, or the end of the session, wants it closed (WM_QUERYENDSESSION, which the Restart Manager that
+    // installers use sends). Avalonia answers "yes" but leaves the program running, so one hidden in the notification area would still be there
+    // when the installer replaces its files. So that message is taken as a real quit, not as a click on X.
+    private void QuitWhenWindowsAsksToEndTheSession()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        const uint WM_QUERYENDSESSION = 0x0011;
+        Avalonia.Controls.Win32Properties.AddWndProcHookCallback(this, (IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam, ref bool handled) =>
+        {
+            if (msg == WM_QUERYENDSESSION)
+            {
+                _quitting = true;
+                Avalonia.Threading.Dispatcher.UIThread.Post(Quit);
+            }
+            return IntPtr.Zero;
+        });
+    }
+
     private void SetUpTray()
     {
+        QuitWhenWindowsAsksToEndTheSession();
         CloseToTrayItem.IsChecked = _settings.CloseToTray;
         CloseToTrayItem.PropertyChanged += (_, e) =>
         {

@@ -18,10 +18,17 @@ public partial class MainWindow
     // Called once the account is known. Links that arrive before the rooms are back wait until they are.
     private void StartLinks()
     {
+        StartUpdateWatch();
         if (Program.StartupLink is { } first) _waitingLinks.Enqueue(first);
         _links = LinkChannel.Listen(LinkChannel.NameFor(_data.Directory), line =>
         {
             if (line == LinkChannel.ShowLine) UI(ShowFromTray);
+            else if (line.StartsWith(LinkChannel.VersionPrefix, StringComparison.Ordinal))
+            {
+                // The copy that was just started is newer than this one: an update was installed while this one ran.
+                if (Version.TryParse(line[LinkChannel.VersionPrefix.Length..].Trim(), out var started) && started > Updater.CurrentVersion)
+                    UI(() => _ = OfferRestartAsync($"Yaparr {started} was installed, but this window is still the older {Updater.CurrentVersion.ToString(3)}."));
+            }
             else if (DeepLink.Parse(line) is { } link) UI(() => { QueueLink(link); });
         });
     }

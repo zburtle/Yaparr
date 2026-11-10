@@ -15,6 +15,12 @@ internal sealed class LinkChannel : IDisposable
     /// <summary>What a second launch with no link sends: bring the window to the front.</summary>
     public const string ShowLine = "show";
 
+    /// <summary>
+    /// A second launch also says which version it is ("version 1.2.3", as a second line, so a copy that does not know it ignores it and still
+    /// shows its window). A copy that is older than the one that was started is what is left running after an update; it offers to restart.
+    /// </summary>
+    public const string VersionPrefix = "version ";
+
     private const int MaxLine = 1024;
     private readonly CancellationTokenSource _stop = new();
     private readonly Action<string> _onLine;
@@ -33,7 +39,7 @@ internal sealed class LinkChannel : IDisposable
     }
 
     /// <summary>Hands <paramref name="line"/> to the app that listens on <paramref name="name"/>; false if none does.</summary>
-    public static bool TrySend(string name, string line, int timeoutMs = 1000)
+    public static bool TrySend(string name, string line, int timeoutMs = 1000, string? secondLine = null)
     {
         try
         {
@@ -41,6 +47,7 @@ internal sealed class LinkChannel : IDisposable
             client.Connect(timeoutMs);
             using var writer = new StreamWriter(client, new UTF8Encoding(false));
             writer.WriteLine(line.Length > MaxLine ? line[..MaxLine] : line);
+            if (secondLine != null) writer.WriteLine(secondLine.Length > MaxLine ? secondLine[..MaxLine] : secondLine);
             writer.Flush();
             return true;
         }
@@ -75,6 +82,9 @@ internal sealed class LinkChannel : IDisposable
                 using var reader = new StreamReader(server, new UTF8Encoding(false), false, 2048, leaveOpen: true);
                 var line = await reader.ReadLineAsync(timeout.Token);
                 if (!string.IsNullOrWhiteSpace(line) && line.Length <= MaxLine) _onLine(line);
+                // A second line, if there is one, is the version of the copy that was started (see VersionPrefix); nothing else is read.
+                var second = line == null ? null : await reader.ReadLineAsync(timeout.Token);
+                if (second is { Length: <= MaxLine } && second.StartsWith(VersionPrefix, StringComparison.Ordinal)) _onLine(second);
             }
             catch (OperationCanceledException) when (_stop.IsCancellationRequested) { break; }
             catch (Exception ex) when (ex is IOException or OperationCanceledException or ObjectDisposedException) { }

@@ -31,6 +31,27 @@ public static class UpdateVerifier
         apt-get install -y --allow-downgrades "$dir/package.deb"
         """;
 
+    /// <summary>
+    /// What runs, detached, after the app has asked to be closed for an update on Linux: it waits until the app's process is gone (so no files are
+    /// replaced under a running program), runs the installer command it was given, and then starts the app again, with the failure marked for it if
+    /// the installer did not succeed. Arguments: the app's process id, the app's program, then the installer command and its arguments. It gives up
+    /// without installing anything if the app is still running after thirty seconds.
+    /// </summary>
+    private const string UpdateRunnerScript = """
+        pid=$1; exe=$2; shift 2
+        n=0
+        while kill -0 "$pid" 2>/dev/null; do
+          n=$((n+1))
+          [ "$n" -gt 300 ] && exit 4
+          sleep 0.1
+        done
+        if ! "$@"; then YAPARR_UPDATE_FAILED=1; export YAPARR_UPDATE_FAILED; fi
+        YAPARR_RESTARTED=1; export YAPARR_RESTARTED
+        exec "$exe"
+        """;
+
+    public static string LinuxUpdateRunnerScript { get; } = UpdateRunnerScript.Replace("\r", "");
+
     /// <summary>The script as <c>sh</c> needs it: a source file checked out with Windows line endings must not put carriage returns into it.</summary>
     public static string LinuxInstallScript { get; } = InstallScript.Replace("\r", "");
 
