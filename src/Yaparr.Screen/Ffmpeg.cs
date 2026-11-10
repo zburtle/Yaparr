@@ -51,9 +51,10 @@ public static class FfmpegLocator
 
 /// <summary>
 /// How the picture is compressed. Auto uses the graphics card when there is one that can (H264 on NVIDIA's NVENC, AMD's AMF or
-/// Intel's Quick Sync) and VP8 in software otherwise.
+/// Intel's Quick Sync) and VP8 in software otherwise. Av1 is asked for on purpose: only graphics cards encode it live (software AV1 is too slow for a
+/// screen at 30 or 60 frames a second), and a viewer needs a decoder for it, so Auto never picks it; where no card can, the share falls back to H.264.
 /// </summary>
-public enum ScreenCodec { Auto, Vp8, H264 }
+public enum ScreenCodec { Auto, Vp8, H264, Av1 }
 
 /// <summary>The graphics card encoders FFmpeg can drive for H.264.</summary>
 public enum HardwareEncoder { Nvenc, Amf, Qsv, Vaapi }
@@ -68,14 +69,21 @@ public static class HardwareEncoders
         ? new[] { HardwareEncoder.Nvenc, HardwareEncoder.Vaapi }
         : new[] { HardwareEncoder.Nvenc, HardwareEncoder.Amf, HardwareEncoder.Qsv };
 
-    /// <summary>FFmpeg's name for the encoder.</summary>
-    public static string Name(HardwareEncoder encoder) => encoder switch
+    /// <summary>FFmpeg's name for the H.264 encoder.</summary>
+    public static string Name(HardwareEncoder encoder) => Name(ScreenCodec.H264, encoder);
+
+    /// <summary>FFmpeg's name for the encoder of this codec (H.264 or AV1).</summary>
+    public static string Name(ScreenCodec codec, HardwareEncoder encoder)
     {
-        HardwareEncoder.Nvenc => "h264_nvenc",
-        HardwareEncoder.Amf => "h264_amf",
-        HardwareEncoder.Vaapi => "h264_vaapi",
-        _ => "h264_qsv",
-    };
+        string kind = codec == ScreenCodec.Av1 ? "av1" : "h264";
+        return encoder switch
+        {
+            HardwareEncoder.Nvenc => kind + "_nvenc",
+            HardwareEncoder.Amf => kind + "_amf",
+            HardwareEncoder.Vaapi => kind + "_vaapi",
+            _ => kind + "_qsv",
+        };
+    }
 
     /// <summary>Whose graphics hardware it is, for messages.</summary>
     public static string Maker(HardwareEncoder encoder) => encoder switch
@@ -103,7 +111,7 @@ public static class HardwareEncoders
 
     /// <summary>The pixel format (and for VA-API the upload to the card) that ends the filter chain for this encoder.</summary>
     internal static string PixelFormat(ScreenCodec codec, HardwareEncoder encoder) =>
-        codec != ScreenCodec.H264 ? "yuv420p" : encoder switch { HardwareEncoder.Qsv => "nv12", HardwareEncoder.Vaapi => "nv12,hwupload", _ => "yuv420p" };
+        codec is not (ScreenCodec.H264 or ScreenCodec.Av1) ? "yuv420p" : encoder switch { HardwareEncoder.Qsv => "nv12", HardwareEncoder.Vaapi => "nv12,hwupload", _ => "yuv420p" };
 
     public static bool TryParse(string? text, out HardwareEncoder encoder)
     {
@@ -266,7 +274,7 @@ public static class FfmpegArgs
         var (width, height) = PortalPipeline.FrameSize(stream, o);
         // No -nostdin: the pictures arrive on standard input.
         var args = new List<string> { "-hide_banner", "-loglevel", "error" };
-        if (codec == ScreenCodec.H264 && encoder == HardwareEncoder.Vaapi) args.AddRange(new[] { "-vaapi_device", HardwareEncoders.VaapiDevice() });
+        if (codec is ScreenCodec.H264 or ScreenCodec.Av1 && encoder == HardwareEncoder.Vaapi) args.AddRange(new[] { "-vaapi_device", HardwareEncoders.VaapiDevice() });
         args.AddRange(new[] { "-f", "rawvideo", "-pixel_format", "yuv420p", "-video_size", $"{width}x{height}", "-framerate", o.Fps.ToString(CultureInfo.InvariantCulture), "-i", "pipe:0" });
         args.AddRange(new[] { "-vf", "format=" + HardwareEncoders.PixelFormat(codec, encoder) });
         return AddEncoder(args, o, codec, encoder);
@@ -279,7 +287,7 @@ public static class FfmpegArgs
         if (o.WindowHandle == null && o.Display == null) throw new ArgumentException("Choose a monitor or a window to share.", nameof(o));
         var args = new List<string> { "-hide_banner", "-loglevel", "error", "-nostdin" };
         // VA-API encodes on a render device that is named up front; the frames are uploaded to it at the end of the filter chain.
-        if (codec == ScreenCodec.H264 && encoder == HardwareEncoder.Vaapi) args.AddRange(new[] { "-vaapi_device", HardwareEncoders.VaapiDevice() });
+        if (codec is ScreenCodec.H264 or ScreenCodec.Av1 && encoder == HardwareEncoder.Vaapi) args.AddRange(new[] { "-vaapi_device", HardwareEncoders.VaapiDevice() });
         args.AddRange(new[] { "-f", "x11grab", "-framerate", o.Fps.ToString(CultureInfo.InvariantCulture), "-draw_mouse", o.ShowCursor ? "1" : "0" });
         if (o.WindowHandle is { } window)
             args.AddRange(new[] { "-window_id", Hex(window), "-i", x11 });   // the window keeps the size it had when sharing began
@@ -323,6 +331,21 @@ public static class FfmpegArgs
             args.AddRange(rate);
             args.AddRange(new[] { "-f", "h264", "pipe:1" });
         }
+        else if (codec == ScreenCodec.Av1)
+        {
+            // The same treatment for AV1 on a graphics card: low latency, no B-frames, every key frame an IDR picture, and the output in IVF (which puts a
+            // temporal delimiter in front of every picture, so the frame boundaries are known). The sequence header, which a viewer needs to start, is
+            // written in front of key frames by the encoders themselves, and a unit counts as a key frame only if it has one (see Av1.IsKeyFrame), so nothing is sent before one that a viewer can start from.
+            args.AddRange(encoder switch
+            {
+                HardwareEncoder.Amf => new[] { "-c:v", "av1_amf", "-usage", "ultralowlatency", "-quality", "speed", "-rc", "vbr_latency", "-async_depth", "1", "-forced_idr", "1", "-header_insertion_mode", "frame" },
+                HardwareEncoder.Vaapi => new[] { "-c:v", "av1_vaapi", "-profile:v", "main" },
+                HardwareEncoder.Qsv => new[] { "-c:v", "av1_qsv", "-preset", "veryfast", "-async_depth", "1", "-forced_idr", "1" },
+                _ => new[] { "-c:v", "av1_nvenc", "-preset", "p4", "-tune", "ll", "-rc", "vbr", "-rc-lookahead", "0", "-bf", "0", "-forced-idr", "1", "-zerolatency", "1" },
+            });
+            args.AddRange(rate);
+            args.AddRange(new[] { "-f", "ivf", "pipe:1" });
+        }
         else
         {
             args.AddRange(new[] { "-c:v", "libvpx", "-deadline", "realtime", "-cpu-used", "6", "-lag-in-frames", "0", "-auto-alt-ref", "0",
@@ -330,6 +353,20 @@ public static class FfmpegArgs
             args.AddRange(rate);
             args.AddRange(new[] { "-f", "ivf", "pipe:1" });
         }
+        return args;
+    }
+
+    /// <summary>
+    /// A tiny test encode on one graphics card, to IVF on standard output: the one reliable way to know the card (and driver, and this FFmpeg) can do
+    /// <paramref name="codec"/>. See <see cref="Av1Support"/>.
+    /// </summary>
+    public static List<string> ProbeEncoder(ScreenCodec codec, HardwareEncoder encoder)
+    {
+        var args = new List<string> { "-hide_banner", "-loglevel", "error", "-nostdin" };
+        if (encoder == HardwareEncoder.Vaapi) args.AddRange(new[] { "-vaapi_device", HardwareEncoders.VaapiDevice() });
+        // Big enough for every maker's minimum picture size (some AV1 encoders refuse the sizes a test usually uses).
+        args.AddRange(new[] { "-f", "lavfi", "-i", "color=c=black:s=640x360:r=10:d=1", "-frames:v", "3", "-vf", "format=" + HardwareEncoders.PixelFormat(codec, encoder),
+            "-c:v", HardwareEncoders.Name(codec, encoder), "-g", "10", "-f", "ivf", "pipe:1" });
         return args;
     }
 

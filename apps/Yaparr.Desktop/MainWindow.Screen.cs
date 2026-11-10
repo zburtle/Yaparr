@@ -83,8 +83,10 @@ public partial class MainWindow
         if (ffmpeg == null) return;
 
         var dialog = new ShareDialog(_node.MeasuredUploadBytesPerSecond);
+        dialog.PreferAv1(_settings.ScreenShareAv1);
         if (!await dialog.ShowDialog<bool>(this) || dialog.Result == null) return;
         var options = dialog.Result;
+        if (_settings.ScreenShareAv1 != dialog.Av1Picked) { _settings.ScreenShareAv1 = dialog.Av1Picked; _data.SaveSettings(_settings); }
 
         // Under Wayland the desktop's own picker decides what is shared.
         if (ScreenCapture.UsesPortal)

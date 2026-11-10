@@ -1,3 +1,4 @@
+using Yaparr.Screen;
 using Avalonia.Controls.ApplicationLifetimes;
 
 namespace Yaparr.Desktop;
@@ -13,6 +14,7 @@ public partial class MainWindow
     // Called once the account is known.
     private void StartUpdateWatch()
     {
+        Av1Support.StartCheck(log: _log.Write);
         if (Program.UpdateFailed) StatusText.Text = "The update was not installed. Yaparr is still the older version.";
         if (!Updater.IsFlatpak) return;
         _ = Task.Run(async () =>

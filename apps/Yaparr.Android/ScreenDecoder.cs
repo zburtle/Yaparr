@@ -7,13 +7,13 @@ using Yaparr.Screen;
 namespace Yaparr.AndroidApp;
 
 /// <summary>
-/// Shows the picture of a screen someone shares: the frames that arrive (H.264, or VP8 when the sharer's computer had no graphics card to encode on) go to
+/// Shows the picture of a screen someone shares: the frames that arrive (H.264, AV1 when the sharer chose it, or VP8 when the sharer's computer had no graphics card to encode on) go to
 /// the phone's own video decoder, which draws straight onto a surface. The first key frame says which codec it is and how big; a key frame of another size
 /// starts the decoder again. Nothing is decoded with FFmpeg on the phone.
 /// </summary>
 internal sealed class ScreenDecoder : IDisposable
 {
-    private const string H264Mime = "video/avc", Vp8Mime = "video/x-vnd.on2.vp8";
+    private const string H264Mime = "video/avc", Vp8Mime = "video/x-vnd.on2.vp8", Av1Mime = "video/av01";
 
     private readonly IMediaFrameSource _frames;
     private readonly Surface _surface;
@@ -95,8 +95,13 @@ internal sealed class ScreenDecoder : IDisposable
     private void Restart(ScreenCodec kind, int width, int height)
     {
         CloseCodec();
-        string mime = kind == ScreenCodec.H264 ? H264Mime : Vp8Mime;
-        var codec = MediaCodec.CreateDecoderByType(mime)!;
+        string mime = kind switch { ScreenCodec.H264 => H264Mime, ScreenCodec.Av1 => Av1Mime, _ => Vp8Mime };
+        MediaCodec codec;
+        try { codec = MediaCodec.CreateDecoderByType(mime)!; }
+        catch (Exception ex) when (kind == ScreenCodec.Av1 && ex is Java.Lang.IllegalArgumentException or Java.IO.IOException or NullReferenceException)
+        {
+            throw new InvalidOperationException("This phone cannot play AV1. Ask the person sharing to pick another format.", ex);
+        }
         try
         {
             using var format = MediaFormat.CreateVideoFormat(mime, width, height);

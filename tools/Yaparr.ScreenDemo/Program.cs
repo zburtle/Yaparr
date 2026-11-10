@@ -72,7 +72,7 @@ else
     if (display == null) { Console.Error.WriteLine("No such monitor; use --list."); return 2; }
     Console.WriteLine($"Sharing monitor {display.Index}: {display.Width}x{display.Height}");
 }
-var codec = (Opt("--codec") ?? "auto").ToLowerInvariant() switch { "vp8" => ScreenCodec.Vp8, "h264" => ScreenCodec.H264, _ => ScreenCodec.Auto };
+var codec = (Opt("--codec") ?? "auto").ToLowerInvariant() switch { "vp8" => ScreenCodec.Vp8, "h264" => ScreenCodec.H264, "av1" => ScreenCodec.Av1, _ => ScreenCodec.Auto };
 var screen = new ScreenOptions { Fps = Int("--fps", 10), Kbps = Int("--kbps", 800), MaxWidth = Int("--width", 1280), MaxHeight = Int("--height", 720), Display = display, WindowHandle = windowHandle, Portal = portal, Codec = codec, Encoder = HardwareEncoders.TryParse(Opt("--encoder"), out var card) ? card : null, GpuScale = args.Contains("--gpu-scale") };
 string? savePath = Opt("--save");
 

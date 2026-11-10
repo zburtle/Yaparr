@@ -34,8 +34,9 @@ public static class ScreenDiagnostics
         var version = await RunAsync(ffmpegPath, "-hide_banner -version", ct).ConfigureAwait(false);
         Line($"  FFmpeg version: {version.Split('\n').FirstOrDefault()?.Trim() ?? "unknown"}");
         var encoders = await RunAsync(ffmpegPath, "-hide_banner -encoders", ct).ConfigureAwait(false);
-        var wanted = encoders.Split('\n').Select(l => l.Trim()).Where(l => l.Contains("vp8") || l.Contains("264") || l.Contains("vaapi") || l.Contains("nvenc")).ToList();
+        var wanted = encoders.Split('\n').Select(l => l.Trim()).Where(l => l.Contains("vp8") || l.Contains("264") || l.Contains("av1") || l.Contains("vaapi") || l.Contains("nvenc")).ToList();
         Line($"  Encoders it has: {(wanted.Count == 0 ? "none of the ones Yaparr uses" : string.Join("; ", wanted.Select(l => l.Replace("  ", " "))))}");
+        Line($"  AV1: {(Av1Support.Latest?.Describe() ?? "not checked yet")}");
         var inputs = await RunAsync(ffmpegPath, "-hide_banner -devices", ct).ConfigureAwait(false);
         Line($"  Capture inputs it has: {string.Join(", ", inputs.Split('\n').Select(l => l.Trim()).Where(l => l.StartsWith("D") && (l.Contains("x11grab") || l.Contains("gdigrab") || l.Contains("lavfi"))).Select(l => l.Split(' ', StringSplitOptions.RemoveEmptyEntries).Skip(1).FirstOrDefault() ?? l))}");
         if (OperatingSystem.IsLinux() && Where("xrandr") != "missing")
