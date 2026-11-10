@@ -194,6 +194,9 @@ public partial class MainWindow
     // What the last share looked like when it ended, for "Copy sharing diagnostics".
     private string? _lastSharingReport;
 
+    // How the last few watches went, kept after the picture is closed (the sharing diagnostics are often copied afterwards).
+    private readonly List<string> _lastWatchReports = new();
+
     private void StopSharingCore()
     {
         var sharer = _sharer;
@@ -275,6 +278,11 @@ public partial class MainWindow
 
     private void WatchEnded(ScreenWatch watch)
     {
+        if (watch.Control.LastReport is { } report)
+        {
+            _lastWatchReports.Add("(ended) " + report);
+            while (_lastWatchReports.Count > 3) _lastWatchReports.RemoveAt(0);
+        }
         _screenViews.Remove(watch.Id);
         watch.Share.Watching = false;
         if (_inlineWatch == watch)

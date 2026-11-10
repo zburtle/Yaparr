@@ -18,6 +18,8 @@ public sealed class CallQualityLog
     private readonly Func<VoiceSession?> _voice;
     private readonly Func<ScreenSharer?> _sharer;
     private readonly Func<ChatNode?> _node;
+    private readonly Func<IEnumerable<ScreenViewControl>> _watches;
+    private readonly Dictionary<ScreenViewControl, (WatchFigures Figures, long At)> _watchBefore = new();
     private readonly FileLog _log;
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(60) };
     private readonly Dictionary<PeerId, VoiceQuality> _before = new();
@@ -26,8 +28,9 @@ public sealed class CallQualityLog
     private ScreenSharer? _sharerWatched;
     private int _quiet;
 
-    public CallQualityLog(Func<VoiceSession?> voice, Func<ScreenSharer?> sharer, Func<ChatNode?> node, FileLog log)
+    public CallQualityLog(Func<VoiceSession?> voice, Func<ScreenSharer?> sharer, Func<ChatNode?> node, Func<IEnumerable<ScreenViewControl>> watches, FileLog log)
     {
+        _watches = watches;
         _voice = voice;
         _sharer = sharer;
         _node = node;
@@ -59,8 +62,19 @@ public sealed class CallQualityLog
         }
 
         var sharer = _sharer();
-        if (sharer != _sharerWatched) { _sharerWatched = sharer; _frames = _bytes = _resent = _dropped = 0; _at = Environment.TickCount64; }
-        if (sharer != null)
+        // The first time a share is seen, only the starting figures are taken: it began some time before this tick, so dividing everything it has
+        // done so far by the one second since "now" would read as a burst of frames when nothing was wrong.
+        bool firstLook = false;
+        if (sharer != _sharerWatched)
+        {
+            _sharerWatched = sharer;
+            firstLook = sharer != null;
+            (_frames, _bytes, _resent, _dropped, _at) = sharer == null ? (0, 0, 0, 0, Environment.TickCount64)
+                : (sharer.Frames, sharer.Bytes, sharer.Source.Status.Retransmitted, sharer.Source.Status.Dropped, Environment.TickCount64);
+            sharer?.TakeLongestGapMs();
+        }
+        if (sharer != null && firstLook) anything = true;
+        else if (sharer != null)
         {
             anything = true;
             long now = Environment.TickCount64;
@@ -81,6 +95,28 @@ public sealed class CallQualityLog
                            + $"{status.Children.Count} watching directly, {ScreenCodecs.Describe(sharer.Codec, sharer.Encoder)}");
             }
         }
+
+        foreach (var watch in _watches().ToList())
+        {
+            if (watch.Figures() is not { } now) continue;
+            anything = true;
+            long tick = Environment.TickCount64;
+            // The first look counts from when the watching began, so nothing is missed from the minute it started in.
+            var (was, at) = _watchBefore.TryGetValue(watch, out var before) ? before : (now with { Shown = 0, FramesIn = 0, BytesIn = 0, Lost = 0, Recovered = 0, Late = 0, Dropped = 0 }, now.StartedAt);
+            _watchBefore[watch] = (now, tick);
+            double seconds = Math.Max(1, (tick - at) / 1000.0);
+            double arriving = (now.FramesIn - was.FramesIn) / seconds, drawn = (now.Shown - was.Shown) / seconds, kbps = (now.BytesIn - was.BytesIn) * 8 / 1000.0 / seconds;
+            long lost = now.Lost - was.Lost, late = now.Late - was.Late, dropped = now.Dropped - was.Dropped;
+            // Frames lost, or too late, or dropped by the decoder; pictures drawn far fewer than arrive (or hardly any at all); a decoder that is behind; no path to the sharer.
+            bool bad = !now.Attached || lost > 0 || dropped > 0 || late > 10 || now.DecodeQueue > 5 || drawn < 10 || (arriving > 0 && drawn < arriving * 0.6);
+            if (!bad) continue;
+            problem = true;
+            string? path = now.Parent is { } parent ? _node()?.GetLink(parent).ToString() : null;
+            _log.Write($"call quality: watching {now.Name}: {arriving:0.0} frames/s arriving at {kbps:0} kbit/s, {drawn:0.0} pictures/s drawn, {lost} frames lost, {late} too late, "
+                       + $"{dropped} dropped by the decoder, decoder queue {now.DecodeQueue}, {now.Recovered} packets recovered in all, "
+                       + (now.Attached ? $"attached {(now.Parent is { } p ? "under " + p.Short : "to the sharer")}{(path != null ? " (" + path + ")" : "")}" : "not attached to the sharer"));
+        }
+        foreach (var gone in _watchBefore.Keys.Where(k => !_watches().Contains(k)).ToList()) _watchBefore.Remove(gone);
 
         if (problem) _quiet = 0;
         else if (anything && ++_quiet % 10 == 0) _log.Write("call quality: no problems in the last ten minutes");
