@@ -20,8 +20,21 @@ public partial class ScreenViewControl : UserControl
     private long _shown;
     private int _pending;
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
+    private readonly long _startedAt = Environment.TickCount64;
 
     public ScreenViewControl() => InitializeComponent();
+
+    /// <summary>What this watch has done so far, counted from when it began (null if there is no stream).</summary>
+    public WatchFigures? Figures()
+    {
+        if (_view == null) return null;
+        var st = _view.Status;
+        return new WatchFigures(_name, _startedAt, _shown, _viewer?.FramesIn ?? 0, _viewer?.BytesIn ?? 0, _view.FramesLost, st.Recovered, Interlocked.Read(ref _late),
+            _viewer?.Dropped ?? 0, _viewer?.DecodeQueue ?? 0, st.Attached, st.Parent);
+    }
+
+    /// <summary>How the watch went, written when it ends (for the sharing diagnostics, which are often copied after the screen is closed).</summary>
+    public string? LastReport { get; private set; }
 
     public ScreenViewControl(string name, MediaView view, string ffmpeg) : this()
     {
@@ -203,6 +216,8 @@ public partial class ScreenViewControl : UserControl
     {
         if (_stopped) return;
         _stopped = true;
+        try { LastReport = Figures()?.Describe(Environment.TickCount64); }
+        catch (ObjectDisposedException) { }
         _timer.Stop();
         _draw.Stop();
         _viewer?.Dispose();

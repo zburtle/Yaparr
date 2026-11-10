@@ -258,6 +258,14 @@ public partial class MainWindow : Window
             else if (_lastSharingReport != null) text.AppendLine("  (it has ended; this is how it was)").Append(_lastSharingReport);
             else text.AppendLine("  You have not shared a screen since Yaparr started.");
             text.AppendLine();
+            text.AppendLine("Screens you watch");
+            var watchLines = _screenViews.Values.Select(w => w.Control.Figures() is { } f
+                    ? f.Describe(Environment.TickCount64, f.Parent is { } parent ? _node?.GetLink(parent).ToString() : null)
+                    : null)
+                .Concat(_lastWatchReports).Where(l => l != null).ToList();
+            foreach (var line in watchLines) text.AppendLine("  " + line);
+            if (watchLines.Count == 0) text.AppendLine("  You have not watched a screen since Yaparr started.");
+            text.AppendLine();
             text.AppendLine("Log lines about sharing and watching");
             var lines = _log.Tail(2000).Where(l => System.Text.RegularExpressions.Regex.IsMatch(l, "screen|shar|portal|FFmpeg|GStreamer|stream|watch|viewer", System.Text.RegularExpressions.RegexOptions.IgnoreCase)).TakeLast(80).ToList();
             foreach (var line in lines) text.AppendLine("  " + DiagnosticsReport.Scrub(line));
@@ -372,7 +380,7 @@ public partial class MainWindow : Window
         _settings = _data.LoadSettings();
         _vpn = new VpnController(_data, _settings, () => _node);
         _log = new FileLog(Path.Combine(_data.Directory, "logs"), legacyFile: Path.Combine(_data.Directory, "yaparr.log"));
-        _callQuality = new CallQualityLog(() => _voice, () => _sharer, () => _node, _log);
+        _callQuality = new CallQualityLog(() => _voice, () => _sharer, () => _node, () => _screenViews.Values.Select(w => w.Control), _log);
         CrashLog.Attach(_log, _log.Folder);
         _log.Write($"Yaparr {Updater.CurrentVersion} starting");
         Updater.Log = _log.Write;
