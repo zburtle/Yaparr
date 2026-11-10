@@ -39,7 +39,7 @@ jobs:
       # A package mirror that stops answering used to hold this step for as long as the job's limit, with nothing to show for it. Now a
       # request gives up after 30 seconds and is tried three times, and the step has a limit of its own.
       - name: Install Flatpak
-        timeout-minutes: 5
+        timeout-minutes: 10
         run: |
           sudo tee /etc/apt/apt.conf.d/80-ci > /dev/null <<'EOF'
           Acquire::Retries "3";
