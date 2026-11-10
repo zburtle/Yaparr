@@ -146,6 +146,52 @@ public class ModerationTests
     }
 
     [Fact]
+    public async Task An_owner_can_delete_the_message_they_just_sent_holding_only_its_key()
+    {
+        var t = await Trio();
+        using var _ = t.Owner; using var __ = t.B; using var ___ = t.C;
+        var atB = Collect(t.Rb);
+        // The app shows what you send before it has come back as a message, so all it holds is the id, and the key made of it.
+        string id = await t.Ro.SendAsync("oops, wrong room");
+        string key = ChatMessage.KeyOf(t.Owner.Id, id);
+        await TestUtil.WaitFor(() => Has(atB, "oops, wrong room"), 20_000);
+
+        Assert.Throws<InvalidOperationException>(() => t.Rc.DeleteMessage(key));
+        t.Ro.DeleteMessage(key);
+        await TestUtil.WaitFor(() => t.Rb.GetHistory().All(m => m.Text != "oops, wrong room") && t.Rc.GetHistory().All(m => m.Text != "oops, wrong room"), 20_000);
+        Assert.DoesNotContain(t.Ro.GetHistory(), m => m.Text == "oops, wrong room");
+    }
+
+    [Fact]
+    public async Task A_member_who_is_no_admin_can_delete_their_own_messages_and_only_those()
+    {
+        var t = await Trio();
+        using var _ = t.Owner; using var __ = t.B; using var ___ = t.C;
+        var atOwner = Collect(t.Ro);
+        string mine = await t.Rc.SendAsync("sent by mistake");
+        await t.Rb.SendAsync("b's message");
+        await TestUtil.WaitFor(() => Has(atOwner, "sent by mistake") && Has(atOwner, "b's message"), 20_000);
+
+        // Not an admin, and still: the one they sent is theirs.
+        Assert.Equal(RoomRole.Member, t.Rc.MyRole);
+        var theirs = t.Rc.GetHistory().Single(m => m.Text == "b's message");
+        Assert.Throws<InvalidOperationException>(() => t.Rc.DeleteMessage(theirs));
+        t.Rc.DeleteMessage(ChatMessage.KeyOf(t.C.Id, mine));
+
+        await TestUtil.WaitFor(() => t.Ro.GetHistory().All(m => m.Text != "sent by mistake") && t.Rb.GetHistory().All(m => m.Text != "sent by mistake")
+            && t.Rc.GetHistory().All(m => m.Text != "sent by mistake"), 20_000);
+        Assert.Contains(t.Ro.GetHistory(), m => m.Text == "b's message");
+
+        // It stays deleted for someone who joins later.
+        var d = TestUtil.NewNode(t.Hub, "dave");
+        using var ____ = d;
+        var rd = await d.JoinRoomAsync(RoomKey.Parse(t.Invite), "lobby");
+        await TestUtil.WaitFor(() => rd.GetHistory().Any(m => m.Text == "b's message"), 30_000);
+        await Task.Delay(500);
+        Assert.DoesNotContain(rd.GetHistory(), m => m.Text == "sent by mistake");
+    }
+
+    [Fact]
     public async Task An_admin_can_remove_anyones_sound()
     {
         var t = await Trio();

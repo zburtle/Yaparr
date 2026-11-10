@@ -209,8 +209,11 @@ public sealed class ChatRoom
     /// <summary>Lifts a ban.</summary>
     public void Unban(PeerId account) => _node.Unban(this, account);
 
-    /// <summary>Deletes a message for everyone in the room (owner or admin only).</summary>
+    /// <summary>Deletes a message for everyone in the room (the owner and admins delete any message, everyone else their own).</summary>
     public void DeleteMessage(ChatMessage message) => _node.DeleteMessage(this, message);
+
+    /// <summary>Deletes a message for everyone in the room by its <see cref="ChatMessage.Key"/> (the owner and admins any message, everyone else their own), for a message the caller sent a moment ago and holds only as that key.</summary>
+    public void DeleteMessage(string key) => _node.DeleteMessage(this, key);
 
     /// <summary>Removes a sound from the soundboard, whoever added it (owner or admin only).</summary>
     public void DeleteSound(string id) => _node.DeleteSound(this, id);

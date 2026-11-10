@@ -82,6 +82,12 @@ internal sealed class ModView
 {
     public readonly Dictionary<string, string> Banned = new();
     public readonly HashSet<string> Messages = new();
+
+    /// <summary>
+    /// Messages a member deleted that may be their own, by message key: the accounts that gave the order. The order counts only for a message that was sent by
+    /// one of that account's devices, which is known from the message itself, so it is decided when the message is looked at (<c>IsMessageDeleted</c>).
+    /// </summary>
+    public readonly Dictionary<string, HashSet<string>> OwnDeletes = new();
     public readonly HashSet<string> Sounds = new();
 
     /// <summary>The name an owner or admin gave a sound that was not theirs, by sound id, and when (the sound's own owner can rename it again later).</summary>
