@@ -6,7 +6,7 @@ A backup server keeps a **locked** copy of your profile backup, so you can bring
 
 **Settings > Backup > Backup server** on the desktop (Android does not have it yet):
 
-1. Type the server's address and choose **Sign in with your browser**. Your browser opens the server's sign-in page; type your username and password there. Yaparr never sees them. When you are signed in the browser says so and Yaparr shows "Signed in to … as …".
+1. Type the server's address and choose **Sign in with your browser**. Your browser opens the server's sign-in page; type your email address and password there (an account is named by its owner's email address, which the person running the server enters when they make it; nothing is ever sent to it). Yaparr never sees them. When you are signed in the browser says so and Yaparr shows "Signed in to … as …".
 2. **Back up now** saves a backup. The first time, Yaparr makes a **recovery code** (like `K7QD-M3XF-9PLR-2WTE-HV8N-C4YB`) and shows it once: save it in a password manager or on paper. After that, backing up needs nothing typed.
 3. **Show recovery code** shows it again on a computer that has it. **Change password** opens the server's page for that. **Sign out** makes the server forget this computer; the backups stay.
 
@@ -37,7 +37,7 @@ The way programs on a computer sign in to web services (OAuth's authorization co
 3. The browser arrives at `redirect_uri?code=<code>&state=<state>`. The code works once, for two minutes. The app ignores a request whose `state` is not its own.
 4. The app trades it: `POST /v1/token` with `{"code":"…","verifier":"…"}` gives `{"token":"…","username":"…"}`. Without the verifier the code is useless, so something that saw the code pass by cannot use it.
 
-Every later request carries `Authorization: Bearer <token>`. `DELETE /v1/token` signs the device out. `GET /account/password` is the page where a person changes their password, which signs every device out.
+In these answers `username` is the account's name, which is its owner's email address. Every later request carries `Authorization: Bearer <token>`. `DELETE /v1/token` signs the device out. `GET /account/password` is the page where a person changes their password, which signs every device out.
 
 ### Backups
 
