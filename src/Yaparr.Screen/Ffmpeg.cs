@@ -340,7 +340,7 @@ public static class FfmpegArgs
             {
                 HardwareEncoder.Amf => new[] { "-c:v", "av1_amf", "-usage", "ultralowlatency", "-quality", "speed", "-rc", "vbr_latency", "-async_depth", "1", "-forced_idr", "1", "-header_insertion_mode", "frame" },
                 HardwareEncoder.Vaapi => new[] { "-c:v", "av1_vaapi", "-profile:v", "main" },
-                HardwareEncoder.Qsv => new[] { "-c:v", "av1_qsv", "-preset", "veryfast", "-scenario", "displayremoting", "-async_depth", "1", "-forced_idr", "1" },
+                HardwareEncoder.Qsv => new[] { "-c:v", "av1_qsv", "-preset", "veryfast", "-async_depth", "1", "-forced_idr", "1" },
                 _ => new[] { "-c:v", "av1_nvenc", "-preset", "p4", "-tune", "ll", "-rc", "vbr", "-rc-lookahead", "0", "-bf", "0", "-forced-idr", "1", "-zerolatency", "1" },
             });
             args.AddRange(rate);
