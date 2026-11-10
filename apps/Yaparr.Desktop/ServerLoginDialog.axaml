@@ -1,0 +1,18 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Yaparr.Desktop.ServerLoginDialog"
+        Title="Restore from a server" Icon="avares://Yaparr.Desktop/Assets/yaparr.png" SizeToContent="Height" Width="460" CanResize="False"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+    <StackPanel Margin="16" Spacing="8">
+        <TextBlock TextWrapping="Wrap"
+                   Text="Bring your account back from a backup you saved on a backup server. You need the server's address and your username and password there. The password never leaves this computer: it unlocks the backup here." />
+        <TextBox x:Name="UrlBox" PlaceholderText="Server address, like https://backup.example.org" />
+        <TextBox x:Name="UserBox" PlaceholderText="Username" MaxLength="32" />
+        <TextBox x:Name="PasswordBox" PasswordChar="•" PlaceholderText="Password" />
+        <TextBlock x:Name="Problem" Foreground="{DynamicResource Bad}" TextWrapping="Wrap" IsVisible="False" />
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,4,0,0">
+            <Button Content="Restore" Classes="primary" IsDefault="True" MinWidth="80" HorizontalContentAlignment="Center" Click="Ok_Click" />
+            <Button Content="Cancel" IsCancel="True" MinWidth="80" HorizontalContentAlignment="Center" Click="Cancel_Click" />
+        </StackPanel>
+    </StackPanel>
+</Window>

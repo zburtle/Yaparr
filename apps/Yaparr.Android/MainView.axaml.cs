@@ -626,6 +626,11 @@ public partial class MainView : UserControl
         if (path == null) { ExistingStatus.Text = "No backup chosen."; return; }
         try
         {
+            if (AppData.IsBackupLocked(path))
+            {
+                ExistingStatus.Text = "This backup is locked with a passphrase, which this app cannot open yet. Restore it on a computer, or make a plain backup.";
+                return;
+            }
             string staging;
             try { staging = await Task.Run(() => _data.StageProfile(path)); }
             catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)

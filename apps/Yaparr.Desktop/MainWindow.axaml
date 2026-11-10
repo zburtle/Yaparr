@@ -1073,6 +1073,35 @@
                             <TextBlock Classes="muted" TextWrapping="Wrap"
                                        Text="Saves a zip of everything Yaparr keeps for you: your identity key, rooms, message history, pictures and settings. Keep it somewhere safe; it holds your account key." />
                             <Button Content="Back up profile…" HorizontalAlignment="Left" Click="BackupProfile_Click" />
+                            <TextBlock Text="Backup server" FontWeight="SemiBold" Margin="0,12,0,0" />
+                            <TextBlock Classes="muted" TextWrapping="Wrap"
+                                       Text="If someone gives you the address of a backup server and an account on it, your backup can be kept there, locked with your password on this computer so the server cannot read it, and brought back on any computer from its first-start screen. Nothing is sent anywhere unless you use this." />
+                            <StackPanel Spacing="4" MaxWidth="420" HorizontalAlignment="Left">
+                                <TextBlock Text="Server address" Classes="muted" />
+                                <TextBox x:Name="ServerUrlBox" PlaceholderText="https://backup.example.org" />
+                                <TextBlock Text="Username" Classes="muted" Margin="0,6,0,0" />
+                                <TextBox x:Name="ServerUserBox" MaxLength="32" />
+                                <TextBlock Text="Password" Classes="muted" Margin="0,6,0,0" />
+                                <TextBox x:Name="ServerPasswordBox" PasswordChar="•" />
+                                <TextBlock Classes="muted" TextWrapping="Wrap" FontSize="12"
+                                           Text="The password locks your backup on this computer and is never sent to the server. Nobody can recover it for you." />
+                            </StackPanel>
+                            <Button x:Name="BackupToServerButton" Content="Back up now" Classes="primary" HorizontalAlignment="Left" Click="BackupToServer_Click" />
+                            <TextBlock x:Name="ServerStatus" Classes="muted" TextWrapping="Wrap" IsVisible="False" />
+                            <Expander Header="Change my password on the server" Margin="0,10,0,0" HorizontalAlignment="Stretch">
+                                <StackPanel Spacing="4" MaxWidth="420" HorizontalAlignment="Left" Margin="0,6,0,0">
+                                    <TextBlock Classes="muted" TextWrapping="Wrap"
+                                               Text="Uses the server address and username above. Your backups on the server are locked with the old password, so a new backup is saved with the new one at once." />
+                                    <TextBlock Text="Current password" Classes="muted" Margin="0,6,0,0" />
+                                    <TextBox x:Name="CurrentServerPasswordBox" PasswordChar="•" />
+                                    <TextBlock Text="New password" Classes="muted" Margin="0,6,0,0" />
+                                    <TextBox x:Name="NewServerPasswordBox" PasswordChar="•" />
+                                    <TextBlock Text="New password again" Classes="muted" Margin="0,6,0,0" />
+                                    <TextBox x:Name="NewServerPasswordAgainBox" PasswordChar="•" />
+                                    <Button x:Name="ChangeServerPasswordButton" Content="Change password" Margin="0,8,0,0" HorizontalAlignment="Left" Click="ChangeServerPassword_Click" />
+                                    <TextBlock x:Name="ChangePasswordStatus" Classes="muted" TextWrapping="Wrap" IsVisible="False" />
+                                </StackPanel>
+                            </Expander>
                         </StackPanel>
                         <StackPanel x:Name="SectionAbout" Spacing="10" IsVisible="False">
                             <TextBlock Text="About" FontSize="15" FontWeight="SemiBold" />

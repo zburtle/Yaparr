@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using Avalonia.Interactivity;
+using Yaparr.AppCore;
 using Yaparr.Chat;
 using Yaparr.Identity;
 
@@ -19,9 +20,11 @@ public partial class MainWindow
             "Do you already have a Yaparr account?\n\n" +
             "Link this device: join the account of a device you still use. Your name, rooms and blocks carry over, and people see you as one person.\n\n" +
             "Restore a backup: bring back an account from a backup file, for a new or reinstalled computer. It joins your account as another device, so the old computer can stay in use.\n\n" +
+            "Restore from a server: the same, from a backup you saved on a backup server (you need its address, your username and your password).\n\n" +
             "Start fresh: make a new account.",
-            "Link this device", "Restore a backup", "Start fresh");
+            "Link this device", "Restore a backup", "Restore from a server", "Start fresh");
         if (start == "Restore a backup") { await RestoreBackupAsync(); return; }
+        if (start == "Restore from a server") { await RestoreFromServerAsync(); return; }
         if (start != "Link this device") return;
 
         var clipboard = await Dialogs.ClipboardTextAsync(this);
@@ -90,15 +93,30 @@ public partial class MainWindow
     // Brings back a backup made with File, Back up profile. Only offered where there is no account yet, so nothing is replaced.
     private async Task RestoreBackupAsync()
     {
-        var path = await Dialogs.PickOpenAsync(this, "Restore a backup", Dialogs.Zip);
+        var path = await Dialogs.PickOpenAsync(this, "Restore a backup", Dialogs.Backup, Dialogs.Zip, Dialogs.LockedBackup, Dialogs.AllFiles);
         if (path == null) return;
 
-        string staging;
-        try { staging = _data.StageProfile(path); }
-        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+        string? staging = null;
+        string? passphrase = null;
+        bool locked = AppData.IsBackupLocked(path);
+        while (staging == null)
         {
-            await Dialogs.MessageAsync(this, "Restore a backup", ex.Message);
-            return;
+            if (locked)
+            {
+                passphrase = await PromptDialog.AskAsync(this, "This backup is locked. Type its passphrase:", secret: true);
+                if (string.IsNullOrEmpty(passphrase)) return;
+            }
+            try { staging = await Task.Run(() => _data.StageProfile(path, passphrase)); }
+            catch (CryptographicException ex)
+            {
+                // A wrong passphrase: ask again rather than making the person pick the file again.
+                await Dialogs.MessageAsync(this, "Restore a backup", ex.Message);
+            }
+            catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+            {
+                await Dialogs.MessageAsync(this, "Restore a backup", ex.Message);
+                return;
+            }
         }
 
         try
