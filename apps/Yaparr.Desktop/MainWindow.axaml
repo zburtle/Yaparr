@@ -775,8 +775,13 @@
                                     Background="Transparent" IsEnabled="False" ToolTip.Tip="Send a picture or GIF" Click="Attach_Click" />
                             <Button x:Name="ShelfButton" DockPanel.Dock="Left" VerticalAlignment="Bottom" Content="GIF" FontSize="11" FontWeight="SemiBold" Width="36" Height="36" Padding="0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Margin="0,4,2,4" CornerRadius="18"
                                     Background="Transparent" IsEnabled="False" ToolTip.Tip="Your GIF shelf" Click="Shelf_Click" />
-                            <TextBox x:Name="InputBox" Classes="composer" PlaceholderText="Write a message" IsEnabled="False" AcceptsReturn="True" TextWrapping="Wrap" MaxHeight="150"
-                                     ToolTip.Tip="Enter sends the message; Shift+Enter starts a new line" />
+                            <Grid>
+                                <TextBox x:Name="InputBox" Classes="composer" PlaceholderText="Write a message" IsEnabled="False" AcceptsReturn="True" TextWrapping="Wrap" MaxHeight="150"
+                                         ToolTip.Tip="Enter sends the message; Shift+Enter starts a new line" />
+                                <!-- November 10th only: the same freighter sails along the message box while it is empty and not being typed in. -->
+                                <local:FitzgeraldShip x:Name="InputShip" Compact="True" IsVisible="False" Margin="4,0"
+                                                      ToolTip.Tip="Click to hear the song (it opens in your browser)" />
+                            </Grid>
                         </DockPanel>
                     </Border>
                     </StackPanel>

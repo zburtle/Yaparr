@@ -7,7 +7,7 @@ using Avalonia.Threading;
 namespace Yaparr.Desktop;
 
 /// <summary>
-/// A lake freighter that crosses the empty chat screen on November 10th, the day the SS Edmund Fitzgerald was lost on Lake Superior
+/// A lake freighter that crosses the empty chat screen, and the message box while it is empty and not being typed in, on November 10th, the day the SS Edmund Fitzgerald was lost on Lake Superior
 /// in 1975 with all 29 of her crew. She is a quiet silhouette that fades in and out of the dark and rides the swell, and makes no sound.
 /// Clicking the ship raises <see cref="ShipClicked"/> (the window offers to open Gordon Lightfoot's song in the browser). It draws only
 /// while it is visible, so the rest of the year it costs nothing.
@@ -27,6 +27,9 @@ internal sealed class FitzgeraldShip : Control
         _timer.Tick += (_, _) => InvalidateVisual();
     }
 
+    /// <summary>A small ship for a single line, such as the message box: sized to the height it is given, with one line of swell.</summary>
+    public bool Compact { get; set; }
+
     /// <summary>The ship itself was clicked (not the water or the empty space around her).</summary>
     public event Action? ShipClicked;
 
@@ -37,6 +40,9 @@ internal sealed class FitzgeraldShip : Control
         e.Handled = true;
         ShipClicked?.Invoke();
     }
+
+    /// <summary>Gordon Lightfoot's song, which clicking the ship offers to open.</summary>
+    public const string SongUrl = "https://youtu.be/FuzTkGyxkYI";
 
     /// <summary>True on November 10th, by the computer's own calendar. YAPARR_FITZ=1 shows it on any day, to look at it.</summary>
     public static bool IsHerDay(DateTime today) =>
@@ -76,10 +82,10 @@ internal sealed class FitzgeraldShip : Control
         var brush = this.TryFindResource("Muted", ActualThemeVariant, out var found) && found is IBrush b ? b : Brushes.Gray;
 
         // She is about a third of the width long, and no bigger than is quiet to look at.
-        double scale = Math.Clamp(w / 3.0 / 100.0, 1.2, 3.2);
+        double scale = Compact ? Math.Clamp((h - 10) / 32.0, 0.5, 1.4) : Math.Clamp(w / 3.0 / 100.0, 1.2, 3.2);
         double length = 101 * scale;
         double x = -length + progress * (w + length);
-        double waterline = h * 0.72;
+        double waterline = Compact ? h - 7 : h * 0.72;
 
         // Fade in as she comes out of the dark at one side, and out at the other.
         double edge = Math.Min(progress, 1 - progress);
@@ -100,7 +106,7 @@ internal sealed class FitzgeraldShip : Control
         }
 
         // The swell: a few long, slow lines, each a little out of step with the last.
-        for (int row = 0; row < 3; row++)
+        for (int row = 0; row < (Compact ? 1 : 3); row++)
         {
             double y = waterline + 3 + row * 7 * Math.Max(1, scale / 2);
             var pen = new Pen(brush, 1);
