@@ -66,9 +66,15 @@ public partial class MainWindow
         }
     }
 
-    // True when the click on X should keep the program running instead of ending it.
+    // True when the click on X should keep the program running instead of ending it. A close request that arrives while the window is already out of
+    // the way (hidden, or minimized because there is no notification area to hide in) cannot be a click on X: nobody can click on a window they cannot
+    // see. It is the desktop's own "Quit" or "Close" on the icon or the taskbar entry, which a friend on KDE (Flatpak) used and which only hid the window
+    // again, five times in a row, until he ended the program by force. So that one really quits.
     private bool KeepRunningOnClose(WindowClosingEventArgs e) =>
-        e.CloseReason == WindowCloseReason.WindowClosing && !_quitting && _settings.CloseToTray && _tray != null;
+        ShouldKeepRunning(e.CloseReason, _quitting, _settings.CloseToTray, _tray != null, !IsVisible || WindowState == WindowState.Minimized);
+
+    internal static bool ShouldKeepRunning(WindowCloseReason reason, bool quitting, bool closeToTray, bool hasTray, bool alreadyOutOfTheWay) =>
+        reason == WindowCloseReason.WindowClosing && !quitting && closeToTray && hasTray && !alreadyOutOfTheWay;
 
     private void HideToTray()
     {
