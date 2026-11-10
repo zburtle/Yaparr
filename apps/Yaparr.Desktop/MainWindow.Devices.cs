@@ -174,6 +174,34 @@ public partial class MainWindow
             $"{where}\n\nOn the new device, start Yaparr, choose \"Link this device\", {step}, and type this passphrase:\n\n{passphrase}");
     }
 
+    // Removes the account from this computer and goes back to the first-start screen. The other devices of the account are not touched.
+    private async void LogOut_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_node == null) return;
+        while (true)
+        {
+            var choice = await Dialogs.ChoiceAsync(this, "Log out",
+                "Logging out removes your account from this computer: your identity key, rooms and room keys, message history, pictures and settings. " +
+                "Yaparr then restarts at the first-start screen.\n\n" +
+                "Your other devices are not affected and keep the account. If this is the only device with the account and you have no backup, " +
+                "the account is gone for good and nobody can bring it back.\n\n" +
+                "Logging out does not cancel this device's access to the account: it only removes your data from this computer.",
+                "Back up first…", "Log out", "Cancel");
+            if (choice == "Back up first…") { await BackupProfileAsync(); continue; }
+            if (choice != "Log out") return;
+            break;
+        }
+
+        try { _data.RequestLogOut(); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            await Dialogs.MessageAsync(this, "Log out", "Couldn't log out: " + ex.Message);
+            return;
+        }
+        _log.Write("logging out: the profile is removed when Yaparr restarts");
+        RestartApp();
+    }
+
     // Another of your devices added or removed a room.
     private void OnSyncedRoomChanged(SyncedRoom room, bool joined)
     {

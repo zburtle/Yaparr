@@ -287,6 +287,57 @@ public sealed class AppData
 
     public bool HasIdentity => File.Exists(IdentityPath);
 
+    // Logging out. The running app holds files open and saves settings as it goes, so it does not delete anything itself: it leaves this
+    // note (with its own process id) and restarts, and the next start waits for the old process to be gone and then removes the profile.
+    private string LogOutNotePath => Path.Combine(Directory, "logout.pending");
+
+    // What stays when a profile is removed: the programs and files that belong to no account.
+    private static readonly string[] KeptOnLogOut = { "ffmpeg", "update", "logs", "logout.pending" };
+
+    /// <summary>True when a log out was asked for and has not been finished.</summary>
+    public bool LogOutPending => File.Exists(LogOutNotePath);
+
+    /// <summary>Asks for this profile to be removed the next time Yaparr starts. Restart straight after.</summary>
+    public void RequestLogOut() => File.WriteAllText(LogOutNotePath, Environment.ProcessId.ToString());
+
+    /// <summary>
+    /// Finishes a log out that was asked for: waits for the process that asked to be gone, then removes the identity key, rooms, history,
+    /// pictures and settings (everything but <see cref="KeptOnLogOut"/>). Safe to call at every start; it does nothing without the note, and
+    /// the note goes last, so a log out that was cut short is finished at the next start. Returns whether a profile was removed.
+    /// </summary>
+    public bool CompleteLogOut(int waitMilliseconds = 15_000)
+    {
+        if (!LogOutPending) return false;
+        if (int.TryParse(File.ReadAllText(LogOutNotePath).Trim(), out var pid) && pid != Environment.ProcessId)
+        {
+            try { using var old = System.Diagnostics.Process.GetProcessById(pid); old.WaitForExit(waitMilliseconds); }
+            catch (ArgumentException) { }       // already gone
+            catch (InvalidOperationException) { }
+        }
+
+        for (int attempt = 0; ; attempt++)
+        {
+            try
+            {
+                foreach (var path in System.IO.Directory.EnumerateFileSystemEntries(Directory))
+                {
+                    var name = Path.GetFileName(path);
+                    if (KeptOnLogOut.Contains(name, StringComparer.OrdinalIgnoreCase)) continue;
+                    if (System.IO.Directory.Exists(path)) System.IO.Directory.Delete(path, recursive: true); else File.Delete(path);
+                }
+                break;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // A file the old process still has open: give it a moment.
+                if (attempt >= 20) throw;
+                Thread.Sleep(250);
+            }
+        }
+        File.Delete(LogOutNotePath);
+        return true;
+    }
+
     public string AccountStatePath => Path.Combine(Directory, "account.json");
 
     /// <summary>Profile pictures: yours and those of the people you have met.</summary>

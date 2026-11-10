@@ -130,7 +130,9 @@ public partial class MainWindow : Window
 
     // A backup is a copy of everything Yaparr keeps for you. It is restored on a computer that has no account yet, from the
     // first-start screen. To use the same account on a second computer at the same time, link it instead.
-    private async void BackupProfile_Click(object? sender, RoutedEventArgs e)
+    private async void BackupProfile_Click(object? sender, RoutedEventArgs e) => await BackupProfileAsync();
+
+    private async Task BackupProfileAsync()
     {
         if (_node == null) return;
         var proceed = await Dialogs.ConfirmAsync(this, "Back up profile",
@@ -366,6 +368,7 @@ public partial class MainWindow : Window
         var dataArg = Arg("--data");
         if (dataArg == null) AppData.MigrateLegacyDefault();
         _data = new AppData(dataArg ?? AppData.DefaultDirectory);
+        _data.CompleteLogOut();     // a log out asked for before the restart: remove the profile, and this start is a first start
         _settings = _data.LoadSettings();
         _vpn = new VpnController(_data, _settings, () => _node);
         _log = new FileLog(Path.Combine(_data.Directory, "logs"), legacyFile: Path.Combine(_data.Directory, "yaparr.log"));
