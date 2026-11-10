@@ -321,7 +321,7 @@ public partial class MainWindow
     }
 
     // The voice settings are in the settings window; the room's menu opens them there.
-    private void VoiceSettings_Click(object? sender, RoutedEventArgs e) => ShowSettings("Voice");
+    private void VoiceSettings_Click(object? sender, RoutedEventArgs e) => ShowSettings("voice");
 
     // A voice setting was changed in the settings window: keep it, and apply it to the call you are in.
     private void OnVoiceSettingChanged(bool devicesChanged)
