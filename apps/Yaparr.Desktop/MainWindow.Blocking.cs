@@ -43,7 +43,9 @@ public partial class MainWindow
         BlockSenderItem.IsVisible = message != null && BlockedIdOf(message) is { } id && _node?.IsBlocked(new PeerId(id)) == false;
         var room = SelectedRoom;
         var source = message?.Source;
-        DeleteMessageItem.IsVisible = room is { MyRole: >= RoomRole.Admin } && source != null;
+        // By key, so the message you have just sent (shown before it has come back as a ChatMessage, so it has no source yet) can be deleted too.
+        // Owners and admins delete any message; everyone deletes their own.
+        DeleteMessageItem.IsVisible = room is { Owner: not null } && message is { Key: not null, IsSystem: false } && (room.MyRole >= RoomRole.Admin || message.IsMine);
         BanSenderItem.IsVisible = source != null && !message!.IsMine && CanBan(source.From.Account.Value, room?.RoleOf(source.From.Account) ?? RoomRole.Member) && room?.IsBanned(source.From.Account) == false;
         if (!ReplyItem.IsVisible && !SavePictureItem.IsVisible && !RetryItem.IsVisible && !BlockSenderItem.IsVisible && !DeleteMessageItem.IsVisible && !BanSenderItem.IsVisible) e.Cancel = true;
     }

@@ -49,10 +49,10 @@ public partial class MainWindow
 
     private async void DeleteMessage_Click(object? sender, RoutedEventArgs e)
     {
-        if (MessageList.SelectedItem is not MessageVm { Source: { } source } || SelectedRoom is not { } room) return;
+        if (MessageList.SelectedItem is not MessageVm { Key: { } key } || SelectedRoom is not { } room) return;
         var proceed = await Dialogs.ConfirmAsync(this, "Delete message", "Delete this message for everyone in the room? It disappears from every member's history and cannot be brought back.", "Delete", "Keep");
         if (!proceed) return;
-        try { room.DeleteMessage(source); }
+        try { room.DeleteMessage(key); }
         catch (Exception ex) when (ex is InvalidOperationException) { StatusText.Text = ex.Message; }
     }
 }

@@ -9,7 +9,7 @@ namespace Yaparr.Chat;
 // banned person still has the room key (see the backlog on rotating it).
 public sealed partial class ChatNode
 {
-    private const int MaxModEntries = 1024, ModBatch = 64;
+    private const int MaxModEntries = 1024, ModBatch = 64, ModReservedForAdmins = 256, MaxOwnDeletesPerMember = 64;
 
     private static string ModFile(string directory, ChatRoom room) => Path.Combine(directory, room.Key + ".mod.json");
 
@@ -99,6 +99,14 @@ public sealed partial class ChatNode
         }
         foreach (var m in all)
         {
+            if (m.Kind == SignedMod.DeleteMessage && SignerRole(m) < RoomRole.Admin)
+            {
+                // Not an admin's order: it counts for the signer's own messages only.
+                var acct = PeerId.FromPublicKey(m.Acct.Length == 0 ? Convert.FromBase64String(m.Pub) : Convert.FromBase64String(m.Acct));
+                if (!view.OwnDeletes.TryGetValue(m.Target, out var signers)) view.OwnDeletes[m.Target] = signers = new HashSet<string>();
+                signers.Add(acct.Value);
+                continue;
+            }
             if (m.Kind is not (SignedMod.DeleteMessage or SignedMod.DeleteSound or SignedMod.DeleteGif) || SignerRole(m) < RoomRole.Admin) continue;
             (m.Kind == SignedMod.DeleteMessage ? view.Messages : m.Kind == SignedMod.DeleteGif ? view.Gifs : view.Sounds).Add(m.Target);
         }
@@ -122,7 +130,11 @@ public sealed partial class ChatNode
     internal bool IsMessageDeleted(ChatRoom room, StoredMessage m)
     {
         var view = Moderation(room);
-        return view.Messages.Count > 0 && view.Messages.Contains(SignedMessage.Key(m));
+        if (view.Messages.Count == 0 && view.OwnDeletes.Count == 0) return false;
+        var key = SignedMessage.Key(m);
+        if (view.Messages.Contains(key)) return true;
+        // A member's own order: it only counts if the message is theirs, one of their account's devices sent it.
+        return view.OwnDeletes.TryGetValue(key, out var signers) && signers.Contains(AccountOf(new PeerId(m.From)).Value);
     }
 
     internal bool IsSoundDeleted(ChatRoom room, string id) => Moderation(room).Sounds.Contains(id);
@@ -158,11 +170,20 @@ public sealed partial class ChatNode
         PublishMod(room, SignedMod.Unban, account.Value, banned.TryGetValue(account.Value, out var label) ? label : account.Short);
     }
 
-    internal void DeleteMessage(ChatRoom room, ChatMessage message)
+    internal void DeleteMessage(ChatRoom room, ChatMessage message) => DeleteMessage(room, SignedMessage.KeyOf(message.From.Id.Value, message.Id));
+
+    // By key (ChatMessage.Key), which is all an order to delete needs: a message you have just sent is on screen before it has come back as a ChatMessage.
+    internal void DeleteMessage(ChatRoom room, string key)
     {
-        RequireAdmin(room);
-        PublishMod(room, SignedMod.DeleteMessage, SignedMessage.KeyOf(message.From.Id.Value, message.Id), "");
+        if (room.Owner == null) throw new InvalidOperationException("This room has no owner, so messages in it cannot be deleted. Rooms made with this version can.");
+        // An owner or admin deletes any message; anyone else only their own (sent from this device or another of their account).
+        if (RoleIn(room, AccountId) < RoomRole.Admin && !MessageIsMine(room, key))
+            throw new InvalidOperationException("Only the owner and the admins of the room can delete other people's messages.");
+        PublishMod(room, SignedMod.DeleteMessage, key, "");
     }
+
+    private bool MessageIsMine(ChatRoom room, string key) =>
+        room.History.Snapshot().Any(m => SignedMessage.Key(m) == key && IsMyDevice(new PeerId(m.From)));
 
     internal void DeleteSound(ChatRoom room, string id)
     {
@@ -235,10 +256,16 @@ public sealed partial class ChatNode
             try { guess = PeerId.FromPublicKey(m.Acct.Length == 0 ? Convert.FromBase64String(m.Pub) : Convert.FromBase64String(m.Acct)); }
             catch (FormatException) { continue; }
             // Skipped before the signature is checked, which is what costs: ones we have, ones from people who are no admin, a full list.
-            if (RoleIn(room, guess) < RoomRole.Admin) continue;
+            // The one thing a member who is no admin may order is the deletion of a message of their own, so that is let through, within limits: a
+            // member can only fill so much of the list (a part is kept for the bans and deletions of admins), and an order about a message we hold
+            // that someone else sent is dropped at once.
+            bool admin = RoleIn(room, guess) >= RoomRole.Admin;
+            if (!admin && (m.Kind != SignedMod.DeleteMessage || m.Target is null || !NotSomeoneElsesMessage(room, m.Target, guess))) continue;
             lock (room.ModGate)
             {
                 if (m.Kind is null || m.Target is null) continue;
+                if (!admin && (room.ModEntries.Count >= MaxModEntries - ModReservedForAdmins
+                               || room.ModEntries.Keys.Count(k => k.EndsWith(":" + guess.Value, StringComparison.Ordinal)) >= MaxOwnDeletesPerMember)) continue;
                 if (room.ModEntries.TryGetValue(SignedMod.SlotOf(m, guess), out var have) && have.Ts >= m.Ts) continue;
                 if (have == null && room.ModEntries.Count >= MaxModEntries) continue;
             }
@@ -257,6 +284,15 @@ public sealed partial class ChatNode
         foreach (var m in accepted)
             Relay(peer, room, PeerId.FromPublicKey(Convert.FromBase64String(m.Pub)).Value, reference => new Wire { Type = Wire.Moderate, Room = reference, Mod = new[] { m } });
         ApplyModeration(room);
+    }
+
+    // False when this message is in our history and someone else sent it (so a member's order to delete it is not worth keeping); true when it is
+    // theirs or we have not seen it, which is the case for a message that has not reached us yet.
+    private bool NotSomeoneElsesMessage(ChatRoom room, string key, PeerId signer)
+    {
+        foreach (var stored in room.History.Snapshot())
+            if (SignedMessage.Key(stored) == key) return AccountOf(new PeerId(stored.From)) == signer;
+        return true;
     }
 
     // Makes the room match the orders: people who are banned leave the member list, voice and anything we would send; people
