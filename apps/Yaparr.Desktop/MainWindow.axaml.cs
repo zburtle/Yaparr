@@ -1200,6 +1200,7 @@ public partial class MainWindow : Window
     private void ShowInputShip()
     {
         InputShip.IsVisible = InputBox.IsEnabled && string.IsNullOrEmpty(InputBox.Text) && !InputBox.IsFocused && FitzgeraldShip.IsHerDay(DateTime.Now);
+        MemorialText.IsVisible = InputBox.IsEnabled && FitzgeraldShip.IsHerDay(DateTime.Now);
         UpdateComposer();
     }
 

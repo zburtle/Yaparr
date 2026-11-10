@@ -784,6 +784,9 @@
                             </Grid>
                         </DockPanel>
                     </Border>
+                    <!-- November 10th only, while a chat is open: what the ship in the box is for. -->
+                    <TextBlock x:Name="MemorialText" Classes="muted small" IsVisible="False" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
+                               Margin="14,-8,14,10" Text="In memory of the 29 crew of the SS Edmund Fitzgerald, lost on Lake Superior, November 10, 1975." />
                     </StackPanel>
                 </Grid>
             </Border>
