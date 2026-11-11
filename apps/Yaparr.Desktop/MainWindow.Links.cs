@@ -19,6 +19,7 @@ public partial class MainWindow
     private void StartLinks()
     {
         StartUpdateWatch();
+        StartAutoBackup();
         if (Program.StartupLink is { } first) _waitingLinks.Enqueue(first);
         _links = LinkChannel.Listen(LinkChannel.NameFor(_data.Directory), line =>
         {
