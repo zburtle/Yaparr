@@ -26,6 +26,8 @@
 
   <!-- The licence texts travel with the app (the MSI takes the whole publish folder, the .deb copies them too). -->
   <ItemGroup>
+    <!-- What this release is offered with (the backup server's address): the published folder carries it into the installer, the Flatpak and the .deb. -->
+    <None Include="yaparr.release.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Include="..\..\LICENSE.txt" Link="LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Include="..\..\COPYING" Link="COPYING" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Include="..\..\THIRD-PARTY-NOTICES.txt" Link="THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

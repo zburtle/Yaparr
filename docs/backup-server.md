@@ -6,13 +6,23 @@ A backup server keeps a **locked** copy of your profile backup, so you can bring
 
 **Settings > Backup > Backup server** on the desktop (Android does not have it yet):
 
-1. Type the server's address and choose **Sign in with your browser**. Your browser opens the server's sign-in page; type your email address and password there (an account is named by its owner's email address, which the person running the server enters when they make it; nothing is ever sent to it). Yaparr never sees them. When you are signed in the browser says so and Yaparr shows "Signed in to … as …".
+1. The address is filled in for you: releases of Yaparr are made for **https://cloud.yaparr.com** (see below), and the address of the last server you used is offered instead if you have used another. You can type a different one. Choose **Sign in with your browser**. Your browser opens the server's sign-in page; type your email address and password there (an account is named by its owner's email address, which the person running the server enters when they make it; nothing is ever sent to it). Yaparr never sees them. When you are signed in the browser says so and Yaparr shows "Signed in to … as …".
 2. **Back up now** saves a backup. The first time, Yaparr makes a **recovery code** (like `K7QD-M3XF-9PLR-2WTE-HV8N-C4YB`) and shows it once: save it in a password manager or on paper. After that, backing up needs nothing typed.
 3. **Show recovery code** shows it again on a computer that has it. **Change password** opens the server's page for that. **Sign out** makes the server forget this computer; the backups stay.
 
-To bring a backup back, choose **Restore from a server** on the first-start screen of a computer with no account: type the address and the recovery code, sign in in the browser, and the newest backup is fetched, unlocked and restored. That computer becomes another device of your account, stays signed in and keeps the code.
+To bring a backup back, choose **Restore from a server** on the first-start screen of a computer with no account: check the address (filled in as above) and type the recovery code, sign in in the browser, and the newest backup is fetched, unlocked and restored. That computer becomes another device of your account, stays signed in and keeps the code.
 
 If the account already has a backup made on another device, a computer that has no code yet asks for that device's code (and checks that it opens the backup) so that one code opens them all; you can also make a new one, and older backups then still need the old code.
+
+## The server a release is made for
+
+`yaparr.release.json` sits beside the program in every release (the Windows installer, the Flatpak and the `.deb` are all made from the same published folder) and holds what that release is offered with:
+
+```json
+{ "backupServer": "https://cloud.yaparr.com" }
+```
+
+It is only a default for the address box: it is read, never written, a missing or unreadable file just means there is no default, and nothing is sent anywhere until you sign in. A person's own choice always wins, so anyone can point Yaparr at another server, and anyone who builds Yaparr themselves can change the file (the source is `apps/Yaparr.Desktop/yaparr.release.json`) or leave the address empty. The address has to be `https://` (`http://` only for a server on the same computer); anything else in the file is ignored.
 
 ## What the server can and cannot see
 

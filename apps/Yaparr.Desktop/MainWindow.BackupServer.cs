@@ -21,7 +21,8 @@ public partial class MainWindow
     private void FillServerForm()
     {
         _server = _data.LoadBackupServer();
-        if (string.IsNullOrEmpty(ServerUrlBox.Text)) ServerUrlBox.Text = _server.Url;
+        // The one used before, or the one this release was made for; either can be changed.
+        if (string.IsNullOrEmpty(ServerUrlBox.Text)) ServerUrlBox.Text = ReleaseConfig.Current.BackupServerToOffer(_server.Url);
         ShowServerState();
     }
 
@@ -50,7 +51,7 @@ public partial class MainWindow
         {
             _server.Token = "";
             _data.SaveBackupServer(_server);
-            ServerUrlBox.Text = _server.Url;
+            ServerUrlBox.Text = ReleaseConfig.Current.BackupServerToOffer(_server.Url);
             ShowServerState();
         }
         ServerStatusIs(ex.Message, problem: true);
@@ -113,7 +114,7 @@ public partial class MainWindow
         catch (BackupServerException) { }   // not reachable: this computer forgets the token all the same
         _server.Token = "";
         _data.SaveBackupServer(_server);
-        ServerUrlBox.Text = _server.Url;
+        ServerUrlBox.Text = ReleaseConfig.Current.BackupServerToOffer(_server.Url);
         ShowServerState();
         ServerStatusIs("Signed out. Your backups stay on the server.");
     }
