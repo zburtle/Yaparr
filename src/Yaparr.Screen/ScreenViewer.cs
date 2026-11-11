@@ -63,6 +63,9 @@ public sealed class ScreenViewer : IDisposable
     public long BytesIn => Interlocked.Read(ref _bytesIn);
 
     /// <summary>Frames waiting for the decoder. Staying above a few means the decoder is behind.</summary>
+    /// <summary>What is being decoded now, like "H264 1920x1080" (null before the first key frame).</summary>
+    public string? PictureKind { get { lock (_gate) return _decoder is { } d ? $"{d.Codec} {d.Width}x{d.Height}" : null; } }
+
     public int DecodeQueue { get { lock (_gate) return _decoder?.Queued ?? 0; } }
 
     // A 1080p picture is 8 MB. A new array for each one lands on the large object heap and makes the garbage collector pause

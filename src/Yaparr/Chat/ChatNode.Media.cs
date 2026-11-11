@@ -225,6 +225,8 @@ public sealed class MediaView : IDisposable, IMediaFrameSource
 
     public long FramesDelivered { get { lock (_gate) return _assembler?.Delivered ?? 0; } }
     public long FramesLost { get { lock (_gate) return _assembler?.Lost ?? 0; } }
+    /// <summary>Frames the sender made that were never shown (lost, or thrown away while waiting for a key frame).</summary>
+    public long FramesMissed { get { lock (_gate) return _assembler?.Missed ?? 0; } }
 
     public MediaStatus Status => _node.StatusOf(_group);
 

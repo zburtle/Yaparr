@@ -34,6 +34,22 @@ public class FrameAssemblerTests
     }
 
     [Fact]
+    public void Frames_thrown_away_while_waiting_for_a_key_frame_are_counted_as_missed()
+    {
+        var assembler = new FrameAssembler(250, 0);
+        var ready = new List<MediaFrame>();
+        foreach (var p in Cut(1, Frame(1, 100), key: true)) assembler.Add(Who, p, 10, ready);
+        // Frame 2 never arrives; 3 and 4 are delta frames, 5 is the next key frame.
+        foreach (var id in new uint[] { 3, 4 }) foreach (var p in Cut(id, Frame((int)id, 100), key: false)) assembler.Add(Who, p, 20, ready);
+        foreach (var p in Cut(5, Frame(5, 100), key: true)) assembler.Add(Who, p, 30, ready);
+        assembler.Tick(1000, ready);
+        foreach (var p in Cut(6, Frame(6, 100), key: false)) assembler.Add(Who, p, 1010, ready);
+
+        Assert.True(assembler.Missed >= 1, "the frames between 1 and the key frame were never shown");
+        Assert.Equal(assembler.Delivered, ready.Count);
+    }
+
+    [Fact]
     public void Frames_before_the_first_key_frame_are_not_handed_over()
     {
         var assembler = new FrameAssembler(250, 0);
