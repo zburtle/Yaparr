@@ -1092,6 +1092,10 @@
                                     <Button Content="Change password" Click="ServerChangePassword_Click" ToolTip.Tip="Opens the server's page in your browser" />
                                     <Button x:Name="ServerSignOutButton" Content="Sign out" Click="ServerSignOut_Click" />
                                 </WrapPanel>
+                                <CheckBox x:Name="AutoBackupCheck" Content="Back up automatically" Margin="0,6,0,0" Click="AutoBackup_Click" />
+                                <TextBlock Classes="muted" TextWrapping="Wrap" FontSize="12"
+                                           Text="Yaparr backs up soon after your rooms, keys or name change, and once a day for your message history. It never asks anything: if another device has saved a newer backup, or you are signed out, it stops and says so here. Turn it on after your first Back up now, which makes your recovery code." />
+                                <TextBlock x:Name="AutoBackupStatus" Classes="muted" TextWrapping="Wrap" FontSize="12" />
                             </StackPanel>
                             <TextBlock x:Name="ServerStatus" Classes="muted" TextWrapping="Wrap" IsVisible="False" />
                         </StackPanel>

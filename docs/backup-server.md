@@ -12,6 +12,15 @@ A backup server keeps a **locked** copy of your profile backup, so you can bring
 
 **Starting from the sign-up page.** When someone signs up in their browser, the server's "You're in" page has an **Open Yaparr and sign in** button (on a computer; not on a phone, since Android has no backup server yet). It opens Yaparr, which asks "Sign in to the backup server …?" and names the server (and the account it would replace, if this computer is already signed in somewhere). On **Sign in** the app is signed in and opens Settings > Backup, so the password is not typed twice. If Yaparr is not installed or is older than this feature, nothing happens and the page's steps (above) still work. The recovery code is still made the first time you press **Back up now**.
 
+**Automatic backups.** Under the buttons, **Back up automatically** (off until you turn it on, which is possible after your first **Back up now**, since that is when your recovery code is made). While Yaparr is running, even in the notification area, it checks every five minutes and backs up:
+
+- **soon after what cannot be lost changes**: a room joined or made, a room key, a linked device, your name or the account. The change has to be still for two minutes, so joining three rooms in a row is one backup. A fingerprint of that (`AppData.KeysFingerprint`) is saved with each backup and compared with the current one; it does not change when messages arrive or a setting such as the theme is changed;
+- **once a day for the history**, if any message, direct chat, picture or sound has been written since the last backup.
+
+It never asks anything. If another device saved a newer backup than this one knows of, it sends nothing and waits (the Backup page says so) until you press **Back up now**, which does ask. If the server no longer knows this device it stops and says so; if the server cannot be reached it tries again after five minutes, then ten, doubling up to six hours, and says how long it has been failing once that is three days. The status line under the switch says what it last did. (A phone does not do this yet.)
+
+Because saving can now happen often, the server keeps the newest three versions and the newest of each of the last seven days (at most ten), not just the newest five: a run of saves cannot push the older, known-good copies out.
+
 To bring a backup back, choose **Restore from a server** on the first-start screen of a computer with no account: check the address (filled in as above) and type the recovery code, sign in in the browser, and the newest backup is fetched, unlocked and restored. That computer becomes another device of your account, stays signed in and keeps the code.
 
 If the account already has a backup made on another device, a computer that has no code yet asks for that device's code (and checks that it opens the backup) so that one code opens them all; you can also make a new one, and older backups then still need the old code.

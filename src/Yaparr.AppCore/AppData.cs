@@ -207,6 +207,52 @@ public sealed class AppData
 
     private string BackupServerPath => Path.Combine(Directory, "backup-server.json");
 
+    /// <summary>
+    /// A fingerprint of what cannot be lost: the identity key, the key that locks the history, the account (its rooms, blocks and devices), the VPN configuration, the
+    /// name, and the room keys. It changes when one of those does (a room joined or made, a key changed, a device linked, the name changed) and not when the
+    /// history grows or a setting like the theme is changed. Automatic backups compare it with the one saved at the last backup to know a backup is due.
+    /// </summary>
+    public string KeysFingerprint()
+    {
+        using var hash = System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName.SHA256);
+        void Add(string label, byte[]? bytes)
+        {
+            hash.AppendData(System.Text.Encoding.UTF8.GetBytes($"{label}:{bytes?.Length ?? -1};"));
+            if (bytes != null) hash.AppendData(bytes);
+        }
+        // The files are sealed for this computer, and sealing differs from one write to the next, so what is hashed is what is inside.
+        foreach (var name in new[] { "identity.key", "history.key", "account.json", "vpn.conf" })
+        {
+            byte[]? bytes = null;
+            var path = Path.Combine(Directory, name);
+            try { if (File.Exists(path)) bytes = SecretStore.ReadAllBytes(path); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.Cryptography.CryptographicException) { }
+            Add(name, bytes);
+        }
+        var settings = LoadSettings();
+        Add("name", System.Text.Encoding.UTF8.GetBytes(settings.DisplayName ?? ""));
+        foreach (var room in settings.PrivateRooms.OrderBy(r => r.Key, StringComparer.Ordinal))
+            Add("room", System.Text.Encoding.UTF8.GetBytes(room.Key + "|" + room.Label));
+        return Convert.ToHexStringLower(hash.GetHashAndReset());
+    }
+
+    /// <summary>True if any message, direct chat, picture or sound has been written since the given moment: whether a backup of the history would hold anything new.</summary>
+    public bool HistoryChangedSince(DateTimeOffset since)
+    {
+        foreach (var folder in BackedUpFolders)
+        {
+            var path = Path.Combine(Directory, folder);
+            if (!System.IO.Directory.Exists(path)) continue;
+            try
+            {
+                foreach (var file in System.IO.Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
+                    if (File.GetLastWriteTimeUtc(file) > since.UtcDateTime) return true;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        }
+        return false;
+    }
+
     /// <summary>What this device remembers about its backup server. It is sealed like the other files with secrets, and is not part of a backup.</summary>
     public BackupServerState LoadBackupServer()
     {
