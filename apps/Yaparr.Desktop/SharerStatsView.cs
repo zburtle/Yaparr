@@ -26,6 +26,14 @@ public sealed class SharerStatsView : Border
 
     public event Action? StopRequested, ChangeRequested;
 
+    /// <summary>People (not devices) who began or stopped watching since the last second; for the sounds.</summary>
+    public event Action<int, int>? ViewersChanged;
+
+    private readonly PresenceTracker _watchers = new();
+
+    /// <summary>Which devices are the sharer's own, so that watching on your other computer makes no sound.</summary>
+    public Func<PeerId, bool>? IsMine { get; set; }
+
     public SharerStatsView(ScreenSharer sharer, int targetFps, ChatRoom room)
     {
         _sharer = sharer;
@@ -76,7 +84,10 @@ public sealed class SharerStatsView : Border
         string encoder = card ? $"{HardwareEncoders.Maker(_sharer.Encoder!.Value)} graphics card · {(_sharer.Codec == ScreenCodec.Av1 ? "AV1" : "H.264")}" : "Processor · VP8";
         _how.Text = encoder;
         _rate.Text = $"{fps:0} / {_targetFps} fps · {(kbps >= 1000 ? $"{kbps / 1000:0.0} Mbit/s" : $"{kbps:0} kbit/s")}";
-        _who.Text = "Watching: " + Names(_sharer.Source.Viewers);
+        var viewers = _sharer.Source.Viewers;
+        _who.Text = "Watching: " + Names(viewers);
+        var (came, went) = _watchers.Update(PeopleOf(viewers));
+        if (came.Count > 0 || went.Count > 0) ViewersChanged?.Invoke(came.Count, went.Count);
 
         var problems = new List<string>();
         if (behind) problems.Add($"Capture or encoding is behind (longest wait {gap} ms).");
@@ -88,6 +99,14 @@ public sealed class SharerStatsView : Border
 
         // The full figures, for anyone who wants them.
         ToolTip.SetTip(this, $"Key frames: {_sharer.KeyFrames}\nLongest wait for a frame from FFmpeg: {gap} ms\nWatchers directly connected: {status.Children.Count}\nPackets sent again this second: {resent}, dropped in all: {status.Dropped}");
+    }
+
+    // One entry per person, leaving out the sharer's own devices.
+    private IEnumerable<string> PeopleOf(IReadOnlyList<PeerId> devices)
+    {
+        var members = _room.Members;
+        return devices.Where(d => IsMine?.Invoke(d) != true)
+            .Select(d => members.FirstOrDefault(m => m.Id == d) is { } m ? m.Account.Value : d.Value).Distinct();
     }
 
     // People, not devices: someone watching on two computers is named once.

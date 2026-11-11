@@ -28,8 +28,27 @@ public partial class MainWindow
     private readonly Dictionary<string, ScreenWatch> _screenViews = new();
     private ScreenWatch? _inlineWatch;
 
+    // Which shares each room had at the last look, so a new one can be told from those that were already there.
+    private readonly Dictionary<ConversationVm, PresenceTracker> _shareCues = new();
+
+    private void PrimeShareCues(ConversationVm conv, ChatRoom room) =>
+        _shareCues[conv] = new PresenceTracker(room.MediaGroups.Where(g => g.Kind == "screen").Select(g => g.Id));
+
     private void RefreshShares(ConversationVm conv, ChatRoom room)
     {
+        // A sound when someone else starts sharing in the call you are in. Every share in the room counts as seen, whichever channel it is in, so
+        // joining a call or moving to another channel does not announce the shares that were already going.
+        if (!_shareCues.TryGetValue(conv, out var cues)) PrimeShareCues(conv, room);
+        else
+        {
+            var all = room.MediaGroups.Where(g => g.Kind == "screen").ToList();
+            var (arrived, _) = cues.Update(all.Select(g => g.Id));
+            string? myChannel = _voiceConv == conv ? _voice?.ChannelId : null;
+            if (_voiceConv == conv && conv.InVoice
+                && all.Any(g => arrived.Contains(g.Id) && !(_node != null && _node.IsMyDevice(g.Root)) && (g.Channel ?? RoomChannels.DefaultVoice) == myChannel))
+                _sounds.ShareStarted();
+        }
+
         // In voice, the shares are those of the voice channel you are in; otherwise all of them, so you know to join.
         string? inChannel = _voiceConv == conv ? _voice?.ChannelId : null;
         var shares = room.MediaGroups.Where(g => g.Kind == "screen" && (inChannel == null || (g.Channel ?? RoomChannels.DefaultVoice) == inChannel)).ToList();
@@ -41,7 +60,13 @@ public partial class MainWindow
 
         // A share that ended stops being watched.
         foreach (var id in watching.Where(id => shares.All(g => g.Id != id)).ToList())
-            if (_screenViews.TryGetValue(id, out var watch)) EndWatch(watch);
+            if (_screenViews.TryGetValue(id, out var watch) && !watch.Control.IsEnded)
+            {
+                // The sharer really stopped (not this call moving to a channel where that share is not shown): the picture stays up as a black screen that
+                // says so, with a sound, until it is closed.
+                if (room.MediaGroups.All(g => g.Id != id)) { _sounds.ShareEnded(); watch.Control.ShowEnded(); }
+                else EndWatch(watch);
+            }
     }
 
     // The FFmpeg program, found here or downloaded after asking. Null if there is none.
@@ -122,6 +147,8 @@ public partial class MainWindow
             _sharerConv = conv;
             GuardSharingWithoutVoice(sharer, conv, room);
             _sharerStats = new SharerStatsView(sharer, options.Fps, room);
+            _sharerStats.IsMine = d => _node != null && _node.IsMyDevice(d);
+            _sharerStats.ViewersChanged += (came, went) => { if (came > 0) _sounds.ViewerJoined(); else if (went > 0) _sounds.ViewerLeft(); };
             _sharerStats.StopRequested += StopSharingCore;
             _sharerStats.ChangeRequested += () => _ = ChangeSharedAsync(sharer, conv);
             SharerPanel.Child = _sharerStats;
@@ -314,7 +341,11 @@ public partial class MainWindow
     private void DockIn(ScreenWatch watch)
     {
         // The place over the chat holds one picture; a screen that was there moves out to a window of its own.
-        if (_inlineWatch is { } other && other != watch) PopOut(other);
+        if (_inlineWatch is { } other && other != watch)
+        {
+            if (other.Control.IsEnded) EndWatch(other);   // nothing left to show: it closes instead of opening a window for a notice
+            else PopOut(other);
+        }
         if (watch.Window is { } window)
         {
             watch.Window = null;

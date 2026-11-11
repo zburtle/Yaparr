@@ -27,7 +27,7 @@ public partial class ScreenViewControl : UserControl
     /// <summary>What this watch has done so far, counted from when it began (null if there is no stream).</summary>
     public WatchFigures? Figures()
     {
-        if (_view == null) return null;
+        if (_view == null || _released) return null;
         var st = _view.Status;
         return new WatchFigures(_name, _startedAt, _shown, _viewer?.FramesIn ?? 0, _viewer?.BytesIn ?? 0, _view.FramesLost, st.Recovered, Interlocked.Read(ref _late),
             _viewer?.Dropped ?? 0, _viewer?.DecodeQueue ?? 0, st.Attached, st.Parent, _view.FramesMissed, _viewer?.PictureKind);
@@ -139,7 +139,7 @@ public partial class ScreenViewControl : UserControl
     private void DrawTick()
     {
         long now = Environment.TickCount64;
-        if (_queue.IsEmpty) { _playing = false; _draw.Stop(); return; }
+        if (IsEnded || _queue.IsEmpty) { _playing = false; _draw.Stop(); return; }
         if (!_playing)
         {
             // Start once a couple of pictures are waiting, or after a short wait if they come slowly.
@@ -209,15 +209,39 @@ public partial class ScreenViewControl : UserControl
             + (st.Attached ? "" : "  -  connecting to the sharer...");
     }
 
-    private bool _stopped;
+    private bool _stopped, _released;
 
-    /// <summary>Ends the watching: the stream, the decoder and the sound are released. Safe to call more than once.</summary>
-    public void StopWatching()
+    /// <summary>Whether the sharer stopped and this shows only the notice that it has ended.</summary>
+    public bool IsEnded { get; private set; }
+
+    /// <summary>
+    /// The sharer stopped. The stream, the decoder and the sound are released, and the picture area goes black with a notice, to be closed by the person
+    /// (rather than the window vanishing under them). <see cref="Stopped"/> is raised when that happens.
+    /// </summary>
+    public void ShowEnded()
     {
-        if (_stopped) return;
-        _stopped = true;
+        if (_stopped || IsEnded) return;
+        IsEnded = true;
+        Release();
+        Picture.Source = null;
+        _bitmap = null;
+        FpsBadge.IsVisible = false;
+        Waiting.Text = "This stream has ended";
+        Waiting.FontSize = 22;
+        Waiting.Foreground = Avalonia.Media.Brushes.White;
+        Waiting.IsVisible = true;
+        SoundPanel.IsVisible = false;
+        Info.Text = _name + "  -  ended";
+        StopButton.Content = "Close";
+    }
+
+    // The stream, the decoder, the sound and the timers; once. What the watch did is written down first, while the figures can still be read.
+    private void Release()
+    {
+        if (_released) return;
         try { LastReport = Figures()?.Describe(Environment.TickCount64); }
         catch (ObjectDisposedException) { }
+        _released = true;
         _timer.Stop();
         _draw.Stop();
         _viewer?.Dispose();
@@ -225,6 +249,14 @@ public partial class ScreenViewControl : UserControl
         _speaker?.Dispose();
         _sound?.Dispose();
         _soundView?.Dispose();
+    }
+
+    /// <summary>Ends the watching: the stream, the decoder and the sound are released. Safe to call more than once.</summary>
+    public void StopWatching()
+    {
+        if (_stopped) return;
+        _stopped = true;
+        Release();
         Stopped?.Invoke();
     }
 }
