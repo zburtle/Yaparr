@@ -5,15 +5,19 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>Yaparr.Screen</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Yaparr\Yaparr.csproj" />
     <!-- Talks to the desktop's ScreenCast portal over D-Bus, which is how Wayland lets a program share the screen (MIT licence). -->
     <PackageReference Include="Tmds.DBus.Protocol" Version="0.95.2" />
+    <!-- .NET bindings to the FFmpeg libraries (MIT licence); they only load the libraries that sit next to the app when the in-process
+         encoder is asked for (see InProcessEncoder), and nothing of FFmpeg itself is in the package. -->
+    <PackageReference Include="FFmpeg.AutoGen" Version="9.0.1.1" />
   </ItemGroup>
 
-  <!-- Capturing, encoding and decoding are done by FFmpeg, run as a separate program (see FfmpegLocator): nothing of FFmpeg is
-       linked into Yaparr, which keeps its licence apart from Yaparr's own. -->
+  <!-- Capturing, encoding and decoding are done by FFmpeg, run as a separate program (see FfmpegLocator). The one exception is the
+       in-process encoder, which uses FFmpeg's libraries (as shared libraries the user can replace: see issue #225). -->
 
 </Project>

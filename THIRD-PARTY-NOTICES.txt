@@ -273,10 +273,13 @@ SCREEN SHARING
 
 FFmpeg (the FFmpeg developers), downloaded on first use
 ------------------------------------------------------------------------------
-Yaparr does not link to FFmpeg. It runs FFmpeg as a separate program, which it can replace (set YAPARR_FFMPEG to another
+By default Yaparr does not link to FFmpeg. It runs FFmpeg as a separate program, which it can replace (set YAPARR_FFMPEG to another
 ffmpeg.exe, or put one in an "ffmpeg" folder next to the app). The Windows installer carries a build of FFmpeg that Yaparr
 makes itself, with only the parts Yaparr uses; where it is missing, the app offers to download the same build into your own
-application data folder.
+application data folder. One experimental option (the environment variable YAPARR_INPROCESS set to 1, off by default) encodes
+inside Yaparr with FFmpeg's libraries instead: shared libraries (DLLs or .so files) that Yaparr loads from a folder next to the
+app (or the one YAPARR_FFMPEG_LIBS names), that are not linked into Yaparr's own programs and that anyone can replace. Only
+libraries under the LGPL are accepted. They are not shipped with Yaparr yet.
 
 FFmpeg is licensed under the GNU Lesser General Public License, version 2.1 or later. The build has no GPL or "nonfree"
 part (no x264, no x265). Next to the program are the licence text (LICENSE.txt), SOURCE.txt, BUILD-INFO.txt (how it was
@@ -293,6 +296,9 @@ Built into it:
     (licenses/amf-headers, licenses/ffnvcodec-headers)
   The compiler's runtime (libgcc, libstdc++), GPL-3.0-or-later with the GCC Runtime Library Exception, and the MinGW-w64
     runtime and winpthreads (licenses/gcc-libs, licenses/crt, licenses/winpthreads)
+
+FFmpeg.AutoGen (Ruslan Balanukhin), the .NET bindings that load FFmpeg's libraries for the experimental option above, MIT licence
+(the MIT text above applies; the package carries its own copy in LICENSE.txt).
 
 FFmpeg is a trademark of Fabrice Bellard, originator of the FFmpeg project. Yaparr is not endorsed by the FFmpeg project.
 

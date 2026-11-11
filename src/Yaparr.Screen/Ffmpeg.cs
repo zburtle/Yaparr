@@ -184,12 +184,21 @@ public sealed class ScreenOptions
     /// </summary>
     public string? X11Display { get; init; } = OperatingSystem.IsLinux() ? Environment.GetEnvironmentVariable("DISPLAY") : null;
 
+    /// <summary>
+    /// Encode H.264 on NVIDIA's encoder inside this program, with FFmpeg's libraries (see <see cref="InProcessEncoder"/>), instead of in a
+    /// separate FFmpeg: then a viewer's request for a key frame is answered on the next picture. FFmpeg still captures and scales, and hands
+    /// the pictures over, so the pictures come down to system memory (this takes the place of <see cref="GpuScale"/>). Windows and X11, NVIDIA,
+    /// H.264 only so far, and only where the libraries are there (<see cref="FfmpegLibraries"/>); anything else is encoded as before.
+    /// Experimental: off unless the YAPARR_INPROCESS environment variable is 1.
+    /// </summary>
+    public bool InProcessEncoder { get; init; } = Environment.GetEnvironmentVariable("YAPARR_INPROCESS") == "1";
+
     /// <summary>The same options for another monitor or window: everything else (quality, codec, sound) stays.</summary>
     public ScreenOptions Retarget(Display? display, long? windowHandle) => new()
     {
         Display = display, WindowHandle = windowHandle, Fps = Fps, MaxWidth = MaxWidth, MaxHeight = MaxHeight, Kbps = Kbps,
         KeyFrameSeconds = KeyFrameSeconds, Codec = Codec, Encoder = Encoder, ShareSound = ShareSound, SoundProgram = SoundProgram, GpuScale = GpuScale, ShowCursor = ShowCursor,
-        X11Display = X11Display,
+        X11Display = X11Display, InProcessEncoder = InProcessEncoder,
     };
 
     /// <summary>The same options for another stream from the portal (the desktop asked again what to share).</summary>
@@ -197,6 +206,7 @@ public sealed class ScreenOptions
     {
         Portal = portal, Fps = Fps, MaxWidth = MaxWidth, MaxHeight = MaxHeight, Kbps = Kbps, KeyFrameSeconds = KeyFrameSeconds, Codec = Codec,
         Encoder = Encoder, ShareSound = ShareSound, SoundProgram = SoundProgram, GpuScale = false, ShowCursor = ShowCursor, X11Display = X11Display,
+        InProcessEncoder = InProcessEncoder,
     };
 }
 
@@ -222,16 +232,36 @@ public static class FfmpegArgs
     /// particular hardware. For H.264 the encoder says which graphics card makes it.
     /// </summary>
     public static List<string> Capture(ScreenOptions o, ScreenCodec codec, HardwareEncoder encoder = HardwareEncoder.Nvenc, bool gpuScale = false)
+        => Capture(o, codec, encoder, gpuScale, raw: false);
+
+    /// <summary>
+    /// The options of <see cref="InProcessEncoder"/> for H.264 on NVIDIA's encoder, as FFmpeg's own names and values. The command line
+    /// (<see cref="AddEncoder"/>) says the same things; a test keeps the two in step.
+    /// </summary>
+    public static readonly (string Name, string Value)[] NvencH264Options =
+    {
+        ("preset", "p4"), ("tune", "ll"), ("rc", "vbr"), ("rc-lookahead", "0"), ("profile", "high"), ("forced-idr", "1"), ("aud", "1"), ("zerolatency", "1"),
+    };
+
+    /// <summary>
+    /// The capture alone, for <see cref="InProcessEncoder"/>: the same capture and scaling as <see cref="Capture(ScreenOptions)"/>, but
+    /// the pictures are written as raw NV12 to standard output instead of being encoded. FFmpeg says the size they come out at when it
+    /// starts (so the log level is "info"; see <see cref="RawSizeParser"/>).
+    /// </summary>
+    public static List<string> CaptureRaw(ScreenOptions o) => Capture(o, ScreenCodec.H264, HardwareEncoder.Nvenc, gpuScale: false, raw: true);
+
+    private static List<string> Capture(ScreenOptions o, ScreenCodec codec, HardwareEncoder encoder, bool gpuScale, bool raw)
     {
         if (o.Fps is < 1 or > 60) throw new ArgumentOutOfRangeException(nameof(o), "Frames per second must be between 1 and 60.");
         if (o.Kbps is < 50 or > 20_000) throw new ArgumentOutOfRangeException(nameof(o), "The bitrate must be between 50 and 20000 kbit/s.");
         if (o.MaxWidth < 16 || o.MaxHeight < 16) throw new ArgumentOutOfRangeException(nameof(o), "The picture box is too small.");
 
-        if (o.Portal is { } portal) return CapturePortal(o, portal.Stream, codec, encoder);
+        if (o.Portal is { } portal)
+            return raw ? throw new NotSupportedException("A Wayland share is not encoded in this program yet.") : CapturePortal(o, portal.Stream, codec, encoder);
 
         // On X11 the input is x11grab, which polls the screen at the frame rate (so a still screen still gives a steady stream) and
         // delivers plain pixels; there is nothing on a graphics card to keep them on.
-        if (o.X11Display is { Length: > 0 } x11) return CaptureX11(o, x11, codec, encoder);
+        if (o.X11Display is { Length: > 0 } x11) return CaptureX11(o, x11, codec, encoder, raw);
 
         string source;
         if (o.WindowHandle is { } window) source = "hwnd=" + Hex(window);
@@ -256,10 +286,19 @@ public static class FfmpegArgs
             filter = capture + ","
                 + "hwdownload,format=bgra,"
                 // Intel's encoder takes NV12 and not planar YUV; the others take either.
-                + $"scale='min({o.MaxWidth},iw)':'min({o.MaxHeight},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,format={HardwareEncoders.PixelFormat(codec, encoder)}";
+                + $"scale='min({o.MaxWidth},iw)':'min({o.MaxHeight},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,format={(raw ? "nv12" : HardwareEncoders.PixelFormat(codec, encoder))}";
         }
         var args = new List<string> { "-hide_banner", "-loglevel", "error", "-nostdin", "-filter_complex", filter };
-        return AddEncoder(args, o, codec, encoder);
+        return raw ? AddRawOutput(args) : AddEncoder(args, o, codec, encoder);
+    }
+
+    // The pictures as they are, for the in-process encoder. "info" so that FFmpeg says the size of the output (and nothing about progress).
+    private static List<string> AddRawOutput(List<string> args)
+    {
+        args[args.IndexOf("-loglevel") + 1] = "info";
+        args.Add("-nostats");
+        args.AddRange(new[] { "-f", "rawvideo", "-pix_fmt", "nv12", "pipe:1" });
+        return args;
     }
 
     /// <summary>
@@ -282,7 +321,7 @@ public static class FfmpegArgs
 
     // The monitor is copied with x11grab: its rectangle (when xrandr gave one) is picked out of the display with the offset in the
     // input name, then scaled down and converted like the Windows path. A window is grabbed by its id.
-    private static List<string> CaptureX11(ScreenOptions o, string x11, ScreenCodec codec, HardwareEncoder encoder)
+    private static List<string> CaptureX11(ScreenOptions o, string x11, ScreenCodec codec, HardwareEncoder encoder, bool raw = false)
     {
         if (o.WindowHandle == null && o.Display == null) throw new ArgumentException("Choose a monitor or a window to share.", nameof(o));
         var args = new List<string> { "-hide_banner", "-loglevel", "error", "-nostdin" };
@@ -298,8 +337,8 @@ public static class FfmpegArgs
             args.AddRange(new[] { "-i", $"{x11}+{shown.X.ToString(CultureInfo.InvariantCulture)},{shown.Y.ToString(CultureInfo.InvariantCulture)}" });
         }
         args.AddRange(new[] { "-vf",
-            $"scale='min({o.MaxWidth},iw)':'min({o.MaxHeight},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,format={HardwareEncoders.PixelFormat(codec, encoder)}" });
-        return AddEncoder(args, o, codec, encoder);
+            $"scale='min({o.MaxWidth},iw)':'min({o.MaxHeight},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,format={(raw ? "nv12" : HardwareEncoders.PixelFormat(codec, encoder))}" });
+        return raw ? AddRawOutput(args) : AddEncoder(args, o, codec, encoder);
     }
 
     // What the two capture paths share: the codec, its options and the rate, writing to standard output.
