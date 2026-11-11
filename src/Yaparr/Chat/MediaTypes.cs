@@ -234,13 +234,20 @@ internal sealed class FrameAssembler
     private readonly SortedDictionary<uint, Partial> _frames = new(Comparer<uint>.Create((a, b) => (int)(a - b)));
     private readonly long _waitMs, _createdAt;
     private bool _waitingForKey = true, _lost;
-    private uint _expected;
+    private uint _expected, _lastDelivered;
+    private bool _haveDelivered;
     private long _lastRequestAt = -1, _expectedSince;
 
     public FrameAssembler(long reorderWaitMs, long now) { _waitMs = reorderWaitMs; _createdAt = now; }
 
     public long Delivered { get; private set; }
     public long Lost { get; private set; }
+
+    /// <summary>
+    /// Frames the sender made that were never shown: the gaps between one delivered frame and the next. This includes the frames thrown away while waiting for a
+    /// key frame after a loss, which <see cref="Lost"/> does not count (it counts only the frames given up on).
+    /// </summary>
+    public long Missed { get; private set; }
     public bool WaitingForKey => _waitingForKey;
 
     /// <summary>Takes one packet. Finished frames are added to <paramref name="ready"/>; true is returned when the sender should be asked for a key frame.</summary>
@@ -300,6 +307,9 @@ internal sealed class FrameAssembler
             {
                 _frames.Remove(_expected);
                 ready.Add(new MediaFrame(next.Origin, _expected, Join(next), next.Key));
+                if (_haveDelivered) Missed += Math.Max(0, (int)(_expected - _lastDelivered) - 1);
+                _lastDelivered = _expected;
+                _haveDelivered = true;
                 Delivered++;
                 _expected++;
                 _expectedSince = now;

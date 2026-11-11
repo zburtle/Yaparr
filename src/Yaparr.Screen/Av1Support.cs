@@ -71,6 +71,22 @@ public static class Av1Support
         return new Av1Report(working, refused, decoder != null, decoder);
     }
 
+    /// <summary>
+    /// The line of FFmpeg's error output that says what went wrong. Its last line is only a closing summary ("Nothing was written into output file…"), so the
+    /// first line that reads like an error is picked; the program's memory address (<c>@ 0000021…</c>) is dropped, and a very long line is cut.
+    /// </summary>
+    public static string CauseIn(string said)
+    {
+        var lines = said.Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0).ToList();
+        if (lines.Count == 0) return "it did not start";
+        string[] signs = { "error", "cannot", "can't", "failed", "not supported", "unsupported", "no device", "unable", "invalid", "not found", "does not support" };
+        string pick = lines.FirstOrDefault(l => !l.Contains("Nothing was written", StringComparison.Ordinal)
+                                                && signs.Any(w => l.Contains(w, StringComparison.OrdinalIgnoreCase)))
+                      ?? lines.LastOrDefault(l => !l.Contains("Nothing was written", StringComparison.Ordinal)) ?? lines[^1];
+        pick = System.Text.RegularExpressions.Regex.Replace(pick, @"\s*@ [0-9a-fA-F]{6,}", "");
+        return pick.Length > 200 ? pick[..200] + "…" : pick;
+    }
+
     /// <summary>Null if the card made an AV1 key frame that a viewer could start from; otherwise why not.</summary>
     private static async Task<string?> TryEncodeAsync(string ffmpeg, HardwareEncoder card, CancellationToken ct)
     {
@@ -92,7 +108,7 @@ public static class Av1Support
         {
             string said = "";
             try { said = (await errors.WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false)).Trim(); } catch (Exception inner) when (inner is TimeoutException or OperationCanceledException) { }
-            return said.Length > 0 ? said.Split('\n')[^1].Trim() : "it did not start";
+            return said.Length > 0 ? CauseIn(said) : "it did not start";
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested) { return "it took too long"; }
         finally { try { if (!process.HasExited) process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { } }
