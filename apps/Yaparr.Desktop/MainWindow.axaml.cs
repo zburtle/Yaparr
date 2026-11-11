@@ -700,6 +700,7 @@ public partial class MainWindow : Window
             if (_voiceConv == conv) LeaveVoiceCore();
             StatusText.Text = "You joined voice on another of your devices, so you left it here.";
         });
+        PrimeShareCues(conv, room);
         room.MediaGroupsChanged += () => UI(() => RefreshShares(conv, room));
         room.MemberRenamed += p => UI(() => { Remember(p); RefreshPeers(); });
         room.MemberJoined += p => UI(() => { Remember(p); RefreshPeers(); });
