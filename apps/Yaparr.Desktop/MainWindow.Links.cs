@@ -50,6 +50,7 @@ public partial class MainWindow
                 var link = _waitingLinks.Dequeue();
                 ShowFromTray();
                 if (link.Kind == DeepLinkKind.Join) await JoinWithKeyAsync(RoomKey.Parse(link.Value), fromLink: true);
+                else if (link.Kind == DeepLinkKind.BackupSignIn) await SignInFromLinkAsync(link);
                 else await ChatFromLinkAsync(new PeerId(link.Value));
             }
         }

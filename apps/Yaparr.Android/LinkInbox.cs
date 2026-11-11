@@ -20,6 +20,8 @@ internal static class LinkInbox
     public static void Offer(string? uri)
     {
         if (DeepLink.Parse(uri) is not { } link) return;
+        // The Android app has no backup server yet, so a link that signs in to one has nothing to do here.
+        if (link.Kind == DeepLinkKind.BackupSignIn) return;
         lock (s_waiting)
         {
             if (s_waiting.Count < MaxWaiting) s_waiting.Enqueue(link);

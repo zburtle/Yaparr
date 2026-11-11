@@ -94,6 +94,10 @@ public class MultiDeviceTests
             d.RoomSecond = await d.Second.JoinRoomAsync(room);
             d.RoomOther = await d.Other.JoinRoomAsync(room);
             await TestUtil.WaitFor(() => d.RoomOther.Members.Count == 2 && d.RoomFirst.Members.Count == 2 && d.RoomSecond.Members.Count == 2);
+            // Seeing each other in the room comes a moment before each device has been told the other is its own (the certificate arrives with its hello):
+            // the tests that follow ask about that straight away, so it is waited for here.
+            await TestUtil.WaitFor(() => d.First.IsMyDevice(d.Second.Id) && d.Second.IsMyDevice(d.First.Id)
+                && d.First.MyOtherDevices.Any(p => p.Id == d.Second.Id) && d.Second.MyOtherDevices.Any(p => p.Id == d.First.Id));
             return d;
         }
 
@@ -117,6 +121,14 @@ public class MultiDeviceTests
             {
                 await before.JoinRoomAsync("lobby");
                 await TestUtil.WaitFor(() => before.IsMyDevice(d.Second.Id));
+                // The device is known a moment before the list is written to disk, and this run closes next: wait for the file, or the next run may find
+                // nothing (or half of it) there.
+                var saved = Path.Combine(dir, "own-devices.json");
+                await TestUtil.WaitFor(() =>
+                {
+                    try { return File.Exists(saved) && File.ReadAllText(saved).Contains(d.Second.Id.Value, StringComparison.Ordinal); }
+                    catch (IOException) { return false; }    // being written
+                });
             }
 
             // A new run, with the other device nowhere to be seen: what it sent while this one was closed is still known to be yours.
