@@ -68,7 +68,7 @@ public class Av1Tests
         string nvidia = string.Join(' ', FfmpegArgs.Capture(options, ScreenCodec.Av1, HardwareEncoder.Nvenc));
         Assert.Contains("-c:v av1_nvenc", nvidia);
         Assert.Contains("-bf 0", nvidia);
-        Assert.Contains("-g 60", nvidia);
+        Assert.Contains("-g 30", nvidia);
         Assert.EndsWith("-f ivf pipe:1", nvidia);
         Assert.DoesNotContain("libvpx", nvidia);
 
