@@ -19,7 +19,9 @@ public partial class ServerLoginDialog : Window
     public static async Task<ServerRestoreLogin?> AskAsync(Window? owner)
     {
         var dialog = new ServerLoginDialog();
-        dialog.Opened += (_, _) => dialog.UrlBox.Focus();
+        // The server this release was made for, if it has one; the person can type another.
+        dialog.UrlBox.Text = ReleaseConfig.Current.BackupServerToOffer(null);
+        dialog.Opened += (_, _) => (string.IsNullOrEmpty(dialog.UrlBox.Text) ? dialog.UrlBox : dialog.CodeBox).Focus();
         dialog.Closed += (_, _) => dialog._waiting?.Cancel();
         if (owner is { IsVisible: true })
             return await dialog.ShowDialog<ServerRestoreLogin?>(owner);
