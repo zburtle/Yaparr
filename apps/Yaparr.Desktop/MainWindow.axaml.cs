@@ -135,26 +135,52 @@ public partial class MainWindow : Window
     private async Task BackupProfileAsync()
     {
         if (_node == null) return;
-        var proceed = await Dialogs.ConfirmAsync(this, "Back up profile",
-            "A backup holds your private identity key, your room keys and your message history. " +
-            "Anyone with the file can impersonate you and read your rooms, so keep it somewhere safe.\n\n" +
+        var choice = await Dialogs.ChoiceAsync(this, "Back up profile",
+            "A backup holds your private identity key, your room keys and your message history.\n\n" +
+            "Lock it with a passphrase and the file is safe to keep anywhere, such as a cloud drive or an email to yourself: without the passphrase it is unreadable. " +
+            "There is no way to get the passphrase back, so don't lose it.\n\n" +
+            "Without a passphrase, anyone with the file can impersonate you and read your rooms, so it has to stay somewhere only you can get at.\n\n" +
             "To use it, choose Restore a backup on the first-start screen of a computer that has no account yet. " +
-            "That computer becomes another device of your account, so this one can carry on being used alongside it.\n\nContinue?",
-            "Continue", "Cancel");
-        if (!proceed) return;
+            "That computer becomes another device of your account, so this one can carry on being used alongside it.",
+            "Lock with a passphrase", "No passphrase", "Cancel");
+        if (choice is not ("Lock with a passphrase" or "No passphrase")) return;
+
+        string? passphrase = null;
+        if (choice == "Lock with a passphrase")
+        {
+            passphrase = await AskNewBackupPassphraseAsync();
+            if (passphrase == null) return;
+        }
 
         var path = await Dialogs.PickSaveAsync(this, "Back up profile",
-            $"Yaparr-backup-{_settings.DisplayName}-{DateTime.Now:yyyyMMdd}.zip", Dialogs.Zip);
+            $"Yaparr-backup-{_settings.DisplayName}-{DateTime.Now:yyyyMMdd}" + (passphrase == null ? ".zip" : ".yapbak"),
+            passphrase == null ? Dialogs.Zip : Dialogs.LockedBackup);
         if (path == null) return;
 
         try
         {
-            _data.ExportProfile(path);
+            StatusText.Text = "Making the backup…";
+            await Task.Run(() => _data.ExportProfile(path, passphrase));
             StatusText.Text = "Backup saved to " + path;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             StatusText.Text = "Backup failed: " + ex.Message;
+        }
+    }
+
+    // Asks for the passphrase twice, since a typing slip would make the backup useless. Null if the person backs out.
+    private async Task<string?> AskNewBackupPassphraseAsync()
+    {
+        while (true)
+        {
+            var first = await PromptDialog.AskAsync(this, $"Choose a passphrase for the backup (at least {ProfileCipher.MinPassphraseLength} characters; a few words in a row are easy to remember):", secret: true);
+            if (first == null) return null;
+            if (ProfileCipher.CheckPassphrase(first) is { } problem) { await Dialogs.MessageAsync(this, "Back up profile", problem); continue; }
+            var again = await PromptDialog.AskAsync(this, "Type it again to make sure:", secret: true);
+            if (again == null) return null;
+            if (again == first) return first;
+            await Dialogs.MessageAsync(this, "Back up profile", "The two passphrases are not the same. Try again.");
         }
     }
 

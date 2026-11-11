@@ -148,7 +148,7 @@ public sealed class AppData
 
     // Files with keys in them: sealed so only this Windows user can read them, and closed to other users elsewhere.
     // Files from earlier versions are plain until this runs.
-    private static readonly string[] SecretFiles = { "identity.key", "settings.json", "account.json", "vpn.conf", "history.key" };
+    private static readonly string[] SecretFiles = { "identity.key", "settings.json", "account.json", "vpn.conf", "history.key", "backup-server.json" };
 
     private void ProtectSecrets()
     {
@@ -205,10 +205,47 @@ public sealed class AppData
 
     public void SaveSettings(AppSettings settings) => SecretStore.WriteAllText(SettingsPath, JsonSerializer.Serialize(settings, Json));
 
-    public void ExportProfile(string zipPath)
+    private string BackupServerPath => Path.Combine(Directory, "backup-server.json");
+
+    /// <summary>What this device remembers about its backup server. It is sealed like the other files with secrets, and is not part of a backup.</summary>
+    public BackupServerState LoadBackupServer()
     {
+        try { return JsonSerializer.Deserialize<BackupServerState>(SecretStore.ReadAllText(BackupServerPath)) ?? new(); }
+        catch (Exception ex) when (ex is IOException or JsonException or System.Security.Cryptography.CryptographicException) { return new(); }
+    }
+
+    public void SaveBackupServer(BackupServerState state)
+    {
+        SecretStore.WriteAllText(BackupServerPath, JsonSerializer.Serialize(state, Json));
+        MakePrivate(BackupServerPath);
+    }
+
+    /// <summary>
+    /// Saves a backup of the profile. With a passphrase the file is locked (see <see cref="ProfileCipher"/>) and can be kept anywhere; without one it is a
+    /// plain zip that anyone who gets it can use.
+    /// </summary>
+    public void ExportProfile(string zipPath, string? passphrase = null)
+    {
+        if (passphrase != null && ProfileCipher.CheckPassphrase(passphrase) is { } why) throw new ArgumentException(why, nameof(passphrase));
         if (File.Exists(zipPath)) File.Delete(zipPath);
-        using var zip = ZipFile.Open(zipPath, ZipArchiveMode.Create);
+        try
+        {
+            Stream file = new FileStream(zipPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            // The zip is written straight into the locking stream, so the plain backup never exists as a file.
+            if (passphrase != null) file = ProfileCipher.Encrypt(file, passphrase);
+            using (file) WriteProfileZip(file);
+        }
+        catch
+        {
+            // Not a half-written backup that looks like a real one.
+            try { File.Delete(zipPath); } catch (IOException) { }
+            throw;
+        }
+    }
+
+    private void WriteProfileZip(Stream destination)
+    {
+        using var zip = new ZipArchive(destination, ZipArchiveMode.Create, leaveOpen: true);
         foreach (var file in System.IO.Directory.EnumerateFiles(Directory, "*", SearchOption.AllDirectories))
         {
             var relative = Path.GetRelativePath(Directory, file).Replace('\\', '/');
@@ -226,7 +263,31 @@ public sealed class AppData
         }
     }
 
-    public string StageProfile(string zipPath)
+    /// <summary>True if the backup file is locked with a passphrase, so <see cref="StageProfile"/> needs it.</summary>
+    public static bool IsBackupLocked(string path) => ProfileCipher.IsLocked(path);
+
+    /// <summary>
+    /// Opens a backup into a staging folder. A locked backup needs its passphrase: a wrong one (or a damaged file) throws
+    /// <see cref="System.Security.Cryptography.CryptographicException"/>, and nothing is left behind.
+    /// </summary>
+    public string StageProfile(string zipPath, string? passphrase = null)
+    {
+        if (!ProfileCipher.IsLocked(zipPath)) return StagePlainProfile(zipPath);
+        if (passphrase == null) throw new InvalidDataException("This backup is locked with a passphrase.");
+
+        // The zip is read from a temporary copy, since reading one needs to jump around in it; the copy is gone as soon as it has been opened.
+        var plain = Path.Combine(Path.GetTempPath(), "Yaparr-unlocked-" + Guid.NewGuid().ToString("N") + ".zip");
+        try
+        {
+            using (var input = new FileStream(zipPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+            using (var output = new FileStream(plain, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                ProfileCipher.Decrypt(input, output, passphrase);
+            return StagePlainProfile(plain);
+        }
+        finally { try { File.Delete(plain); } catch (IOException) { } }
+    }
+
+    private string StagePlainProfile(string zipPath)
     {
         var staging = Path.Combine(Path.GetTempPath(), "Yaparr-import-" + Guid.NewGuid().ToString("N"));
         System.IO.Directory.CreateDirectory(staging);

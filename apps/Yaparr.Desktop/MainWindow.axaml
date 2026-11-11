@@ -1073,6 +1073,27 @@
                             <TextBlock Classes="muted" TextWrapping="Wrap"
                                        Text="Saves a zip of everything Yaparr keeps for you: your identity key, rooms, message history, pictures and settings. Keep it somewhere safe; it holds your account key." />
                             <Button Content="Back up profile…" HorizontalAlignment="Left" Click="BackupProfile_Click" />
+                            <TextBlock Text="Backup server" FontWeight="SemiBold" Margin="0,12,0,0" />
+                            <TextBlock Classes="muted" TextWrapping="Wrap"
+                                       Text="If someone gives you the address of a backup server and an account on it, your backup can be kept there and brought back on any computer from its first-start screen. You sign in in your browser, and the backup is locked on this computer with a recovery code, so the server cannot read it. Nothing is sent anywhere unless you use this." />
+                            <StackPanel x:Name="ServerSignedOutPanel" Spacing="4" MaxWidth="420" HorizontalAlignment="Left">
+                                <TextBlock Text="Server address" Classes="muted" />
+                                <TextBox x:Name="ServerUrlBox" MinWidth="320" PlaceholderText="https://backup.example.org" />
+                                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+                                    <Button x:Name="ServerSignInButton" Content="Sign in with your browser" Classes="primary" Click="ServerSignIn_Click" />
+                                    <Button x:Name="ServerCancelSignInButton" Content="Cancel" IsVisible="False" Click="ServerCancelSignIn_Click" />
+                                </StackPanel>
+                            </StackPanel>
+                            <StackPanel x:Name="ServerSignedInPanel" Spacing="8" IsVisible="False">
+                                <TextBlock x:Name="ServerSignedInText" TextWrapping="Wrap" />
+                                <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="8">
+                                    <Button x:Name="BackupToServerButton" Content="Back up now" Classes="primary" Click="BackupToServer_Click" />
+                                    <Button x:Name="ShowRecoveryCodeButton" Content="Show recovery code" Click="ShowRecoveryCode_Click" />
+                                    <Button Content="Change password" Click="ServerChangePassword_Click" ToolTip.Tip="Opens the server's page in your browser" />
+                                    <Button x:Name="ServerSignOutButton" Content="Sign out" Click="ServerSignOut_Click" />
+                                </WrapPanel>
+                            </StackPanel>
+                            <TextBlock x:Name="ServerStatus" Classes="muted" TextWrapping="Wrap" IsVisible="False" />
                         </StackPanel>
                         <StackPanel x:Name="SectionAbout" Spacing="10" IsVisible="False">
                             <TextBlock Text="About" FontSize="15" FontWeight="SemiBold" />

@@ -67,6 +67,7 @@ public partial class MainWindow
         TurnPanel.SetActive(key == "turn");
         if (key == "network") NetworkView.Activate();
         if (key == "blocked") RefreshBlocked();
+        if (key == "backup") FillServerForm();
         var sections = new (string Key, Control Panel)[]
         {
             ("devices", SectionDevices), ("notifications", SectionNotifications), ("voice", SectionVoice), ("network", SectionNetwork),
