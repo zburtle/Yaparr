@@ -144,7 +144,7 @@ public sealed class ScreenOptions
     public int Kbps { get; init; } = 800;
 
     /// <summary>Seconds between key frames. A viewer that joins or loses packets waits at most this long for one.</summary>
-    public double KeyFrameSeconds { get; init; } = 2;
+    public double KeyFrameSeconds { get; init; } = 1;
 
     public ScreenCodec Codec { get; init; } = ScreenCodec.Auto;
 

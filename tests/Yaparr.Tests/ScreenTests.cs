@@ -5,11 +5,11 @@ namespace Yaparr.Tests;
 public class ScreenTests
 {
     [Fact]
-    public void A_key_frame_every_two_seconds_is_the_default_so_a_share_does_not_burst_every_second()
+    public void A_key_frame_every_second_is_the_default_so_a_viewer_that_loses_frames_waits_at_most_that_long()
     {
-        Assert.Equal(2, new ScreenOptions().KeyFrameSeconds);
+        Assert.Equal(1, new ScreenOptions().KeyFrameSeconds);
         var args = FfmpegArgs.Capture(new ScreenOptions { X11Display = null, Fps = 30, Display = new Display(0, "monitor", 0, 0, 1920, 1080, true, Handle: 0x1A2B) }, ScreenCodec.Vp8);
-        Assert.Equal("60", args[args.IndexOf("-g") + 1]);
+        Assert.Equal("30", args[args.IndexOf("-g") + 1]);
     }
 
     [Fact]
