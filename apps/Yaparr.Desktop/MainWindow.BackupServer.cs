@@ -80,14 +80,7 @@ public partial class MainWindow
             ServerStatusIs("Waiting for you to sign in in your browser…");
             var (token, username) = await signIn.WaitAsync(cancel: _serverSignIn.Token);
 
-            // Another server or another account than before: its backups have a recovery code of their own.
-            var url = server.ToString().TrimEnd('/');
-            if (url != _server.Url || username != _server.Username) _server = new BackupServerState();
-            _server.Url = url;
-            _server.Username = username;
-            _server.Token = token;
-            _data.SaveBackupServer(_server);
-            _log.Write("signed in to a backup server");
+            AdoptSignIn(server, token, username);
             ShowServerState();
             ServerStatusIs("");
             Activate();
@@ -99,6 +92,48 @@ public partial class MainWindow
             ServerSignInButton.IsEnabled = ServerUrlBox.IsEnabled = true;
             ServerCancelSignInButton.IsVisible = false;
         }
+    }
+
+    // Keeps a sign-in this computer has just been given. Another server or another account than before: its backups have a recovery code of their own.
+    private void AdoptSignIn(Uri server, string token, string username)
+    {
+        var url = server.ToString().TrimEnd('/');
+        _server = _data.LoadBackupServer();
+        if (url != _server.Url || username != _server.Username) _server = new BackupServerState();
+        _server.Url = url;
+        _server.Username = username;
+        _server.Token = token;
+        _data.SaveBackupServer(_server);
+        _log.Write("signed in to a backup server");
+    }
+
+    // The button on a backup server's "You're in" page opened the app: yaparr://backup-signin/<code>/<server>. Like every link it only asks:
+    // the person is told which server, and whom it would replace, before the one-time code is traded. (The code alone is the proof here, so this
+    // question is what stops a made-up link from signing the app in to someone else's account.)
+    private async Task SignInFromLinkAsync(DeepLink link)
+    {
+        const string title = "Sign in to a backup server";
+        if (!link.TryGetBackupSignIn(out var code, out var server)) return;
+        var current = _data.LoadBackupServer();
+        var host = server.Authority;
+        var replaces = current.SignedIn
+            ? $"\n\nThis computer is signed in to {(Uri.TryCreate(current.Url, UriKind.Absolute, out var now) ? now.Authority : current.Url)} as {current.Username}; this replaces that."
+            : "";
+        if (!await Dialogs.ConfirmAsync(this, title,
+                $"A link from the sign-up page of the backup server {host} asks to sign this computer in to it, so you can keep a locked backup of your profile there." +
+                "\n\nOnly continue if you have just signed up there and pressed \"Open Yaparr and sign in\"." + replaces,
+                "Sign in", "Cancel")) return;
+
+        try
+        {
+            var (token, username) = await BackupServerClient.TradeHandoffCodeAsync(server, code);
+            AdoptSignIn(server, token, username);
+            ShowSettings("backup");
+            ServerUrlBox.Text = ReleaseConfig.Current.BackupServerToOffer(_server.Url);
+            ShowServerState();
+            ServerStatusIs($"Signed in to {host} as {username}. Press Back up now to save your first backup; Yaparr then makes a recovery code for you to keep.");
+        }
+        catch (BackupServerException ex) { await Dialogs.MessageAsync(this, title, ex.Message); }
     }
 
     private void ServerCancelSignIn_Click(object? sender, RoutedEventArgs e) => _serverSignIn?.Cancel();

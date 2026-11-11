@@ -10,6 +10,8 @@ A backup server keeps a **locked** copy of your profile backup, so you can bring
 2. **Back up now** saves a backup. The first time, Yaparr makes a **recovery code** (like `K7QD-M3XF-9PLR-2WTE-HV8N-C4YB`) and shows it once: save it in a password manager or on paper. After that, backing up needs nothing typed.
 3. **Show recovery code** shows it again on a computer that has it. **Change password** opens the server's page for that. **Sign out** makes the server forget this computer; the backups stay.
 
+**Starting from the sign-up page.** When someone signs up in their browser, the server's "You're in" page has an **Open Yaparr and sign in** button (on a computer; not on a phone, since Android has no backup server yet). It opens Yaparr, which asks "Sign in to the backup server …?" and names the server (and the account it would replace, if this computer is already signed in somewhere). On **Sign in** the app is signed in and opens Settings > Backup, so the password is not typed twice. If Yaparr is not installed or is older than this feature, nothing happens and the page's steps (above) still work. The recovery code is still made the first time you press **Back up now**.
+
 To bring a backup back, choose **Restore from a server** on the first-start screen of a computer with no account: check the address (filled in as above) and type the recovery code, sign in in the browser, and the newest backup is fetched, unlocked and restored. That computer becomes another device of your account, stays signed in and keeps the code.
 
 If the account already has a backup made on another device, a computer that has no code yet asks for that device's code (and checks that it opens the backup) so that one code opens them all; you can also make a new one, and older backups then still need the old code.
@@ -47,7 +49,9 @@ The way programs on a computer sign in to web services (OAuth's authorization co
 3. The browser arrives at `redirect_uri?code=<code>&state=<state>`. The code works once, for two minutes. The app ignores a request whose `state` is not its own.
 4. The app trades it: `POST /v1/token` with `{"code":"…","verifier":"…"}` gives `{"token":"…","username":"…"}`. Without the verifier the code is useless, so something that saw the code pass by cannot use it.
 
-In these answers `username` is the account's name, which is its owner's email address. Every later request carries `Authorization: Bearer <token>`. `DELETE /v1/token` signs the device out. `GET /account/password` is the page where a person changes their password, which signs every device out.
+In these answers `username` is the account's name, which is its owner's email address. **Signing in from the sign-up page** uses a weaker, one-time handoff, because there the browser starts it and the app has no secret of its own to prove it with. The button is a link, `yaparr://backup-signin/<code>/<the server, escaped>` (only in this app form: there is no page on yaparr.com for it). The app shows the server, asks, and then trades the code: `POST /v1/token/handoff` with `{"code":"…"}` gives `{"token":"…","username":"…"}`. The code is 256 random bits, works once and for five minutes, and is made only for the account whose password has just been chosen. Another program on the same computer that also claims `yaparr://` links could take it, which is why the app always asks first, and why the code only ever gives a token for that account's locked backups. The link is refused if the server is not `https://` (or `http://` on the same computer), or if the code is not the shape the server makes.
+
+Every later request carries `Authorization: Bearer <token>`. `DELETE /v1/token` signs the device out. `GET /account/password` is the page where a person changes their password, which signs every device out.
 
 ### Backups
 

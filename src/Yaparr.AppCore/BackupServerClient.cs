@@ -140,7 +140,7 @@ public sealed class BrowserSignIn : IDisposable
         finally { if (owned) http.Dispose(); }
     }
 
-    private sealed record TokenJson(string? Token, string? Username);
+    internal sealed record TokenJson(string? Token, string? Username);
 
     // Reads one request from the browser. The one that carries the code (for this sign-in: the state has to be ours) is answered with a page
     // that says it worked; anything else (a browser asks for an icon too) gets "not found" and the wait goes on.
@@ -204,6 +204,28 @@ public sealed class BackupServerClient : IDisposable
         else if (uri.Scheme == Uri.UriSchemeHttp && (uri.IsLoopback || uri.Host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase))) { }
         else return null;   // a password is typed into this site and a token is sent to it: not over the internet in the clear
         return new UriBuilder(uri.Scheme, uri.Host, uri.IsDefaultPort ? -1 : uri.Port).Uri;
+    }
+
+    /// <summary>
+    /// Trades the one-time code in the button on the server's "You're in" page (a <c>yaparr://backup-signin/…</c> link) for a token. Unlike
+    /// <see cref="BrowserSignIn"/> there is no secret of this app's own to prove it with: the code alone is the proof, which is why the person is asked to
+    /// confirm before this is called, and why the server makes it work once, for five minutes, for the account that has just been set up.
+    /// </summary>
+    public static async Task<(string Token, string Username)> TradeHandoffCodeAsync(Uri server, string code, HttpClient? http = null, CancellationToken cancel = default)
+    {
+        var owned = http == null;
+        http ??= new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        try
+        {
+            using var response = await http.PostAsJsonAsync(new Uri(server, "/v1/token/handoff"), new { code }, cancel);
+            if (!response.IsSuccessStatusCode) throw await FailureAsync(response, cancel);
+            var answer = await response.Content.ReadFromJsonAsync<BrowserSignIn.TokenJson>(Json, cancel);
+            if (string.IsNullOrEmpty(answer?.Token)) throw new BackupServerException("The backup server did not finish the sign-in.");
+            return (answer.Token, answer.Username ?? "");
+        }
+        catch (HttpRequestException ex) { throw new BackupServerException("Couldn't reach the backup server: " + ex.Message, inner: ex); }
+        catch (TaskCanceledException ex) when (!cancel.IsCancellationRequested) { throw new BackupServerException("The backup server took too long to answer.", inner: ex); }
+        finally { if (owned) http.Dispose(); }
     }
 
     /// <summary>The page where a person changes their password, for the browser.</summary>
