@@ -75,6 +75,10 @@ internal sealed class MediaGroup
     public readonly Dictionary<uint, long> ReplayAsked = new();
     public long LastReplayPacketAt;
     public long Retransmitted, Recovered;
+    // What the receiving end saw of the packets, to tell a link that loses them from one that only delivers them late, and a viewer that asks for
+    // too much from one that asks for too little: packets that came, gaps noticed when a later one came first, gaps too big to ask about, packets that
+    // then arrived by themselves (late) or after being asked for, packets never seen at all, and the requests made.
+    public long PacketsSeen, GapsNoticed, BigGaps, ArrivedLate, RepairedAfterAsking, GaveUp, NacksSent, PacketsAsked;
 
     public uint Seq;
     public readonly Dictionary<ulong, SeqWindow> Windows = new();
@@ -362,7 +366,8 @@ public sealed partial class ChatNode
     internal MediaStatus StatusOf(MediaGroup g)
     {
         lock (g.Gate)
-            return new MediaStatus(g.Id, g.IsRoot, g.Parent, g.Children.Keys.ToList(), g.Delivered, g.Forwarded, g.Dropped, g.Duplicates, g.Retransmitted, g.Recovered, g.ServerBlocked);
+            return new MediaStatus(g.Id, g.IsRoot, g.Parent, g.Children.Keys.ToList(), g.Delivered, g.Forwarded, g.Dropped, g.Duplicates, g.Retransmitted, g.Recovered, g.ServerBlocked,
+                g.PacketsSeen, g.GapsNoticed, g.BigGaps, g.ArrivedLate, g.RepairedAfterAsking, g.NacksSent, g.PacketsAsked, g.GaveUp);
     }
 
     // ---- starting, announcing, ending -------------------------------------------------------
@@ -684,15 +689,21 @@ public sealed partial class ChatNode
         lock (g.Gate)
         {
             long now = Environment.TickCount64;
+            g.PacketsSeen++;
             if (!g.SeenAny) { g.SeenAny = true; g.HighestSeq = seq; return; }
             int ahead = (int)(seq - g.HighestSeq);
             if (ahead > 0)
             {
                 if (ahead <= 256)
-                    for (uint s = g.HighestSeq + 1; s != seq; s++) { g.Missing[s] = now; gap = true; }
+                    for (uint s = g.HighestSeq + 1; s != seq; s++) { g.Missing[s] = now; g.GapsNoticed++; gap = true; }
+                else g.BigGaps++;
                 g.HighestSeq = seq;
             }
-            else if (g.Missing.Remove(seq)) g.Recovered++;
+            else if (g.Missing.Remove(seq))
+            {
+                g.Recovered++;
+                if (g.Asked.ContainsKey(seq)) g.RepairedAfterAsking++; else g.ArrivedLate++;
+            }
         }
         if (gap) ScheduleNack(g);
     }
@@ -716,12 +727,13 @@ public sealed partial class ChatNode
                     lock (g.Gate)
                     {
                         long now = Environment.TickCount64;
-                        foreach (var old in g.Missing.Where(kv => now - kv.Value > 1500).Select(kv => kv.Key).ToList()) { g.Missing.Remove(old); g.Asked.Remove(old); }
+                        foreach (var old in g.Missing.Where(kv => now - kv.Value > 1500).Select(kv => kv.Key).ToList()) { g.Missing.Remove(old); g.Asked.Remove(old); g.GaveUp++; }
                         // Ending and clearing the flag happen together, so a gap noticed from now on starts a new round.
                         if (g.Missing.Count == 0) { g.NackRunning = false; g.Asked.Clear(); return; }
                         // Not again until the answer has had time to come.
                         want = g.Missing.Where(kv => now - kv.Value >= 30 && now - g.Asked.GetValueOrDefault(kv.Key) >= 80).Select(kv => kv.Key).Take(32).ToList();
                         foreach (var seq in want) g.Asked[seq] = now;
+                        if (want.Count > 0) { g.NacksSent++; g.PacketsAsked += want.Count; }
                         parent = g.Parent;
                     }
                     if (want.Count > 0 && parent is { } p) SendMedia(p, g, new WireMedia { Op = "nack", Seqs = want.ToArray() });
@@ -770,6 +782,7 @@ public sealed partial class ChatNode
                         for (uint seq = g.ReplayFirst; (int)(limit - seq) >= 0 && missing.Count < 32; seq++)
                             if (!g.ReplayGot.Contains(seq) && now - g.ReplayAsked.GetValueOrDefault(seq) >= 100) missing.Add(seq);
                         foreach (var seq in missing) g.ReplayAsked[seq] = now;
+                        if (missing.Count > 0) { g.NacksSent++; g.PacketsAsked += missing.Count; }
                         parent = g.Parent;
                         finished = quiet && missing.Count == 0 && !g.ReplayAsked.Keys.Any(q => !g.ReplayGot.Contains(q));
                     }

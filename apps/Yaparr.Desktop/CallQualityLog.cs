@@ -137,18 +137,23 @@ public sealed class CallQualityLog
             anything = true;
             long tick = Environment.TickCount64;
             // The first look counts from when the watching began, so nothing is missed from the minute it started in.
-            var (was, at) = _watchBefore.TryGetValue(watch, out var before) ? before : (now with { Shown = 0, FramesIn = 0, BytesIn = 0, Lost = 0, Missed = 0, Recovered = 0, Late = 0, Dropped = 0 }, now.StartedAt);
+            var (was, at) = _watchBefore.TryGetValue(watch, out var before) ? before : (now with { Shown = 0, FramesIn = 0, BytesIn = 0, Lost = 0, Missed = 0, Recovered = 0, Late = 0, Dropped = 0, PacketsSeen = 0, GapsNoticed = 0, BigGaps = 0, ArrivedLate = 0, RepairedAfterAsking = 0, NacksSent = 0, PacketsAsked = 0, GaveUp = 0 }, now.StartedAt);
             _watchBefore[watch] = (now, tick);
             double seconds = Math.Max(1, (tick - at) / 1000.0);
             double arriving = (now.FramesIn - was.FramesIn) / seconds, drawn = (now.Shown - was.Shown) / seconds, kbps = (now.BytesIn - was.BytesIn) * 8 / 1000.0 / seconds;
             long skipped = now.Skipped - was.Skipped, lost = now.Lost - was.Lost, late = now.Late - was.Late, dropped = now.Dropped - was.Dropped;
             // Frames lost, or too late, or dropped by the decoder; pictures drawn far fewer than arrive (or hardly any at all); a decoder that is behind; no path to the sharer.
             bool bad = !now.Attached || lost > 0 || dropped > 0 || late > 10 || now.DecodeQueue > 5 || drawn < 10 || (arriving > 0 && drawn < arriving * 0.6);
-            if (!bad) continue;
-            problem = true;
+            // Written every minute while watching, with or without trouble, so that a good minute can be set beside a bad one.
+            if (bad) problem = true;
+            var packets = now with
+            {
+                PacketsSeen = now.PacketsSeen - was.PacketsSeen, GapsNoticed = now.GapsNoticed - was.GapsNoticed, BigGaps = now.BigGaps - was.BigGaps, ArrivedLate = now.ArrivedLate - was.ArrivedLate,
+                RepairedAfterAsking = now.RepairedAfterAsking - was.RepairedAfterAsking, NacksSent = now.NacksSent - was.NacksSent, PacketsAsked = now.PacketsAsked - was.PacketsAsked, GaveUp = now.GaveUp - was.GaveUp,
+            };
             string? path = now.Parent is { } parent ? _node()?.GetLink(parent).ToString() : null;
-            _log.Write($"call quality: watching {now.Name}{(now.PictureKind != null ? " (" + now.PictureKind + ")" : "")}: {arriving:0.0} frames/s arriving at {kbps:0} kbit/s, {drawn:0.0} pictures/s drawn, {lost} frames lost, {skipped} skipped waiting for a key frame, {late} too late, "
-                       + $"{dropped} dropped by the decoder, decoder queue {now.DecodeQueue}, {now.Recovered} packets recovered in all, "
+            _log.Write($"call quality: watching{(bad ? " (a problem)" : "")} {now.Name}{(now.PictureKind != null ? " (" + now.PictureKind + ")" : "")}: {arriving:0.0} frames/s arriving at {kbps:0} kbit/s, {drawn:0.0} pictures/s drawn, {lost} frames lost, {skipped} skipped waiting for a key frame, {late} too late, "
+                       + $"{dropped} dropped by the decoder, decoder queue {now.DecodeQueue}, {now.Recovered} packets recovered in all; in the last minute {packets.DescribePackets()}; "
                        + (now.Attached ? $"attached {(now.Parent is { } p ? "under " + p.Short : "to the sharer")}{(path != null ? " (" + path + ")" : "")}" : "not attached to the sharer"));
         }
         foreach (var gone in _watchBefore.Keys.Where(k => !_watches().Contains(k)).ToList()) _watchBefore.Remove(gone);
