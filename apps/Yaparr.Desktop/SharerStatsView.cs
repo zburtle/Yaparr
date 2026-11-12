@@ -98,7 +98,9 @@ public sealed class SharerStatsView : Border
         _warning.IsVisible = problems.Count > 0;
 
         // The full figures, for anyone who wants them.
-        ToolTip.SetTip(this, $"Key frames: {_sharer.KeyFrames}{(_sharer.InProcess ? $" ({_sharer.KeyFramesForced} made because a viewer asked)" : "")}\nLongest wait for a frame from FFmpeg: {gap} ms\nWatchers directly connected: {status.Children.Count}\nPackets sent again this second: {resent}, dropped in all: {status.Dropped}");
+        var figures = _sharer.Figures();
+        string encoding = figures.DescribeEncoding(_sharer.FrameBudgetMs);
+        ToolTip.SetTip(this, $"Key frames: {figures.DescribeKeys()}\n{(encoding.Length > 0 ? "Encoder: " + encoding + "\n" : "")}Longest wait for a frame from FFmpeg: {gap} ms\nWatchers directly connected: {status.Children.Count}\nPackets sent again this second: {resent}, dropped in all: {status.Dropped}");
     }
 
     // One entry per person, leaving out the sharer's own devices.

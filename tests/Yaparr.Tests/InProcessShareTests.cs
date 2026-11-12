@@ -54,6 +54,23 @@ public class InProcessShareTests(Xunit.Abstractions.ITestOutputHelper output)
             await TestUtil.WaitFor(() => got.Count >= 20, 15_000);
 
             output.WriteLine($"viewer has {got.Count} frames");
+
+            // The share counted what it did, so that a log or a report can say it.
+            var figures = sharer.Figures();
+            output.WriteLine(sharer.Describe());
+            Assert.True(figures.KeyRequests >= 1 && figures.KeysForced >= 1 && figures.Answers >= 1, "the request, the key frame and its answer should all be counted");
+            Assert.True(figures.Encodes >= 20 && figures.EncodeAverageMs > 0, "encoding times should be counted");
+            Assert.True(figures.Reads >= 20, "the waits for the capture should be counted");
+            Assert.True(figures.Keys >= 2 && figures.KeyAverageKb > 0 && figures.DeltaAverageKb > 0, "key and other frames should be measured");
+            Assert.NotNull(sharer.PictureSize);
+            Assert.Contains("in this program", sharer.EncoderDetails);
+            Assert.Contains("h264_nvenc", sharer.EncoderDetails);
+            Assert.Contains("avcodec", sharer.EncoderDetails);
+            Assert.True(sharer.CaptureCpu > TimeSpan.Zero, "the capture program's processor time should be counted");
+            string report = sharer.Describe();
+            Assert.Contains("Key frames:", report);
+            Assert.Contains("Encoder in this program:", report);
+            Assert.Contains("How the encoder was set up: in this program", report);
             // What the viewer was handed can be decoded: only a key frame may jump.
             uint? previous = null;
             foreach (var f in got)
@@ -64,5 +81,51 @@ public class InProcessShareTests(Xunit.Abstractions.ITestOutputHelper output)
             Assert.True(got.All(f => !f.IsKey || ScreenCodecs.IsKeyFrame(ScreenCodec.H264, f.Data.ToArray())), "every key frame must hold the parameter sets");
         }
         finally { foreach (var v in views) v.Dispose(); }
+    }
+
+    /// <summary>
+    /// What a share says about itself, whatever the screen is doing: the encoder in use and how it was set up, the timings, the sizes of key frames
+    /// and the others, the capture program's processor time. It does nothing without Windows, a monitor, FFmpeg and its libraries, or an NVIDIA card.
+    /// </summary>
+    [Fact]
+    public async Task A_real_in_process_share_counts_and_describes_what_it_does()
+    {
+        if (!OperatingSystem.IsWindows() || !FfmpegLibraries.IsAvailable) return;
+        if (FfmpegLocator.Find() is not { } ffmpeg) return;
+        if (Displays.List().FirstOrDefault() is not { } display) return;
+
+        using var cluster = await MediaTreeTests.Cluster.StartAsync(2, fanout: 2, rootFanout: 2);
+        var options = new ScreenOptions
+        {
+            Display = display, X11Display = null, Fps = 15, Kbps = 1000, KeyFrameSeconds = 1, MaxWidth = 640, MaxHeight = 360,
+            Codec = ScreenCodec.H264, Encoder = HardwareEncoder.Nvenc, InProcessEncoder = true,
+        };
+        using var sharer = ScreenSharer.Start(cluster.Root, cluster.Rooms[0], "Test screen", options, ffmpeg);
+        try { await TestUtil.WaitFor(() => sharer.Frames >= 40, 20_000); }
+        catch (TimeoutException) { return; }
+        if (!sharer.InProcess) return;   // no NVIDIA encoder here: the share fell back to a separate FFmpeg
+
+        var figures = sharer.Figures();
+        output.WriteLine(sharer.Describe());
+        Assert.True(figures.Encodes >= 30 && figures.EncodeAverageMs > 0 && figures.EncodeMaxTicksEver > 0, "encoding times should be counted");
+        Assert.True(figures.Reads >= 30 && figures.WaitMaxTicksEver > 0, "the waits for the capture should be counted");
+        Assert.True(figures.Keys >= 2 && figures.KeyAverageKb > 0 && figures.DeltaAverageKb > 0, "key and other frames should be measured (a key frame every second)");
+        Assert.True(figures.Keys + figures.Deltas == sharer.Frames || figures.Keys + figures.Deltas == sharer.Frames + 1, "every frame sent is either a key frame or another");
+        Assert.Equal(0, figures.Restarts);
+        Assert.NotNull(sharer.PictureSize);
+        Assert.Contains("in this program", sharer.EncoderDetails);
+        Assert.Contains("h264_nvenc", sharer.EncoderDetails);
+        Assert.Contains("avcodec", sharer.EncoderDetails);
+        Assert.Contains("preset=p4", sharer.EncoderDetails);
+        Assert.True(sharer.CaptureCpu > TimeSpan.Zero, "the capture program's processor time should be counted");
+        Assert.Equal(1000.0 / 15, sharer.FrameBudgetMs, 3);
+        string report = sharer.Describe();
+        Assert.Contains("Key frames:", report);
+        Assert.Contains("Encoder in this program:", report);
+        Assert.Contains("How the encoder was set up: in this program", report);
+        Assert.Contains("Capture program restarted 0 times", report);
+        var maxima = sharer.TakeMaxima(1);
+        Assert.True(maxima.KeyBytes > 0 && maxima.EncodeTicks > 0);
+        Assert.Equal(0, sharer.TakeMaxima(1).KeyBytes);   // taken: the next minute starts from nothing
     }
 }

@@ -13,7 +13,7 @@ public static class FfmpegLibraries
 {
     private static readonly object Gate = new();
     private static bool _tried, _ok;
-    private static string _why = "";
+    private static string _why = "", _info = "";
 
     /// <summary>The folder with FFmpeg's libraries, or null when there is none.</summary>
     public static string? Find(string? appDirectory = null, string? explicitFolder = null)
@@ -47,6 +47,9 @@ public static class FfmpegLibraries
         }
     }
 
+    /// <summary>Where the loaded libraries are, their versions and licence, for the log; empty when none are loaded.</summary>
+    public static string Describe() { lock (Gate) return _ok ? _info : ""; }
+
     /// <summary>Whether libraries are there and load, without saying why not.</summary>
     public static bool IsAvailable => TryLoad(out _);
 
@@ -61,6 +64,8 @@ public static class FfmpegLibraries
             string licence = ffmpeg.avcodec_license() ?? "";
             if (!licence.StartsWith("LGPL", StringComparison.OrdinalIgnoreCase))
                 return (false, $"The FFmpeg libraries in {dir} are under the \"{licence}\" licence; only LGPL ones are used.");
+            static string Version(uint v) => $"{v >> 16}.{(v >> 8) & 255}.{v & 255}";
+            _info = $"{dir} (avcodec {Version(ffmpeg.avcodec_version())}, avutil {Version(ffmpeg.avutil_version())}, {licence})";
             return (true, "");
         }
         catch (Exception ex) when (ex is DllNotFoundException or NotSupportedException or EntryPointNotFoundException or BadImageFormatException or InvalidOperationException)
@@ -107,6 +112,10 @@ public sealed unsafe class InProcessEncoder : IDisposable
 
     public int Width { get; }
     public int Height { get; }
+    private string _description = "";
+
+    /// <summary>How the encoder was set up and which libraries are used, for the log.</summary>
+    public string Describe() => _description;
 
     /// <summary>The size of one picture handed to <see cref="Encode"/>: NV12, so 12 bits a pixel.</summary>
     public int PictureBytes => Width * Height * 3 / 2;
@@ -136,6 +145,8 @@ public sealed unsafe class InProcessEncoder : IDisposable
             // Hand each packet back as soon as it is made: by default NVENC holds two pictures back, which is two pictures of delay.
             SetOption("delay", "0");
             Check(ffmpeg.avcodec_open2(_context, codec, null), "starting the NVIDIA encoder");
+            _description = $"h264_nvenc {width}x{height} at {options.Fps} fps, {options.Kbps} kbit/s (at most {options.Kbps * 1.5:0}, buffer {options.Kbps * 1.5:0}), "
+                           + $"a key frame every {_context->gop_size} pictures, options {string.Join(' ', FfmpegArgs.NvencH264Options.Select(o => o.Name + "=" + o.Value))} delay=0; libraries {FfmpegLibraries.Describe()}";
             _frame = ffmpeg.av_frame_alloc();
             _frame->format = (int)AVPixelFormat.AV_PIX_FMT_NV12;
             _frame->width = width;

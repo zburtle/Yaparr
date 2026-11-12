@@ -234,6 +234,11 @@ public sealed class ScreenSharer : IDisposable
         text.AppendLine($"  Sharing: {(_options.Portal != null ? (_options.Portal.IsWindow ? "a window, chosen in the desktop's picker" : "a screen, chosen in the desktop's picker") : _options.WindowHandle != null ? "a window" : "a monitor")}, {_options.Fps} fps, {_options.Kbps} kbit/s, up to {_options.MaxWidth}x{_options.MaxHeight}, a key frame every {_options.KeyFrameSeconds:0.#} s");
         text.AppendLine($"  Encoder: {ScreenCodecs.Describe(Codec, Encoder)}{(InProcess ? ", in this program" : "")}{(FallbackReason is { } why ? $" (not used: {why})" : "")}");
         text.AppendLine($"  Sent: {Frames} frames, {KeyFrames} of them key frames{(InProcess ? $" ({KeyFramesForced} made because a viewer asked)" : "")}, {Bytes / 1024} KB in {seconds:0} s ({(seconds > 1 ? Frames / seconds : 0):0.0} frames per second on average)");
+        var figures = Figures();
+        text.AppendLine($"  Key frames: {figures.DescribeKeys()}");
+        if (figures.Encodes > 0) text.AppendLine($"  Encoder in this program: {figures.DescribeEncoding(FrameBudgetMs)}; picture {(PictureSize is { } size ? $"{size.Width}x{size.Height}" : "unknown")}");
+        text.AppendLine($"  Capture program restarted {figures.Restarts} times; processor time used by it: {CaptureCpu.TotalSeconds:0.0} s");
+        text.AppendLine($"  How the encoder was set up: {(EncoderDetails.Length > 0 ? EncoderDetails : "not started yet")}");
         text.AppendLine($"  Longest wait for a frame from FFmpeg since this was last asked: {Interlocked.Read(ref _maxGapMs)} ms; running: {(IsRunning ? "yes" : "no")}");
         text.AppendLine($"  Sound: {(SharingSound ? "shared" : SoundProblem ?? "not shared")}");
         if (_options.Portal != null)
@@ -317,11 +322,14 @@ public sealed class ScreenSharer : IDisposable
         _codec = codec;
         _hardware = encoder;
         _inProcess = false;
+        _picture = null;
+        Interlocked.Increment(ref _runs);
         lock (_gate) _errors.Clear();
         var portal = _options.Portal;
         var psi = new ProcessStartInfo(_ffmpeg) { RedirectStandardOutput = true, RedirectStandardError = true, RedirectStandardInput = portal != null, UseShellExecute = false, CreateNoWindow = true };
         foreach (var a in FfmpegArgs.Capture(_options, codec, encoder ?? HardwareEncoder.Nvenc, gpuScale)) psi.ArgumentList.Add(a);
         _lastArguments = string.Join(' ', psi.ArgumentList);
+        _encoderDetails = "a separate FFmpeg: " + _lastArguments;
         _startedAt = DateTime.UtcNow;
         var process = Process.Start(psi) ?? throw new InvalidOperationException("FFmpeg did not start.");
         lock (_gate) _process = process;
@@ -386,13 +394,58 @@ public sealed class ScreenSharer : IDisposable
             while (gap > (seen = Interlocked.Read(ref _maxGapMs)) && Interlocked.CompareExchange(ref _maxGapMs, gap, seen) != seen) { }
             while (gap > (seen = Interlocked.Read(ref _longestGapMs)) && Interlocked.CompareExchange(ref _longestGapMs, gap, seen) != seen) { }
         }
-        if (isKey) _pacer.KeySent(tick);
+        long answered = isKey ? _pacer.KeySent(tick) : -1;
+        _stats.Frame(frame.Length, isKey);
         FrameEncoded?.Invoke(frame, isKey);
         await _source.SendFrameAsync(frame, isKey, ct).ConfigureAwait(false);
+        if (answered >= 0)
+        {
+            _stats.Answered(answered);
+            KeyFrameAnswered?.Invoke(answered, frame.Length);
+        }
         Interlocked.Increment(ref _frames);
         Interlocked.Add(ref _bytes, frame.Length);
         if (isKey) Interlocked.Increment(ref _keys);
     }
+
+    private readonly ShareStats _stats = new();
+    private int _runs;
+    private TimeSpan _childCpu;
+    private volatile string _encoderDetails = "";
+    private (int Width, int Height)? _picture;
+
+    /// <summary>What the share has counted about its encoder and key frames, in totals since it began (see <see cref="ShareStats"/>).</summary>
+    public ShareFigures Figures() => _stats.Figures(_pacer, Math.Max(0, Volatile.Read(ref _runs) - 1));
+
+    /// <summary>The largest values since this reader (0 for the sharing panel, 1 for the log) last asked.</summary>
+    public ShareMaxima TakeMaxima(int reader) => _stats.TakeMaxima(reader);
+
+    /// <summary>The time there is for each picture: the time between two, in milliseconds.</summary>
+    public double FrameBudgetMs => 1000.0 / Math.Max(1, _options.Fps);
+
+    /// <summary>The size of the pictures the encoder is given, when this program encodes them (the capture says it as it starts); otherwise null.</summary>
+    public (int Width, int Height)? PictureSize => _picture;
+
+    /// <summary>How the current encoder was set up, for the log: the libraries and options in use, or the FFmpeg command line.</summary>
+    public string EncoderDetails => _encoderDetails;
+
+    /// <summary>The processor time the capture program(s) used so far, including ones that were stopped.</summary>
+    public TimeSpan CaptureCpu
+    {
+        get
+        {
+            Process? p; TimeSpan done;
+            lock (_gate) { p = _process; done = _childCpu; }
+            try { return p is { HasExited: false } ? done + p.TotalProcessorTime : done; }
+            catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException) { return done; }
+        }
+    }
+
+    /// <summary>
+    /// A key frame that a viewer asked for went out: how many milliseconds after the request arrived, and how big it was. Only when this program
+    /// encodes. On another thread, so a handler has to be quick.
+    /// </summary>
+    public event Action<long, int>? KeyFrameAnswered;
 
     /// <summary>Whether this share is encoded inside this program (see <see cref="ScreenOptions.InProcessEncoder"/>) and not by a separate FFmpeg.</summary>
     public bool InProcess => _inProcess;
@@ -415,6 +468,8 @@ public sealed class ScreenSharer : IDisposable
         _codec = ScreenCodec.H264;
         _hardware = HardwareEncoder.Nvenc;
         _inProcess = true;
+        _picture = null;
+        Interlocked.Increment(ref _runs);
         lock (_gate) _errors.Clear();
         var psi = new ProcessStartInfo(_ffmpeg) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
         foreach (var a in FfmpegArgs.CaptureRaw(_options)) psi.ArgumentList.Add(a);
@@ -436,6 +491,7 @@ public sealed class ScreenSharer : IDisposable
                 if (parser.Feed(line, out int w, out int h)) { known = true; size.TrySetResult((w, h)); }
                 return;
             }
+            if (line.StartsWith(' ')) return;   // the indented notes under the output stream ("Metadata:", "encoder: ...") are not problems
             lock (_gate) { _errors.Enqueue(line); while (_errors.Count > 5) _errors.Dequeue(); }
         };
         process.BeginErrorReadLine();
@@ -448,6 +504,8 @@ public sealed class ScreenSharer : IDisposable
         try { encoder = new InProcessEncoder(picture.Width, picture.Height, _options); }
         catch (Exception) { KillProcess(); throw; }   // no NVIDIA encoder to use: the next way of encoding is tried
         using var disposeEncoder = encoder;
+        _picture = picture;
+        _encoderDetails = $"in this program: {encoder.Describe()}; capture: {_lastArguments}";
         EncoderStarted?.Invoke();
 
         var stdout = process.StandardOutput.BaseStream;
@@ -461,11 +519,16 @@ public sealed class ScreenSharer : IDisposable
         {
             while (true)
             {
+                long waitStart = Stopwatch.GetTimestamp();
                 try { await stdout.ReadExactlyAsync(buffer, ct).ConfigureAwait(false); }
                 catch (EndOfStreamException) { break; }
+                _stats.Waited(Stopwatch.GetElapsedTime(waitStart).Ticks);
                 bool force = _pacer.ShouldForce(Environment.TickCount64);
                 ready.Clear();
+                long encodeStart = Stopwatch.GetTimestamp();
                 encoder.Encode(buffer, force, Collect);
+                var took = Stopwatch.GetElapsedTime(encodeStart);
+                _stats.Encoded(took.Ticks, took.TotalMilliseconds > FrameBudgetMs);
                 foreach (var (frame, key) in ready)
                 {
                     // The same rule as for a separate FFmpeg: a key frame is one a viewer can start from, and nothing goes out before the first.
@@ -593,7 +656,9 @@ public sealed class ScreenSharer : IDisposable
         if ((errors.Contains("gfxcapture", StringComparison.OrdinalIgnoreCase) && errors.Contains("No such filter", StringComparison.OrdinalIgnoreCase))
             || errors.Contains("dup_frames", StringComparison.OrdinalIgnoreCase))
             return new InvalidOperationException("This FFmpeg is too old for screen capture: it needs a build from late October 2026 or newer (the Graphics Capture fixes are not in FFmpeg 9.0.2 or earlier).");
-        return new InvalidOperationException("FFmpeg stopped. " + errors);
+        string exit = "";
+        try { if (process.HasExited) exit = $" (exit code {process.ExitCode})"; } catch (InvalidOperationException) { }
+        return new InvalidOperationException("FFmpeg stopped" + exit + ". " + errors);
     }
 
     private void KillProcess()
@@ -604,6 +669,8 @@ public sealed class ScreenSharer : IDisposable
         {
             if (each == null) continue;
             try { if (!each.HasExited) each.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
+            // What it used is added to the total before it is gone, so the total counts every capture program this share has had.
+            if (each == p) { try { lock (_gate) _childCpu += each.TotalProcessorTime; } catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException) { } }
             each.Dispose();
         }
     }
