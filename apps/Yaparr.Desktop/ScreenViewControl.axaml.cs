@@ -35,7 +35,7 @@ public partial class ScreenViewControl : UserControl
         var st = _view.Status;
         return new WatchFigures(_name, _startedAt, _shown, _viewer?.FramesIn ?? 0, _viewer?.BytesIn ?? 0, _view.FramesLost, st.Recovered, _playout.Late,
             _viewer?.Dropped ?? 0, _viewer?.DecodeQueue ?? 0, st.Attached, st.Parent, _view.FramesMissed, _viewer?.PictureKind,
-            st.PacketsSeen, st.GapsNoticed, st.BigGaps, st.ArrivedLate, st.RepairedAfterAsking, st.NacksSent, st.PacketsAsked, st.GaveUp, _quality.Sample);
+            st.PacketsSeen, st.GapsNoticed, st.BigGaps, st.ArrivedLate, st.RepairedAfterAsking, st.NacksSent, st.PacketsAsked, st.GaveUp, _quality.Sample, st.Duplicates);
     }
 
     /// <summary>How the watch went, written when it ends (for the sharing diagnostics, which are often copied after the screen is closed).</summary>

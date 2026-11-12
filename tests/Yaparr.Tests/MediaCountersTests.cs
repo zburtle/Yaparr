@@ -62,7 +62,7 @@ public class MediaCountersTests
         var figures = new WatchFigures("x", 0, 100, 100, 1000, 3, 12, 0, 0, 0, true, null,
             PacketsSeen: 5000, GapsNoticed: 40, BigGaps: 1, ArrivedLate: 9, RepairedAfterAsking: 20, NacksSent: 15, PacketsAsked: 31, GaveUp: 11);
         string line = figures.DescribePackets();
-        Assert.Equal("5000 packets came, 40 were missing when a later one arrived (9 turned up by themselves, 20 after being asked for, 11 never), 15 resend requests for 31 packets, 1 gaps too big to ask about", line);
+        Assert.Equal("5000 packets came, 40 were missing when a later one arrived (9 turned up by themselves, 20 after being asked for, 11 never), 15 resend requests for 31 packets, 1 gaps too big to ask about, 0 copies refused (a packet already taken, or one from too far back)", line);
         Assert.Contains(line, figures.Describe(10_000));
     }
 }

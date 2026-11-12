@@ -149,7 +149,7 @@ public sealed class CallQualityLog
             anything = true;
             long tick = Environment.TickCount64;
             // The first look counts from when the watching began, so nothing is missed from the minute it started in.
-            var (was, at) = _watchBefore.TryGetValue(watch, out var before) ? before : (now with { Shown = 0, FramesIn = 0, BytesIn = 0, Lost = 0, Missed = 0, Recovered = 0, Late = 0, Dropped = 0, PacketsSeen = 0, GapsNoticed = 0, BigGaps = 0, ArrivedLate = 0, RepairedAfterAsking = 0, NacksSent = 0, PacketsAsked = 0, GaveUp = 0 }, now.StartedAt);
+            var (was, at) = _watchBefore.TryGetValue(watch, out var before) ? before : (now with { Shown = 0, FramesIn = 0, BytesIn = 0, Lost = 0, Missed = 0, Recovered = 0, Late = 0, Dropped = 0, PacketsSeen = 0, GapsNoticed = 0, BigGaps = 0, ArrivedLate = 0, RepairedAfterAsking = 0, NacksSent = 0, PacketsAsked = 0, GaveUp = 0, Duplicates = 0 }, now.StartedAt);
             _watchBefore[watch] = (now, tick);
             double seconds = Math.Max(1, (tick - at) / 1000.0);
             double arriving = (now.FramesIn - was.FramesIn) / seconds, drawn = (now.Shown - was.Shown) / seconds, kbps = (now.BytesIn - was.BytesIn) * 8 / 1000.0 / seconds;
@@ -161,7 +161,7 @@ public sealed class CallQualityLog
             var packets = now with
             {
                 PacketsSeen = now.PacketsSeen - was.PacketsSeen, GapsNoticed = now.GapsNoticed - was.GapsNoticed, BigGaps = now.BigGaps - was.BigGaps, ArrivedLate = now.ArrivedLate - was.ArrivedLate,
-                RepairedAfterAsking = now.RepairedAfterAsking - was.RepairedAfterAsking, NacksSent = now.NacksSent - was.NacksSent, PacketsAsked = now.PacketsAsked - was.PacketsAsked, GaveUp = now.GaveUp - was.GaveUp,
+                RepairedAfterAsking = now.RepairedAfterAsking - was.RepairedAfterAsking, NacksSent = now.NacksSent - was.NacksSent, PacketsAsked = now.PacketsAsked - was.PacketsAsked, GaveUp = now.GaveUp - was.GaveUp, Duplicates = now.Duplicates - was.Duplicates,
             };
             string? path = now.Parent is { } parent ? _node()?.GetLink(parent).ToString() : null;
             _log.Write($"call quality: watching{(bad ? " (a problem)" : "")} {now.Name}{(now.PictureKind != null ? " (" + now.PictureKind + ")" : "")}: {arriving:0.0} frames/s arriving at {kbps:0} kbit/s, {drawn:0.0} pictures/s drawn, {lost} frames lost, {skipped} skipped waiting for a key frame, {late} too late, "

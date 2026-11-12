@@ -160,28 +160,42 @@ internal static class MediaWire
 }
 
 /// <summary>Remembers which packets of one sender have arrived, so a packet that comes twice is used once.</summary>
+/// <summary>
+/// Remembers which packet numbers of one source have been taken, so that a second copy of one is refused, and takes a packet that comes late: a repair, which
+/// arrives after the viewer noticed the gap, waited a moment, asked, and the answer came back, by which time hundreds of packets have gone by at a few Mbit/s.
+/// It holds the last <see cref="Size"/> numbers (about six seconds at 6 Mbit/s, well beyond the second and a half a viewer goes on asking for a packet). The
+/// first version held 64, about a tenth of a second at that rate, and refused most repairs as duplicates.
+/// </summary>
 internal sealed class SeqWindow
 {
+    /// <summary>How many numbers behind the newest one still count (a power of two).</summary>
+    public const int Size = 4096;
+
     private bool _any;
     private uint _max;
-    private ulong _bits;
+    private readonly ulong[] _bits = new ulong[Size / 64];   // a ring: the number n is bit n % Size
+
+    private bool Get(uint seq) => (_bits[(int)(seq % Size) >> 6] & (1UL << (int)(seq & 63))) != 0;
+    private void Set(uint seq) => _bits[(int)(seq % Size) >> 6] |= 1UL << (int)(seq & 63);
+    private void Clear(uint seq) => _bits[(int)(seq % Size) >> 6] &= ~(1UL << (int)(seq & 63));
 
     public bool Accept(uint seq)
     {
-        if (!_any) { _any = true; _max = seq; _bits = 1; return true; }
+        if (!_any) { _any = true; _max = seq; Array.Clear(_bits); Set(seq); return true; }
         int diff = (int)(seq - _max);
         if (diff > 0)
         {
-            _bits = diff >= 64 ? 0 : _bits << diff;
-            _bits |= 1;
+            // The numbers that come into the window are unseen; the ring still holds what the numbers a window's length before them said.
+            if (diff >= Size) Array.Clear(_bits);
+            else for (uint s = _max + 1; s != seq; s++) Clear(s);
             _max = seq;
+            Set(seq);
             return true;
         }
         int back = -diff;
-        if (back >= 64) return false;
-        ulong mask = 1UL << back;
-        if ((_bits & mask) != 0) return false;
-        _bits |= mask;
+        if (back >= Size) return false;
+        if (Get(seq)) return false;
+        Set(seq);
         return true;
     }
 }
