@@ -237,7 +237,8 @@ public sealed class ScreenSharer : IDisposable
         var figures = Figures();
         text.AppendLine($"  Key frames: {figures.DescribeKeys()}");
         if (figures.Encodes > 0) text.AppendLine($"  Encoder in this program: {figures.DescribeEncoding(FrameBudgetMs)}; picture {(PictureSize is { } size ? $"{size.Width}x{size.Height}" : "unknown")}");
-        text.AppendLine($"  Capture program restarted {figures.Restarts} times; processor time used by it: {CaptureCpu.TotalSeconds:0.0} s");
+        text.AppendLine(CaptureInProcess ? $"  Capture: in this program (no separate FFmpeg), {(CaptureOnCard ? "pictures kept on the graphics card" : "pictures copied to memory")}, so its processor time is in this program's own"
+                                         : $"  Capture program restarted {figures.Restarts} times; processor time used by it: {CaptureCpu.TotalSeconds:0.0} s");
         text.AppendLine($"  How the encoder was set up: {(EncoderDetails.Length > 0 ? EncoderDetails : "not started yet")}");
         text.AppendLine($"  Longest wait for a frame from FFmpeg since this was last asked: {Interlocked.Read(ref _maxGapMs)} ms; running: {(IsRunning ? "yes" : "no")}");
         text.AppendLine($"  Sound: {(SharingSound ? "shared" : SoundProblem ?? "not shared")}");
@@ -246,7 +247,7 @@ public sealed class ScreenSharer : IDisposable
             bool gst; lock (_gate) gst = _gstreamer is { HasExited: false };
             text.AppendLine($"  GStreamer is {(gst ? "running" : "not running")}; the portal stream is {_options.Portal.Stream.Width}x{_options.Portal.Stream.Height}");
         }
-        text.AppendLine($"  FFmpeg arguments: {_lastArguments}");
+        text.AppendLine($"  {(CaptureInProcess ? "Capture graph" : "FFmpeg arguments")}: {_lastArguments}");
         text.AppendLine($"  FFmpeg and GStreamer last said: {(LastErrors.Length > 0 ? LastErrors : "nothing")}");
         return text.ToString();
     }
@@ -270,23 +271,29 @@ public sealed class ScreenSharer : IDisposable
             {
                 _switch = false;
                 long before = Interlocked.Read(ref _frames);
-                var attempts = new List<(ScreenCodec Codec, HardwareEncoder? Encoder, bool GpuScale, bool InProcess)>();
+                var attempts = new List<(ScreenCodec Codec, HardwareEncoder? Encoder, bool GpuScale, bool InProcess, bool CaptureHere)>();
                 foreach (var (codec, encoder) in Plan(_options))
                 {
-                    // In this program, where it is asked for and can be done (see ScreenOptions.InProcessEncoder); the same encoder as a separate FFmpeg is the next try.
-                    if (WantsInProcess(_options, codec, encoder)) attempts.Add((codec, encoder, false, true));
-                    if (_options.GpuScale && codec == ScreenCodec.H264 && encoder == HardwareEncoder.Nvenc) attempts.Add((codec, encoder, true, false));
-                    attempts.Add((codec, encoder, false, false));
+                    // In this program, where it is asked for and can be done (see ScreenOptions.InProcessEncoder and InProcessCapture): the capture too first,
+                    // then the encoder alone with a separate FFmpeg capturing, then the same encoder in a separate FFmpeg.
+                    if (WantsInProcessCapture(_options, codec, encoder))
+                    {
+                        if (_options.CaptureOnCard) attempts.Add((codec, encoder, true, true, true));   // the pictures stay on the card
+                        attempts.Add((codec, encoder, false, true, true));                              // copied to memory
+                    }
+                    if (WantsInProcess(_options, codec, encoder)) attempts.Add((codec, encoder, false, true, false));
+                    if (_options.GpuScale && codec == ScreenCodec.H264 && encoder == HardwareEncoder.Nvenc) attempts.Add((codec, encoder, true, false, false));
+                    attempts.Add((codec, encoder, false, false, false));
                 }
                 var reasons = new List<string>();
                 for (int i = 0; i < attempts.Count; i++)
                 {
-                    var (attempt, card, onCard, inProcess) = attempts[i];
-                    try { await (inProcess ? RunInProcessAsync(ct) : RunAsync(attempt, card, onCard, ct)).ConfigureAwait(false); break; }
+                    var (attempt, card, onCard, inProcess, captureHere) = attempts[i];
+                    try { await (captureHere ? RunInProcessCaptureAsync(onCard, ct) : inProcess ? RunInProcessAsync(ct) : RunAsync(attempt, card, onCard, ct)).ConfigureAwait(false); break; }
                     catch (Exception) when (_switch) { break; }   // stopped on purpose to share something else
                     catch (Exception ex) when (!ct.IsCancellationRequested && i < attempts.Count - 1 && Interlocked.Read(ref _frames) == before && !WindowGone)
                     {
-                        string? who = card is { } known ? (attempt == ScreenCodec.Av1 ? "AV1 " : "") + HardwareEncoders.Maker(known) + (onCard ? " (scaling on the card)" : "") + (inProcess ? " (in this program)" : "") : null;
+                        string? who = card is { } known ? (attempt == ScreenCodec.Av1 ? "AV1 " : "") + HardwareEncoders.Maker(known) + (onCard ? " (scaling on the card)" : "") + (captureHere ? (onCard ? " (capture and encoding in this program, pictures kept on the card)" : " (capture and encoding in this program)") : inProcess ? " (in this program)" : "") : null;
                         reasons.Add(who != null ? $"{who}: {ex.Message}" : ex.Message);
                         _fallback = string.Join("; ", reasons);
                     }
@@ -322,6 +329,8 @@ public sealed class ScreenSharer : IDisposable
         _codec = codec;
         _hardware = encoder;
         _inProcess = false;
+        _captureInProcess = false;
+        _captureOnCard = false;
         _picture = null;
         Interlocked.Increment(ref _runs);
         lock (_gate) _errors.Clear();
@@ -453,13 +462,121 @@ public sealed class ScreenSharer : IDisposable
     /// <summary>How many key frames were made on the very next picture because a viewer asked for one. Only the in-process encoder can; a separate FFmpeg cannot be asked.</summary>
     public long KeyFramesForced => _pacer.Forced;
 
-    private volatile bool _inProcess;
+    private volatile bool _inProcess, _captureInProcess, _captureOnCard;
+
+    /// <summary>With the capture in this program: the pictures stay on the graphics card all the way to the encoder, and are never copied to memory.</summary>
+    public bool CaptureOnCard => _captureOnCard;
+
+    /// <summary>Whether the capture too runs inside this program (see <see cref="ScreenOptions.InProcessCapture"/>): no FFmpeg is running for this share at all.</summary>
+    public bool CaptureInProcess => _captureInProcess;
+
+    private volatile InProcessCapture? _captureHere;
+
+    /// <summary>With the capture in this program: how many pictures it has handed over, and how many times it was asked and had none yet (0 and 0 otherwise).</summary>
+    public (long Pictures, long EmptyPolls) CaptureCounts => _captureHere is { } c ? (c.Pictures, c.EmptyPolls) : (0, 0);
     private readonly KeyFramePacer _pacer = new();
     private readonly Action _onKeyRequested;
 
     /// <summary>The in-process encoder is asked for and there is something to do it with: NVIDIA's H.264 on Windows or X11, and FFmpeg's libraries.</summary>
     private static bool WantsInProcess(ScreenOptions options, ScreenCodec codec, HardwareEncoder? encoder)
-        => options.InProcessEncoder && options.Portal == null && codec == ScreenCodec.H264 && encoder == HardwareEncoder.Nvenc && FfmpegLibraries.IsAvailable;
+        => options.InProcessEncoder && options.Portal == null && codec == ScreenCodec.H264 && encoder == HardwareEncoder.Nvenc && FfmpegLibraries.IsAvailable
+           && (options.InProcessAsked || InProcessGuard.Allowed);
+
+    /// <summary>The capture in this program is asked for as well, and can be done: Windows Graphics Capture, H.264 on NVIDIA, and the libraries.</summary>
+    private static bool WantsInProcessCapture(ScreenOptions options, ScreenCodec codec, HardwareEncoder? encoder)
+        => options.InProcessCapture && OperatingSystem.IsWindows() && options.X11Display == null && WantsInProcess(options, codec, encoder);
+
+    // Capture here as well: FFmpeg's capture filter runs as a filter graph in this program (see InProcessCapture), and its pictures go to the encoder as
+    // they are. The capture hands over a picture when the screen changes, so the share's own clock decides when a picture is encoded, and the last
+    // one is repeated when there is none: the encoder gets an even 60 a second instead of the bursts of copies the command-line FFmpeg makes.
+    private async Task RunInProcessCaptureAsync(bool onCard, CancellationToken ct)
+    {
+        _codec = ScreenCodec.H264;
+        _hardware = HardwareEncoder.Nvenc;
+        _inProcess = true;
+        _captureInProcess = true;
+        _captureOnCard = onCard;
+        _picture = null;
+        Interlocked.Increment(ref _runs);
+        lock (_gate) _errors.Clear();
+        _startedAt = DateTime.UtcNow;
+        // The program ending in the middle of this (native code crashing) is what InProcessGuard is for: the mark is taken away when the share ends here.
+        InProcessGuard.Begin();
+        try { await RunInProcessCaptureCoreAsync(onCard, ct).ConfigureAwait(false); }
+        finally { InProcessGuard.End(); }
+    }
+
+    private async Task RunInProcessCaptureCoreAsync(bool onCard, CancellationToken ct)
+    {
+        InProcessCapture capture;
+        try { capture = new InProcessCapture(_options, onCard); }
+        catch (Exception ex) when (!ct.IsCancellationRequested) { throw CaptureFailed(ex.Message); }
+        using var disposeCapture = capture;
+        _captureHere = capture;
+        _lastArguments = "in this program: " + capture.Graph;
+        try { await capture.WaitForFirstAsync(TimeSpan.FromSeconds(20), ct).ConfigureAwait(false); }
+        catch (Exception ex) when (!ct.IsCancellationRequested) { throw CaptureFailed(capture.EndedBecause ?? ex.Message); }
+        InProcessEncoder encoder;
+        try { encoder = new InProcessEncoder(capture.Width, capture.Height, _options, capture); }
+        catch (Exception) { throw; }   // no NVIDIA encoder to use, or it will not read pictures from the card: the next way is tried
+        using var disposeEncoder = encoder;
+        _picture = (capture.Width, capture.Height);
+        _encoderDetails = $"in this program: {encoder.Describe()}; capture: in this program{(onCard ? ", pictures kept on the graphics card" : "")}, {capture.Graph}";
+        EncoderStarted?.Invoke();
+
+        long frameTicks = Math.Max(1, Stopwatch.Frequency / Math.Max(1, _options.Fps));
+        long due = Stopwatch.GetTimestamp(), lastArrival = 0;
+        bool started = false;
+        var ready = new List<(byte[] Frame, bool Key)>(2);
+        void Collect(byte[] frame, bool key) => ready.Add((frame, key));
+        while (!ct.IsCancellationRequested)
+        {
+            long wait = due - Stopwatch.GetTimestamp();
+            if (wait > 0) await Task.Delay(TimeSpan.FromSeconds((double)wait / Stopwatch.Frequency), ct).ConfigureAwait(false);
+            // A late tick does not make a burst afterwards: the clock skips ahead instead of catching up.
+            due = Math.Max(due + frameTicks, Stopwatch.GetTimestamp() - frameTicks);
+            using var picture = capture.TakeNewest(out bool isNew, out long arrivedAt);
+            if (picture == null) { if (capture.EndedBecause != null) break; continue; }
+            if (isNew)
+            {
+                // How long the capture took over this picture, as the stand-in for "waiting for the capture" (long gaps are stalls, tiny ones bursts).
+                if (lastArrival != 0) _stats.Waited(Stopwatch.GetElapsedTime(lastArrival, arrivedAt).Ticks, TimeSpan.FromMilliseconds(FrameBudgetMs).Ticks);
+                lastArrival = arrivedAt;
+            }
+            else
+            {
+                if (capture.EndedBecause != null) break;
+                _stats.Repeated();
+            }
+            bool force = _pacer.ShouldForce(Environment.TickCount64);
+            ready.Clear();
+            long encodeStart = Stopwatch.GetTimestamp();
+            encoder.Encode(picture, force, Collect);
+            var took = Stopwatch.GetElapsedTime(encodeStart);
+            _stats.Encoded(took.Ticks, took.TotalMilliseconds > FrameBudgetMs);
+            foreach (var (frame, key) in ready)
+            {
+                bool isKey = key && ScreenCodecs.IsKeyFrame(ScreenCodec.H264, frame);
+                if (!started && !isKey) continue;
+                started = true;
+                await DeliverAsync(frame, isKey, ct).ConfigureAwait(false);
+            }
+        }
+        _captureHere = null;
+        if (!ct.IsCancellationRequested && !_switch) throw CaptureFailed(capture.EndedBecause ?? "The capture stopped.");
+    }
+
+    // Why the capture in this program is not giving pictures, as plainly as it can be said.
+    private Exception CaptureFailed(string said)
+    {
+        if (_portalGone) return new InvalidOperationException("The screen share was stopped from the desktop.");
+        if (_options.WindowHandle is { } handle && !ShareWindows.Exists(handle))
+            return new InvalidOperationException("The window you were sharing was closed.");
+        if ((said.Contains("gfxcapture", StringComparison.OrdinalIgnoreCase) && said.Contains("No such filter", StringComparison.OrdinalIgnoreCase))
+            || said.Contains("dup_frames", StringComparison.OrdinalIgnoreCase))
+            return new InvalidOperationException("These FFmpeg libraries are too old for screen capture: they need a build from late October 2026 or newer (the Graphics Capture fixes are not in FFmpeg 9.0.2 or earlier).");
+        return new InvalidOperationException("The capture in this program stopped. " + said);
+    }
 
     // Capture is still FFmpeg, as a separate program that writes raw pictures; the encoding is done here, one picture at a time, so that a
     // viewer's request for a key frame is answered on the very next picture.
@@ -468,9 +585,18 @@ public sealed class ScreenSharer : IDisposable
         _codec = ScreenCodec.H264;
         _hardware = HardwareEncoder.Nvenc;
         _inProcess = true;
+        _captureInProcess = false;
+        _captureOnCard = false;
         _picture = null;
         Interlocked.Increment(ref _runs);
         lock (_gate) _errors.Clear();
+        InProcessGuard.Begin();
+        try { await RunInProcessEncoderCoreAsync(ct).ConfigureAwait(false); }
+        finally { InProcessGuard.End(); }
+    }
+
+    private async Task RunInProcessEncoderCoreAsync(CancellationToken ct)
+    {
         var psi = new ProcessStartInfo(_ffmpeg) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
         foreach (var a in FfmpegArgs.CaptureRaw(_options)) psi.ArgumentList.Add(a);
         _lastArguments = string.Join(' ', psi.ArgumentList) + "  (encoded in this program)";

@@ -140,7 +140,7 @@ public sealed class CallQualityLog
             if (bad) problem = true;
             var paths = status.Children.Select(c => c.Short + " " + (_node()?.GetLink(c).ToString() ?? "path unknown")).ToList();
             _log.Write(new SharingMinute(fps, wanted, kbps, ScreenCodecs.Describe(sharer.Codec, sharer.Encoder), sharer.InProcess, sharer.PictureSize, interval, maxima, sharer.FrameBudgetMs,
-                gap, resent, dropped, sharer.Source.Viewers.Count, paths, appPercent, capturePercent, process.WorkingSet64 / (1024 * 1024), gcDelta, paused, card, bad, previewPercent, previewKind).Describe());
+                gap, resent, dropped, sharer.Source.Viewers.Count, paths, appPercent, capturePercent, process.WorkingSet64 / (1024 * 1024), gcDelta, paused, card, bad, previewPercent, previewKind, sharer.CaptureInProcess, sharer.CaptureOnCard).Describe());
         }
 
         foreach (var watch in _watches().ToList())

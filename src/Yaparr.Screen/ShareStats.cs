@@ -10,7 +10,7 @@ namespace Yaparr.Screen;
 /// </summary>
 public sealed class ShareStats
 {
-    private long _keys, _keyBytes, _deltas, _deltaBytes, _encodes, _encodeTicks, _overBudget, _reads, _readTicks, _bunched, _stalled, _answers, _answerMs;
+    private long _keys, _keyBytes, _deltas, _deltaBytes, _encodes, _encodeTicks, _overBudget, _reads, _readTicks, _bunched, _stalled, _answers, _answerMs, _repeated;
     private long _keyMaxEver, _deltaMaxEver, _encodeMaxEver, _readMaxEver, _answerMaxEver;
     private readonly long[] _keyMax = new long[2], _deltaMax = new long[2], _encodeMax = new long[2], _readMax = new long[2], _answerMax = new long[2];
 
@@ -66,6 +66,9 @@ public sealed class ShareStats
         Raise(_readMax, ticks);
     }
 
+    /// <summary>The share's own clock came round and the capture had nothing new, so the last picture was encoded again (capture in this program only).</summary>
+    public void Repeated() => Interlocked.Increment(ref _repeated);
+
     /// <summary>A key frame that a viewer asked for went out, this many milliseconds after the request arrived.</summary>
     public void Answered(long ms)
     {
@@ -79,7 +82,8 @@ public sealed class ShareStats
         Interlocked.Read(ref _keys), Interlocked.Read(ref _keyBytes), Interlocked.Read(ref _deltas), Interlocked.Read(ref _deltaBytes),
         Interlocked.Read(ref _encodes), Interlocked.Read(ref _encodeTicks), Interlocked.Read(ref _overBudget), Interlocked.Read(ref _reads), Interlocked.Read(ref _readTicks), Interlocked.Read(ref _bunched), Interlocked.Read(ref _stalled),
         pacer.Requested, pacer.Forced, pacer.Deferred, pacer.Satisfied, Interlocked.Read(ref _answers), Interlocked.Read(ref _answerMs), restarts,
-        Interlocked.Read(ref _keyMaxEver), Interlocked.Read(ref _deltaMaxEver), Interlocked.Read(ref _encodeMaxEver), Interlocked.Read(ref _readMaxEver), Interlocked.Read(ref _answerMaxEver));
+        Interlocked.Read(ref _keyMaxEver), Interlocked.Read(ref _deltaMaxEver), Interlocked.Read(ref _encodeMaxEver), Interlocked.Read(ref _readMaxEver), Interlocked.Read(ref _answerMaxEver),
+        Interlocked.Read(ref _repeated));
 
     /// <summary>The largest values since this reader (0 or 1) last asked, and starts again from nothing.</summary>
     public ShareMaxima TakeMaxima(int reader) => new(
@@ -98,7 +102,7 @@ public readonly record struct ShareMaxima(long KeyBytes, long DeltaBytes, long E
 public readonly record struct ShareFigures(
     long Keys, long KeyBytes, long Deltas, long DeltaBytes, long Encodes, long EncodeTicks, long OverBudget, long Reads, long ReadTicks, long Bunched, long Stalled,
     long KeyRequests, long KeysForced, long KeyRequestsHeldBack, long KeyRequestsMetByRegularKey, long Answers, long AnswerMs, int Restarts,
-    long KeyMaxEver, long DeltaMaxEver, long EncodeMaxTicksEver, long WaitMaxTicksEver, long AnswerMaxMsEver)
+    long KeyMaxEver, long DeltaMaxEver, long EncodeMaxTicksEver, long WaitMaxTicksEver, long AnswerMaxMsEver, long Repeated = 0)
 {
     /// <summary>What happened between <paramref name="before"/> and now (the largest values are not totals, so they are left as they are).</summary>
     public ShareFigures Since(ShareFigures before) => this with
@@ -108,7 +112,7 @@ public readonly record struct ShareFigures(
         Reads = Reads - before.Reads, ReadTicks = ReadTicks - before.ReadTicks, Bunched = Bunched - before.Bunched, Stalled = Stalled - before.Stalled, KeyRequests = KeyRequests - before.KeyRequests,
         KeysForced = KeysForced - before.KeysForced, KeyRequestsHeldBack = KeyRequestsHeldBack - before.KeyRequestsHeldBack,
         KeyRequestsMetByRegularKey = KeyRequestsMetByRegularKey - before.KeyRequestsMetByRegularKey, Answers = Answers - before.Answers,
-        AnswerMs = AnswerMs - before.AnswerMs, Restarts = Restarts - before.Restarts,
+        AnswerMs = AnswerMs - before.AnswerMs, Restarts = Restarts - before.Restarts, Repeated = Repeated - before.Repeated,
     };
 
     private static double Kb(double bytes) => bytes / 1024.0;
@@ -135,6 +139,7 @@ public readonly record struct ShareFigures(
         if (Encodes == 0) return "";
         double encodeMax = maxima?.EncodeMs ?? Ms(EncodeMaxTicksEver), waitMax = maxima?.WaitMs ?? Ms(WaitMaxTicksEver);
         return $"encoding {EncodeAverageMs:0.0} ms per picture on average and {encodeMax:0.0} ms at most ({OverBudget} of {Encodes} over the {budgetMs:0.0} ms there is for each), "
-               + $"waiting for the capture {WaitAverageMs:0.0} ms on average and {waitMax:0.0} ms at most, {Stalled} waits of more than two pictures and {Bunched} pictures that came in a burst straight after another";
+               + $"waiting for the capture {WaitAverageMs:0.0} ms on average and {waitMax:0.0} ms at most, {Stalled} waits of more than two pictures and {Bunched} pictures that came in a burst straight after another"
+               + (Repeated > 0 ? $", {Repeated} pictures repeated because the capture had no new one" : "");
     }
 }

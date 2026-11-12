@@ -16,11 +16,16 @@ public static class FfmpegLibraries
     private static string _why = "", _info = "";
 
     /// <summary>The folder with FFmpeg's libraries, or null when there is none.</summary>
-    public static string? Find(string? appDirectory = null, string? explicitFolder = null)
+    public static string? Find(string? appDirectory = null, string? explicitFolder = null, string? installDirectory = null)
     {
         explicitFolder ??= Environment.GetEnvironmentVariable("YAPARR_FFMPEG_LIBS");
         appDirectory ??= AppContext.BaseDirectory;
-        foreach (var dir in new[] { explicitFolder, Path.Combine(appDirectory, "ffmpeg"), appDirectory })
+        // The libraries come in the same package as ffmpeg.exe (see FfmpegPackage), so the folder of the FFmpeg the app would run, bundled next to the
+        // app or downloaded by it, has them too.
+        string? installed = null;
+        try { installed = Path.GetDirectoryName(FfmpegLocator.Find(appDirectory, pathVariable: "", explicitPath: "", installDirectory: installDirectory)); }
+        catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException) { }
+        foreach (var dir in new[] { explicitFolder, Path.Combine(appDirectory, "ffmpeg"), appDirectory, installed })
             if (!string.IsNullOrWhiteSpace(dir) && Directory.Exists(dir) && HasLibrary(dir)) return Path.GetFullPath(dir);
         return null;
     }
@@ -53,12 +58,30 @@ public static class FfmpegLibraries
     /// <summary>Whether libraries are there and load, without saying why not.</summary>
     public static bool IsAvailable => TryLoad(out _);
 
+    // FFmpeg's libraries need others that sit in the same folder (dav1d, libvpx, the oneVPL dispatcher, winpthreads and the compiler's runtime, see
+    // Yaparr.FFmpeg). The bindings load each library by its full path, and Windows then looks for the ones that library needs in the folder of the app
+    // and the system folders, not in the folder of the library, so the library fails to load. Loading them first, by their full paths, puts them in the
+    // process under their names, and Windows finds them there. The runtime comes first because the others need it.
+    private static void PreloadDependencies(string dir)
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var ownLibraries = new System.Text.RegularExpressions.Regex(@"^(av(codec|filter|format|device|util)|sw(scale|resample)|postproc)-\d+\.dll$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var first = new[] { "libwinpthread-1.dll", "libgcc_s_seh-1.dll", "libstdc++-6.dll" };
+        var others = Directory.EnumerateFiles(dir, "*.dll").Select(Path.GetFileName).Where(n => n != null && !ownLibraries.IsMatch(n!) && !first.Contains(n!, StringComparer.OrdinalIgnoreCase));
+        foreach (var name in first.Concat(others!))
+        {
+            var path = Path.Combine(dir, name!);
+            if (File.Exists(path)) NativeLibrary.TryLoad(path, out _);
+        }
+    }
+
     private static (bool, string) Load()
     {
         var dir = Find();
         if (dir == null) return (false, "FFmpeg's libraries were not found next to the app (an 'ffmpeg' folder) or in YAPARR_FFMPEG_LIBS.");
         try
         {
+            PreloadDependencies(dir);
             ffmpeg.RootPath = dir;
             DynamicallyLoadedBindings.Initialize();
             string licence = ffmpeg.avcodec_license() ?? "";
@@ -120,7 +143,18 @@ public sealed unsafe class InProcessEncoder : IDisposable
     /// <summary>The size of one picture handed to <see cref="Encode"/>: NV12, so 12 bits a pixel.</summary>
     public int PictureBytes => Width * Height * 3 / 2;
 
-    public InProcessEncoder(int width, int height, ScreenOptions options)
+    private bool _onCard;
+
+    /// <summary>Pictures are read from the graphics card (see <see cref="InProcessCapture.OnCard"/>), not handed over as bytes.</summary>
+    public bool OnCard => _onCard;
+
+    public InProcessEncoder(int width, int height, ScreenOptions options) : this(width, height, options, null) { }
+
+    /// <summary>
+    /// With <paramref name="capture"/> keeping its pictures on the card, the encoder takes Direct3D 11 pictures from it as they are (NVENC converts them
+    /// itself); otherwise it takes NV12 bytes.
+    /// </summary>
+    public InProcessEncoder(int width, int height, ScreenOptions options, InProcessCapture? capture)
     {
         if (!FfmpegLibraries.TryLoad(out var why)) throw new PlatformNotSupportedException(why);
         if (width < 16 || height < 16 || width % 2 != 0 || height % 2 != 0) throw new ArgumentException($"A picture of {width}x{height} cannot be encoded.");
@@ -135,7 +169,9 @@ public sealed unsafe class InProcessEncoder : IDisposable
             _context->height = height;
             _context->time_base = new AVRational { num = 1, den = options.Fps };
             _context->framerate = new AVRational { num = options.Fps, den = 1 };
-            _context->pix_fmt = AVPixelFormat.AV_PIX_FMT_NV12;
+            _onCard = capture is { OnCard: true };
+            _context->pix_fmt = _onCard ? AVPixelFormat.AV_PIX_FMT_D3D11 : AVPixelFormat.AV_PIX_FMT_NV12;
+            if (_onCard) _context->hw_frames_ctx = ffmpeg.av_buffer_ref(capture!.HardwareFrames);
             _context->bit_rate = options.Kbps * 1000L;
             _context->rc_max_rate = (long)(options.Kbps * 1500L);
             _context->rc_buffer_size = (int)(options.Kbps * 1500L);
@@ -146,12 +182,16 @@ public sealed unsafe class InProcessEncoder : IDisposable
             SetOption("delay", "0");
             Check(ffmpeg.avcodec_open2(_context, codec, null), "starting the NVIDIA encoder");
             _description = $"h264_nvenc {width}x{height} at {options.Fps} fps, {options.Kbps} kbit/s (at most {options.Kbps * 1.5:0}, buffer {options.Kbps * 1.5:0}), "
-                           + $"a key frame every {_context->gop_size} pictures, options {string.Join(' ', FfmpegArgs.NvencH264Options.Select(o => o.Name + "=" + o.Value))} delay=0; libraries {FfmpegLibraries.Describe()}";
-            _frame = ffmpeg.av_frame_alloc();
-            _frame->format = (int)AVPixelFormat.AV_PIX_FMT_NV12;
-            _frame->width = width;
-            _frame->height = height;
-            Check(ffmpeg.av_frame_get_buffer(_frame, 0), "allocating a picture");
+                           + $"a key frame every {_context->gop_size} pictures, options {string.Join(' ', FfmpegArgs.NvencH264Options.Select(o => o.Name + "=" + o.Value))} delay=0; "
+                           + (_onCard ? "pictures read from the graphics card (Direct3D 11); " : "") + $"libraries {FfmpegLibraries.Describe()}";
+            if (!_onCard)
+            {
+                _frame = ffmpeg.av_frame_alloc();
+                _frame->format = (int)AVPixelFormat.AV_PIX_FMT_NV12;
+                _frame->width = width;
+                _frame->height = height;
+                Check(ffmpeg.av_frame_get_buffer(_frame, 0), "allocating a picture");
+            }
             _packet = ffmpeg.av_packet_alloc();
         }
         catch
@@ -177,6 +217,7 @@ public sealed unsafe class InProcessEncoder : IDisposable
     /// </summary>
     public void Encode(ReadOnlySpan<byte> picture, bool forceKey, Action<byte[], bool> output)
     {
+        if (_onCard) throw new InvalidOperationException("This encoder takes its pictures from the graphics card, not as bytes.");
         if (picture.Length != PictureBytes) throw new ArgumentException($"A picture is {PictureBytes} bytes, not {picture.Length}.", nameof(picture));
         if (_context == null) throw new ObjectDisposedException(nameof(InProcessEncoder));
         Check(ffmpeg.av_frame_make_writable(_frame), "preparing a picture");
@@ -188,6 +229,29 @@ public sealed unsafe class InProcessEncoder : IDisposable
         _frame->pts = _pts++;
         _frame->pict_type = forceKey ? AVPictureType.AV_PICTURE_TYPE_I : AVPictureType.AV_PICTURE_TYPE_NONE;
         Check(ffmpeg.avcodec_send_frame(_context, _frame), "encoding a picture");
+        ReceivePackets(output);
+    }
+
+    /// <summary>
+    /// Encodes a picture that <see cref="InProcessCapture"/> made, as it is: the encoder reads it from FFmpeg's memory, so nothing is copied here.
+    /// Otherwise as <see cref="Encode(ReadOnlySpan{byte}, bool, Action{byte[], bool})"/>.
+    /// </summary>
+    public void Encode(CapturedPicture picture, bool forceKey, Action<byte[], bool> output)
+    {
+        if (_context == null) throw new ObjectDisposedException(nameof(InProcessEncoder));
+        var frame = picture.Frame;
+        if (frame == null) throw new ObjectDisposedException(nameof(CapturedPicture));
+        var format = _onCard ? AVPixelFormat.AV_PIX_FMT_D3D11 : AVPixelFormat.AV_PIX_FMT_NV12;
+        if (frame->format != (int)format || frame->width != Width || frame->height != Height)
+            throw new ArgumentException($"The encoder takes {(_onCard ? "Direct3D 11" : "NV12")} pictures of {Width}x{Height}, not {frame->width}x{frame->height}.", nameof(picture));
+        frame->pts = _pts++;
+        frame->pict_type = forceKey ? AVPictureType.AV_PICTURE_TYPE_I : AVPictureType.AV_PICTURE_TYPE_NONE;
+        Check(ffmpeg.avcodec_send_frame(_context, frame), "encoding a picture");
+        ReceivePackets(output);
+    }
+
+    private void ReceivePackets(Action<byte[], bool> output)
+    {
         while (true)
         {
             int result = ffmpeg.avcodec_receive_packet(_context, _packet);

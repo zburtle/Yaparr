@@ -1,4 +1,5 @@
 ﻿using Avalonia.Controls;
+using System.Diagnostics;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Yaparr.Chat;
@@ -126,14 +127,20 @@ public partial class MainWindow
             var what = options.Portal?.IsWindow ?? options.WindowHandle != null ? "window" : "screen";
             var sharer = ScreenSharer.Start(_node, room, $"{_settings.DisplayName}'s {what}", options, ffmpeg);
             _log.Write($"sharing your {what}: {options.Fps} fps, {options.Kbps} kbit/s, up to {options.MaxWidth}x{options.MaxHeight}, a key frame every {options.KeyFrameSeconds:0.##} s, "
-                       + $"asked for: {options.Codec}{(options.Encoder is { } asked ? " on " + asked : "")}{(options.GpuScale ? ", scaling on the card" : "")}{(options.InProcessEncoder ? ", encoding in this program" : "")}, "
+                       + $"asked for: {options.Codec}{(options.Encoder is { } asked ? " on " + asked : "")}{(options.GpuScale ? ", scaling on the card" : "")}{(options.InProcessCapture ? (options.CaptureOnCard ? ", capturing and encoding in this program, pictures kept on the card" : ", capturing and encoding in this program, pictures copied to memory") : options.InProcessEncoder ? ", encoding in this program" : "")}, "
                        + $"{(options.ShareSound ? "with sound" : "no sound")}, {(options.ShowCursor ? "with" : "without")} the pointer, FFmpeg {ffmpeg}");
             if (options.Portal == null)
                 _log.Write(options.WindowHandle != null ? "what is shared: a window" : options.Display is { Width: > 0 } shown ? $"what is shared: a monitor of {shown.Width}x{shown.Height} at {shown.X},{shown.Y}{(shown.Primary ? ", the primary one" : "")}" : "what is shared: a monitor");
             if (options.Encoder is null or Yaparr.Screen.HardwareEncoder.Nvenc)
                 _ = Task.Run(async () => { if (await NvidiaSmi.InfoAsync() is { } card) _log.Write("graphics card: " + card); });
             if (options.InProcessEncoder)
-                _log.Write(FfmpegLibraries.TryLoad(out var libraryProblem) ? "in-process encoder: FFmpeg libraries " + FfmpegLibraries.Describe() : "in-process encoder asked for but not usable: " + libraryProblem);
+            {
+                if (!FfmpegLibraries.TryLoad(out var libraryProblem))
+                    _log.Write($"in-process capture and encoding {(options.InProcessAsked ? "asked for" : "is the default here")} but not usable: {libraryProblem} A separate FFmpeg is used.");
+                else if (!options.InProcessAsked && !InProcessGuard.Allowed)
+                    _log.Write($"in-process capture and encoding is the default here but off: the program ended in the middle of such a share {InProcessGuard.UncleanEndings} times in a row (see {InProcessGuard.MarkFile}); a separate FFmpeg is used until a share ends well, or YAPARR_INPROCESS=capture asks for it.");
+                else _log.Write("in-process encoder: FFmpeg libraries " + FfmpegLibraries.Describe());
+            }
             // Which encoder is really in use (not only which was asked for): in this program, a separate FFmpeg, or the next one after a failure.
             sharer.EncoderStarted += () =>
             {
@@ -159,6 +166,8 @@ public partial class MainWindow
                 conv.Add(MessageVm.System("The sound stopped: " + ex.Message + " The picture is still shared."));
             });
             _sharer = sharer;
+            _shareStartedTicks = Stopwatch.GetTimestamp();
+            using (var me = Process.GetCurrentProcess()) _shareAppCpu = me.TotalProcessorTime;
             _sharerConv = conv;
             GuardSharingWithoutVoice(sharer, conv, room);
             _sharerStats = new SharerStatsView(sharer, options.Fps, room);
@@ -242,12 +251,21 @@ public partial class MainWindow
     private readonly List<string> _lastWatchReports = new();
 
     /// <summary>What a share did, in one line for the log: the encoder, the frames and key frames, the encoder's timings and the capture's processor time.</summary>
+    // When the share began and what this program had used by then, so that the totals can say what the share cost this program (a share too short for
+    // the per-minute line, or one the line missed, still says it).
+    private long _shareStartedTicks;
+    private TimeSpan _shareAppCpu;
+
     private string SharingSummary(ScreenSharer sharer)
     {
+        double seconds = _shareStartedTicks == 0 ? 0 : Stopwatch.GetElapsedTime(_shareStartedTicks).TotalSeconds;
+        TimeSpan used;
+        using (var me = Process.GetCurrentProcess()) used = me.TotalProcessorTime - _shareAppCpu;
+        string program = seconds >= 1 ? $", this program used {used.TotalSeconds:0.0} s of processor time over {seconds:0} s ({used.TotalSeconds / seconds * 100:0}% of a core)" : "";
         var figures = sharer.Figures();
         return $"{ScreenCodecs.Describe(sharer.Codec, sharer.Encoder)}{(sharer.InProcess ? ", in this program" : "")}{(sharer.FallbackReason is { } why ? $" (not used: {why})" : "")}, "
                + $"{sharer.Frames} frames sent; {figures.DescribeKeys()}{(figures.Encodes > 0 ? "; " + figures.DescribeEncoding(sharer.FrameBudgetMs) : "")}; "
-               + $"capture program used {sharer.CaptureCpu.TotalSeconds:0.0} s of processor time, restarted {figures.Restarts} times, "
+               + (sharer.CaptureInProcess ? (sharer.CaptureOnCard ? "capture in this program, pictures kept on the card" : "capture in this program, pictures copied to memory") : $"capture program used {sharer.CaptureCpu.TotalSeconds:0.0} s of processor time, restarted {figures.Restarts} times") + program + ", "
                + $"the preview's decoder {SharePreview.DecoderCpu.TotalSeconds:0.0} s{(SharePreview.DecoderKind is { } kind ? " (" + kind + ")" : "")}";
     }
 

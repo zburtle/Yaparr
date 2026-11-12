@@ -21,14 +21,15 @@ public sealed record FfmpegPackage(string Version, Uri Url, string Sha256, long 
     /// x264; see https://github.com/zburtle/Yaparr.FFmpeg) of commit 17a4a474f4 of FFmpeg's development branch, N-128212 of
     /// 30 October 2026, which has the Graphics Capture fixes of 24 October 2026. No numbered release has those fixes yet (8.1.3
     /// and 9.0.2 capture one frame and stop). It was checked with the FfmpegIntegration tests and the demo. Move to a numbered
-    /// release when one includes the fixes. The file is the asset of the Yaparr.FFmpeg release ffmpeg-6 (the same FFmpeg as ffmpeg-3 and later, with AV1 added from ffmpeg-6: the graphics cards' AV1 encoders
-    /// and the dav1d decoder), which also holds the exact source; see README.md next to this file.
+    /// release when one includes the fixes. The file is the asset of the Yaparr.FFmpeg release ffmpeg-7 (the same FFmpeg as ffmpeg-3 and later, with AV1 added from ffmpeg-6: the graphics cards' AV1 encoders
+    /// and the dav1d decoder; and from ffmpeg-7 Direct3D 12 decoding and scaling on the card, and shared libraries: ffmpeg.exe and FFmpeg's DLLs side by side, which
+    /// the app also loads into itself to share a screen without a separate program), which also holds the exact source; see README.md next to this file.
     /// </summary>
     public static FfmpegPackage Default { get; } = new(
-        "g17a4a474f4-yaparr-6-win64",
-        new Uri("https://github.com/zburtle/Yaparr.FFmpeg/releases/download/ffmpeg-6/ffmpeg-yaparr-g17a4a474f4-win64.zip"),
-        "6d92d97c263da3f71e923215258969d361709f09dc12abef677a6b4eb37dd07a",
-        4_171_419,
+        "g17a4a474f4-yaparr-7-win64",
+        new Uri("https://github.com/zburtle/Yaparr.FFmpeg/releases/download/ffmpeg-7/ffmpeg-yaparr-g17a4a474f4-win64.zip"),
+        "064b72c6bbd13938be3afa203c1c28c351822b404647fd044167ab4d625ef1a9",
+        6_652_814,
         "ffmpeg-yaparr-g17a4a474f4-win64/bin/ffmpeg.exe",
         "ffmpeg-yaparr-g17a4a474f4-win64/LICENSE.txt",
         "ffmpeg-yaparr-g17a4a474f4-win64");
@@ -138,6 +139,7 @@ public static class FfmpegInstaller
             using (var archive = ZipFile.OpenRead(zip))
             {
                 Extract(archive, package.ExePathInZip, Path.Combine(staging, ExeName));
+                ExtractLibraries(archive, package.ExePathInZip, staging);
                 if (package.LicensePathInZip != null) Extract(archive, package.LicensePathInZip, Path.Combine(staging, "LICENSE.txt"), required: false);
                 if (package.NoticesRoot != null) ExtractNotices(archive, package.NoticesRoot, staging);
             }
@@ -159,6 +161,22 @@ public static class FfmpegInstaller
         finally
         {
             try { Directory.Delete(work, recursive: true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
+    }
+
+    // The libraries of a shared build (the DLLs, or the .so files) sit in the zip next to the program and must sit next to it afterwards: Windows looks for a
+    // DLL in the folder of the program that needs it, and the app loads them from there too. Only files, only of those kinds, only from that folder.
+    private static void ExtractLibraries(ZipArchive archive, string exePathInZip, string destination)
+    {
+        int slash = exePathInZip.LastIndexOf('/');
+        string folder = slash < 0 ? "" : exePathInZip[..(slash + 1)];
+        foreach (var entry in archive.Entries)
+        {
+            if (entry.FullName.EndsWith('/') || !entry.FullName.StartsWith(folder, StringComparison.Ordinal)) continue;
+            string name = entry.FullName[folder.Length..];
+            if (name.Contains('/') || name.Length == 0) continue;
+            if (!(name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) || name.Contains(".so", StringComparison.Ordinal))) continue;
+            entry.ExtractToFile(Path.Combine(destination, name), overwrite: true);
         }
     }
 

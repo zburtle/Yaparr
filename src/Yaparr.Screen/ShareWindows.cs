@@ -28,6 +28,7 @@ public static class ShareWindows
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
     [DllImport("user32.dll", EntryPoint = "GetWindowLongW")] private static extern int GetWindowLong(IntPtr hwnd, int index);
     [DllImport("dwmapi.dll")] private static extern int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out int value, int size);
+    [DllImport("user32.dll")] private static extern bool GetClientRect(IntPtr hwnd, out Rect rect);
 
     private const int GWL_EXSTYLE = -20, WS_EX_TOOLWINDOW = 0x80, DWMWA_CLOAKED = 14;
 
@@ -38,6 +39,17 @@ public static class ShareWindows
         if (!OperatingSystem.IsWindows()) return 0;
         GetWindowThreadProcessId((IntPtr)handle, out uint pid);
         return (int)pid;
+    }
+
+    /// <summary>
+    /// The size of the picture Windows Graphics Capture makes of the window: what is inside it, its client area, without the title bar and the borders
+    /// (measured: an 800x500 window gives a 784x460 picture, the client area of 784x461 made even). Null where that cannot be asked, and for a minimised window.
+    /// </summary>
+    public static (int Width, int Height)? CaptureSize(long handle)
+    {
+        if (!OperatingSystem.IsWindows() || IsIconic((IntPtr)handle) || !GetClientRect((IntPtr)handle, out var rect)) return null;
+        int width = rect.Right - rect.Left, height = rect.Bottom - rect.Top;
+        return width >= 16 && height >= 16 ? (width, height) : null;
     }
 
     /// <summary>Whether the window is still open.</summary>
