@@ -5,11 +5,16 @@ using Yaparr.Chat;
 namespace Yaparr.Screen;
 
 /// <summary>
-/// A preview instead of a watch: only key frames are decoded (about one a second, a small part of what decoding every frame costs), and the
-/// pictures are scaled down by FFmpeg to fit this box, so reading, converting and drawing them costs next to nothing too.
+/// A preview instead of a watch: the pictures are scaled down by FFmpeg to fit this box, so reading, converting and drawing them costs little,
+/// and no more than <paramref name="Fps"/> of them a second are kept. With one or two a second only key frames are decoded (a small part of
+/// what decoding every frame costs); with more, every frame is decoded (on the graphics card where there is one), because a frame cannot be
+/// decoded without the ones before it, and that is where the processor time goes.
 /// </summary>
-public sealed record PreviewSize(int MaxWidth, int MaxHeight)
+public sealed record PreviewSize(int MaxWidth, int MaxHeight, int Fps = 1)
 {
+    /// <summary>One or two pictures a second is what the key frames give (a key frame about every second): nothing in between is decoded.</summary>
+    public bool KeyFramesOnly => Fps <= 2;
+
     /// <summary>The size a <paramref name="width"/> x <paramref name="height"/> picture is shown at: as large as fits, never larger than it is, both sides even.</summary>
     public (int Width, int Height) Fit(int width, int height)
     {
@@ -52,7 +57,7 @@ public sealed class ScreenViewer : IDisposable
     public ScreenViewer(IMediaFrameSource view, string? ffmpegPath = null, bool gpuDecode = false, PreviewSize? preview = null)
     {
         _preview = preview;
-        _gpu = gpuDecode && OperatingSystem.IsWindows() && preview == null;
+        _gpu = OperatingSystem.IsWindows() && (preview == null ? gpuDecode : !preview.KeyFramesOnly);
         _view = view;
         _ffmpeg = ffmpegPath ?? FfmpegLocator.Find() ?? throw new FileNotFoundException("FFmpeg was not found. Put ffmpeg.exe in an 'ffmpeg' folder next to the app, or set YAPARR_FFMPEG.");
         _view.FrameReceived += OnFrame;
@@ -116,7 +121,7 @@ public sealed class ScreenViewer : IDisposable
 
     private void OnFrame(MediaFrame frame)
     {
-        if (_preview != null && !frame.IsKey) return;   // not even copied: a preview shows key frames only
+        if (_preview is { KeyFramesOnly: true } && !frame.IsKey) return;   // not even copied: this preview shows key frames only
         var data = frame.Data.ToArray();
         Interlocked.Increment(ref _framesIn);
         Interlocked.Add(ref _bytesIn, data.Length);
@@ -140,7 +145,7 @@ public sealed class ScreenViewer : IDisposable
     {
         var psi = new ProcessStartInfo(_ffmpeg) { RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
         var shown = _preview?.Fit(width, height);
-        foreach (var a in FfmpegArgs.DecodeForViewer(codec, _gpu, shown)) psi.ArgumentList.Add(a);
+        foreach (var a in FfmpegArgs.DecodeForViewer(codec, _gpu, shown, _preview?.KeyFramesOnly ?? true)) psi.ArgumentList.Add(a);
         var process = Process.Start(psi) ?? throw new InvalidOperationException("FFmpeg did not start.");
         process.ErrorDataReceived += (_, e) =>
         {
@@ -222,7 +227,7 @@ public sealed class ScreenViewer : IDisposable
                     {
                         // A preview gets a picture only now and then, and FFmpeg holds one picture back until the next goes in, so the key frame goes in twice
                         // (two identical pictures come out, at once; the second is dropped when drawn).
-                        for (int copy = 0; copy < (_owner._preview != null ? 2 : 1); copy++)
+                        for (int copy = 0; copy < (_owner._preview is { KeyFramesOnly: true } ? 2 : 1); copy++)
                         {
                             await stdin.WriteAsync(frame, ct).ConfigureAwait(false);
                             await stdin.WriteAsync(H264.EndMarker.ToArray(), ct).ConfigureAwait(false); // the picture is complete: no waiting for the next
@@ -248,9 +253,17 @@ public sealed class ScreenViewer : IDisposable
                 var (outWidth, outHeight) = Out;
                 int size = outWidth * outHeight * 4;
                 var raw = new byte[Nv12.Size(outWidth, outHeight)];
+                // A preview of every frame keeps no more than its rate: the rest are read (they have to be) but not converted or drawn.
+                long keepEvery = _owner._preview is { KeyFramesOnly: false } p ? Stopwatch.Frequency / Math.Max(1, p.Fps) : 0, last = 0;
                 while (!ct.IsCancellationRequested)
                 {
                     await stdout.ReadExactlyAsync(raw, ct).ConfigureAwait(false);
+                    if (keepEvery > 0)
+                    {
+                        long now = Stopwatch.GetTimestamp();
+                        if (last != 0 && now - last < keepEvery * 9 / 10) continue;
+                        last = now;
+                    }
                     var picture = _owner.Rent(size);
                     Nv12.ToBgra(raw, outWidth, outHeight, picture);
                     Interlocked.Increment(ref _owner._pictures);
