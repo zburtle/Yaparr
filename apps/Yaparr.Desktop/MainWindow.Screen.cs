@@ -125,15 +125,30 @@ public partial class MainWindow
         {
             var what = options.Portal?.IsWindow ?? options.WindowHandle != null ? "window" : "screen";
             var sharer = ScreenSharer.Start(_node, room, $"{_settings.DisplayName}'s {what}", options, ffmpeg);
-            _log.Write($"sharing your {what}: {options.Fps} fps, {options.Kbps} kbit/s, up to {options.MaxWidth}x{options.MaxHeight}, FFmpeg {ffmpeg}");
+            _log.Write($"sharing your {what}: {options.Fps} fps, {options.Kbps} kbit/s, up to {options.MaxWidth}x{options.MaxHeight}, a key frame every {options.KeyFrameSeconds:0.##} s, "
+                       + $"asked for: {options.Codec}{(options.Encoder is { } asked ? " on " + asked : "")}{(options.GpuScale ? ", scaling on the card" : "")}{(options.InProcessEncoder ? ", encoding in this program" : "")}, "
+                       + $"{(options.ShareSound ? "with sound" : "no sound")}, {(options.ShowCursor ? "with" : "without")} the pointer, FFmpeg {ffmpeg}");
+            if (options.Portal == null)
+                _log.Write(options.WindowHandle != null ? "what is shared: a window" : options.Display is { Width: > 0 } shown ? $"what is shared: a monitor of {shown.Width}x{shown.Height} at {shown.X},{shown.Y}{(shown.Primary ? ", the primary one" : "")}" : "what is shared: a monitor");
+            if (options.Encoder is null or Yaparr.Screen.HardwareEncoder.Nvenc)
+                _ = Task.Run(async () => { if (await NvidiaSmi.InfoAsync() is { } card) _log.Write("graphics card: " + card); });
+            if (options.InProcessEncoder)
+                _log.Write(FfmpegLibraries.TryLoad(out var libraryProblem) ? "in-process encoder: FFmpeg libraries " + FfmpegLibraries.Describe() : "in-process encoder asked for but not usable: " + libraryProblem);
+            // Which encoder is really in use (not only which was asked for): in this program, a separate FFmpeg, or the next one after a failure.
+            sharer.EncoderStarted += () =>
+            {
+                _log.Write($"screen sharing encoder: {ScreenCodecs.Describe(sharer.Codec, sharer.Encoder)}{(sharer.InProcess ? ", in this program" : ", separate FFmpeg")}{(sharer.FallbackReason is { } reason ? $" (not used: {reason})" : "")}");
+                _log.Write("screen sharing encoder set up as: " + sharer.EncoderDetails);
+            };
+            sharer.KeyFrameAnswered += (ms, bytes) => _log.Write($"screen sharing: made a key frame {ms} ms after a viewer asked for one ({bytes / 1024} KB)");
             sharer.Ended += ex => UI(() =>
             {
                 if (_sharer != sharer) return;
-                _log.Write($"screen sharing ended: {ScreenCodecs.Describe(sharer.Codec, sharer.Encoder)}{(sharer.FallbackReason is { } why ? $" (not used: {why})" : "")}, {sharer.Frames} frames sent");
-                StopSharingCore();
+                _log.Write("screen sharing ended: " + SharingSummary(sharer));
+                StopSharingCore(writeSummary: false);
                 if (ex != null)
                 {
-                    _log.Write("screen sharing stopped: " + ex.Message + (sharer.LastErrors.Length > 0 ? " | FFmpeg: " + sharer.LastErrors : ""));
+                    _log.Write($"screen sharing stopped: {ex.Message} ({ex.GetType().Name})" + (sharer.LastErrors.Length > 0 ? " | FFmpeg: " + sharer.LastErrors : ""));
                     StatusText.Text = "Screen sharing stopped: " + ex.Message;
                 }
             });
@@ -149,7 +164,7 @@ public partial class MainWindow
             _sharerStats = new SharerStatsView(sharer, options.Fps, room);
             _sharerStats.IsMine = d => _node != null && _node.IsMyDevice(d);
             _sharerStats.ViewersChanged += (came, went) => { if (came > 0) _sounds.ViewerJoined(); else if (went > 0) _sounds.ViewerLeft(); };
-            _sharerStats.StopRequested += StopSharingCore;
+            _sharerStats.StopRequested += () => StopSharingCore();
             _sharerStats.ChangeRequested += () => _ = ChangeSharedAsync(sharer, conv);
             SharerPanel.Child = _sharerStats;
             SharePreview.Attach(sharer, ffmpeg, wholeMonitor: what == "screen");
@@ -226,10 +241,21 @@ public partial class MainWindow
     // How the last few watches went, kept after the picture is closed (the sharing diagnostics are often copied afterwards).
     private readonly List<string> _lastWatchReports = new();
 
-    private void StopSharingCore()
+    /// <summary>What a share did, in one line for the log: the encoder, the frames and key frames, the encoder's timings and the capture's processor time.</summary>
+    private static string SharingSummary(ScreenSharer sharer)
+    {
+        var figures = sharer.Figures();
+        return $"{ScreenCodecs.Describe(sharer.Codec, sharer.Encoder)}{(sharer.InProcess ? ", in this program" : "")}{(sharer.FallbackReason is { } why ? $" (not used: {why})" : "")}, "
+               + $"{sharer.Frames} frames sent; {figures.DescribeKeys()}{(figures.Encodes > 0 ? "; " + figures.DescribeEncoding(sharer.FrameBudgetMs) : "")}; "
+               + $"capture program used {sharer.CaptureCpu.TotalSeconds:0.0} s of processor time, restarted {figures.Restarts} times";
+    }
+
+    // The totals go to the log when a share stops (the ended handler writes its own, with the reason, and asks not to).
+    private void StopSharingCore(bool writeSummary = true)
     {
         var sharer = _sharer;
         if (sharer != null) _lastSharingReport = sharer.Describe();
+        if (sharer != null && writeSummary) _log.Write("screen sharing stopped: " + SharingSummary(sharer));
         var conv = _sharerConv;
         _sharer = null;
         _sharerConv = null;

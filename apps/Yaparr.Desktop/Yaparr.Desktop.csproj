@@ -34,6 +34,12 @@
     <None Include="..\..\THIRD-PARTY-NOTICES-SkiaSharp.txt" Link="THIRD-PARTY-NOTICES-SkiaSharp.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!-- For trying the in-process encoder (the "in-process encoder" launch profile sets YAPARR_INPROCESS=1): FFmpeg's shared libraries, fetched by
+       tools\Get-FfmpegLibs.ps1 into artifacts\ffmpeg-libs, are copied next to the program in an "ffmpeg" folder, in Debug builds only. Nothing is shipped from this. -->
+  <ItemGroup Condition="'$(Configuration)' == 'Debug' And Exists('$(MSBuildThisFileDirectory)..\..\artifacts\ffmpeg-libs')">
+    <None Include="$(MSBuildThisFileDirectory)..\..\artifacts\ffmpeg-libs\*.dll" Link="ffmpeg\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <AvaloniaResource Include="..\..\assets\logo\png\yaparr-256.png" Link="Assets\yaparr.png" />
   </ItemGroup>

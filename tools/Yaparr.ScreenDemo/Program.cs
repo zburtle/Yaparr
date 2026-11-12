@@ -131,7 +131,7 @@ var cpu = Cpu() - cpu0;
 
 Console.WriteLine();
 Console.WriteLine($"Viewer decoding: {(viewer.GpuDecoding ? "on the graphics card" : "on the processor")}");
-Console.WriteLine($"Codec: {ScreenCodecs.Describe(sharer.Codec, sharer.Encoder)}{(sharer.FallbackReason is { } why ? $" (not used: {why})" : "")}");
+Console.WriteLine($"Codec: {ScreenCodecs.Describe(sharer.Codec, sharer.Encoder)}{(sharer.InProcess ? ", encoded in this program" : "")}{(sharer.FallbackReason is { } why ? $" (not used: {why})" : "")}");
 Console.WriteLine($"First picture after {firstPictureMs} ms");
 Console.WriteLine($"Sent {sharer.Frames} frames, {sharer.Bytes * 8 / 1000 / seconds} kbit/s on average ({sharer.KeyFrames} key frames)");
 Console.WriteLine($"Viewer got {viewer.Pictures} pictures ({viewer.Pictures / (double)seconds:0.0} per second), dropped {viewer.Dropped}, lost {view.FramesLost}");
