@@ -188,6 +188,28 @@ public sealed unsafe class InProcessEncoder : IDisposable
         _frame->pts = _pts++;
         _frame->pict_type = forceKey ? AVPictureType.AV_PICTURE_TYPE_I : AVPictureType.AV_PICTURE_TYPE_NONE;
         Check(ffmpeg.avcodec_send_frame(_context, _frame), "encoding a picture");
+        ReceivePackets(output);
+    }
+
+    /// <summary>
+    /// Encodes a picture that <see cref="InProcessCapture"/> made, as it is: the encoder reads it from FFmpeg's memory, so nothing is copied here.
+    /// Otherwise as <see cref="Encode(ReadOnlySpan{byte}, bool, Action{byte[], bool})"/>.
+    /// </summary>
+    public void Encode(CapturedPicture picture, bool forceKey, Action<byte[], bool> output)
+    {
+        if (_context == null) throw new ObjectDisposedException(nameof(InProcessEncoder));
+        var frame = picture.Frame;
+        if (frame == null) throw new ObjectDisposedException(nameof(CapturedPicture));
+        if (frame->format != (int)AVPixelFormat.AV_PIX_FMT_NV12 || frame->width != Width || frame->height != Height)
+            throw new ArgumentException($"The encoder takes NV12 pictures of {Width}x{Height}, not {frame->width}x{frame->height}.", nameof(picture));
+        frame->pts = _pts++;
+        frame->pict_type = forceKey ? AVPictureType.AV_PICTURE_TYPE_I : AVPictureType.AV_PICTURE_TYPE_NONE;
+        Check(ffmpeg.avcodec_send_frame(_context, frame), "encoding a picture");
+        ReceivePackets(output);
+    }
+
+    private void ReceivePackets(Action<byte[], bool> output)
+    {
         while (true)
         {
             int result = ffmpeg.avcodec_receive_packet(_context, _packet);

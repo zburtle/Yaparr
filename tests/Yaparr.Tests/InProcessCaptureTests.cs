@@ -1,0 +1,93 @@
+using Yaparr.Chat;
+using Yaparr.Screen;
+
+namespace Yaparr.Tests;
+
+/// <summary>
+/// Windows Graphics Capture inside this program. These need Windows, a monitor, FFmpeg's libraries with the Graphics Capture fixes of October 2026
+/// (the libraries from the pinned FFmpeg commit, or a recent master build; an older release lacks the capture's <c>dup_frames</c> option) and, for the
+/// share, an NVIDIA card, so they do nothing on the build server.
+/// </summary>
+public class InProcessCaptureTests(Xunit.Abstractions.ITestOutputHelper output)
+{
+    private static ScreenOptions Options(Display display, int fps = 30) => new()
+    {
+        Display = display, X11Display = null, Fps = fps, Kbps = 1000, KeyFrameSeconds = 1, MaxWidth = 640, MaxHeight = 360,
+        Codec = ScreenCodec.H264, Encoder = HardwareEncoder.Nvenc, InProcessEncoder = true, InProcessCapture = true,
+    };
+
+    [Fact]
+    public void The_capture_filter_text_is_what_the_command_line_uses()
+    {
+        var options = Options(new Display(0, "primary", 0, 0, 1920, 1080, true, 0xAB), 60);
+        string graph = FfmpegArgs.CaptureFilter(options, raw: true);
+        Assert.StartsWith("gfxcapture=hmonitor=", graph);
+        Assert.Contains("max_framerate=60", graph);
+        Assert.Contains("dup_frames=1", graph);
+        Assert.Contains("hwdownload,format=bgra,scale='min(640,iw)':'min(360,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=nv12", graph);
+        Assert.Contains(graph, string.Join(' ', FfmpegArgs.CaptureRaw(options)));   // the command line is the same graph
+    }
+
+    [Fact]
+    public async Task A_capture_in_this_program_gives_even_sized_NV12_pictures_that_can_be_taken_again_and_again()
+    {
+        if (!OperatingSystem.IsWindows() || !FfmpegLibraries.IsAvailable) return;
+        if (Displays.List().FirstOrDefault() is not { } display) return;
+        InProcessCapture capture;
+        try { capture = new InProcessCapture(Options(display)); }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("dup_frames") || ex.Message.Contains("gfxcapture")) { output.WriteLine("libraries too old: " + ex.Message); return; }
+        using (capture)
+        {
+            await capture.WaitForFirstAsync(TimeSpan.FromSeconds(20), CancellationToken.None);
+            Assert.True(capture.Width is >= 16 and <= 640 && capture.Height is >= 16 and <= 360, $"{capture.Width}x{capture.Height}");
+            Assert.True(capture.Width % 2 == 0 && capture.Height % 2 == 0);
+            Assert.Equal(capture.Width * capture.Height * 3 / 2, capture.PictureBytes);
+
+            int taken = 0, fresh = 0;
+            for (int i = 0; i < 20; i++)
+            {
+                using var picture = capture.TakeNewest(out bool isNew, out _);
+                Assert.NotNull(picture);
+                Assert.Equal((capture.Width, capture.Height), (picture!.Width, picture.Height));
+                taken++;
+                if (isNew) fresh++;
+                await Task.Delay(33);
+            }
+            output.WriteLine($"{taken} taken, {fresh} of them new; the capture gave {capture.Pictures} pictures");
+            Assert.True(fresh >= 1, "the first take is a new picture");
+            Assert.Null(capture.EndedBecause);
+        }
+    }
+
+    [Fact]
+    public async Task A_real_share_with_the_capture_in_this_program_sends_an_even_stream_and_runs_no_ffmpeg()
+    {
+        if (!OperatingSystem.IsWindows() || !FfmpegLibraries.IsAvailable) return;
+        if (FfmpegLocator.Find() is not { } ffmpeg) return;
+        if (Displays.List().FirstOrDefault() is not { } display) return;
+
+        using var cluster = await MediaTreeTests.Cluster.StartAsync(2, fanout: 2, rootFanout: 2);
+        using var sharer = ScreenSharer.Start(cluster.Root, cluster.Rooms[0], "Test screen", Options(display, fps: 30), ffmpeg);
+        try { await TestUtil.WaitFor(() => sharer.Frames >= 60, 30_000); }
+        catch (TimeoutException) { output.WriteLine(sharer.Describe()); return; }
+        output.WriteLine(sharer.Describe());
+        if (!sharer.InProcess) return;   // no NVIDIA encoder here
+
+        if (!sharer.CaptureInProcess)
+        {
+            // The libraries lack what the capture needs: the share fell back to the encoder here and a separate FFmpeg capturing, and said why.
+            Assert.Contains("too old", sharer.FallbackReason ?? "");
+            return;
+        }
+        var figures = sharer.Figures();
+        Assert.Equal(TimeSpan.Zero, sharer.CaptureCpu);   // there is no capture program
+        Assert.Contains("Capture: in this program", sharer.Describe());
+        Assert.Contains("gfxcapture", sharer.EncoderDetails);
+        Assert.True(figures.Encodes >= 50);
+        Assert.True(figures.Keys >= 2, "a key frame every second");
+        Assert.Equal(0, figures.Restarts);
+        // The share's own clock sets the pace: 30 pictures a second whatever the capture does, and none arriving in a burst after another.
+        Assert.True(figures.Bunched * 10 <= figures.Reads + 1, $"{figures.Bunched} of {figures.Reads} pictures came straight after another");
+        Assert.Null(sharer.FallbackReason);
+    }
+}

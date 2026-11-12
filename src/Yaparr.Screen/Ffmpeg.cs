@@ -191,14 +191,21 @@ public sealed class ScreenOptions
     /// H.264 only so far, and only where the libraries are there (<see cref="FfmpegLibraries"/>); anything else is encoded as before.
     /// Experimental: off unless the YAPARR_INPROCESS environment variable is 1.
     /// </summary>
-    public bool InProcessEncoder { get; init; } = Environment.GetEnvironmentVariable("YAPARR_INPROCESS") == "1";
+    public bool InProcessEncoder { get; init; } = Environment.GetEnvironmentVariable("YAPARR_INPROCESS") is "1" or "capture";
+
+    /// <summary>
+    /// Also capture inside this program (Windows Graphics Capture through FFmpeg's libraries, see <see cref="InProcessCapture"/>), so that no FFmpeg
+    /// runs at all and a picture goes from the capture to the encoder without a pipe. Implies <see cref="InProcessEncoder"/>; Windows only so far, and
+    /// where the libraries lack what the capture needs the encoder alone is tried next. Experimental: off unless YAPARR_INPROCESS is "capture".
+    /// </summary>
+    public bool InProcessCapture { get; init; } = Environment.GetEnvironmentVariable("YAPARR_INPROCESS") == "capture";
 
     /// <summary>The same options for another monitor or window: everything else (quality, codec, sound) stays.</summary>
     public ScreenOptions Retarget(Display? display, long? windowHandle) => new()
     {
         Display = display, WindowHandle = windowHandle, Fps = Fps, MaxWidth = MaxWidth, MaxHeight = MaxHeight, Kbps = Kbps,
         KeyFrameSeconds = KeyFrameSeconds, Codec = Codec, Encoder = Encoder, ShareSound = ShareSound, SoundProgram = SoundProgram, GpuScale = GpuScale, ShowCursor = ShowCursor,
-        X11Display = X11Display, InProcessEncoder = InProcessEncoder,
+        X11Display = X11Display, InProcessEncoder = InProcessEncoder, InProcessCapture = InProcessCapture,
     };
 
     /// <summary>The same options for another stream from the portal (the desktop asked again what to share).</summary>
@@ -206,7 +213,7 @@ public sealed class ScreenOptions
     {
         Portal = portal, Fps = Fps, MaxWidth = MaxWidth, MaxHeight = MaxHeight, Kbps = Kbps, KeyFrameSeconds = KeyFrameSeconds, Codec = Codec,
         Encoder = Encoder, ShareSound = ShareSound, SoundProgram = SoundProgram, GpuScale = false, ShowCursor = ShowCursor, X11Display = X11Display,
-        InProcessEncoder = InProcessEncoder,
+        InProcessEncoder = InProcessEncoder, InProcessCapture = InProcessCapture,
     };
 }
 
@@ -263,6 +270,24 @@ public static class FfmpegArgs
         // delivers plain pixels; there is nothing on a graphics card to keep them on.
         if (o.X11Display is { Length: > 0 } x11) return CaptureX11(o, x11, codec, encoder, raw);
 
+        string filter = CaptureFilterText(o, codec, encoder, gpuScale, raw);
+        var args = new List<string> { "-hide_banner", "-loglevel", "error", "-nostdin", "-filter_complex", filter };
+        return raw ? AddRawOutput(args) : AddEncoder(args, o, codec, encoder);
+    }
+
+    /// <summary>
+    /// The filter chain of a Windows capture as FFmpeg's own text, the one the command line gives <c>-filter_complex</c>: capture, copy back to memory,
+    /// scale to fit the box, NV12. <see cref="InProcessCapture"/> builds the same chain as a filter graph inside this program.
+    /// </summary>
+    public static string CaptureFilter(ScreenOptions o, bool raw)
+    {
+        if (o.Fps is < 1 or > 60) throw new ArgumentOutOfRangeException(nameof(o), "Frames per second must be between 1 and 60.");
+        if (o.MaxWidth < 16 || o.MaxHeight < 16) throw new ArgumentOutOfRangeException(nameof(o), "The picture box is too small.");
+        return CaptureFilterText(o, ScreenCodec.H264, HardwareEncoder.Nvenc, gpuScale: false, raw);
+    }
+
+    private static string CaptureFilterText(ScreenOptions o, ScreenCodec codec, HardwareEncoder encoder, bool gpuScale, bool raw)
+    {
         string source;
         if (o.WindowHandle is { } window) source = "hwnd=" + Hex(window);
         else if (o.Display is { Handle: not 0 } display) source = "hmonitor=" + Hex(display.Handle);
@@ -288,8 +313,7 @@ public static class FfmpegArgs
                 // Intel's encoder takes NV12 and not planar YUV; the others take either.
                 + $"scale='min({o.MaxWidth},iw)':'min({o.MaxHeight},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,format={(raw ? "nv12" : HardwareEncoders.PixelFormat(codec, encoder))}";
         }
-        var args = new List<string> { "-hide_banner", "-loglevel", "error", "-nostdin", "-filter_complex", filter };
-        return raw ? AddRawOutput(args) : AddEncoder(args, o, codec, encoder);
+        return filter;
     }
 
     // The pictures as they are, for the in-process encoder. "info" so that FFmpeg says the size of the output (and nothing about progress).

@@ -126,7 +126,7 @@ public partial class MainWindow
             var what = options.Portal?.IsWindow ?? options.WindowHandle != null ? "window" : "screen";
             var sharer = ScreenSharer.Start(_node, room, $"{_settings.DisplayName}'s {what}", options, ffmpeg);
             _log.Write($"sharing your {what}: {options.Fps} fps, {options.Kbps} kbit/s, up to {options.MaxWidth}x{options.MaxHeight}, a key frame every {options.KeyFrameSeconds:0.##} s, "
-                       + $"asked for: {options.Codec}{(options.Encoder is { } asked ? " on " + asked : "")}{(options.GpuScale ? ", scaling on the card" : "")}{(options.InProcessEncoder ? ", encoding in this program" : "")}, "
+                       + $"asked for: {options.Codec}{(options.Encoder is { } asked ? " on " + asked : "")}{(options.GpuScale ? ", scaling on the card" : "")}{(options.InProcessCapture ? ", capturing and encoding in this program" : options.InProcessEncoder ? ", encoding in this program" : "")}, "
                        + $"{(options.ShareSound ? "with sound" : "no sound")}, {(options.ShowCursor ? "with" : "without")} the pointer, FFmpeg {ffmpeg}");
             if (options.Portal == null)
                 _log.Write(options.WindowHandle != null ? "what is shared: a window" : options.Display is { Width: > 0 } shown ? $"what is shared: a monitor of {shown.Width}x{shown.Height} at {shown.X},{shown.Y}{(shown.Primary ? ", the primary one" : "")}" : "what is shared: a monitor");
@@ -247,7 +247,7 @@ public partial class MainWindow
         var figures = sharer.Figures();
         return $"{ScreenCodecs.Describe(sharer.Codec, sharer.Encoder)}{(sharer.InProcess ? ", in this program" : "")}{(sharer.FallbackReason is { } why ? $" (not used: {why})" : "")}, "
                + $"{sharer.Frames} frames sent; {figures.DescribeKeys()}{(figures.Encodes > 0 ? "; " + figures.DescribeEncoding(sharer.FrameBudgetMs) : "")}; "
-               + $"capture program used {sharer.CaptureCpu.TotalSeconds:0.0} s of processor time, restarted {figures.Restarts} times";
+               + (sharer.CaptureInProcess ? "capture in this program" : $"capture program used {sharer.CaptureCpu.TotalSeconds:0.0} s of processor time, restarted {figures.Restarts} times");
     }
 
     // The totals go to the log when a share stops (the ended handler writes its own, with the reason, and asks not to).
