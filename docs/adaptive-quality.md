@@ -96,9 +96,15 @@ Two liars in a room of three could still lower the stream. That is the price of 
 
 The policy is a pure function: reports and the sharer's own figures in, a step (or no change) out, with the clock passed in. It is tested with scripted rooms: one weak viewer among ten (no change), half the room (step down after 10 s, not after 9), the room recovering (step up after 30 s, not after 29), a link that cannot take step 0 (the wait doubles), no reports at all (no change), a single viewer (that viewer decides), two liars in three. The cluster tests that already drop packets between nodes (`OutboundFilter`) exercise the whole path on a simulated bad link.
 
-## Where the first piece stands
+## Where it stands
 
-`InProcessEncoder.SetBitrate` changes the bitrate while encoding, with no restart and no lost frame; measured with pictures that are expensive to code, 6000, 1500 and 6000 kbit/s asked for gave about 7000, 1500 and 6900 kbit/s (`The_bitrate_follows_a_new_value_while_encoding_in_both_directions`). That is steps 1 and 2 of the ladder. The frame rate and resolution steps, the report, the `room` state and the policy are still to do.
+Built, in shadow mode (the policy runs and says what it would do; nothing is changed):
+- `InProcessEncoder.SetBitrate`: the bitrate changes while encoding, no restart and no lost frame; measured with pictures that are expensive to code, 6000, 1500 and 6000 kbit/s asked for gave about 7000, 1500 and 6900 kbit/s (steps 1 and 2 of the ladder).
+- `QualityPolicy` and `QualityLadder` (`QualityPolicyTests`): the rules above as a pure function, with scripted rooms.
+- The report: `ViewerQualityMeter` (a viewer judging its own picture over ten seconds), the `quality` control operation, folded by each relay on the way up (`MediaSource.Room` at the root; `QualityReportTests` run it through a chain of relays).
+- `ScreenSharer` runs the policy every second from `Room` and its own link, writes `adaptive quality (shadow mode, nothing is changed): would lower to 1080p60 at 4.2 Mbit/s (step 1 of 5): 2 of 3 viewers lost frames for 10 s` to the log, and says where it is in the sharing line and the report (`ShadowQualityTests`).
+
+Still to do: the frame rate step (the share's clock encodes every second or third tick), the size step (the capture graph and the encoder built again at the new size), acting on the decisions behind a setting, the `room` state sent down the tree and the message to a viewer who is the only one in trouble, and the sharer panel line. Each is its own change; shadow mode comes first so that the numbers (how often, how fast, whether it flaps) come from real rooms before it acts.
 
 ## Questions that are open
 

@@ -9,6 +9,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Yaparr.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Yaparr\Yaparr.csproj" />
     <!-- Talks to the desktop's ScreenCast portal over D-Bus, which is how Wayland lets a program share the screen (MIT licence). -->
     <PackageReference Include="Tmds.DBus.Protocol" Version="0.95.2" />

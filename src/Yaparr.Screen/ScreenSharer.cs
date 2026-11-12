@@ -8,7 +8,7 @@ namespace Yaparr.Screen;
 /// Shares the screen or one window with a room: FFmpeg captures and encodes, and every encoded frame goes out through the
 /// stream tree. Capture is Windows Graphics Capture on Windows and x11grab on Linux under X11 (see <see cref="ScreenCapture"/>).
 /// </summary>
-public sealed class ScreenSharer : IDisposable
+public sealed partial class ScreenSharer : IDisposable
 {
     private readonly MediaSource _source;
     private volatile ScreenOptions _options;
@@ -50,6 +50,7 @@ public sealed class ScreenSharer : IDisposable
         if (options.ShareSound) sharer.StartSound(node, room);
         sharer.WatchPortal(options.Portal);
         sharer._run = Task.Run(() => sharer.PumpAsync(sharer._cts.Token));
+        sharer.StartQualityWatch();
         return sharer;
     }
 
@@ -241,6 +242,7 @@ public sealed class ScreenSharer : IDisposable
                                          : $"  Capture program restarted {figures.Restarts} times; processor time used by it: {CaptureCpu.TotalSeconds:0.0} s");
         text.AppendLine($"  How the encoder was set up: {(EncoderDetails.Length > 0 ? EncoderDetails : "not started yet")}");
         text.AppendLine($"  Longest wait for a frame from FFmpeg since this was last asked: {Interlocked.Read(ref _maxGapMs)} ms; running: {(IsRunning ? "yes" : "no")}");
+        text.AppendLine($"  Adaptive quality: {QualityNote ?? "not started"}");
         text.AppendLine($"  Sound: {(SharingSound ? "shared" : SoundProblem ?? "not shared")}");
         if (_options.Portal != null)
         {
@@ -803,6 +805,7 @@ public sealed class ScreenSharer : IDisposable
 
     public void Dispose()
     {
+        StopQualityWatch();
         _cts.Cancel();
         KillProcess();
         try { _run?.Wait(TimeSpan.FromSeconds(2)); } catch (AggregateException) { }
