@@ -62,17 +62,19 @@ internal sealed class MediaGroup
 
     // Packets recently seen, to give again to a child that missed them; and what we are missing ourselves.
     public readonly Dictionary<uint, byte[]> Recent = new();
-    public readonly Queue<uint> RecentOrder = new();
+    public readonly Queue<(uint Seq, long At)> RecentOrder = new();
     public bool SeenAny, NackRunning;
     public uint HighestSeq;
     public readonly Dictionary<uint, long> Missing = new();
     public readonly Dictionary<uint, long> Asked = new();
+    public readonly Dictionary<uint, int> AskCount = new();
 
     // A replay from the parent: which numbers it promised (first to last), which have come, and when the last one did.
     public bool ReplayExpected, ReplayChecking;
     public uint ReplayFirst, ReplayLast, ReplayMax;
     public HashSet<uint> ReplayGot = new();
     public readonly Dictionary<uint, long> ReplayAsked = new();
+    public readonly Dictionary<uint, int> ReplayAskCount = new();
     public long LastReplayPacketAt;
     public long Retransmitted, Recovered;
     // What the receiving end saw of the packets, to tell a link that loses them from one that only delivers them late, and a viewer that asks for
@@ -673,12 +675,31 @@ public sealed partial class ChatNode
                 }
             }
         }
-        foreach (var packet in found)
+        if (found.Count == 0) return;
+        // A few at once, the rest spread out at the pace of the stream itself: thirty packets in a row into a path that has just lost some
+        // are likely to be lost in the same way.
+        _ = ResendPaced(peer, g, found, ResendFirstAtOnce, Math.Max(256_000, g.Info.Kbps * 125.0));
+    }
+
+    internal const int ResendFirstAtOnce = 4;
+
+    private async Task ResendPaced(PeerState peer, MediaGroup g, List<byte[]> packets, int freeCount, double rate)
+    {
+        long started = System.Diagnostics.Stopwatch.GetTimestamp();
+        long sent = 0;
+        for (int i = 0; i < packets.Count; i++)
         {
+            var packet = packets[i];
+            if (i >= freeCount)
+            {
+                double ahead = sent * 1000.0 / rate - System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+                if (ahead > 2) { try { await Task.Delay((int)ahead, _cts.Token).ConfigureAwait(false); } catch (OperationCanceledException) { return; } }
+            }
             if (!MediaBudget.TryTake(packet.Length, Environment.TickCount64)) { lock (g.Gate) g.Dropped++; continue; }
             try { peer.Connection.SendUnreliable(ChannelIds.Media, packet); }
             catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return; }
             lock (g.Gate) g.Retransmitted++;
+            if (i >= freeCount) sent += packet.Length;
         }
     }
 
@@ -708,6 +729,17 @@ public sealed partial class ChatNode
         if (gap) ScheduleNack(g);
     }
 
+    internal const int MaxAsks = 4;
+
+    /// <summary>The missing packets to ask the parent for now (at most 32), noting that they were asked for. Call with the group's lock held.</summary>
+    internal static List<uint> SelectAsks(MediaGroup g, long now)
+    {
+        var want = g.Missing.Where(kv => now - kv.Value >= 30 && g.AskCount.GetValueOrDefault(kv.Key) < MaxAsks
+                                         && now - g.Asked.GetValueOrDefault(kv.Key) >= 80 << Math.Max(0, g.AskCount.GetValueOrDefault(kv.Key) - 1)).Select(kv => kv.Key).Take(32).ToList();
+        foreach (var seq in want) { g.Asked[seq] = now; g.AskCount[seq] = g.AskCount.GetValueOrDefault(seq) + 1; }
+        return want;
+    }
+
     private void ScheduleNack(MediaGroup g)
     {
         lock (g.Gate)
@@ -727,12 +759,12 @@ public sealed partial class ChatNode
                     lock (g.Gate)
                     {
                         long now = Environment.TickCount64;
-                        foreach (var old in g.Missing.Where(kv => now - kv.Value > 1500).Select(kv => kv.Key).ToList()) { g.Missing.Remove(old); g.Asked.Remove(old); g.GaveUp++; }
+                        foreach (var old in g.Missing.Where(kv => now - kv.Value > 1500).Select(kv => kv.Key).ToList()) { g.Missing.Remove(old); g.Asked.Remove(old); g.AskCount.Remove(old); g.GaveUp++; }
                         // Ending and clearing the flag happen together, so a gap noticed from now on starts a new round.
-                        if (g.Missing.Count == 0) { g.NackRunning = false; g.Asked.Clear(); return; }
-                        // Not again until the answer has had time to come.
-                        want = g.Missing.Where(kv => now - kv.Value >= 30 && now - g.Asked.GetValueOrDefault(kv.Key) >= 80).Select(kv => kv.Key).Take(32).ToList();
-                        foreach (var seq in want) g.Asked[seq] = now;
+                        if (g.Missing.Count == 0) { g.NackRunning = false; g.Asked.Clear(); g.AskCount.Clear(); return; }
+                        // Not again until the answer has had time to come, then a little longer each time, and only a few times: after 600 ms the
+                        // frame has been given up on, and asking on every 80 ms for a packet that is not coming only adds to the traffic.
+                        want = SelectAsks(g, now);
                         if (want.Count > 0) { g.NacksSent++; g.PacketsAsked += want.Count; }
                         parent = g.Parent;
                     }
@@ -758,6 +790,7 @@ public sealed partial class ChatNode
             g.ReplayMax = m.Seqs[0] - 1;
             g.ReplayGot = new HashSet<uint>();
             g.ReplayAsked.Clear();
+            g.ReplayAskCount.Clear();
             g.LastReplayPacketAt = Environment.TickCount64;
             if (g.ReplayChecking) return;
             g.ReplayChecking = true;
@@ -780,11 +813,12 @@ public sealed partial class ChatNode
                         // While it arrives, only what is behind the newest number; at the end, everything promised.
                         uint limit = quiet ? g.ReplayLast : g.ReplayMax - 2;
                         for (uint seq = g.ReplayFirst; (int)(limit - seq) >= 0 && missing.Count < 32; seq++)
-                            if (!g.ReplayGot.Contains(seq) && now - g.ReplayAsked.GetValueOrDefault(seq) >= 100) missing.Add(seq);
-                        foreach (var seq in missing) g.ReplayAsked[seq] = now;
+                            if (!g.ReplayGot.Contains(seq) && g.ReplayAskCount.GetValueOrDefault(seq) < MaxAsks
+                                && now - g.ReplayAsked.GetValueOrDefault(seq) >= 100 << Math.Max(0, g.ReplayAskCount.GetValueOrDefault(seq) - 1)) missing.Add(seq);
+                        foreach (var seq in missing) { g.ReplayAsked[seq] = now; g.ReplayAskCount[seq] = g.ReplayAskCount.GetValueOrDefault(seq) + 1; }
                         if (missing.Count > 0) { g.NacksSent++; g.PacketsAsked += missing.Count; }
                         parent = g.Parent;
-                        finished = quiet && missing.Count == 0 && !g.ReplayAsked.Keys.Any(q => !g.ReplayGot.Contains(q));
+                        finished = quiet && missing.Count == 0 && !g.ReplayAsked.Keys.Any(q => !g.ReplayGot.Contains(q) && g.ReplayAskCount.GetValueOrDefault(q) < MaxAsks);
                     }
                     if (missing.Count > 0 && parent is { } p) SendMedia(p, g, new WireMedia { Op = "nack", Add = true, Seqs = missing.ToArray() });
                     if (finished) break;
@@ -1195,15 +1229,28 @@ public sealed partial class ChatNode
         }
     }
 
-    // The last few hundred packets of a one-way stream, for children that missed one.
+    /// <summary>How long a packet is kept to give again. A viewer asks for a missing packet for about 600 ms, so this is well past that.</summary>
+    internal const int RecentKeepMs = 2000;
+
+    /// <summary>The most packets kept to give again, whatever their age (about 5 MB), so a very fast stream cannot fill the memory.</summary>
+    internal const int RecentMaxPackets = 4500;
+
+    // The packets of the last couple of seconds of a one-way stream, for children that missed one. Kept by age, not by count: a count of 600
+    // was under a second at 6 Mbit/s, and most of what a viewer asked for was already gone.
     private void StoreRecent(MediaGroup g, uint seq, byte[] packet)
     {
         if (g.Info.Upstream) return;
+        KeepRecent(g, seq, packet, Environment.TickCount64);
+    }
+
+    internal static void KeepRecent(MediaGroup g, uint seq, byte[] packet, long now)
+    {
         lock (g.Gate)
         {
             if (!g.Recent.TryAdd(seq, packet)) return;
-            g.RecentOrder.Enqueue(seq);
-            while (g.RecentOrder.Count > 600) g.Recent.Remove(g.RecentOrder.Dequeue());
+            g.RecentOrder.Enqueue((seq, now));
+            while (g.RecentOrder.Count > 0 && (g.RecentOrder.Count > RecentMaxPackets || now - g.RecentOrder.Peek().At > RecentKeepMs))
+                g.Recent.Remove(g.RecentOrder.Dequeue().Seq);
         }
     }
 
