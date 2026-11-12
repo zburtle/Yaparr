@@ -86,7 +86,7 @@ internal static class SignedMedia
 /// <summary>The control messages between neighbours in a group's tree. They travel on the chat connection. Ops: join, place, attach, ok, refuse, leave, ping, link, key, nack.</summary>
 internal sealed class WireMedia
 {
-    /// <summary>join, place, attach, ok, refuse, leave, ping, link, audit or here.</summary>
+    /// <summary>join, place, attach, ok, refuse, leave, ping, link, audit, here, nack, replay, key or quality.</summary>
     public string Op { get; set; } = "";
     public string Group { get; set; } = "";
     /// <summary>For place: the member to attach to (empty if there is no room). For link: the member that took the child on. For here: who the sender sits under (empty if nobody).</summary>
@@ -101,6 +101,11 @@ internal sealed class WireMedia
     public bool Add { get; set; }
     /// <summary>For nack: the packets the sender is missing.</summary>
     public uint[]? Seqs { get; set; }
+    /// <summary>For quality: how many viewers the report covers, how many are in trouble, the worst picture rate among them (tenths of a picture a second), how many lose packets for good.</summary>
+    public int Viewers { get; set; }
+    public int Troubled { get; set; }
+    public int WorstTenths { get; set; }
+    public int Lossy { get; set; }
 }
 
 internal static class MediaWire

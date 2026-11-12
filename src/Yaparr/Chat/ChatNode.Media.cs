@@ -11,6 +11,9 @@ internal sealed class ChildLink
     public long HeardAt;
     public int Cap;
     public long LastReplayAt;
+    /// <summary>What the viewers under this child last said about the stream, and when (see <see cref="MediaQuality"/>).</summary>
+    public MediaQuality Quality;
+    public long QualityAt;
 }
 
 internal sealed record MapNode(PeerId Parent, int Cap);
@@ -81,6 +84,13 @@ internal sealed class MediaGroup
     // too much from one that asks for too little: packets that came, gaps noticed when a later one came first, gaps too big to ask about, packets that
     // then arrived by themselves (late) or after being asked for, packets never seen at all, and the requests made.
     public long PacketsSeen, GapsNoticed, BigGaps, ArrivedLate, RepairedAfterAsking, GaveUp, NacksSent, PacketsAsked;
+
+    /// <summary>A viewer: how this device judges its own picture, asked for every two seconds and sent up the tree; null when it does not (a sharer, a relay without a picture).</summary>
+    public Func<ViewerQualitySample>? QualityProvider;
+    public long QualitySentAt;
+    /// <summary>At the root: what the viewers say, folded, and when it was last worked out.</summary>
+    public MediaQuality RoomQuality;
+    public long RoomQualityAt;
 
     public uint Seq;
     public readonly Dictionary<ulong, SeqWindow> Windows = new();
@@ -175,6 +185,12 @@ public sealed class MediaSource : IDisposable
 
     public MediaStatus Status => _node.StatusOf(_group);
 
+    /// <summary>
+    /// What the viewers say about how the stream is going, folded: how many reported, how many are in trouble (see <see cref="MediaQuality"/>). Only viewers that
+    /// reported are in it (an older version does not), and only what is under six seconds old; none at all is <see cref="MediaQuality.None"/>, which means no information.
+    /// </summary>
+    public MediaQuality Room => _node.RoomQualityOf(_group);
+
     /// <summary>Everyone who is watching now, however far down the tree they sit, as far as the reports up the tree have said.</summary>
     public IReadOnlyList<PeerId> Viewers => _node.ViewersOf(_group);
 
@@ -215,6 +231,16 @@ public sealed class MediaView : IDisposable, IMediaFrameSource
     }
 
     public MediaGroupInfo Info => _group.Info;
+
+    /// <summary>
+    /// How this viewer judges its own picture; asked for every two seconds, and sent up the tree with what the viewers below report, so that the sharer
+    /// can tell a room that struggles from one viewer that does (see <see cref="ViewerQualityMeter"/>). Leave it unset to say nothing.
+    /// </summary>
+    public Func<ViewerQualitySample>? QualityProvider
+    {
+        get { lock (_group.Gate) return _group.QualityProvider; }
+        set { lock (_group.Gate) _group.QualityProvider = value; }
+    }
 
     /// <summary>A packet arrived. It can come from any thread.</summary>
     public event Action<MediaPacket>? Received;
@@ -620,7 +646,74 @@ public sealed partial class ChatNode
             case "key": OnMediaKey(peer, g); break;
             case "nack": OnMediaNack(peer, g, m); break;
             case "replay": OnMediaReplay(peer, g, m); break;
+            case "quality": OnMediaQuality(peer, g, m); break;
         }
+    }
+
+    // ---- what the viewers say about the stream -------------------------------------------------------------------
+
+    private const long QualityEveryMs = 2_000, QualityFreshMs = 6_000;
+    private const int MaxViewersInReport = 100_000;
+
+    // A child tells what its viewers think of the stream. Kept as sent, a figure per child, so that each report replaces the last; a child that
+    // is not ours, or a report that does not add up, is ignored.
+    private void OnMediaQuality(PeerState peer, MediaGroup g, WireMedia m)
+    {
+        if (m.Viewers is < 1 or > MaxViewersInReport || m.Troubled < 0 || m.Troubled > m.Viewers || m.Lossy < 0 || m.Lossy > m.Viewers || m.WorstTenths is < 0 or > 10_000) return;
+        lock (g.Gate)
+        {
+            if (!g.Children.TryGetValue(peer.Id, out var child)) return;
+            child.Quality = new MediaQuality(m.Viewers, m.Troubled, m.WorstTenths / 10.0, m.Lossy);
+            child.QualityAt = Environment.TickCount64;
+        }
+    }
+
+    // This device's own judgement (if it is a viewer) and what its children last said that is still fresh, folded into one.
+    private MediaQuality FoldQuality(MediaGroup g, long now, bool includeOwn)
+    {
+        var total = MediaQuality.None;
+        Func<ViewerQualitySample>? provider;
+        lock (g.Gate)
+        {
+            provider = includeOwn ? g.QualityProvider : null;
+            foreach (var child in g.Children.Values)
+                if (child.QualityAt != 0 && now - child.QualityAt <= QualityFreshMs) total = total.Plus(child.Quality);
+        }
+        if (provider != null)
+        {
+            try { total = total.Plus(provider().AsQuality); }
+            catch (Exception) { }
+        }
+        return total;
+    }
+
+    // Every two seconds: a viewer or a relay sends one report up, the root works out what the room says.
+    private void MaintainQuality(MediaGroup g, long now)
+    {
+        PeerId? parent;
+        bool root;
+        lock (g.Gate)
+        {
+            if (!g.IsRoot && !g.Joined) return;
+            if (now - g.QualitySentAt < QualityEveryMs) return;
+            g.QualitySentAt = now;
+            parent = g.Parent;
+            root = g.IsRoot;
+        }
+        if (root)
+        {
+            var room = FoldQuality(g, now, includeOwn: false);
+            lock (g.Gate) { g.RoomQuality = room; g.RoomQualityAt = now; }
+            return;
+        }
+        var folded = FoldQuality(g, now, includeOwn: true);
+        if (folded.Viewers < 1 || parent is not { } up) return;
+        SendMedia(up, g, new WireMedia { Op = "quality", Viewers = folded.Viewers, Troubled = folded.Troubled, WorstTenths = (int)Math.Round(folded.WorstFps * 10), Lossy = folded.Lossy });
+    }
+
+    internal MediaQuality RoomQualityOf(MediaGroup g)
+    {
+        lock (g.Gate) return Environment.TickCount64 - g.RoomQualityAt <= QualityFreshMs + QualityEveryMs ? g.RoomQuality : MediaQuality.None;
     }
 
     // A viewer needs a place to start from. The cache of whoever is closest may have one; if not, the sharer has to make one.
@@ -1132,6 +1225,7 @@ public sealed partial class ChatNode
             foreach (var id in deadChildren) ReportLink(g, id, add: false, 0);
             if (deadParent is { } lost) SendMedia(lost, g, new WireMedia { Op = "leave" });
             foreach (var id in neighbours) SendMedia(id, g, new WireMedia { Op = "ping" });
+            MaintainQuality(g, now);
             AdvanceMedia(g);
         }
         if (removedAny) room.RaiseMediaChanged();

@@ -1,0 +1,64 @@
+namespace Yaparr.Chat;
+
+/// <summary>
+/// What the viewers below one point of a stream's tree say about how it is going, folded together: how many viewers the figure covers, how many of them
+/// are in trouble, the worst picture rate among them (pictures drawn a second, 0 when not known) and how many lose packets that asking again does not get back.
+/// Counts only, no names, so a relay passes up one small message however many viewers sit below it.
+/// </summary>
+public readonly record struct MediaQuality(int Viewers, int Troubled, double WorstFps = 0, int Lossy = 0)
+{
+    public static MediaQuality None => default;
+
+    /// <summary>The two together: the counts add, the worst rate is the lower of the two that are known.</summary>
+    public MediaQuality Plus(MediaQuality other) => new(Viewers + other.Viewers, Troubled + other.Troubled,
+        WorstFps == 0 ? other.WorstFps : other.WorstFps == 0 ? WorstFps : Math.Min(WorstFps, other.WorstFps), Lossy + other.Lossy);
+}
+
+/// <summary>How one viewer judges its own picture over the last seconds (see <see cref="ViewerQualityMeter"/>); <see cref="Known"/> is false while there is nothing to judge by.</summary>
+public readonly record struct ViewerQualitySample(bool Known, bool Troubled, double Fps, bool Lossy)
+{
+    public static ViewerQualitySample Unknown => default;
+    public MediaQuality AsQuality => Known ? new MediaQuality(1, Troubled ? 1 : 0, Fps, Lossy ? 1 : 0) : MediaQuality.None;
+}
+
+/// <summary>The running totals of what a viewer has seen since it began (they only go up), which <see cref="ViewerQualityMeter"/> reads once a second.</summary>
+public readonly record struct ViewerCounters(long Shown, long Lost, long Skipped, long Late, long DecoderDropped, long GaveUp);
+
+/// <summary>
+/// Judges a viewer's own picture over a window of about ten seconds, from the running totals fed to it once a second. In trouble when fewer than nine
+/// in ten of the pictures that were sent were shown (lost, skipped waiting for a key frame, or too late to show count as not shown), or the decoder dropped
+/// frames. It says nothing (<see cref="ViewerQualitySample.Known"/> false) until it has five seconds of pictures to go by.
+/// </summary>
+public sealed class ViewerQualityMeter
+{
+    private readonly int _windowSeconds;
+    private readonly Queue<(long At, ViewerCounters Counters)> _samples = new();
+    private ViewerQualitySample _sample;
+
+    public ViewerQualityMeter(int windowSeconds = 10) => _windowSeconds = windowSeconds;
+
+    /// <summary>The share of the pictures sent below which a viewer is in trouble.</summary>
+    public const double ShownLimit = 0.90;
+
+    public ViewerQualitySample Sample { get { lock (_samples) return _sample; } }
+
+    /// <summary>Feed the totals; call about once a second.</summary>
+    public void Update(long nowMs, ViewerCounters totals)
+    {
+        lock (_samples)
+        {
+            _samples.Enqueue((nowMs, totals));
+            while (_samples.Count > 1 && nowMs - _samples.Peek().At > _windowSeconds * 1000L) _samples.Dequeue();
+            var first = _samples.Peek();
+            double seconds = (nowMs - first.At) / 1000.0;
+            if (seconds < 5) { _sample = ViewerQualitySample.Unknown; return; }
+            long shown = totals.Shown - first.Counters.Shown;
+            long notShown = (totals.Lost - first.Counters.Lost) + (totals.Skipped - first.Counters.Skipped) + (totals.Late - first.Counters.Late);
+            long sent = shown + notShown;
+            if (sent <= 0) { _sample = ViewerQualitySample.Unknown; return; }   // nothing came, so there is nothing to judge: no information
+            bool troubled = shown < sent * ShownLimit || totals.DecoderDropped - first.Counters.DecoderDropped >= 5;
+            bool lossy = totals.GaveUp - first.Counters.GaveUp >= 10;
+            _sample = new ViewerQualitySample(true, troubled, shown / seconds, lossy);
+        }
+    }
+}
