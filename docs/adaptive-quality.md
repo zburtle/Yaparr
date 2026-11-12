@@ -39,11 +39,11 @@ A new control operation, `quality`, sent by a viewer to its parent every 2 s whi
 | `Worst` | the worst picture rate of those (pictures drawn per second, so a sharer can see "nobody gets more than 20") |
 | `Lossy` | how many lose packets they never get back (loss that resending does not repair) |
 
-No names: a relay says how many, not who. (The sharer's panel can still say "3 of 4".) Reports are small (tens of bytes) and a relay sends at most one every 2 s, so a room of any size adds a trickle at the root.
+No names: a relay says how many, not who. (The sharer's panel can still say "3 of 4".) Reports are small (tens of bytes) and a relay sends at most one every 2 s, so a room of any size adds a trickle at the root. A report is good for 10 s at the root and each relay: the first real share showed a viewer on a link that lost 12 to 22% of the packets, whose reports were late often enough that the room looked silent in the middle of its trouble, so the policy also holds its count where it is for up to 15 s when no report arrives with viewers there (and starts again after that).
 
 A viewer **has trouble** when, over the last 10 s, it showed fewer than 90% of the pictures that were sent, or lost frames it asked for and did not get back (the "never came" count of #228), or its decoder dropped frames. The viewer measures this against what the stream says it sends (frames per second are in the stream's own numbering), so it needs no clock agreement with anyone.
 
-Old versions ignore an operation they do not know, and do not pass it up, so a root sometimes sees only part of the room (the newer viewers whose relays are also new). **Missing reports mean "no information", never "fine"**: the policy below only counts the viewers that reported, and does nothing when it has none.
+Old versions ignore an operation they do not know, and do not pass it up, so a root sometimes sees only part of the room (the newer viewers whose relays are also new). **Missing reports mean "no information", never "fine"** (and a gap of a few seconds holds the count where it is): the policy below only counts the viewers that reported, and does nothing when it has none.
 
 ## The policy
 

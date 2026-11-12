@@ -187,7 +187,7 @@ public sealed class MediaSource : IDisposable
 
     /// <summary>
     /// What the viewers say about how the stream is going, folded: how many reported, how many are in trouble (see <see cref="MediaQuality"/>). Only viewers that
-    /// reported are in it (an older version does not), and only what is under six seconds old; none at all is <see cref="MediaQuality.None"/>, which means no information.
+    /// reported are in it (an older version does not), and only what is under ten seconds old; none at all is <see cref="MediaQuality.None"/>, which means no information.
     /// </summary>
     public MediaQuality Room => _node.RoomQualityOf(_group);
 
@@ -652,7 +652,10 @@ public sealed partial class ChatNode
 
     // ---- what the viewers say about the stream -------------------------------------------------------------------
 
-    private const long QualityEveryMs = 2_000, QualityFreshMs = 6_000;
+    // Sent every two seconds (the loop that sends them runs every two, so the guard is a little under, or one in two would be skipped and the gap would be four),
+    // and good for ten: over a link that loses a good part of what it carries a report can be late by a few seconds, and a figure that went stale in the middle of
+    // trouble made the room look silent.
+    private const long QualityEveryMs = 2_000, QualitySendGapMs = 1_500, QualityFreshMs = 10_000;
     private const int MaxViewersInReport = 100_000;
 
     // A child tells what its viewers think of the stream. Kept as sent, a figure per child, so that each report replaces the last; a child that
@@ -695,7 +698,7 @@ public sealed partial class ChatNode
         lock (g.Gate)
         {
             if (!g.IsRoot && !g.Joined) return;
-            if (now - g.QualitySentAt < QualityEveryMs) return;
+            if (now - g.QualitySentAt < QualitySendGapMs) return;
             g.QualitySentAt = now;
             parent = g.Parent;
             root = g.IsRoot;

@@ -159,6 +159,39 @@ public class QualityPolicyTests
     }
 
     [Fact]
+    public void A_gap_in_the_reports_holds_the_count_of_trouble_where_it_is_and_a_long_one_starts_it_again()
+    {
+        // trouble for 6 s, three seconds in which nothing arrives (a report late over a bad link): the six seconds stand and the count goes on from there
+        var policy = new QualityPolicy();
+        long now = 0;
+        Assert.Empty(Run(policy, ref now, 6, new RoomQuality(1, 1, 30, 1), viewers: 1));
+        Assert.Empty(Run(policy, ref now, 3, RoomQuality.None, viewers: 1));
+        Assert.Empty(Run(policy, ref now, 3, new RoomQuality(1, 1, 30, 1), viewers: 1));   // nine seconds of trouble in all
+        Assert.Equal(new[] { (1, 1) }, Run(policy, ref now, 1, new RoomQuality(1, 1, 30, 1), viewers: 1));
+
+        // a gap longer than the carry (15 s) is no information, and the count starts again after it
+        var longGap = new QualityPolicy();
+        now = 0;
+        Run(longGap, ref now, 6, new RoomQuality(1, 1, 30, 1), viewers: 1);
+        Assert.Empty(Run(longGap, ref now, 20, RoomQuality.None, viewers: 1));
+        Assert.Empty(Run(longGap, ref now, 9, new RoomQuality(1, 1, 30, 1), viewers: 1));
+        Assert.Equal(new[] { (1, 1) }, Run(longGap, ref now, 1, new RoomQuality(1, 1, 30, 1), viewers: 1));
+    }
+
+    [Fact]
+    public void A_gap_in_the_reports_holds_the_count_of_quiet_where_it_is_too()
+    {
+        var policy = new QualityPolicy();
+        long now = 0;
+        Run(policy, ref now, 12, new RoomQuality(10, 6));   // step 1
+        Assert.Equal(1, policy.Step);
+        Assert.Empty(Run(policy, ref now, 20, new RoomQuality(10, 0)));
+        Assert.Empty(Run(policy, ref now, 9, RoomQuality.None));   // the reports are late: the twenty quiet seconds stand
+        Assert.Empty(Run(policy, ref now, 9, new RoomQuality(10, 0)));
+        Assert.Equal(new[] { (1, 0) }, Run(policy, ref now, 1, new RoomQuality(10, 0)));
+    }
+
+    [Fact]
     public void The_sharers_own_link_lowers_it_when_it_sends_to_more_than_one_viewer_directly_and_not_when_it_sends_to_one()
     {
         var policy = new QualityPolicy();
