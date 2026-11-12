@@ -34,6 +34,11 @@ public sealed class QualityPolicy
         public int BackoffMaxSeconds { get; init; } = 300;
         /// <summary>After this long without trouble the wait for a step up falls back to <see cref="QuietSeconds"/>.</summary>
         public int BackoffResetSeconds { get; init; } = 600;
+        /// <summary>
+        /// When no report arrives with viewers there (a report late over a link that loses much of what it carries), the count of trouble or quiet is held for
+        /// this long, so that a gap does not wipe out seconds that were counted; after it, no report is no information and the count starts again.
+        /// </summary>
+        public int CarrySeconds { get; init; } = 15;
         /// <summary>The share of what was sent that is sent again, above which the sharer's own link is taken to be the cause.</summary>
         public double ResentLimit { get; init; } = 0.05;
         public int MaxStep { get; init; } = QualityLadder.Steps - 1;
@@ -43,7 +48,7 @@ public sealed class QualityPolicy
     public const long TickMs = 1000;
 
     private readonly Settings _s;
-    private long _troubleSince = -1, _quietSince = -1, _lastChange = long.MinValue / 2, _lastUp = long.MinValue / 2, _lastTrouble = long.MinValue / 2;
+    private long _troubleSince = -1, _quietSince = -1, _lastChange = long.MinValue / 2, _lastUp = long.MinValue / 2, _lastTrouble = long.MinValue / 2, _lastReportAt = long.MinValue / 2;
     private int _upWaitSeconds;
 
     public QualityPolicy(Settings? settings = null)
@@ -69,6 +74,15 @@ public sealed class QualityPolicy
     public QualityDecision Tick(long nowMs, RoomQuality room, OwnLink own, int viewers)
     {
         bool roomTrouble = RoomInTrouble(room), ownTrouble = OwnLinkInTrouble(own);
+        if (room.Reported > 0) _lastReportAt = nowMs;
+        else if (viewers > 0 && !ownTrouble && nowMs - _lastReportAt <= _s.CarrySeconds * 1000L)
+        {
+            // Nothing arrived this second, with viewers there and a report a moment ago (late over a link that loses much of what it carries): no information
+            // changes nothing, so the count of trouble or quiet is held where it is and goes on when reports come back. After the carry it starts again.
+            if (_troubleSince >= 0) _troubleSince += TickMs;
+            if (_quietSince >= 0) _quietSince += TickMs;
+            return new QualityDecision(Step, false, null);
+        }
         bool trouble = roomTrouble || ownTrouble;
         // Quiet: nobody that reported is in trouble and the sharer's link is fine, with someone to hear from; or nobody is watching at all.
         bool quiet = !trouble && ((room.Reported > 0 && room.Troubled == 0) || viewers == 0);
