@@ -45,7 +45,7 @@ Not there yet: a real session on GNOME and KDE.
 
 - Sender: FFmpeg's Windows Graphics Capture filter (`gfxcapture`) captures and FFmpeg encodes. Use a hardware H.264 encoder (NVENC, AMF, Quick Sync) when the machine has one, otherwise VP8 or VP9 in software; pick with a short test at the start.
 - Transport: the encoded packets go over an unreliable channel, split into datagrams of about 1100 bytes with sequence numbers, and a keyframe is requested when a viewer joins or loses packets.
-- Viewer: FFmpeg decodes to raw frames drawn in a viewer tile. Windows bundles it; the `.deb` recommends the system `ffmpeg` package. Android can only watch (its own decoders handle both codecs).
+- Viewer: FFmpeg decodes to raw frames drawn in a viewer tile. Pictures wait in a queue of a few and are drawn on a steady clock (`PlayoutQueue`, `PlayoutClock`) whose pace is the number of pictures that arrived in the last second over the time they took, so bunched arrivals (jitter, or a burst after the sender stalled) do not slow it. An earlier clock averaged the gaps between arrivals after lifting each to at least 15 ms, which at 60 pictures a second ran too slow whenever arrivals were bunched: a viewer drew 49 of the 60 pictures that arrived (the rest counted as "too late to show") with nothing lost, and at 120 a second about half. Windows bundles it; the `.deb` recommends the system `ffmpeg` package. Android can only watch (its own decoders handle both codecs).
 - A share is announced like a voice beacon (who, which screen or window, size, codec), and nothing is sent to anyone who has not clicked Watch. A blocked person's share is never shown.
 
 ## FFmpeg and the encoders
