@@ -22,14 +22,18 @@ public partial class ScreenViewControl : UserControl
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly long _startedAt = Environment.TickCount64;
 
-    public ScreenViewControl() => InitializeComponent();
+    public ScreenViewControl()
+    {
+        InitializeComponent();
+        _playout = new PlayoutQueue<Picture>(picture => _viewer?.Return(picture));
+    }
 
     /// <summary>What this watch has done so far, counted from when it began (null if there is no stream).</summary>
     public WatchFigures? Figures()
     {
         if (_view == null || _released) return null;
         var st = _view.Status;
-        return new WatchFigures(_name, _startedAt, _shown, _viewer?.FramesIn ?? 0, _viewer?.BytesIn ?? 0, _view.FramesLost, st.Recovered, Interlocked.Read(ref _late),
+        return new WatchFigures(_name, _startedAt, _shown, _viewer?.FramesIn ?? 0, _viewer?.BytesIn ?? 0, _view.FramesLost, st.Recovered, _playout.Late,
             _viewer?.Dropped ?? 0, _viewer?.DecodeQueue ?? 0, st.Attached, st.Parent, _view.FramesMissed, _viewer?.PictureKind);
     }
 
@@ -106,52 +110,22 @@ public partial class ScreenViewControl : UserControl
         }
     }
 
-    // Over the internet pictures arrive unevenly: a few close together, then a gap. Drawn as they come, that looks like
-    // stutter. They wait in a short queue and are drawn on a steady clock set by how fast they arrive on average. The
-    // queue holds only a few pictures (about a tenth of a second), and if it grows past that the oldest are dropped
-    // so the delay does not build up.
-    private const int TargetQueue = 2, MaxQueue = 5;
-    private const double MinIntervalMs = 15, MaxIntervalMs = 200;
-    private readonly System.Collections.Concurrent.ConcurrentQueue<Picture> _queue = new();
+    // Over the internet pictures arrive unevenly: a few close together, then a gap. Drawn as they come, that looks like stutter. They wait in a
+    // short queue and are drawn on a steady clock set by how fast they arrive on average (see PlayoutQueue).
+    private readonly PlayoutQueue<Picture> _playout;
     private readonly DispatcherTimer _draw = new() { Interval = TimeSpan.FromMilliseconds(4) };
-    private double _intervalMs = 33;
-    private long _lastArrival, _nextDue, _firstQueued;
-    private bool _playing;
     private long _statsAt = Environment.TickCount64, _statsShown, _statsFrames, _statsBytes;
-    private long _late;   // pictures that arrived too bunched up to be shown in time and were skipped
 
     private void OnPicture(Picture picture)
     {
-        long now = Environment.TickCount64;
-        long previous = Interlocked.Exchange(ref _lastArrival, now);
-        if (previous != 0)
-        {
-            // Smoothed over many pictures, so one late arrival does not slow the clock.
-            double gap = Math.Clamp(now - previous, MinIntervalMs, MaxIntervalMs);
-            _intervalMs += (gap - _intervalMs) * 0.05;
-        }
-        if (_queue.IsEmpty) Volatile.Write(ref _firstQueued, now);
-        _queue.Enqueue(picture);
-        while (_queue.Count > MaxQueue && _queue.TryDequeue(out var old)) { Interlocked.Increment(ref _late); _viewer?.Return(old); }
+        _playout.Arrive(picture, Environment.TickCount64);
         if (Interlocked.Exchange(ref _pending, 1) == 0) Dispatcher.UIThread.Post(() => { Interlocked.Exchange(ref _pending, 0); if (!_draw.IsEnabled) _draw.Start(); });
     }
 
     private void DrawTick()
     {
-        long now = Environment.TickCount64;
-        if (IsEnded || _queue.IsEmpty) { _playing = false; _draw.Stop(); return; }
-        if (!_playing)
-        {
-            // Start once a couple of pictures are waiting, or after a short wait if they come slowly.
-            if (_queue.Count < TargetQueue && now - Volatile.Read(ref _firstQueued) < 120) return;
-            _playing = true;
-            _nextDue = now;
-        }
-        if (now < _nextDue) return;
-        if (!_queue.TryDequeue(out var picture)) return;
-        _nextDue = Math.Max(_nextDue + (long)_intervalMs, now - (long)_intervalMs);   // a late draw does not make a burst afterwards
-        // More waiting than the target means the clock is behind; show the newest of them instead of falling further back.
-        while (_queue.Count > TargetQueue + 1 && _queue.TryDequeue(out var skipped)) { Interlocked.Increment(ref _late); _viewer?.Return(picture); picture = skipped; }
+        if (IsEnded || _playout.IsEmpty) { _playout.Reset(); _draw.Stop(); return; }
+        if (!_playout.TryDraw(Environment.TickCount64, out var picture)) return;
         Show(picture);
         _viewer?.Return(picture);
     }
@@ -187,7 +161,7 @@ public partial class ScreenViewControl : UserControl
         double shownFps = (shown - _statsShown) / seconds, arriveFps = (frames - _statsFrames) / seconds, kbps = (bytes - _statsBytes) * 8 / 1000.0 / seconds;
         (_statsAt, _statsShown, _statsFrames, _statsBytes) = (now, shown, frames, bytes);
         // Delay added by the playout queue: what waits to be drawn, at the pace they arrive.
-        int delayMs = (int)(_queue.Count * _intervalMs);
+        int delayMs = (int)(_playout.Count * _playout.IntervalMs);
         // The stream's own check: a parent that has not been heard from for a few seconds is let go, and it is looked for again.
         if (st.Attached)
         {
@@ -204,7 +178,7 @@ public partial class ScreenViewControl : UserControl
         // A small figure over the picture: how many pictures a second are really drawn.
         FpsBadge.IsVisible = _shown > 0 && !_connectionLost;
         FpsText.Text = $"{shownFps:0} fps";
-        Info.Text = $"{_name}  -  {_shown} pictures, {_view.FramesLost} lost, {st.Recovered} packets recovered, {Interlocked.Read(ref _late)} late"
+        Info.Text = $"{_name}  -  {_shown} pictures, {_view.FramesLost} lost, {st.Recovered} packets recovered, {_playout.Late} late"
             + $"\nArriving {arriveFps:0.0}/s at {kbps:0} kbit/s, drawn {shownFps:0.0}/s, decoder queue {_viewer?.DecodeQueue ?? 0}, playout delay {delayMs} ms"
             + (st.Attached ? "" : "  -  connecting to the sharer...");
     }
