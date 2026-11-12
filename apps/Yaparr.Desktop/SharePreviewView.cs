@@ -11,9 +11,11 @@ using Yaparr.Screen;
 namespace Yaparr.Desktop;
 
 /// <summary>
-/// What the people watching your share see: the frames that are being sent, decoded again here and shown above the sharing panel. It is the
-/// real thing (quality, blur, how smooth) and costs a second decoder while it is open, so it only runs while it is shown. Sharing a whole
-/// monitor with the preview showing on it makes the picture show itself, so for a monitor it starts closed.
+/// What the people watching your share see: the frames that are being sent, decoded again here, shrunk, and shown above the sharing panel, at
+/// <see cref="Size"/> (about 15 pictures a second by default; with 1 or 2 only key frames are decoded, which is much cheaper). The first version
+/// decoded every frame in software and drew them at full size, and cost more than the whole share (measured: this program went from 138% to
+/// 10% of a core with the preview hidden). It only runs while it is shown.
+/// Sharing a whole monitor with the preview showing on it makes the picture show itself, so for a monitor it starts closed.
 /// </summary>
 public sealed class SharePreviewView : UserControl
 {
@@ -33,6 +35,21 @@ public sealed class SharePreviewView : UserControl
     private int _pending;
     private bool _expanded;
     private bool _wholeMonitor;
+    private TimeSpan _decoderCpuDone;
+
+    /// <summary>
+    /// The picture shown is no larger than this (the box it is shown in is 150 high), and no more of them a second than this; scaling down is done by
+    /// the decoder. YAPARR_PREVIEW_FPS changes the rate (1 shows key frames only), to find what suits.
+    /// </summary>
+    internal static readonly PreviewSize Size = new(640, 360, Environment.GetEnvironmentVariable("YAPARR_PREVIEW_FPS") is { } fps && int.TryParse(fps, out int n) && n > 0 ? Math.Min(n, 60) : 15);
+
+    /// <summary>The processor time the preview's decoder (a separate FFmpeg) has used since the share began, which the program's own figure does not include.</summary>
+    public TimeSpan DecoderCpu => _decoderCpuDone + (_viewer?.DecoderCpu ?? default);
+
+    private string? _decoderKind;
+
+    /// <summary>How the preview is decoding (on the card through Direct3D 12 or 11, or on the processor, and what did not work), kept after it closes; null until it has run.</summary>
+    public string? DecoderKind => _viewer?.DecoderKind ?? _decoderKind;
 
     public SharePreviewView()
     {
@@ -40,6 +57,9 @@ public sealed class SharePreviewView : UserControl
         DockPanel.SetDock(_toggle, Dock.Right);
         header.Children.Add(_toggle);
         header.Children.Add(_title);
+        ToolTip.SetTip(header, Size.KeyFramesOnly
+            ? "Shows each key frame of what is being sent, about once a second, shrunk. It is not live video."
+            : $"Shows what is being sent, shrunk, at about {Size.Fps} pictures a second. It decodes the stream a second time, which costs some processor time while it is open.");
         _body.Child = new Grid { Children = { _picture, _waiting } };
         Content = new StackPanel { Children = { header, _body, _note } };
         _toggle.Click += (_, _) => SetExpanded(!_expanded);
@@ -51,6 +71,8 @@ public sealed class SharePreviewView : UserControl
     {
         Detach();
         _sharer = sharer;
+        _decoderCpuDone = default;
+        _decoderKind = null;
         _ffmpeg = ffmpegPath;
         sharer.FrameEncoded += OnEncoded;
         IsVisible = true;
@@ -100,7 +122,7 @@ public sealed class SharePreviewView : UserControl
         try
         {
             var frames = new LocalFrames();
-            var viewer = new ScreenViewer(frames, _ffmpeg);
+            var viewer = new ScreenViewer(frames, _ffmpeg, preview: Size);
             viewer.PictureReceived += OnPicture;
             viewer.Failed += ex => Dispatcher.UIThread.Post(() => { _waiting.Text = "The preview stopped: " + ex.Message; _waiting.IsVisible = true; });
             _viewer = viewer;
@@ -117,7 +139,7 @@ public sealed class SharePreviewView : UserControl
         _frames = null;
         var viewer = _viewer;
         _viewer = null;
-        if (viewer != null) { viewer.PictureReceived -= OnPicture; viewer.Dispose(); }
+        if (viewer != null) { viewer.PictureReceived -= OnPicture; _decoderKind = viewer.DecoderKind; viewer.Dispose(); _decoderCpuDone += viewer.DecoderCpu; }
         Interlocked.Exchange(ref _latest, null);
         _bitmap = null;
         _picture.Source = null;

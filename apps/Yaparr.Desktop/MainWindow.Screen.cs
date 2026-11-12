@@ -265,7 +265,8 @@ public partial class MainWindow
         var figures = sharer.Figures();
         return $"{ScreenCodecs.Describe(sharer.Codec, sharer.Encoder)}{(sharer.InProcess ? ", in this program" : "")}{(sharer.FallbackReason is { } why ? $" (not used: {why})" : "")}, "
                + $"{sharer.Frames} frames sent; {figures.DescribeKeys()}{(figures.Encodes > 0 ? "; " + figures.DescribeEncoding(sharer.FrameBudgetMs) : "")}; "
-               + (sharer.CaptureInProcess ? (sharer.CaptureOnCard ? "capture in this program, pictures kept on the card" : "capture in this program, pictures copied to memory") : $"capture program used {sharer.CaptureCpu.TotalSeconds:0.0} s of processor time, restarted {figures.Restarts} times") + program;
+               + (sharer.CaptureInProcess ? (sharer.CaptureOnCard ? "capture in this program, pictures kept on the card" : "capture in this program, pictures copied to memory") : $"capture program used {sharer.CaptureCpu.TotalSeconds:0.0} s of processor time, restarted {figures.Restarts} times") + program + ", "
+               + $"the preview's decoder {SharePreview.DecoderCpu.TotalSeconds:0.0} s{(SharePreview.DecoderKind is { } kind ? " (" + kind + ")" : "")}";
     }
 
     // The totals go to the log when a share stops (the ended handler writes its own, with the reason, and asks not to).
