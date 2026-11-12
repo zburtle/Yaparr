@@ -1,4 +1,5 @@
 ﻿using Avalonia.Controls;
+using System.Diagnostics;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Yaparr.Chat;
@@ -159,6 +160,8 @@ public partial class MainWindow
                 conv.Add(MessageVm.System("The sound stopped: " + ex.Message + " The picture is still shared."));
             });
             _sharer = sharer;
+            _shareStartedTicks = Stopwatch.GetTimestamp();
+            using (var me = Process.GetCurrentProcess()) _shareAppCpu = me.TotalProcessorTime;
             _sharerConv = conv;
             GuardSharingWithoutVoice(sharer, conv, room);
             _sharerStats = new SharerStatsView(sharer, options.Fps, room);
@@ -242,12 +245,21 @@ public partial class MainWindow
     private readonly List<string> _lastWatchReports = new();
 
     /// <summary>What a share did, in one line for the log: the encoder, the frames and key frames, the encoder's timings and the capture's processor time.</summary>
-    private static string SharingSummary(ScreenSharer sharer)
+    // When the share began and what this program had used by then, so that the totals can say what the share cost this program (a share too short for
+    // the per-minute line, or one the line missed, still says it).
+    private long _shareStartedTicks;
+    private TimeSpan _shareAppCpu;
+
+    private string SharingSummary(ScreenSharer sharer)
     {
+        double seconds = _shareStartedTicks == 0 ? 0 : Stopwatch.GetElapsedTime(_shareStartedTicks).TotalSeconds;
+        TimeSpan used;
+        using (var me = Process.GetCurrentProcess()) used = me.TotalProcessorTime - _shareAppCpu;
+        string program = seconds >= 1 ? $", this program used {used.TotalSeconds:0.0} s of processor time over {seconds:0} s ({used.TotalSeconds / seconds * 100:0}% of a core)" : "";
         var figures = sharer.Figures();
         return $"{ScreenCodecs.Describe(sharer.Codec, sharer.Encoder)}{(sharer.InProcess ? ", in this program" : "")}{(sharer.FallbackReason is { } why ? $" (not used: {why})" : "")}, "
                + $"{sharer.Frames} frames sent; {figures.DescribeKeys()}{(figures.Encodes > 0 ? "; " + figures.DescribeEncoding(sharer.FrameBudgetMs) : "")}; "
-               + (sharer.CaptureInProcess ? "capture in this program" : $"capture program used {sharer.CaptureCpu.TotalSeconds:0.0} s of processor time, restarted {figures.Restarts} times");
+               + (sharer.CaptureInProcess ? "capture in this program" : $"capture program used {sharer.CaptureCpu.TotalSeconds:0.0} s of processor time, restarted {figures.Restarts} times") + program;
     }
 
     // The totals go to the log when a share stops (the ended handler writes its own, with the reason, and asks not to).
