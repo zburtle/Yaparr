@@ -16,11 +16,16 @@ public static class FfmpegLibraries
     private static string _why = "", _info = "";
 
     /// <summary>The folder with FFmpeg's libraries, or null when there is none.</summary>
-    public static string? Find(string? appDirectory = null, string? explicitFolder = null)
+    public static string? Find(string? appDirectory = null, string? explicitFolder = null, string? installDirectory = null)
     {
         explicitFolder ??= Environment.GetEnvironmentVariable("YAPARR_FFMPEG_LIBS");
         appDirectory ??= AppContext.BaseDirectory;
-        foreach (var dir in new[] { explicitFolder, Path.Combine(appDirectory, "ffmpeg"), appDirectory })
+        // The libraries come in the same package as ffmpeg.exe (see FfmpegPackage), so the folder of the FFmpeg the app would run, bundled next to the
+        // app or downloaded by it, has them too.
+        string? installed = null;
+        try { installed = Path.GetDirectoryName(FfmpegLocator.Find(appDirectory, pathVariable: "", explicitPath: "", installDirectory: installDirectory)); }
+        catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException) { }
+        foreach (var dir in new[] { explicitFolder, Path.Combine(appDirectory, "ffmpeg"), appDirectory, installed })
             if (!string.IsNullOrWhiteSpace(dir) && Directory.Exists(dir) && HasLibrary(dir)) return Path.GetFullPath(dir);
         return null;
     }

@@ -28,7 +28,7 @@ public static class ShareWindows
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
     [DllImport("user32.dll", EntryPoint = "GetWindowLongW")] private static extern int GetWindowLong(IntPtr hwnd, int index);
     [DllImport("dwmapi.dll")] private static extern int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out int value, int size);
-    [DllImport("dwmapi.dll", EntryPoint = "DwmGetWindowAttribute")] private static extern int DwmGetWindowRect(IntPtr hwnd, int attribute, out Rect value, int size);
+    [DllImport("user32.dll")] private static extern bool GetClientRect(IntPtr hwnd, out Rect rect);
 
     private const int GWL_EXSTYLE = -20, WS_EX_TOOLWINDOW = 0x80, DWMWA_CLOAKED = 14;
 
@@ -42,16 +42,12 @@ public static class ShareWindows
     }
 
     /// <summary>
-    /// The size of the window as Windows Graphics Capture sees it: the visible frame, without the invisible borders Windows puts around a window
-    /// (a maximised window is 8 pixels larger than the screen on each side by its rectangle, and exactly the work area by its frame). Null where
-    /// that cannot be asked, and for a minimised window.
+    /// The size of the picture Windows Graphics Capture makes of the window: what is inside it, its client area, without the title bar and the borders
+    /// (measured: an 800x500 window gives a 784x460 picture, the client area of 784x461 made even). Null where that cannot be asked, and for a minimised window.
     /// </summary>
     public static (int Width, int Height)? CaptureSize(long handle)
     {
-        if (!OperatingSystem.IsWindows() || IsIconic((IntPtr)handle)) return null;
-        const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
-        Rect rect;
-        if (DwmGetWindowRect((IntPtr)handle, DWMWA_EXTENDED_FRAME_BOUNDS, out rect, Marshal.SizeOf<Rect>()) != 0 && !GetWindowRect((IntPtr)handle, out rect)) return null;
+        if (!OperatingSystem.IsWindows() || IsIconic((IntPtr)handle) || !GetClientRect((IntPtr)handle, out var rect)) return null;
         int width = rect.Right - rect.Left, height = rect.Bottom - rect.Top;
         return width >= 16 && height >= 16 ? (width, height) : null;
     }

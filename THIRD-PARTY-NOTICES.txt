@@ -271,15 +271,18 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 SCREEN SHARING
 ==============================================================================
 
-FFmpeg (the FFmpeg developers), downloaded on first use
+FFmpeg (the FFmpeg developers), shipped with the app and downloaded where it is missing
 ------------------------------------------------------------------------------
-By default Yaparr does not link to FFmpeg. It runs FFmpeg as a separate program, which it can replace (set YAPARR_FFMPEG to another
-ffmpeg.exe, or put one in an "ffmpeg" folder next to the app). The Windows installer carries a build of FFmpeg that Yaparr
-makes itself, with only the parts Yaparr uses; where it is missing, the app offers to download the same build into your own
-application data folder. One experimental option (the environment variable YAPARR_INPROCESS set to 1, off by default) encodes
-inside Yaparr with FFmpeg's libraries instead: shared libraries (DLLs or .so files) that Yaparr loads from a folder next to the
-app (or the one YAPARR_FFMPEG_LIBS names), that are not linked into Yaparr's own programs and that anyone can replace. Only
-libraries under the LGPL are accepted. They are not shipped with Yaparr yet.
+On Windows Yaparr links to FFmpeg: it loads FFmpeg's shared libraries (the DLLs avcodec, avfilter, avformat, avdevice, avutil,
+swscale and swresample) from the "ffmpeg" folder next to the app, and uses them inside its own process to capture, scale and
+encode a shared screen. It also runs ffmpeg.exe, from the same folder, as a separate program for the rest (showing a screen, and
+graphics cards other than NVIDIA's). The libraries are separate files, not linked into Yaparr's own programs, and anyone can
+replace them: put DLLs of the same versions, built from the source below or from another FFmpeg, in that folder (or in the
+folder the environment variable YAPARR_FFMPEG_LIBS names; YAPARR_FFMPEG names another ffmpeg.exe). Only libraries under the
+LGPL are accepted. Setting YAPARR_INPROCESS to 0 turns the use inside Yaparr off, and then only the separate program is used.
+On Linux Yaparr runs FFmpeg as a separate program only. The Windows installer carries the build of FFmpeg that Yaparr makes
+itself, with only the parts Yaparr uses; where it is missing, the app offers to download the same build into your own
+application data folder.
 
 FFmpeg is licensed under the GNU Lesser General Public License, version 2.1 or later. The build has no GPL or "nonfree"
 part (no x264, no x265). Next to the program are the licence text (LICENSE.txt), SOURCE.txt, BUILD-INFO.txt (how it was
@@ -297,7 +300,7 @@ Built into it:
   The compiler's runtime (libgcc, libstdc++), GPL-3.0-or-later with the GCC Runtime Library Exception, and the MinGW-w64
     runtime and winpthreads (licenses/gcc-libs, licenses/crt, licenses/winpthreads)
 
-FFmpeg.AutoGen (Ruslan Balanukhin), the .NET bindings that load FFmpeg's libraries for the experimental option above, MIT licence
+FFmpeg.AutoGen (Ruslan Balanukhin), the .NET bindings through which Yaparr loads and calls FFmpeg's libraries, MIT licence
 (the MIT text above applies; the package carries its own copy in LICENSE.txt).
 
 FFmpeg is a trademark of Fabrice Bellard, originator of the FFmpeg project. Yaparr is not endorsed by the FFmpeg project.

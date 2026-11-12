@@ -479,7 +479,8 @@ public sealed class ScreenSharer : IDisposable
 
     /// <summary>The in-process encoder is asked for and there is something to do it with: NVIDIA's H.264 on Windows or X11, and FFmpeg's libraries.</summary>
     private static bool WantsInProcess(ScreenOptions options, ScreenCodec codec, HardwareEncoder? encoder)
-        => options.InProcessEncoder && options.Portal == null && codec == ScreenCodec.H264 && encoder == HardwareEncoder.Nvenc && FfmpegLibraries.IsAvailable;
+        => options.InProcessEncoder && options.Portal == null && codec == ScreenCodec.H264 && encoder == HardwareEncoder.Nvenc && FfmpegLibraries.IsAvailable
+           && (options.InProcessAsked || InProcessGuard.Allowed);
 
     /// <summary>The capture in this program is asked for as well, and can be done: Windows Graphics Capture, H.264 on NVIDIA, and the libraries.</summary>
     private static bool WantsInProcessCapture(ScreenOptions options, ScreenCodec codec, HardwareEncoder? encoder)
@@ -499,6 +500,14 @@ public sealed class ScreenSharer : IDisposable
         Interlocked.Increment(ref _runs);
         lock (_gate) _errors.Clear();
         _startedAt = DateTime.UtcNow;
+        // The program ending in the middle of this (native code crashing) is what InProcessGuard is for: the mark is taken away when the share ends here.
+        InProcessGuard.Begin();
+        try { await RunInProcessCaptureCoreAsync(onCard, ct).ConfigureAwait(false); }
+        finally { InProcessGuard.End(); }
+    }
+
+    private async Task RunInProcessCaptureCoreAsync(bool onCard, CancellationToken ct)
+    {
         InProcessCapture capture;
         try { capture = new InProcessCapture(_options, onCard); }
         catch (Exception ex) when (!ct.IsCancellationRequested) { throw CaptureFailed(ex.Message); }
@@ -581,6 +590,13 @@ public sealed class ScreenSharer : IDisposable
         _picture = null;
         Interlocked.Increment(ref _runs);
         lock (_gate) _errors.Clear();
+        InProcessGuard.Begin();
+        try { await RunInProcessEncoderCoreAsync(ct).ConfigureAwait(false); }
+        finally { InProcessGuard.End(); }
+    }
+
+    private async Task RunInProcessEncoderCoreAsync(CancellationToken ct)
+    {
         var psi = new ProcessStartInfo(_ffmpeg) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
         foreach (var a in FfmpegArgs.CaptureRaw(_options)) psi.ArgumentList.Add(a);
         _lastArguments = string.Join(' ', psi.ArgumentList) + "  (encoded in this program)";

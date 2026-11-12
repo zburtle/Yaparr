@@ -138,6 +138,7 @@ public static class FfmpegInstaller
             using (var archive = ZipFile.OpenRead(zip))
             {
                 Extract(archive, package.ExePathInZip, Path.Combine(staging, ExeName));
+                ExtractLibraries(archive, package.ExePathInZip, staging);
                 if (package.LicensePathInZip != null) Extract(archive, package.LicensePathInZip, Path.Combine(staging, "LICENSE.txt"), required: false);
                 if (package.NoticesRoot != null) ExtractNotices(archive, package.NoticesRoot, staging);
             }
@@ -159,6 +160,22 @@ public static class FfmpegInstaller
         finally
         {
             try { Directory.Delete(work, recursive: true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
+    }
+
+    // The libraries of a shared build (the DLLs, or the .so files) sit in the zip next to the program and must sit next to it afterwards: Windows looks for a
+    // DLL in the folder of the program that needs it, and the app loads them from there too. Only files, only of those kinds, only from that folder.
+    private static void ExtractLibraries(ZipArchive archive, string exePathInZip, string destination)
+    {
+        int slash = exePathInZip.LastIndexOf('/');
+        string folder = slash < 0 ? "" : exePathInZip[..(slash + 1)];
+        foreach (var entry in archive.Entries)
+        {
+            if (entry.FullName.EndsWith('/') || !entry.FullName.StartsWith(folder, StringComparison.Ordinal)) continue;
+            string name = entry.FullName[folder.Length..];
+            if (name.Contains('/') || name.Length == 0) continue;
+            if (!(name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) || name.Contains(".so", StringComparison.Ordinal))) continue;
+            entry.ExtractToFile(Path.Combine(destination, name), overwrite: true);
         }
     }
 

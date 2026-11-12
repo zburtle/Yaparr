@@ -191,7 +191,13 @@ public sealed class ScreenOptions
     /// H.264 only so far, and only where the libraries are there (<see cref="FfmpegLibraries"/>); anything else is encoded as before.
     /// Experimental: off unless the YAPARR_INPROCESS environment variable is 1.
     /// </summary>
-    public bool InProcessEncoder { get; init; } = Environment.GetEnvironmentVariable("YAPARR_INPROCESS") is "1" or "capture" or "capture-cpu";
+    public bool InProcessEncoder { get; init; } = InProcessSettings.FromEnvironment().Mode != InProcessMode.Off;
+
+    /// <summary>
+    /// The in-process mode was asked for in so many words (YAPARR_INPROCESS has a value), not left to the default: then <see cref="InProcessGuard"/>, which
+    /// turns the default off after programs that ended in the middle of such a share, does not stop it.
+    /// </summary>
+    public bool InProcessAsked { get; init; } = InProcessSettings.FromEnvironment().Asked;
 
     /// <summary>
     /// Also capture inside this program (Windows Graphics Capture through FFmpeg's libraries, see <see cref="InProcessCapture"/>), so that no FFmpeg
@@ -199,7 +205,7 @@ public sealed class ScreenOptions
     /// where the libraries lack what the capture needs the encoder alone is tried next. Experimental: off unless YAPARR_INPROCESS is "capture"
     /// (pictures kept on the graphics card, see <see cref="CaptureOnCard"/>) or "capture-cpu" (copied to memory).
     /// </summary>
-    public bool InProcessCapture { get; init; } = Environment.GetEnvironmentVariable("YAPARR_INPROCESS") is "capture" or "capture-cpu";
+    public bool InProcessCapture { get; init; } = InProcessSettings.FromEnvironment().Mode is InProcessMode.CaptureOnCpu or InProcessMode.CaptureOnCard;
 
     /// <summary>
     /// With <see cref="InProcessCapture"/>: the pictures stay on the graphics card from the capture to NVENC (the capture scales them there, and NVENC
@@ -207,14 +213,14 @@ public sealed class ScreenOptions
     /// or a window's as it is when sharing begins); where it cannot be had, or the card refuses, the pictures are copied to memory as before.
     /// On whenever YAPARR_INPROCESS is "capture"; "capture-cpu" is the copy to memory only, for comparing.
     /// </summary>
-    public bool CaptureOnCard { get; init; } = Environment.GetEnvironmentVariable("YAPARR_INPROCESS") == "capture";
+    public bool CaptureOnCard { get; init; } = InProcessSettings.FromEnvironment().Mode == InProcessMode.CaptureOnCard;
 
     /// <summary>The same options for another monitor or window: everything else (quality, codec, sound) stays.</summary>
     public ScreenOptions Retarget(Display? display, long? windowHandle) => new()
     {
         Display = display, WindowHandle = windowHandle, Fps = Fps, MaxWidth = MaxWidth, MaxHeight = MaxHeight, Kbps = Kbps,
         KeyFrameSeconds = KeyFrameSeconds, Codec = Codec, Encoder = Encoder, ShareSound = ShareSound, SoundProgram = SoundProgram, GpuScale = GpuScale, ShowCursor = ShowCursor,
-        X11Display = X11Display, InProcessEncoder = InProcessEncoder, InProcessCapture = InProcessCapture, CaptureOnCard = CaptureOnCard,
+        X11Display = X11Display, InProcessEncoder = InProcessEncoder, InProcessCapture = InProcessCapture, CaptureOnCard = CaptureOnCard, InProcessAsked = InProcessAsked,
     };
 
     /// <summary>The same options for another stream from the portal (the desktop asked again what to share).</summary>
@@ -222,7 +228,7 @@ public sealed class ScreenOptions
     {
         Portal = portal, Fps = Fps, MaxWidth = MaxWidth, MaxHeight = MaxHeight, Kbps = Kbps, KeyFrameSeconds = KeyFrameSeconds, Codec = Codec,
         Encoder = Encoder, ShareSound = ShareSound, SoundProgram = SoundProgram, GpuScale = false, ShowCursor = ShowCursor, X11Display = X11Display,
-        InProcessEncoder = InProcessEncoder, InProcessCapture = InProcessCapture, CaptureOnCard = CaptureOnCard,
+        InProcessEncoder = InProcessEncoder, InProcessCapture = InProcessCapture, CaptureOnCard = CaptureOnCard, InProcessAsked = InProcessAsked,
     };
 }
 

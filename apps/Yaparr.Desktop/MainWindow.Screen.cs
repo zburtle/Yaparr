@@ -134,7 +134,13 @@ public partial class MainWindow
             if (options.Encoder is null or Yaparr.Screen.HardwareEncoder.Nvenc)
                 _ = Task.Run(async () => { if (await NvidiaSmi.InfoAsync() is { } card) _log.Write("graphics card: " + card); });
             if (options.InProcessEncoder)
-                _log.Write(FfmpegLibraries.TryLoad(out var libraryProblem) ? "in-process encoder: FFmpeg libraries " + FfmpegLibraries.Describe() : "in-process encoder asked for but not usable: " + libraryProblem);
+            {
+                if (!FfmpegLibraries.TryLoad(out var libraryProblem))
+                    _log.Write($"in-process capture and encoding {(options.InProcessAsked ? "asked for" : "is the default here")} but not usable: {libraryProblem} A separate FFmpeg is used.");
+                else if (!options.InProcessAsked && !InProcessGuard.Allowed)
+                    _log.Write($"in-process capture and encoding is the default here but off: the program ended in the middle of such a share {InProcessGuard.UncleanEndings} times in a row (see {InProcessGuard.MarkFile}); a separate FFmpeg is used until a share ends well, or YAPARR_INPROCESS=capture asks for it.");
+                else _log.Write("in-process encoder: FFmpeg libraries " + FfmpegLibraries.Describe());
+            }
             // Which encoder is really in use (not only which was asked for): in this program, a separate FFmpeg, or the next one after a failure.
             sharer.EncoderStarted += () =>
             {

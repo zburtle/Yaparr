@@ -25,7 +25,7 @@ public class InProcessShareTests(Xunit.Abstractions.ITestOutputHelper output)
         var options = new ScreenOptions
         {
             Display = display, X11Display = null, Fps = 15, Kbps = 1000, KeyFrameSeconds = 30, MaxWidth = 640, MaxHeight = 360,
-            Codec = ScreenCodec.H264, Encoder = HardwareEncoder.Nvenc, InProcessEncoder = true,
+            Codec = ScreenCodec.H264, Encoder = HardwareEncoder.Nvenc, InProcessEncoder = true, InProcessCapture = false,   // the encoder here, a separate FFmpeg capturing
         };
         using var sharer = ScreenSharer.Start(cluster.Root, cluster.Rooms[0], "Test screen", options, ffmpeg);
         try { await TestUtil.WaitFor(() => sharer.Frames >= 5, 20_000); }
@@ -98,7 +98,7 @@ public class InProcessShareTests(Xunit.Abstractions.ITestOutputHelper output)
         var options = new ScreenOptions
         {
             Display = display, X11Display = null, Fps = 15, Kbps = 1000, KeyFrameSeconds = 1, MaxWidth = 640, MaxHeight = 360,
-            Codec = ScreenCodec.H264, Encoder = HardwareEncoder.Nvenc, InProcessEncoder = true,
+            Codec = ScreenCodec.H264, Encoder = HardwareEncoder.Nvenc, InProcessEncoder = true, InProcessCapture = false,   // the encoder here, a separate FFmpeg capturing
         };
         using var sharer = ScreenSharer.Start(cluster.Root, cluster.Rooms[0], "Test screen", options, ffmpeg);
         try { await TestUtil.WaitFor(() => sharer.Frames >= 40, 20_000); }
