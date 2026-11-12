@@ -32,6 +32,7 @@ public sealed unsafe class InProcessCapture : IDisposable
     private bool _timerRaised;
     private readonly TaskCompletionSource _first = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private long _pictures, _emptyPolls;
+    private AVBufferRef* _hardwareFrames;   // with pictures on the card: what the encoder needs to read them
 
     /// <summary>The size of the pictures (known once the first has come; see <see cref="WaitForFirstAsync"/>).</summary>
     public int Width { get; private set; }
@@ -49,11 +50,19 @@ public sealed unsafe class InProcessCapture : IDisposable
     /// <summary>The size of one picture handed to the encoder: NV12, so 12 bits a pixel.</summary>
     public int PictureBytes => Width * Height * 3 / 2;
 
-    public InProcessCapture(ScreenOptions options)
+    /// <summary>The pictures stay on the graphics card (Direct3D 11 textures) and the encoder reads them there.</summary>
+    public bool OnCard { get; }
+
+    /// <summary>With the pictures on the card: the frames context to give the encoder (a reference is held here; the encoder takes its own).</summary>
+    internal AVBufferRef* HardwareFrames => _hardwareFrames;
+
+    public InProcessCapture(ScreenOptions options, bool onCard = false)
     {
+        OnCard = onCard;
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Capture in this program is only for Windows Graphics Capture so far.");
         if (!FfmpegLibraries.TryLoad(out var why)) throw new PlatformNotSupportedException(why);
-        Graph = FfmpegArgs.CaptureFilter(options, raw: true);
+        Graph = (onCard ? FfmpegArgs.CaptureFilterOnCard(options) : FfmpegArgs.CaptureFilter(options, raw: true))
+                ?? throw new InvalidOperationException("The size of the picture is not known, so it cannot be scaled on the graphics card.");
         _graph = ffmpeg.avfilter_graph_alloc();
         try
         {
@@ -73,6 +82,12 @@ public sealed unsafe class InProcessCapture : IDisposable
             ffmpeg.avfilter_inout_free(&outputs);
             Check(parsed, "building the capture graph");
             Check(ffmpeg.avfilter_graph_config(_graph, null), "starting the capture");
+            if (onCard)
+            {
+                var frames = ffmpeg.av_buffersink_get_hw_frames_ctx(_sink);
+                if (frames == null) throw new InvalidOperationException("The capture does not keep its pictures on the graphics card.");
+                _hardwareFrames = ffmpeg.av_buffer_ref(frames);
+            }
         }
         catch
         {
@@ -114,7 +129,8 @@ public sealed unsafe class InProcessCapture : IDisposable
                     Finish("The capture stopped: " + Marshal.PtrToStringAnsi((IntPtr)buffer));
                     return;
                 }
-                if (frame->format != (int)AVPixelFormat.AV_PIX_FMT_NV12) { ffmpeg.av_frame_unref(frame); Finish("The capture gave pictures that are not NV12."); return; }
+                var expected = OnCard ? AVPixelFormat.AV_PIX_FMT_D3D11 : AVPixelFormat.AV_PIX_FMT_NV12;
+                if (frame->format != (int)expected) { ffmpeg.av_frame_unref(frame); Finish($"The capture gave pictures that are not {(OnCard ? "on the graphics card" : "NV12")}."); return; }
                 long at = Stopwatch.GetTimestamp();
                 lock (_gate)
                 {
@@ -167,6 +183,7 @@ public sealed unsafe class InProcessCapture : IDisposable
             if (_newest != null) { var f = _newest; ffmpeg.av_frame_free(&f); _newest = null; }
         }
         if (_graph != null && threadGone) { var g = _graph; ffmpeg.avfilter_graph_free(&g); _graph = null; }
+        if (_hardwareFrames != null && threadGone) { var h = _hardwareFrames; ffmpeg.av_buffer_unref(&h); _hardwareFrames = null; }
         if (_timerRaised) { _timerRaised = false; timeEndPeriod(1); }
         _first.TrySetCanceled();
     }

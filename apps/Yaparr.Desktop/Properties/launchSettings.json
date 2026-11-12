@@ -10,10 +10,16 @@
         "YAPARR_INPROCESS": "1"
       }
     },
-    "Yaparr (your profile, in-process capture and encoder)": {
+    "Yaparr (your profile, in-process capture, pictures on the card)": {
       "commandName": "Project",
       "environmentVariables": {
         "YAPARR_INPROCESS": "capture"
+      }
+    },
+    "Yaparr (your profile, in-process capture, pictures copied to memory)": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "YAPARR_INPROCESS": "capture-cpu"
       }
     },
     "alice (separate profile)": {

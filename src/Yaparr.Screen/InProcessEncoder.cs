@@ -120,7 +120,18 @@ public sealed unsafe class InProcessEncoder : IDisposable
     /// <summary>The size of one picture handed to <see cref="Encode"/>: NV12, so 12 bits a pixel.</summary>
     public int PictureBytes => Width * Height * 3 / 2;
 
-    public InProcessEncoder(int width, int height, ScreenOptions options)
+    private bool _onCard;
+
+    /// <summary>Pictures are read from the graphics card (see <see cref="InProcessCapture.OnCard"/>), not handed over as bytes.</summary>
+    public bool OnCard => _onCard;
+
+    public InProcessEncoder(int width, int height, ScreenOptions options) : this(width, height, options, null) { }
+
+    /// <summary>
+    /// With <paramref name="capture"/> keeping its pictures on the card, the encoder takes Direct3D 11 pictures from it as they are (NVENC converts them
+    /// itself); otherwise it takes NV12 bytes.
+    /// </summary>
+    public InProcessEncoder(int width, int height, ScreenOptions options, InProcessCapture? capture)
     {
         if (!FfmpegLibraries.TryLoad(out var why)) throw new PlatformNotSupportedException(why);
         if (width < 16 || height < 16 || width % 2 != 0 || height % 2 != 0) throw new ArgumentException($"A picture of {width}x{height} cannot be encoded.");
@@ -135,7 +146,9 @@ public sealed unsafe class InProcessEncoder : IDisposable
             _context->height = height;
             _context->time_base = new AVRational { num = 1, den = options.Fps };
             _context->framerate = new AVRational { num = options.Fps, den = 1 };
-            _context->pix_fmt = AVPixelFormat.AV_PIX_FMT_NV12;
+            _onCard = capture is { OnCard: true };
+            _context->pix_fmt = _onCard ? AVPixelFormat.AV_PIX_FMT_D3D11 : AVPixelFormat.AV_PIX_FMT_NV12;
+            if (_onCard) _context->hw_frames_ctx = ffmpeg.av_buffer_ref(capture!.HardwareFrames);
             _context->bit_rate = options.Kbps * 1000L;
             _context->rc_max_rate = (long)(options.Kbps * 1500L);
             _context->rc_buffer_size = (int)(options.Kbps * 1500L);
@@ -146,12 +159,16 @@ public sealed unsafe class InProcessEncoder : IDisposable
             SetOption("delay", "0");
             Check(ffmpeg.avcodec_open2(_context, codec, null), "starting the NVIDIA encoder");
             _description = $"h264_nvenc {width}x{height} at {options.Fps} fps, {options.Kbps} kbit/s (at most {options.Kbps * 1.5:0}, buffer {options.Kbps * 1.5:0}), "
-                           + $"a key frame every {_context->gop_size} pictures, options {string.Join(' ', FfmpegArgs.NvencH264Options.Select(o => o.Name + "=" + o.Value))} delay=0; libraries {FfmpegLibraries.Describe()}";
-            _frame = ffmpeg.av_frame_alloc();
-            _frame->format = (int)AVPixelFormat.AV_PIX_FMT_NV12;
-            _frame->width = width;
-            _frame->height = height;
-            Check(ffmpeg.av_frame_get_buffer(_frame, 0), "allocating a picture");
+                           + $"a key frame every {_context->gop_size} pictures, options {string.Join(' ', FfmpegArgs.NvencH264Options.Select(o => o.Name + "=" + o.Value))} delay=0; "
+                           + (_onCard ? "pictures read from the graphics card (Direct3D 11); " : "") + $"libraries {FfmpegLibraries.Describe()}";
+            if (!_onCard)
+            {
+                _frame = ffmpeg.av_frame_alloc();
+                _frame->format = (int)AVPixelFormat.AV_PIX_FMT_NV12;
+                _frame->width = width;
+                _frame->height = height;
+                Check(ffmpeg.av_frame_get_buffer(_frame, 0), "allocating a picture");
+            }
             _packet = ffmpeg.av_packet_alloc();
         }
         catch
@@ -177,6 +194,7 @@ public sealed unsafe class InProcessEncoder : IDisposable
     /// </summary>
     public void Encode(ReadOnlySpan<byte> picture, bool forceKey, Action<byte[], bool> output)
     {
+        if (_onCard) throw new InvalidOperationException("This encoder takes its pictures from the graphics card, not as bytes.");
         if (picture.Length != PictureBytes) throw new ArgumentException($"A picture is {PictureBytes} bytes, not {picture.Length}.", nameof(picture));
         if (_context == null) throw new ObjectDisposedException(nameof(InProcessEncoder));
         Check(ffmpeg.av_frame_make_writable(_frame), "preparing a picture");
@@ -200,8 +218,9 @@ public sealed unsafe class InProcessEncoder : IDisposable
         if (_context == null) throw new ObjectDisposedException(nameof(InProcessEncoder));
         var frame = picture.Frame;
         if (frame == null) throw new ObjectDisposedException(nameof(CapturedPicture));
-        if (frame->format != (int)AVPixelFormat.AV_PIX_FMT_NV12 || frame->width != Width || frame->height != Height)
-            throw new ArgumentException($"The encoder takes NV12 pictures of {Width}x{Height}, not {frame->width}x{frame->height}.", nameof(picture));
+        var format = _onCard ? AVPixelFormat.AV_PIX_FMT_D3D11 : AVPixelFormat.AV_PIX_FMT_NV12;
+        if (frame->format != (int)format || frame->width != Width || frame->height != Height)
+            throw new ArgumentException($"The encoder takes {(_onCard ? "Direct3D 11" : "NV12")} pictures of {Width}x{Height}, not {frame->width}x{frame->height}.", nameof(picture));
         frame->pts = _pts++;
         frame->pict_type = forceKey ? AVPictureType.AV_PICTURE_TYPE_I : AVPictureType.AV_PICTURE_TYPE_NONE;
         Check(ffmpeg.avcodec_send_frame(_context, frame), "encoding a picture");

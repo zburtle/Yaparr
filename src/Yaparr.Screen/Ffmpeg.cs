@@ -191,21 +191,30 @@ public sealed class ScreenOptions
     /// H.264 only so far, and only where the libraries are there (<see cref="FfmpegLibraries"/>); anything else is encoded as before.
     /// Experimental: off unless the YAPARR_INPROCESS environment variable is 1.
     /// </summary>
-    public bool InProcessEncoder { get; init; } = Environment.GetEnvironmentVariable("YAPARR_INPROCESS") is "1" or "capture";
+    public bool InProcessEncoder { get; init; } = Environment.GetEnvironmentVariable("YAPARR_INPROCESS") is "1" or "capture" or "capture-cpu";
 
     /// <summary>
     /// Also capture inside this program (Windows Graphics Capture through FFmpeg's libraries, see <see cref="InProcessCapture"/>), so that no FFmpeg
     /// runs at all and a picture goes from the capture to the encoder without a pipe. Implies <see cref="InProcessEncoder"/>; Windows only so far, and
-    /// where the libraries lack what the capture needs the encoder alone is tried next. Experimental: off unless YAPARR_INPROCESS is "capture".
+    /// where the libraries lack what the capture needs the encoder alone is tried next. Experimental: off unless YAPARR_INPROCESS is "capture"
+    /// (pictures kept on the graphics card, see <see cref="CaptureOnCard"/>) or "capture-cpu" (copied to memory).
     /// </summary>
-    public bool InProcessCapture { get; init; } = Environment.GetEnvironmentVariable("YAPARR_INPROCESS") == "capture";
+    public bool InProcessCapture { get; init; } = Environment.GetEnvironmentVariable("YAPARR_INPROCESS") is "capture" or "capture-cpu";
+
+    /// <summary>
+    /// With <see cref="InProcessCapture"/>: the pictures stay on the graphics card from the capture to NVENC (the capture scales them there, and NVENC
+    /// converts them itself), so nothing is copied to memory and converted on the processor. That needs the size of the picture up front (a monitor's,
+    /// or a window's as it is when sharing begins); where it cannot be had, or the card refuses, the pictures are copied to memory as before.
+    /// On whenever YAPARR_INPROCESS is "capture"; "capture-cpu" is the copy to memory only, for comparing.
+    /// </summary>
+    public bool CaptureOnCard { get; init; } = Environment.GetEnvironmentVariable("YAPARR_INPROCESS") == "capture";
 
     /// <summary>The same options for another monitor or window: everything else (quality, codec, sound) stays.</summary>
     public ScreenOptions Retarget(Display? display, long? windowHandle) => new()
     {
         Display = display, WindowHandle = windowHandle, Fps = Fps, MaxWidth = MaxWidth, MaxHeight = MaxHeight, Kbps = Kbps,
         KeyFrameSeconds = KeyFrameSeconds, Codec = Codec, Encoder = Encoder, ShareSound = ShareSound, SoundProgram = SoundProgram, GpuScale = GpuScale, ShowCursor = ShowCursor,
-        X11Display = X11Display, InProcessEncoder = InProcessEncoder, InProcessCapture = InProcessCapture,
+        X11Display = X11Display, InProcessEncoder = InProcessEncoder, InProcessCapture = InProcessCapture, CaptureOnCard = CaptureOnCard,
     };
 
     /// <summary>The same options for another stream from the portal (the desktop asked again what to share).</summary>
@@ -213,7 +222,7 @@ public sealed class ScreenOptions
     {
         Portal = portal, Fps = Fps, MaxWidth = MaxWidth, MaxHeight = MaxHeight, Kbps = Kbps, KeyFrameSeconds = KeyFrameSeconds, Codec = Codec,
         Encoder = Encoder, ShareSound = ShareSound, SoundProgram = SoundProgram, GpuScale = false, ShowCursor = ShowCursor, X11Display = X11Display,
-        InProcessEncoder = InProcessEncoder, InProcessCapture = InProcessCapture,
+        InProcessEncoder = InProcessEncoder, InProcessCapture = InProcessCapture, CaptureOnCard = CaptureOnCard,
     };
 }
 
@@ -284,6 +293,34 @@ public static class FfmpegArgs
         if (o.Fps is < 1 or > 60) throw new ArgumentOutOfRangeException(nameof(o), "Frames per second must be between 1 and 60.");
         if (o.MaxWidth < 16 || o.MaxHeight < 16) throw new ArgumentOutOfRangeException(nameof(o), "The picture box is too small.");
         return CaptureFilterText(o, ScreenCodec.H264, HardwareEncoder.Nvenc, gpuScale: false, raw);
+    }
+
+    /// <summary>
+    /// The capture alone, with the pictures kept on the graphics card: Graphics Capture scales them to the size worked out here (the shape kept, even
+    /// numbers, never above the source), and the filter graph ends there. Null when the size is not known: a window that is minimised, or no monitor size.
+    /// </summary>
+    public static string? CaptureFilterOnCard(ScreenOptions o)
+    {
+        if (o.Fps is < 1 or > 60) throw new ArgumentOutOfRangeException(nameof(o), "Frames per second must be between 1 and 60.");
+        if (o.MaxWidth < 16 || o.MaxHeight < 16) throw new ArgumentOutOfRangeException(nameof(o), "The picture box is too small.");
+        string source;
+        (int Width, int Height) shown;
+        if (o.WindowHandle is { } window)
+        {
+            if (ShareWindows.CaptureSize(window) is not { } size) return null;
+            source = "hwnd=" + Hex(window);
+            shown = size;
+        }
+        else if (o.Display is { Handle: not 0, Width: > 0, Height: > 0 } display)
+        {
+            source = "hmonitor=" + Hex(display.Handle);
+            shown = (display.Width, display.Height);
+        }
+        else return null;
+        double factor = Math.Min(1.0, Math.Min((double)o.MaxWidth / shown.Width, (double)o.MaxHeight / shown.Height));
+        int w = Math.Max(2, (int)(shown.Width * factor) / 2 * 2), h = Math.Max(2, (int)(shown.Height * factor) / 2 * 2);
+        // The size is always given, even when it is the source's own, so that the picture is the size the encoder is told.
+        return $"gfxcapture={source}:max_framerate={o.Fps.ToString(CultureInfo.InvariantCulture)}:capture_cursor={(o.ShowCursor ? 1 : 0)}:resize_mode=scale_aspect:dup_frames=1:width={w}:height={h}";
     }
 
     private static string CaptureFilterText(ScreenOptions o, ScreenCodec codec, HardwareEncoder encoder, bool gpuScale, bool raw)
