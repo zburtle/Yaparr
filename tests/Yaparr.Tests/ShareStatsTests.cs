@@ -51,7 +51,7 @@ public class ShareStatsTests
         stats.Frame(3000, key: false);
         stats.Encoded(6 * Ms, overBudget: true);
         stats.Encoded(8 * Ms, overBudget: false);
-        stats.Waited(2 * Ms);
+        stats.Waited(2 * Ms, 16 * Ms);
         var minute = stats.Figures(pacer, 2).Since(before);
 
         Assert.Equal((0, 2), (minute.Keys, minute.Deltas));
@@ -59,6 +59,21 @@ public class ShareStatsTests
         Assert.Equal(7, minute.EncodeAverageMs, 3);
         Assert.Equal(1, minute.OverBudget);
         Assert.Equal(2, minute.WaitAverageMs, 3);
+    }
+
+    [Fact]
+    public void Pictures_that_came_in_a_burst_and_waits_of_more_than_two_pictures_are_counted()
+    {
+        var stats = new ShareStats();
+        long frame = 16 * Ms;
+        stats.Encoded(Ms, overBudget: false);   // the line is only written when something was encoded
+        foreach (var wait in new[] { 16 * Ms, 100 * Ms, Ms, 2 * Ms, 3 * Ms, 17 * Ms, 32 * Ms, 40 * Ms })
+            stats.Waited(wait, frame);
+        var figures = stats.Figures(new KeyFramePacer(), 0);
+        Assert.Equal(8, figures.Reads);
+        Assert.Equal(3, figures.Bunched);    // 1, 2 and 3 ms: under a quarter of 16 ms
+        Assert.Equal(2, figures.Stalled);    // 100 and 40 ms: over two pictures (32 ms is not)
+        Assert.Contains("2 waits of more than two pictures and 3 pictures that came in a burst", figures.DescribeEncoding(16) + "");
     }
 
     [Fact]
@@ -107,7 +122,7 @@ public class ShareStatsTests
         Assert.Equal("", stats.Figures(new KeyFramePacer(), 0).DescribeEncoding(16.7));
         stats.Encoded(20 * Ms, overBudget: true);
         stats.Encoded(4 * Ms, overBudget: false);
-        stats.Waited(10 * Ms);
+        stats.Waited(10 * Ms, 16 * Ms);
         string line = stats.Figures(new KeyFramePacer(), 0).DescribeEncoding(16.7);
         Assert.Contains("12.0 ms per picture on average and 20.0 ms at most (1 of 2 over the 16.7 ms there is for each)", line);
         Assert.Contains("waiting for the capture 10.0 ms on average", line);
@@ -138,7 +153,7 @@ public class ShareStatsTests
         pacer.ShouldForce(1010);
         stats.Frame(150 * 1024, key: true);
         stats.Answered(pacer.KeySent(1090));
-        for (int i = 0; i < 59; i++) { stats.Frame(9 * 1024, key: false); stats.Encoded(5 * Ms, overBudget: false); stats.Waited(11 * Ms); }
+        for (int i = 0; i < 59; i++) { stats.Frame(9 * 1024, key: false); stats.Encoded(5 * Ms, overBudget: false); stats.Waited(11 * Ms, 16 * Ms); }
         var interval = stats.Figures(pacer, restarts: 1).Since(new ShareFigures());
         var minute = new SharingMinute(59.8, 60, 5200, "H.264 on the NVIDIA graphics card", InProcess: true, Picture: (1920, 1080), interval, stats.TakeMaxima(1), 16.7,
             LongestGapMs: 41, Resent: 3, Dropped: 0, Watching: 2, DirectPaths: new[] { "ab12 direct" }, AppPercent: 38, CapturePercent: 22, MemoryMb: 410,

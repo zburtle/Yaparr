@@ -10,7 +10,7 @@ namespace Yaparr.Screen;
 /// </summary>
 public sealed class ShareStats
 {
-    private long _keys, _keyBytes, _deltas, _deltaBytes, _encodes, _encodeTicks, _overBudget, _reads, _readTicks, _answers, _answerMs;
+    private long _keys, _keyBytes, _deltas, _deltaBytes, _encodes, _encodeTicks, _overBudget, _reads, _readTicks, _bunched, _stalled, _answers, _answerMs;
     private long _keyMaxEver, _deltaMaxEver, _encodeMaxEver, _readMaxEver, _answerMaxEver;
     private readonly long[] _keyMax = new long[2], _deltaMax = new long[2], _encodeMax = new long[2], _readMax = new long[2], _answerMax = new long[2];
 
@@ -51,11 +51,17 @@ public sealed class ShareStats
         Raise(_encodeMax, ticks);
     }
 
-    /// <summary>The time spent waiting for the next raw picture from the capture: long waits mean the capture, not the encoder, is the slow part.</summary>
-    public void Waited(long ticks)
+    /// <summary>
+    /// The time spent waiting for the next raw picture from the capture: long waits mean the capture, not the encoder, is the slow part. With
+    /// <paramref name="frameTicks"/>, the time between two pictures, it also counts pictures that came in a burst (hardly any wait: the capture
+    /// was catching up) and waits longer than two pictures (a stall); bursts after stalls are what makes a viewer's playback uneven.
+    /// </summary>
+    public void Waited(long ticks, long frameTicks)
     {
         Interlocked.Increment(ref _reads);
         Interlocked.Add(ref _readTicks, ticks);
+        if (ticks * 4 < frameTicks) Interlocked.Increment(ref _bunched);
+        else if (ticks > frameTicks * 2) Interlocked.Increment(ref _stalled);
         Raise(ref _readMaxEver, ticks);
         Raise(_readMax, ticks);
     }
@@ -71,7 +77,7 @@ public sealed class ShareStats
 
     public ShareFigures Figures(KeyFramePacer pacer, int restarts) => new(
         Interlocked.Read(ref _keys), Interlocked.Read(ref _keyBytes), Interlocked.Read(ref _deltas), Interlocked.Read(ref _deltaBytes),
-        Interlocked.Read(ref _encodes), Interlocked.Read(ref _encodeTicks), Interlocked.Read(ref _overBudget), Interlocked.Read(ref _reads), Interlocked.Read(ref _readTicks),
+        Interlocked.Read(ref _encodes), Interlocked.Read(ref _encodeTicks), Interlocked.Read(ref _overBudget), Interlocked.Read(ref _reads), Interlocked.Read(ref _readTicks), Interlocked.Read(ref _bunched), Interlocked.Read(ref _stalled),
         pacer.Requested, pacer.Forced, pacer.Deferred, pacer.Satisfied, Interlocked.Read(ref _answers), Interlocked.Read(ref _answerMs), restarts,
         Interlocked.Read(ref _keyMaxEver), Interlocked.Read(ref _deltaMaxEver), Interlocked.Read(ref _encodeMaxEver), Interlocked.Read(ref _readMaxEver), Interlocked.Read(ref _answerMaxEver));
 
@@ -90,7 +96,7 @@ public readonly record struct ShareMaxima(long KeyBytes, long DeltaBytes, long E
 
 /// <summary>Totals since a share began (see <see cref="ShareStats"/>).</summary>
 public readonly record struct ShareFigures(
-    long Keys, long KeyBytes, long Deltas, long DeltaBytes, long Encodes, long EncodeTicks, long OverBudget, long Reads, long ReadTicks,
+    long Keys, long KeyBytes, long Deltas, long DeltaBytes, long Encodes, long EncodeTicks, long OverBudget, long Reads, long ReadTicks, long Bunched, long Stalled,
     long KeyRequests, long KeysForced, long KeyRequestsHeldBack, long KeyRequestsMetByRegularKey, long Answers, long AnswerMs, int Restarts,
     long KeyMaxEver, long DeltaMaxEver, long EncodeMaxTicksEver, long WaitMaxTicksEver, long AnswerMaxMsEver)
 {
@@ -99,7 +105,7 @@ public readonly record struct ShareFigures(
     {
         Keys = Keys - before.Keys, KeyBytes = KeyBytes - before.KeyBytes, Deltas = Deltas - before.Deltas, DeltaBytes = DeltaBytes - before.DeltaBytes,
         Encodes = Encodes - before.Encodes, EncodeTicks = EncodeTicks - before.EncodeTicks, OverBudget = OverBudget - before.OverBudget,
-        Reads = Reads - before.Reads, ReadTicks = ReadTicks - before.ReadTicks, KeyRequests = KeyRequests - before.KeyRequests,
+        Reads = Reads - before.Reads, ReadTicks = ReadTicks - before.ReadTicks, Bunched = Bunched - before.Bunched, Stalled = Stalled - before.Stalled, KeyRequests = KeyRequests - before.KeyRequests,
         KeysForced = KeysForced - before.KeysForced, KeyRequestsHeldBack = KeyRequestsHeldBack - before.KeyRequestsHeldBack,
         KeyRequestsMetByRegularKey = KeyRequestsMetByRegularKey - before.KeyRequestsMetByRegularKey, Answers = Answers - before.Answers,
         AnswerMs = AnswerMs - before.AnswerMs, Restarts = Restarts - before.Restarts,
@@ -129,6 +135,6 @@ public readonly record struct ShareFigures(
         if (Encodes == 0) return "";
         double encodeMax = maxima?.EncodeMs ?? Ms(EncodeMaxTicksEver), waitMax = maxima?.WaitMs ?? Ms(WaitMaxTicksEver);
         return $"encoding {EncodeAverageMs:0.0} ms per picture on average and {encodeMax:0.0} ms at most ({OverBudget} of {Encodes} over the {budgetMs:0.0} ms there is for each), "
-               + $"waiting for the capture {WaitAverageMs:0.0} ms on average and {waitMax:0.0} ms at most";
+               + $"waiting for the capture {WaitAverageMs:0.0} ms on average and {waitMax:0.0} ms at most, {Stalled} waits of more than two pictures and {Bunched} pictures that came in a burst straight after another";
     }
 }

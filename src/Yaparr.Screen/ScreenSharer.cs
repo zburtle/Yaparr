@@ -522,7 +522,7 @@ public sealed class ScreenSharer : IDisposable
                 long waitStart = Stopwatch.GetTimestamp();
                 try { await stdout.ReadExactlyAsync(buffer, ct).ConfigureAwait(false); }
                 catch (EndOfStreamException) { break; }
-                _stats.Waited(Stopwatch.GetElapsedTime(waitStart).Ticks);
+                _stats.Waited(Stopwatch.GetElapsedTime(waitStart).Ticks, TimeSpan.FromMilliseconds(FrameBudgetMs).Ticks);
                 bool force = _pacer.ShouldForce(Environment.TickCount64);
                 ready.Clear();
                 long encodeStart = Stopwatch.GetTimestamp();

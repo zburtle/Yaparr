@@ -144,8 +144,8 @@ public partial class MainWindow
             sharer.Ended += ex => UI(() =>
             {
                 if (_sharer != sharer) return;
-                _log.Write($"screen sharing ended: {ScreenCodecs.Describe(sharer.Codec, sharer.Encoder)}{(sharer.InProcess ? ", in this program" : "")}{(sharer.FallbackReason is { } why ? $" (not used: {why})" : "")}, {sharer.Frames} frames sent; {sharer.Figures().DescribeKeys()}{(sharer.Figures().Encodes > 0 ? "; " + sharer.Figures().DescribeEncoding(sharer.FrameBudgetMs) : "")}; capture program used {sharer.CaptureCpu.TotalSeconds:0.0} s of processor time");
-                StopSharingCore();
+                _log.Write("screen sharing ended: " + SharingSummary(sharer));
+                StopSharingCore(writeSummary: false);
                 if (ex != null)
                 {
                     _log.Write($"screen sharing stopped: {ex.Message} ({ex.GetType().Name})" + (sharer.LastErrors.Length > 0 ? " | FFmpeg: " + sharer.LastErrors : ""));
@@ -164,7 +164,7 @@ public partial class MainWindow
             _sharerStats = new SharerStatsView(sharer, options.Fps, room);
             _sharerStats.IsMine = d => _node != null && _node.IsMyDevice(d);
             _sharerStats.ViewersChanged += (came, went) => { if (came > 0) _sounds.ViewerJoined(); else if (went > 0) _sounds.ViewerLeft(); };
-            _sharerStats.StopRequested += StopSharingCore;
+            _sharerStats.StopRequested += () => StopSharingCore();
             _sharerStats.ChangeRequested += () => _ = ChangeSharedAsync(sharer, conv);
             SharerPanel.Child = _sharerStats;
             SharePreview.Attach(sharer, ffmpeg, wholeMonitor: what == "screen");
@@ -241,10 +241,21 @@ public partial class MainWindow
     // How the last few watches went, kept after the picture is closed (the sharing diagnostics are often copied afterwards).
     private readonly List<string> _lastWatchReports = new();
 
-    private void StopSharingCore()
+    /// <summary>What a share did, in one line for the log: the encoder, the frames and key frames, the encoder's timings and the capture's processor time.</summary>
+    private static string SharingSummary(ScreenSharer sharer)
+    {
+        var figures = sharer.Figures();
+        return $"{ScreenCodecs.Describe(sharer.Codec, sharer.Encoder)}{(sharer.InProcess ? ", in this program" : "")}{(sharer.FallbackReason is { } why ? $" (not used: {why})" : "")}, "
+               + $"{sharer.Frames} frames sent; {figures.DescribeKeys()}{(figures.Encodes > 0 ? "; " + figures.DescribeEncoding(sharer.FrameBudgetMs) : "")}; "
+               + $"capture program used {sharer.CaptureCpu.TotalSeconds:0.0} s of processor time, restarted {figures.Restarts} times";
+    }
+
+    // The totals go to the log when a share stops (the ended handler writes its own, with the reason, and asks not to).
+    private void StopSharingCore(bool writeSummary = true)
     {
         var sharer = _sharer;
         if (sharer != null) _lastSharingReport = sharer.Describe();
+        if (sharer != null && writeSummary) _log.Write("screen sharing stopped: " + SharingSummary(sharer));
         var conv = _sharerConv;
         _sharer = null;
         _sharerConv = null;
