@@ -58,12 +58,30 @@ public static class FfmpegLibraries
     /// <summary>Whether libraries are there and load, without saying why not.</summary>
     public static bool IsAvailable => TryLoad(out _);
 
+    // FFmpeg's libraries need others that sit in the same folder (dav1d, libvpx, the oneVPL dispatcher, winpthreads and the compiler's runtime, see
+    // Yaparr.FFmpeg). The bindings load each library by its full path, and Windows then looks for the ones that library needs in the folder of the app
+    // and the system folders, not in the folder of the library, so the library fails to load. Loading them first, by their full paths, puts them in the
+    // process under their names, and Windows finds them there. The runtime comes first because the others need it.
+    private static void PreloadDependencies(string dir)
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var ownLibraries = new System.Text.RegularExpressions.Regex(@"^(av(codec|filter|format|device|util)|sw(scale|resample)|postproc)-\d+\.dll$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var first = new[] { "libwinpthread-1.dll", "libgcc_s_seh-1.dll", "libstdc++-6.dll" };
+        var others = Directory.EnumerateFiles(dir, "*.dll").Select(Path.GetFileName).Where(n => n != null && !ownLibraries.IsMatch(n!) && !first.Contains(n!, StringComparer.OrdinalIgnoreCase));
+        foreach (var name in first.Concat(others!))
+        {
+            var path = Path.Combine(dir, name!);
+            if (File.Exists(path)) NativeLibrary.TryLoad(path, out _);
+        }
+    }
+
     private static (bool, string) Load()
     {
         var dir = Find();
         if (dir == null) return (false, "FFmpeg's libraries were not found next to the app (an 'ffmpeg' folder) or in YAPARR_FFMPEG_LIBS.");
         try
         {
+            PreloadDependencies(dir);
             ffmpeg.RootPath = dir;
             DynamicallyLoadedBindings.Initialize();
             string licence = ffmpeg.avcodec_license() ?? "";
