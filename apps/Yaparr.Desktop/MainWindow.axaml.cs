@@ -401,7 +401,7 @@ public partial class MainWindow : Window
         _settings = _data.LoadSettings();
         _vpn = new VpnController(_data, _settings, () => _node);
         _log = new FileLog(Path.Combine(_data.Directory, "logs"), legacyFile: Path.Combine(_data.Directory, "yaparr.log"));
-        _callQuality = new CallQualityLog(() => _voice, () => _sharer, () => _node, () => _screenViews.Values.Select(w => w.Control), _log);
+        _callQuality = new CallQualityLog(() => _voice, () => _sharer, () => _node, () => _screenViews.Values.Select(w => w.Control), _log, () => _sharer != null ? SharePreview.DecoderCpu : null);
         CrashLog.Attach(_log, _log.Folder);
         _log.Write($"Yaparr {Updater.CurrentVersion} starting");
         Updater.Log = _log.Write;

@@ -4,6 +4,20 @@ using Yaparr.Chat;
 
 namespace Yaparr.Screen;
 
+/// <summary>
+/// A preview instead of a watch: only key frames are decoded (about one a second, a small part of what decoding every frame costs), and the
+/// pictures are scaled down by FFmpeg to fit this box, so reading, converting and drawing them costs next to nothing too.
+/// </summary>
+public sealed record PreviewSize(int MaxWidth, int MaxHeight)
+{
+    /// <summary>The size a <paramref name="width"/> x <paramref name="height"/> picture is shown at: as large as fits, never larger than it is, both sides even.</summary>
+    public (int Width, int Height) Fit(int width, int height)
+    {
+        double scale = Math.Min(1.0, Math.Min((double)MaxWidth / Math.Max(1, width), (double)MaxHeight / Math.Max(1, height)));
+        return (Math.Max(2, (int)(width * scale) & ~1), Math.Max(2, (int)(height * scale) & ~1));
+    }
+}
+
 /// <summary>One decoded picture: <paramref name="Bgra"/> holds width x height x 4 bytes, blue first. Give it back with <see cref="ScreenViewer.Return"/> when done.</summary>
 public sealed record Picture(int Width, int Height, byte[] Bgra);
 
@@ -21,6 +35,8 @@ public sealed class ScreenViewer : IDisposable
     private Decoder? _decoder;
     private bool _disposed;
     private long _pictures, _dropped;
+    private readonly PreviewSize? _preview;
+    private TimeSpan _childCpu;
 
     private const int MaxQueuedFrames = 90;
 
@@ -33,9 +49,10 @@ public sealed class ScreenViewer : IDisposable
     /// <paramref name="gpuDecode"/>: also decode H.264 on the graphics card (Windows, Direct3D 11), falling back to the processor if
     /// FFmpeg cannot. Off by default: on the machines measured (issue #100) it did not use less processor time than decoding in software.
     /// </summary>
-    public ScreenViewer(IMediaFrameSource view, string? ffmpegPath = null, bool gpuDecode = false)
+    public ScreenViewer(IMediaFrameSource view, string? ffmpegPath = null, bool gpuDecode = false, PreviewSize? preview = null)
     {
-        _gpu = gpuDecode && OperatingSystem.IsWindows();
+        _preview = preview;
+        _gpu = gpuDecode && OperatingSystem.IsWindows() && preview == null;
         _view = view;
         _ffmpeg = ffmpegPath ?? FfmpegLocator.Find() ?? throw new FileNotFoundException("FFmpeg was not found. Put ffmpeg.exe in an 'ffmpeg' folder next to the app, or set YAPARR_FFMPEG.");
         _view.FrameReceived += OnFrame;
@@ -47,6 +64,17 @@ public sealed class ScreenViewer : IDisposable
     public event Action<Exception>? Failed;
 
     public long Pictures => Interlocked.Read(ref _pictures);
+
+    /// <summary>The processor time the FFmpeg that decodes has used, over all the ones started so far. Not counted in this program's own time.</summary>
+    public TimeSpan DecoderCpu
+    {
+        get
+        {
+            Decoder? d; TimeSpan done;
+            lock (_gate) { d = _decoder; done = _childCpu; }
+            return done + (d?.Cpu ?? default);
+        }
+    }
 
     /// <summary>Whether the current decoder runs on the graphics card.</summary>
     public bool GpuDecoding { get { lock (_gate) return _gpu && _decoder?.Codec == ScreenCodec.H264; } }
@@ -88,6 +116,7 @@ public sealed class ScreenViewer : IDisposable
 
     private void OnFrame(MediaFrame frame)
     {
+        if (_preview != null && !frame.IsKey) return;   // not even copied: a preview shows key frames only
         var data = frame.Data.ToArray();
         Interlocked.Increment(ref _framesIn);
         Interlocked.Add(ref _bytesIn, data.Length);
@@ -110,7 +139,8 @@ public sealed class ScreenViewer : IDisposable
     private Decoder StartDecoder(ScreenCodec codec, int width, int height)
     {
         var psi = new ProcessStartInfo(_ffmpeg) { RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
-        foreach (var a in FfmpegArgs.DecodeForViewer(codec, _gpu)) psi.ArgumentList.Add(a);
+        var shown = _preview?.Fit(width, height);
+        foreach (var a in FfmpegArgs.DecodeForViewer(codec, _gpu, shown)) psi.ArgumentList.Add(a);
         var process = Process.Start(psi) ?? throw new InvalidOperationException("FFmpeg did not start.");
         process.ErrorDataReceived += (_, e) =>
         {
@@ -118,7 +148,7 @@ public sealed class ScreenViewer : IDisposable
             lock (_gate) { _errors.Enqueue(e.Data); while (_errors.Count > 5) _errors.Dequeue(); }
         };
         process.BeginErrorReadLine();
-        var decoder = new Decoder(this, process, codec, width, height, _gpu && codec == ScreenCodec.H264);
+        var decoder = new Decoder(this, process, codec, width, height, _gpu && codec == ScreenCodec.H264, shown ?? (width, height));
         decoder.Start(_cts.Token);
         return decoder;
     }
@@ -140,9 +170,21 @@ public sealed class ScreenViewer : IDisposable
 
         public bool OnCard { get; }
 
-        public Decoder(ScreenViewer owner, Process process, ScreenCodec codec, int width, int height, bool onCard)
+        /// <summary>The size of the pictures that come out: the size of the stream, or the smaller one a preview is scaled to.</summary>
+        public (int Width, int Height) Out { get; }
+
+        public Decoder(ScreenViewer owner, Process process, ScreenCodec codec, int width, int height, bool onCard, (int Width, int Height) output)
         {
-            _owner = owner; _process = process; Codec = codec; Width = width; Height = height; OnCard = onCard;
+            _owner = owner; _process = process; Codec = codec; Width = width; Height = height; OnCard = onCard; Out = output;
+        }
+
+        public TimeSpan Cpu
+        {
+            get
+            {
+                try { return _process.TotalProcessorTime; }
+                catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException) { return default; }
+            }
         }
 
         public void Start(CancellationToken ct)
@@ -178,8 +220,13 @@ public sealed class ScreenViewer : IDisposable
                     Interlocked.Decrement(ref _queued);
                     if (h264)
                     {
-                        await stdin.WriteAsync(frame, ct).ConfigureAwait(false);
-                        await stdin.WriteAsync(H264.EndMarker.ToArray(), ct).ConfigureAwait(false); // the picture is complete: no waiting for the next
+                        // A preview gets a picture only now and then, and FFmpeg holds one picture back until the next goes in, so the key frame goes in twice
+                        // (two identical pictures come out, at once; the second is dropped when drawn).
+                        for (int copy = 0; copy < (_owner._preview != null ? 2 : 1); copy++)
+                        {
+                            await stdin.WriteAsync(frame, ct).ConfigureAwait(false);
+                            await stdin.WriteAsync(H264.EndMarker.ToArray(), ct).ConfigureAwait(false); // the picture is complete: no waiting for the next
+                        }
                     }
                     else
                     {
@@ -198,15 +245,16 @@ public sealed class ScreenViewer : IDisposable
             try
             {
                 var stdout = _process.StandardOutput.BaseStream;
-                int size = Width * Height * 4;
-                var raw = new byte[Nv12.Size(Width, Height)];
+                var (outWidth, outHeight) = Out;
+                int size = outWidth * outHeight * 4;
+                var raw = new byte[Nv12.Size(outWidth, outHeight)];
                 while (!ct.IsCancellationRequested)
                 {
                     await stdout.ReadExactlyAsync(raw, ct).ConfigureAwait(false);
                     var picture = _owner.Rent(size);
-                    Nv12.ToBgra(raw, Width, Height, picture);
+                    Nv12.ToBgra(raw, outWidth, outHeight, picture);
                     Interlocked.Increment(ref _owner._pictures);
-                    _owner.PictureReceived?.Invoke(new Picture(Width, Height, picture));
+                    _owner.PictureReceived?.Invoke(new Picture(outWidth, outHeight, picture));
                 }
             }
             catch (OperationCanceledException) { }
@@ -222,10 +270,13 @@ public sealed class ScreenViewer : IDisposable
         {
             _stop.Cancel();
             _input.Writer.TryComplete();
+            _owner.AddCpu(Cpu);
             try { if (!_process.HasExited) _process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
             _process.Dispose();
         }
     }
+
+    private void AddCpu(TimeSpan used) { lock (_gate) _childCpu += used; }
 
     /// <summary>The graphics card could not decode: the processor takes over, starting with the key frame that is already here.</summary>
     private bool FallBackToProcessor(Decoder failed)

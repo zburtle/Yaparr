@@ -242,12 +242,13 @@ public partial class MainWindow
     private readonly List<string> _lastWatchReports = new();
 
     /// <summary>What a share did, in one line for the log: the encoder, the frames and key frames, the encoder's timings and the capture's processor time.</summary>
-    private static string SharingSummary(ScreenSharer sharer)
+    private string SharingSummary(ScreenSharer sharer)
     {
         var figures = sharer.Figures();
         return $"{ScreenCodecs.Describe(sharer.Codec, sharer.Encoder)}{(sharer.InProcess ? ", in this program" : "")}{(sharer.FallbackReason is { } why ? $" (not used: {why})" : "")}, "
                + $"{sharer.Frames} frames sent; {figures.DescribeKeys()}{(figures.Encodes > 0 ? "; " + figures.DescribeEncoding(sharer.FrameBudgetMs) : "")}; "
-               + $"capture program used {sharer.CaptureCpu.TotalSeconds:0.0} s of processor time, restarted {figures.Restarts} times";
+               + $"capture program used {sharer.CaptureCpu.TotalSeconds:0.0} s of processor time, restarted {figures.Restarts} times, "
+               + $"the preview's decoder {SharePreview.DecoderCpu.TotalSeconds:0.0} s";
     }
 
     // The totals go to the log when a share stops (the ended handler writes its own, with the reason, and asks not to).

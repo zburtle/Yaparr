@@ -415,13 +415,18 @@ public static class FfmpegArgs
     /// Direct3D 11, which any maker's card supports, and only the finished picture is copied back. FFmpeg stops with an error if
     /// the card or driver cannot, and the viewer then starts again without it.
     /// </summary>
-    public static List<string> DecodeForViewer(ScreenCodec codec, bool gpu)
+    public static List<string> DecodeForViewer(ScreenCodec codec, bool gpu, (int Width, int Height)? previewSize = null)
     {
-        gpu &= codec == ScreenCodec.H264;
-        var args = new List<string> { "-hide_banner", "-loglevel", "error", "-flags", "low_delay", "-probesize", "32", "-analyzeduration", "0" };
+        // A preview is small pictures from now and then: no graphics card (starting it costs more than the pictures), one thread (with several,
+        // a picture comes out only when the next ones have gone in, which for one picture a second is seconds), and the scaling done by FFmpeg.
+        gpu &= codec == ScreenCodec.H264 && previewSize == null;
+        var args = new List<string> { "-hide_banner", "-loglevel", "error" };
+        if (previewSize != null) args.AddRange(new[] { "-threads", "1" });
+        args.AddRange(new[] { "-flags", "low_delay", "-probesize", "32", "-analyzeduration", "0" });
         if (gpu) args.AddRange(new[] { "-hwaccel", "d3d11va", "-hwaccel_output_format", "d3d11" });
         args.AddRange(new[] { "-f", codec == ScreenCodec.H264 ? "h264" : "ivf", "-i", "pipe:0" });
         if (gpu) args.AddRange(new[] { "-vf", "hwdownload,format=nv12" });
+        else if (previewSize is { } size) args.AddRange(new[] { "-vf", $"scale={size.Width}:{size.Height}" });
         args.AddRange(new[] { "-f", "rawvideo", "-pix_fmt", "nv12", "pipe:1" });
         return args;
     }

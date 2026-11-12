@@ -11,9 +11,10 @@ using Yaparr.Screen;
 namespace Yaparr.Desktop;
 
 /// <summary>
-/// What the people watching your share see: the frames that are being sent, decoded again here and shown above the sharing panel. It is the
-/// real thing (quality, blur, how smooth) and costs a second decoder while it is open, so it only runs while it is shown. Sharing a whole
-/// monitor with the preview showing on it makes the picture show itself, so for a monitor it starts closed.
+/// What the people watching your share see: the key frames that are being sent (one a second or so), decoded again here, shrunk, and shown
+/// above the sharing panel. It is the real thing as to quality and blur, but not live video: decoding every frame of a 1080p60 stream cost more
+/// than the whole share (measured: this program went from 138% to 10% of a core with the preview hidden). It only runs while it is shown.
+/// Sharing a whole monitor with the preview showing on it makes the picture show itself, so for a monitor it starts closed.
 /// </summary>
 public sealed class SharePreviewView : UserControl
 {
@@ -33,6 +34,13 @@ public sealed class SharePreviewView : UserControl
     private int _pending;
     private bool _expanded;
     private bool _wholeMonitor;
+    private TimeSpan _decoderCpuDone;
+
+    /// <summary>The picture shown is no larger than this (the box it is shown in is 150 high); scaling it down is done by the decoder.</summary>
+    internal static readonly PreviewSize Size = new(640, 360);
+
+    /// <summary>The processor time the preview's decoder (a separate FFmpeg) has used since the share began, which the program's own figure does not include.</summary>
+    public TimeSpan DecoderCpu => _decoderCpuDone + (_viewer?.DecoderCpu ?? default);
 
     public SharePreviewView()
     {
@@ -40,6 +48,7 @@ public sealed class SharePreviewView : UserControl
         DockPanel.SetDock(_toggle, Dock.Right);
         header.Children.Add(_toggle);
         header.Children.Add(_title);
+        ToolTip.SetTip(header, "Shows each key frame of what is being sent, about once a second, shrunk. It is not live video: that would cost more processor time than the share itself.");
         _body.Child = new Grid { Children = { _picture, _waiting } };
         Content = new StackPanel { Children = { header, _body, _note } };
         _toggle.Click += (_, _) => SetExpanded(!_expanded);
@@ -51,6 +60,7 @@ public sealed class SharePreviewView : UserControl
     {
         Detach();
         _sharer = sharer;
+        _decoderCpuDone = default;
         _ffmpeg = ffmpegPath;
         sharer.FrameEncoded += OnEncoded;
         IsVisible = true;
@@ -100,7 +110,7 @@ public sealed class SharePreviewView : UserControl
         try
         {
             var frames = new LocalFrames();
-            var viewer = new ScreenViewer(frames, _ffmpeg);
+            var viewer = new ScreenViewer(frames, _ffmpeg, preview: Size);
             viewer.PictureReceived += OnPicture;
             viewer.Failed += ex => Dispatcher.UIThread.Post(() => { _waiting.Text = "The preview stopped: " + ex.Message; _waiting.IsVisible = true; });
             _viewer = viewer;
@@ -117,7 +127,7 @@ public sealed class SharePreviewView : UserControl
         _frames = null;
         var viewer = _viewer;
         _viewer = null;
-        if (viewer != null) { viewer.PictureReceived -= OnPicture; viewer.Dispose(); }
+        if (viewer != null) { viewer.PictureReceived -= OnPicture; viewer.Dispose(); _decoderCpuDone += viewer.DecoderCpu; }
         Interlocked.Exchange(ref _latest, null);
         _bitmap = null;
         _picture.Source = null;
