@@ -251,4 +251,49 @@ public class InProcessEncoderTests
         if (!FfmpegLibraries.IsAvailable) return;
         Assert.Throws<ArgumentException>(() => new InProcessEncoder(width, height, new ScreenOptions()));
     }
+
+    /// <summary>
+    /// The bitrate follows a new value while encoding, in both directions, without restarting the encoder or losing a frame: the way to lower the
+    /// quality of a share for viewers who cannot keep up (measured here: 7000, 1650, 1390 and 6900 kbit/s for 6000, 1500, 1500 and 6000 asked for, on
+    /// pictures that are expensive to code, so that the encoder is held to its bitrate). Does nothing without the libraries and an NVIDIA card.
+    /// </summary>
+    [Fact]
+    public void The_bitrate_follows_a_new_value_while_encoding_in_both_directions()
+    {
+        if (!OperatingSystem.IsWindows() || !FfmpegLibraries.IsAvailable) return;
+        const int w = 1280, h = 720, fps = 30;
+        InProcessEncoder encoder;
+        try { encoder = new InProcessEncoder(w, h, new ScreenOptions { Fps = fps, Kbps = 6000, KeyFrameSeconds = 2 }); }
+        catch (Exception ex) when (ex is InvalidOperationException or PlatformNotSupportedException) { return; }
+        using (encoder)
+        {
+            var picture = new byte[encoder.PictureBytes];
+            var rng = new Random(1);
+            int frame = 0;
+            double Phase(int seconds)
+            {
+                long bytes = 0; int frames = 0;
+                for (int n = 0; n < seconds * fps; n++, frame++)
+                {
+                    for (int i = 0; i < w * h; i += 7) picture[i] = (byte)rng.Next(256);
+                    for (int i = 0; i < w * h; i++) picture[i] = (byte)(picture[i] + frame);
+                    encoder.Encode(picture, false, (f, _) => { bytes += f.Length; frames++; });
+                }
+                Assert.Equal(seconds * fps, frames);   // a picture in, a frame out, whatever the bitrate
+                return bytes * 8 / 1000.0 / seconds;
+            }
+            double high = Phase(3);
+            Assert.InRange(high, 4000, 9000);
+            encoder.SetBitrate(1500);
+            Assert.Equal(1500, encoder.Kbps);
+            Phase(1);   // a moment to settle
+            double low = Phase(3);
+            Assert.True(low < high * 0.4, $"{low:0} kbit/s after asking for 1500, {high:0} before");
+            encoder.SetBitrate(6000);
+            Phase(1);
+            double back = Phase(3);
+            Assert.True(back > low * 2.5, $"{back:0} kbit/s after asking for 6000 again, {low:0} before");
+            Assert.Throws<ArgumentOutOfRangeException>(() => encoder.SetBitrate(10));
+        }
+    }
 }
