@@ -211,6 +211,9 @@ public sealed class ScreenOptions
 }
 
 /// <summary>The command lines for FFmpeg. Kept apart from running it so that they can be checked without FFmpeg.</summary>
+/// <summary>Which Direct3D a decoder on the graphics card goes through.</summary>
+public enum GpuApi { D3d11, D3d12 }
+
 public static class FfmpegArgs
 {
     private static string Num(double v) => v.ToString("0.###", CultureInfo.InvariantCulture);
@@ -415,7 +418,7 @@ public static class FfmpegArgs
     /// Direct3D 11, which any maker's card supports, and only the finished picture is copied back. FFmpeg stops with an error if
     /// the card or driver cannot, and the viewer then starts again without it.
     /// </summary>
-    public static List<string> DecodeForViewer(ScreenCodec codec, bool gpu, (int Width, int Height)? previewSize = null, bool keyFramesOnly = true)
+    public static List<string> DecodeForViewer(ScreenCodec codec, bool gpu, (int Width, int Height)? previewSize = null, bool keyFramesOnly = true, GpuApi api = GpuApi.D3d11)
     {
         // A preview of key frames only is small pictures from now and then: no graphics card (starting it costs more than the pictures), one thread
         // (with several, a picture comes out only when the next ones have gone in, which for one picture a second is seconds), and the scaling done by
@@ -425,9 +428,17 @@ public static class FfmpegArgs
         var args = new List<string> { "-hide_banner", "-loglevel", "error" };
         if (previewSize != null && keyFramesOnly) args.AddRange(new[] { "-threads", "1" });
         args.AddRange(new[] { "-flags", "low_delay", "-probesize", "32", "-analyzeduration", "0" });
-        if (gpu) args.AddRange(new[] { "-hwaccel", "d3d11va", "-hwaccel_output_format", "d3d11" });
+        string hw = api == GpuApi.D3d12 ? "d3d12" : "d3d11";
+        if (gpu) args.AddRange(new[] { "-hwaccel", hw + "va", "-hwaccel_output_format", hw });
         args.AddRange(new[] { "-f", codec == ScreenCodec.H264 ? "h264" : "ivf", "-i", "pipe:0" });
-        if (gpu) args.AddRange(new[] { "-vf", previewSize is { } shrunk ? $"hwdownload,format=nv12,scale={shrunk.Width}:{shrunk.Height}" : "hwdownload,format=nv12" });
+        // Scaling on the card (D3D12 has a filter for it, D3D11 has none that works) means only the small picture is copied back to memory:
+        // measured, about a fifth to an eighth of the processor time of copying the whole frame back and scaling it there.
+        if (gpu) args.AddRange(new[] { "-vf", (api, previewSize) switch
+        {
+            (GpuApi.D3d12, { } s) => $"scale_d3d12=w={s.Width}:h={s.Height}:format=nv12,hwdownload,format=nv12",
+            (_, { } s) => $"hwdownload,format=nv12,scale={s.Width}:{s.Height}",
+            _ => "hwdownload,format=nv12",
+        } });
         else if (previewSize is { } size) args.AddRange(new[] { "-vf", $"scale={size.Width}:{size.Height}" });
         args.AddRange(new[] { "-f", "rawvideo", "-pix_fmt", "nv12", "pipe:1" });
         return args;

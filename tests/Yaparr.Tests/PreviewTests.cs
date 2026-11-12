@@ -5,6 +5,9 @@ namespace Yaparr.Tests;
 
 public class PreviewTests
 {
+    private readonly Xunit.Abstractions.ITestOutputHelper _out;
+    public PreviewTests(Xunit.Abstractions.ITestOutputHelper output) => _out = output;
+
     private sealed class Frames : IMediaFrameSource
     {
         public event Action<MediaFrame>? FrameReceived;
@@ -51,6 +54,20 @@ public class PreviewTests
         Assert.DoesNotContain("-hwaccel", software);
         // Whatever is asked, a card is for H.264 only.
         Assert.DoesNotContain("-hwaccel", string.Join(' ', FfmpegArgs.DecodeForViewer(ScreenCodec.Vp8, gpu: true, previewSize: (640, 344), keyFramesOnly: false)));
+    }
+
+    [Fact]
+    public void A_preview_through_Direct3D_12_scales_on_the_card_and_copies_back_only_the_small_picture()
+    {
+        string line = string.Join(' ', FfmpegArgs.DecodeForViewer(ScreenCodec.H264, gpu: true, previewSize: (640, 344), keyFramesOnly: false, api: GpuApi.D3d12));
+        Assert.Contains("-hwaccel d3d12va -hwaccel_output_format d3d12", line);
+        Assert.Contains("-vf scale_d3d12=w=640:h=344:format=nv12,hwdownload,format=nv12", line);
+        Assert.DoesNotContain("d3d11", line);
+        // Without a preview size (a watch) there is nothing to scale to: the frame is copied back as it is.
+        string watch = string.Join(' ', FfmpegArgs.DecodeForViewer(ScreenCodec.H264, gpu: true, api: GpuApi.D3d12));
+        Assert.Contains("-hwaccel d3d12va", watch);
+        Assert.Contains("-vf hwdownload,format=nv12", watch);
+        Assert.DoesNotContain("scale_d3d12", watch);
     }
 
     [Theory]
@@ -123,6 +140,9 @@ public class PreviewTests
             }
             Assert.True(viewer.FramesIn > 200, $"{viewer.FramesIn} frames went in; a preview of every frame takes them all");
             Assert.True(viewer.DecoderCpu > TimeSpan.Zero);
+            // Direct3D 12 first, then 11, then the processor: whichever FFmpeg and the card can do, and a note of what did not work.
+            _out.WriteLine($"FFmpeg {ffmpeg}: decoded {viewer.DecoderKind}; {shown.Count} pictures, decoder processor time {viewer.DecoderCpu.TotalSeconds:0.00} s");
+            Assert.StartsWith("on the ", viewer.DecoderKind);
         }
     }
 

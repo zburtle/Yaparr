@@ -21,7 +21,7 @@ public sealed class CallQualityLog
     private readonly Func<ScreenSharer?> _sharer;
     private readonly Func<ChatNode?> _node;
     private readonly Func<IEnumerable<ScreenViewControl>> _watches;
-    private readonly Func<TimeSpan?>? _previewCpu;
+    private readonly Func<(TimeSpan Cpu, string? Kind)?>? _previewCpu;
     private readonly Dictionary<ScreenViewControl, (WatchFigures Figures, long At)> _watchBefore = new();
     private readonly FileLog _log;
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(60) };
@@ -34,7 +34,7 @@ public sealed class CallQualityLog
     private ScreenSharer? _sharerWatched;
     private int _quiet;
 
-    public CallQualityLog(Func<VoiceSession?> voice, Func<ScreenSharer?> sharer, Func<ChatNode?> node, Func<IEnumerable<ScreenViewControl>> watches, FileLog log, Func<TimeSpan?>? previewCpu = null)
+    public CallQualityLog(Func<VoiceSession?> voice, Func<ScreenSharer?> sharer, Func<ChatNode?> node, Func<IEnumerable<ScreenViewControl>> watches, FileLog log, Func<(TimeSpan Cpu, string? Kind)?>? previewCpu = null)
     {
         _watches = watches;
         _previewCpu = previewCpu;
@@ -94,7 +94,7 @@ public sealed class CallQualityLog
                 sharer.TakeMaxima(1);
                 _appCpu = Process.GetCurrentProcess().TotalProcessorTime;
                 _captureCpu = sharer.CaptureCpu;
-                _previewBefore = _previewCpu?.Invoke() ?? default;
+                _previewBefore = _previewCpu?.Invoke()?.Cpu ?? default;
                 _gc = Collections();
                 _gcPause = GC.GetTotalPauseDuration();
             }
@@ -124,10 +124,12 @@ public sealed class CallQualityLog
             (_appCpu, _captureCpu, _gc, _gcPause) = (app, capture, collections, pause);
             // The preview's decoder is a separate FFmpeg that the figure for this program does not include; null when there is no preview.
             double previewPercent = -1;
+            string? previewKind = null;
             if (_previewCpu?.Invoke() is { } preview)
             {
-                previewPercent = Math.Max(0, (preview - _previewBefore).TotalSeconds / seconds * 100);
-                _previewBefore = preview;
+                previewPercent = Math.Max(0, (preview.Cpu - _previewBefore).TotalSeconds / seconds * 100);
+                _previewBefore = preview.Cpu;
+                previewKind = preview.Kind;
             }
             // More pictures than were asked for means the capture is handing over a burst (the encoder then sends many times the bitrate). An encoder
             // that is over the time it has for a picture more than one time in fifty cannot keep up.
@@ -138,7 +140,7 @@ public sealed class CallQualityLog
             if (bad) problem = true;
             var paths = status.Children.Select(c => c.Short + " " + (_node()?.GetLink(c).ToString() ?? "path unknown")).ToList();
             _log.Write(new SharingMinute(fps, wanted, kbps, ScreenCodecs.Describe(sharer.Codec, sharer.Encoder), sharer.InProcess, sharer.PictureSize, interval, maxima, sharer.FrameBudgetMs,
-                gap, resent, dropped, sharer.Source.Viewers.Count, paths, appPercent, capturePercent, process.WorkingSet64 / (1024 * 1024), gcDelta, paused, card, bad, previewPercent).Describe());
+                gap, resent, dropped, sharer.Source.Viewers.Count, paths, appPercent, capturePercent, process.WorkingSet64 / (1024 * 1024), gcDelta, paused, card, bad, previewPercent, previewKind).Describe());
         }
 
         foreach (var watch in _watches().ToList())

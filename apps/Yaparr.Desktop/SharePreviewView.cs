@@ -46,6 +46,11 @@ public sealed class SharePreviewView : UserControl
     /// <summary>The processor time the preview's decoder (a separate FFmpeg) has used since the share began, which the program's own figure does not include.</summary>
     public TimeSpan DecoderCpu => _decoderCpuDone + (_viewer?.DecoderCpu ?? default);
 
+    private string? _decoderKind;
+
+    /// <summary>How the preview is decoding (on the card through Direct3D 12 or 11, or on the processor, and what did not work), kept after it closes; null until it has run.</summary>
+    public string? DecoderKind => _viewer?.DecoderKind ?? _decoderKind;
+
     public SharePreviewView()
     {
         var header = new DockPanel();
@@ -67,6 +72,7 @@ public sealed class SharePreviewView : UserControl
         Detach();
         _sharer = sharer;
         _decoderCpuDone = default;
+        _decoderKind = null;
         _ffmpeg = ffmpegPath;
         sharer.FrameEncoded += OnEncoded;
         IsVisible = true;
@@ -133,7 +139,7 @@ public sealed class SharePreviewView : UserControl
         _frames = null;
         var viewer = _viewer;
         _viewer = null;
-        if (viewer != null) { viewer.PictureReceived -= OnPicture; viewer.Dispose(); _decoderCpuDone += viewer.DecoderCpu; }
+        if (viewer != null) { viewer.PictureReceived -= OnPicture; _decoderKind = viewer.DecoderKind; viewer.Dispose(); _decoderCpuDone += viewer.DecoderCpu; }
         Interlocked.Exchange(ref _latest, null);
         _bitmap = null;
         _picture.Source = null;

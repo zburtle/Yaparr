@@ -46,7 +46,8 @@ public sealed class ScreenViewer : IDisposable
     private const int MaxQueuedFrames = 90;
 
     // When asked for, H.264 is decoded on the graphics card while that works; the first time it does not, this turns off and the processor does it.
-    private bool _gpu;
+    private GpuApi? _api;
+    private string? _fallbackNote;
     private byte[]? _lastKey;
 
     /// <summary>
@@ -57,7 +58,10 @@ public sealed class ScreenViewer : IDisposable
     public ScreenViewer(IMediaFrameSource view, string? ffmpegPath = null, bool gpuDecode = false, PreviewSize? preview = null)
     {
         _preview = preview;
-        _gpu = OperatingSystem.IsWindows() && (preview == null ? gpuDecode : !preview.KeyFramesOnly);
+        // A watch decodes on the card through Direct3D 11 when asked to; a preview of every frame through Direct3D 12, which can also scale on the card
+        // (and falls back to Direct3D 11, then to the processor, when FFmpeg or the card cannot).
+        if (OperatingSystem.IsWindows())
+            _api = preview == null ? (gpuDecode ? GpuApi.D3d11 : null) : (preview.KeyFramesOnly ? null : GpuApi.D3d12);
         _view = view;
         _ffmpeg = ffmpegPath ?? FfmpegLocator.Find() ?? throw new FileNotFoundException("FFmpeg was not found. Put ffmpeg.exe in an 'ffmpeg' folder next to the app, or set YAPARR_FFMPEG.");
         _view.FrameReceived += OnFrame;
@@ -82,7 +86,20 @@ public sealed class ScreenViewer : IDisposable
     }
 
     /// <summary>Whether the current decoder runs on the graphics card.</summary>
-    public bool GpuDecoding { get { lock (_gate) return _gpu && _decoder?.Codec == ScreenCodec.H264; } }
+    public bool GpuDecoding { get { lock (_gate) return _api != null && _decoder?.Codec == ScreenCodec.H264; } }
+
+    /// <summary>How pictures are being decoded, for a log: on the card through Direct3D 12 or 11, or by the processor, and why not the first choice when it did not work.</summary>
+    public string DecoderKind
+    {
+        get
+        {
+            lock (_gate)
+            {
+                string kind = _api switch { GpuApi.D3d12 => "on the card through Direct3D 12", GpuApi.D3d11 => "on the card through Direct3D 11", _ => "on the processor" };
+                return _fallbackNote == null ? kind : $"{kind} ({_fallbackNote})";
+            }
+        }
+    }
 
     /// <summary>Frames not handed to the decoder because it fell behind; the viewer then waits for the next key frame.</summary>
     public long Dropped => Interlocked.Read(ref _dropped);
@@ -145,7 +162,7 @@ public sealed class ScreenViewer : IDisposable
     {
         var psi = new ProcessStartInfo(_ffmpeg) { RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
         var shown = _preview?.Fit(width, height);
-        foreach (var a in FfmpegArgs.DecodeForViewer(codec, _gpu, shown, _preview?.KeyFramesOnly ?? true)) psi.ArgumentList.Add(a);
+        foreach (var a in FfmpegArgs.DecodeForViewer(codec, _api != null, shown, _preview?.KeyFramesOnly ?? true, _api ?? GpuApi.D3d11)) psi.ArgumentList.Add(a);
         var process = Process.Start(psi) ?? throw new InvalidOperationException("FFmpeg did not start.");
         process.ErrorDataReceived += (_, e) =>
         {
@@ -153,7 +170,7 @@ public sealed class ScreenViewer : IDisposable
             lock (_gate) { _errors.Enqueue(e.Data); while (_errors.Count > 5) _errors.Dequeue(); }
         };
         process.BeginErrorReadLine();
-        var decoder = new Decoder(this, process, codec, width, height, _gpu && codec == ScreenCodec.H264, shown ?? (width, height));
+        var decoder = new Decoder(this, process, codec, width, height, _api != null && codec == ScreenCodec.H264, shown ?? (width, height));
         decoder.Start(_cts.Token);
         return decoder;
     }
@@ -299,7 +316,11 @@ public sealed class ScreenViewer : IDisposable
         lock (_gate)
         {
             if (_disposed || _decoder != failed) return _decoder != failed && !_disposed;
-            _gpu = false;
+            // The next choice down: Direct3D 12, then Direct3D 11, then the processor. What FFmpeg said goes in the note, for the log.
+            string said = LastErrors.Length > 0 ? ": " + (LastErrors.Length > 120 ? LastErrors[..120] : LastErrors) : "";
+            _fallbackNote = (_fallbackNote == null ? "" : _fallbackNote + "; ") + (_api == GpuApi.D3d12 ? "Direct3D 12" : "Direct3D 11") + " did not work" + said;
+            _api = _api == GpuApi.D3d12 ? GpuApi.D3d11 : null;
+            _errors.Clear();   // what the next one says is about the next one
             key = _lastKey;
             _decoder = null;
             if (key != null && ScreenCodecs.TryGetKeyFrame(key, out var codec, out int w, out int h)) replacement = _decoder = StartDecoder(codec, w, h);
