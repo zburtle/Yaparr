@@ -35,7 +35,7 @@ public partial class ScreenViewControl : UserControl
         var st = _view.Status;
         return new WatchFigures(_name, _startedAt, _shown, _viewer?.FramesIn ?? 0, _viewer?.BytesIn ?? 0, _view.FramesLost, st.Recovered, _playout.Late,
             _viewer?.Dropped ?? 0, _viewer?.DecodeQueue ?? 0, st.Attached, st.Parent, _view.FramesMissed, _viewer?.PictureKind,
-            st.PacketsSeen, st.GapsNoticed, st.BigGaps, st.ArrivedLate, st.RepairedAfterAsking, st.NacksSent, st.PacketsAsked, st.GaveUp);
+            st.PacketsSeen, st.GapsNoticed, st.BigGaps, st.ArrivedLate, st.RepairedAfterAsking, st.NacksSent, st.PacketsAsked, st.GaveUp, _quality.Sample);
     }
 
     /// <summary>How the watch went, written when it ends (for the sharing diagnostics, which are often copied after the screen is closed).</summary>
@@ -46,6 +46,9 @@ public partial class ScreenViewControl : UserControl
         _name = name;
         _view = view;
         _viewer = new ScreenViewer(view, ffmpeg);
+        // How this picture is doing, judged over ten seconds and sent up the tree with the others' (see ViewerQualityMeter), so that the sharer can tell
+        // a room that struggles from one viewer that does.
+        view.QualityProvider = () => _quality.Sample;
         _viewer.PictureReceived += OnPicture;
         _viewer.Failed += ex =>
         {
@@ -116,6 +119,7 @@ public partial class ScreenViewControl : UserControl
     private readonly PlayoutQueue<Picture> _playout;
     private readonly DispatcherTimer _draw = new() { Interval = TimeSpan.FromMilliseconds(4) };
     private long _statsAt = Environment.TickCount64, _statsShown, _statsFrames, _statsBytes;
+    private readonly ViewerQualityMeter _quality = new();
 
     private void OnPicture(Picture picture)
     {
@@ -161,6 +165,7 @@ public partial class ScreenViewControl : UserControl
         double seconds = Math.Max(0.1, (now - _statsAt) / 1000.0);
         double shownFps = (shown - _statsShown) / seconds, arriveFps = (frames - _statsFrames) / seconds, kbps = (bytes - _statsBytes) * 8 / 1000.0 / seconds;
         (_statsAt, _statsShown, _statsFrames, _statsBytes) = (now, shown, frames, bytes);
+        _quality.Update(now, new ViewerCounters(shown, _view.FramesLost, _view.FramesMissed, _playout.Late, _viewer?.Dropped ?? 0, st.GaveUp));
         // Delay added by the playout queue: what waits to be drawn, at the pace they arrive.
         int delayMs = (int)(_playout.Count * _playout.IntervalMs);
         // The stream's own check: a parent that has not been heard from for a few seconds is let go, and it is looked for again.

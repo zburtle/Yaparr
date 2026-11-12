@@ -172,6 +172,7 @@ public sealed unsafe class InProcessEncoder : IDisposable
             _onCard = capture is { OnCard: true };
             _context->pix_fmt = _onCard ? AVPixelFormat.AV_PIX_FMT_D3D11 : AVPixelFormat.AV_PIX_FMT_NV12;
             if (_onCard) _context->hw_frames_ctx = ffmpeg.av_buffer_ref(capture!.HardwareFrames);
+            Kbps = options.Kbps;
             _context->bit_rate = options.Kbps * 1000L;
             _context->rc_max_rate = (long)(options.Kbps * 1500L);
             _context->rc_buffer_size = (int)(options.Kbps * 1500L);
@@ -248,6 +249,23 @@ public sealed unsafe class InProcessEncoder : IDisposable
         frame->pict_type = forceKey ? AVPictureType.AV_PICTURE_TYPE_I : AVPictureType.AV_PICTURE_TYPE_NONE;
         Check(ffmpeg.avcodec_send_frame(_context, frame), "encoding a picture");
         ReceivePackets(output);
+    }
+
+    /// <summary>The bitrate the encoder was last given, in kbit/s.</summary>
+    public int Kbps { get; private set; }
+
+    /// <summary>
+    /// Changes the bitrate while encoding, without a restart: the average, the ceiling and the buffer move together (the ceiling and the buffer are
+    /// one and a half times the average, as when the encoder was started). Whether the encoder follows is what the caller has to measure.
+    /// </summary>
+    public void SetBitrate(int kbps)
+    {
+        if (_context == null) throw new ObjectDisposedException(nameof(InProcessEncoder));
+        if (kbps < 50) throw new ArgumentOutOfRangeException(nameof(kbps));
+        _context->bit_rate = kbps * 1000L;
+        _context->rc_max_rate = kbps * 1500L;
+        _context->rc_buffer_size = (int)(kbps * 1500L);
+        Kbps = kbps;
     }
 
     private void ReceivePackets(Action<byte[], bool> output)

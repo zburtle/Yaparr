@@ -147,6 +147,7 @@ public partial class MainWindow
                 _log.Write($"screen sharing encoder: {ScreenCodecs.Describe(sharer.Codec, sharer.Encoder)}{(sharer.InProcess ? ", in this program" : ", separate FFmpeg")}{(sharer.FallbackReason is { } reason ? $" (not used: {reason})" : "")}");
                 _log.Write("screen sharing encoder set up as: " + sharer.EncoderDetails);
             };
+            sharer.QualityDecided += text => _log.Write(text);
             sharer.KeyFrameAnswered += (ms, bytes) => _log.Write($"screen sharing: made a key frame {ms} ms after a viewer asked for one ({bytes / 1024} KB)");
             sharer.Ended += ex => UI(() =>
             {

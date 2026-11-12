@@ -1,0 +1,145 @@
+namespace Yaparr.Screen;
+
+/// <summary>
+/// What the viewers of a share say, as far as it has reached the sharer (see docs/adaptive-quality.md): how many viewers reported, how many of them are
+/// in trouble, the worst picture rate among them, and how many lose packets that resending does not get back. Viewers whose reports did not arrive (an
+/// older version, or a relay that does not pass them up) are not counted at all: no report is no information, never "fine".
+/// </summary>
+public readonly record struct RoomQuality(int Reported, int Troubled, double WorstFps = 0, int Lossy = 0)
+{
+    public static RoomQuality None => default;
+}
+
+/// <summary>What the sharer sees of its own link over the last few seconds: the share of what it sent that it had to send again, packets it dropped, and how many viewers it sends to directly.</summary>
+public readonly record struct OwnLink(double ResentFraction, long Dropped, int DirectViewers);
+
+/// <summary>What the policy decided this second: the step (0 is the quality asked for), whether it changed, and why, in words for a log or a panel.</summary>
+public readonly record struct QualityDecision(int Step, bool Changed, string? Why, bool AtFloor = false);
+
+/// <summary>
+/// When to lower the quality of a share for the viewers and when to raise it again. A pure function of what it is told and the time it is told it at,
+/// so it can be run with scripted rooms: one weak viewer among ten changes nothing, half the room lowers it after ten seconds of trouble, a quiet
+/// half minute raises it one step, and a link that cannot take the higher step is tried less and less often (docs/adaptive-quality.md).
+/// </summary>
+public sealed class QualityPolicy
+{
+    /// <summary>The numbers of the design, in one place.</summary>
+    public sealed record Settings
+    {
+        public int TroubleSeconds { get; init; } = 10;
+        public int QuietSeconds { get; init; } = 30;
+        public int MinSecondsBetweenChanges { get; init; } = 20;
+        /// <summary>A step up followed by trouble within this long doubles the wait before the next.</summary>
+        public int FlapSeconds { get; init; } = 60;
+        public int BackoffMaxSeconds { get; init; } = 300;
+        /// <summary>After this long without trouble the wait for a step up falls back to <see cref="QuietSeconds"/>.</summary>
+        public int BackoffResetSeconds { get; init; } = 600;
+        /// <summary>The share of what was sent that is sent again, above which the sharer's own link is taken to be the cause.</summary>
+        public double ResentLimit { get; init; } = 0.05;
+        public int MaxStep { get; init; } = QualityLadder.Steps - 1;
+    }
+
+    /// <summary>How often <see cref="Tick"/> is called, in milliseconds.</summary>
+    public const long TickMs = 1000;
+
+    private readonly Settings _s;
+    private long _troubleSince = -1, _quietSince = -1, _lastChange = long.MinValue / 2, _lastUp = long.MinValue / 2, _lastTrouble = long.MinValue / 2;
+    private int _upWaitSeconds;
+
+    public QualityPolicy(Settings? settings = null)
+    {
+        _s = settings ?? new Settings();
+        _upWaitSeconds = _s.QuietSeconds;
+    }
+
+    /// <summary>The step now: 0 is what was asked for, each one above it is lower (see <see cref="QualityLadder"/>).</summary>
+    public int Step { get; private set; }
+
+    /// <summary>How long the room has to be quiet before the next step up, which grows when steps up are followed by trouble.</summary>
+    public int UpWaitSeconds => _upWaitSeconds;
+
+    /// <summary>The room is in trouble: at least half of the viewers that reported and at least two of them, or the one viewer there is.</summary>
+    public static bool RoomInTrouble(RoomQuality room)
+        => room.Reported >= 1 && ((room.Reported == 1 && room.Troubled >= 1) || (room.Reported >= 2 && room.Troubled >= 2 && room.Troubled * 2 >= room.Reported));
+
+    /// <summary>The sharer's own link is the cause: it had to send a good share of the stream again, or dropped packets, and sends to more than one viewer directly (with one it is that viewer's link, which the room rule sees).</summary>
+    public bool OwnLinkInTrouble(OwnLink own) => own.DirectViewers >= 2 && (own.ResentFraction > _s.ResentLimit || own.Dropped > 0);
+
+    /// <summary>Called about once a second. <paramref name="viewers"/> is how many viewers the sharer knows of (from the tree), reported or not.</summary>
+    public QualityDecision Tick(long nowMs, RoomQuality room, OwnLink own, int viewers)
+    {
+        bool roomTrouble = RoomInTrouble(room), ownTrouble = OwnLinkInTrouble(own);
+        bool trouble = roomTrouble || ownTrouble;
+        // Quiet: nobody that reported is in trouble and the sharer's link is fine, with someone to hear from; or nobody is watching at all.
+        bool quiet = !trouble && ((room.Reported > 0 && room.Troubled == 0) || viewers == 0);
+        if (trouble) _lastTrouble = nowMs;
+        if (nowMs - _lastTrouble >= _s.BackoffResetSeconds * 1000L) _upWaitSeconds = _s.QuietSeconds;
+
+        // The second just seen counts: ten seconds of trouble is the tenth one-second look that shows it, and a quiet half minute the thirtieth.
+        if (trouble) { if (_troubleSince < 0) _troubleSince = nowMs - TickMs; _quietSince = -1; }
+        else
+        {
+            _troubleSince = -1;
+            if (quiet) { if (_quietSince < 0) _quietSince = nowMs - TickMs; }
+            else _quietSince = -1;   // some viewers in trouble, not enough to act on; or no information: hold where we are
+        }
+
+        if (_troubleSince >= 0 && nowMs - _troubleSince >= _s.TroubleSeconds * 1000L)
+        {
+            if (Step >= _s.MaxStep)
+            {
+                _troubleSince = nowMs;
+                return new QualityDecision(Step, false, "the room is still in trouble and the quality is as low as it goes", AtFloor: true);
+            }
+            string why = roomTrouble ? $"{room.Troubled} of {room.Reported} viewers lost frames for {_s.TroubleSeconds} s" : $"this computer's own link: {own.ResentFraction * 100:0}% sent again, {own.Dropped} dropped";
+            // A step up that was followed by trouble within the minute: the link cannot take it, so the next try is further off.
+            if (nowMs - _lastUp < _s.FlapSeconds * 1000L) _upWaitSeconds = Math.Min(_upWaitSeconds * 2, _s.BackoffMaxSeconds);
+            Step++;
+            _lastChange = nowMs;
+            _troubleSince = nowMs;
+            return new QualityDecision(Step, true, why);
+        }
+
+        if (_quietSince >= 0 && Step > 0 && nowMs - _quietSince >= _upWaitSeconds * 1000L && nowMs - _lastChange >= _s.MinSecondsBetweenChanges * 1000L)
+        {
+            Step--;
+            _lastChange = nowMs;
+            _lastUp = nowMs;
+            _quietSince = nowMs;
+            return new QualityDecision(Step, true, viewers == 0 ? "nobody is watching" : $"no viewer in trouble for {_upWaitSeconds} s");
+        }
+        return new QualityDecision(Step, false, null);
+    }
+}
+
+/// <summary>What a step of the ladder means for the picture: the bitrate, the frame rate and the largest size.</summary>
+public readonly record struct QualityLevel(int Kbps, int Fps, int Width, int Height)
+{
+    /// <summary>For a log or a panel: "720p30 at 2.7 Mbit/s".</summary>
+    public string Describe() => $"{Height}p{Fps} at {(Kbps >= 1000 ? (Kbps / 1000.0).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " Mbit/s" : Kbps + " kbit/s")}";
+}
+
+/// <summary>
+/// The steps from the quality that was asked for down to the floor: first the bitrate (nobody notices), then the frame rate, and last the size (the
+/// only step that makes a viewer's decoder start again). Nothing goes below 500 kbit/s, 15 frames a second or 540 lines.
+/// </summary>
+public static class QualityLadder
+{
+    public const int Steps = 6, FloorKbps = 500, FloorFps = 15, FloorHeight = 540;
+
+    /// <summary>The level of <paramref name="step"/> for a share asked for with <paramref name="kbps"/> and <paramref name="fps"/>, with a picture of <paramref name="width"/> x <paramref name="height"/>.</summary>
+    public static QualityLevel For(int step, int kbps, int fps, int width, int height)
+    {
+        step = Math.Clamp(step, 0, Steps - 1);
+        double bitrate = step switch { 0 => 1.0, 1 => 0.70, 2 => 0.45, 3 => 0.45, 4 => 0.30, _ => 0.45 };
+        int divisor = step switch { 3 => 2, 4 => 3, _ => 1 };
+        int w = width, h = height;
+        if (step == 5)
+        {
+            // One size down: 1080 to 720, 720 to 540, and nothing below 540. The shape is kept, both sides even.
+            int to = height > 720 ? 720 : height > FloorHeight ? FloorHeight : height;
+            if (to < height) { w = Math.Max(2, (int)Math.Round(width * (double)to / height) / 2 * 2); h = to; }
+        }
+        return new QualityLevel(Math.Max(Math.Min(kbps, FloorKbps), (int)Math.Round(kbps * bitrate)), Math.Max(Math.Min(fps, FloorFps), fps / divisor), w, h);
+    }
+}

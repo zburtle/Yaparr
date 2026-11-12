@@ -140,7 +140,7 @@ public sealed class CallQualityLog
             if (bad) problem = true;
             var paths = status.Children.Select(c => c.Short + " " + (_node()?.GetLink(c).ToString() ?? "path unknown")).ToList();
             _log.Write(new SharingMinute(fps, wanted, kbps, ScreenCodecs.Describe(sharer.Codec, sharer.Encoder), sharer.InProcess, sharer.PictureSize, interval, maxima, sharer.FrameBudgetMs,
-                gap, resent, dropped, sharer.Source.Viewers.Count, paths, appPercent, capturePercent, process.WorkingSet64 / (1024 * 1024), gcDelta, paused, card, bad, previewPercent, previewKind, sharer.CaptureInProcess, sharer.CaptureOnCard).Describe());
+                gap, resent, dropped, sharer.Source.Viewers.Count, paths, appPercent, capturePercent, process.WorkingSet64 / (1024 * 1024), gcDelta, paused, card, bad, previewPercent, previewKind, sharer.CaptureInProcess, sharer.CaptureOnCard, sharer.QualityNote).Describe());
         }
 
         foreach (var watch in _watches().ToList())
@@ -165,7 +165,7 @@ public sealed class CallQualityLog
             };
             string? path = now.Parent is { } parent ? _node()?.GetLink(parent).ToString() : null;
             _log.Write($"call quality: watching{(bad ? " (a problem)" : "")} {now.Name}{(now.PictureKind != null ? " (" + now.PictureKind + ")" : "")}: {arriving:0.0} frames/s arriving at {kbps:0} kbit/s, {drawn:0.0} pictures/s drawn, {lost} frames lost, {skipped} skipped waiting for a key frame, {late} too late, "
-                       + $"{dropped} dropped by the decoder, decoder queue {now.DecodeQueue}, {now.Recovered} packets recovered in all; in the last minute {packets.DescribePackets()}; "
+                       + $"{dropped} dropped by the decoder, decoder queue {now.DecodeQueue}, {now.Recovered} packets recovered in all; in the last minute {packets.DescribePackets()}; {now.DescribeJudgement()}; "
                        + (now.Attached ? $"attached {(now.Parent is { } p ? "under " + p.Short : "to the sharer")}{(path != null ? " (" + path + ")" : "")}" : "not attached to the sharer"));
         }
         foreach (var gone in _watchBefore.Keys.Where(k => !_watches().Contains(k)).ToList()) _watchBefore.Remove(gone);

@@ -1,3 +1,4 @@
+using Yaparr.Chat;
 using Yaparr.Desktop;
 
 namespace Yaparr.Tests;
@@ -44,5 +45,17 @@ public class WatchFiguresTests
     {
         var figures = new WatchFigures("Zed's screen", 0, 0, 0, 0, 0, 0, 0, 0, 0, Attached: false, Parent: null);
         Assert.EndsWith("not attached to the sharer", figures.Describe(5_000));
+    }
+
+    [Fact]
+    public void A_watch_says_how_the_viewer_judged_its_own_picture_which_is_what_it_told_the_sharer()
+    {
+        WatchFigures With(ViewerQualitySample judged) => new("Zed's screen", 0, 0, 0, 0, 0, 0, 0, 0, 0, Attached: true, Parent: null, Judged: judged);
+
+        Assert.Equal("not judged yet, so nothing was told to the sharer", With(ViewerQualitySample.Unknown).DescribeJudgement());
+        Assert.Equal("judged fine, 58 pictures a second over the last ten seconds, and told the sharer so", With(new ViewerQualitySample(true, false, 58, false)).DescribeJudgement());
+        Assert.Equal("judged in trouble, 22 pictures a second over the last ten seconds, losing packets for good, and told the sharer so", With(new ViewerQualitySample(true, true, 22, true)).DescribeJudgement());
+        // it is in the description that is copied for a bug report too
+        Assert.Contains("judged in trouble, 22 pictures a second", With(new ViewerQualitySample(true, true, 22, false)).Describe(10_000));
     }
 }
