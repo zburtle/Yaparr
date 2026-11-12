@@ -214,6 +214,12 @@ public sealed class ScreenSharer : IDisposable
     /// <summary>The sharing ended; the exception is null when it was stopped on purpose.</summary>
     public event Action<Exception?>? Ended;
 
+    /// <summary>
+    /// An encoder is running now: <see cref="Codec"/>, <see cref="Encoder"/> and <see cref="InProcess"/> say which, and <see cref="FallbackReason"/> why
+    /// an earlier choice was not used. Raised again if another one has to take over. On another thread, so a handler has to be quick.
+    /// </summary>
+    public event Action? EncoderStarted;
+
     private volatile string _lastArguments = "";
     private DateTime _startedAt;
 
@@ -319,6 +325,7 @@ public sealed class ScreenSharer : IDisposable
         _startedAt = DateTime.UtcNow;
         var process = Process.Start(psi) ?? throw new InvalidOperationException("FFmpeg did not start.");
         lock (_gate) _process = process;
+        EncoderStarted?.Invoke();
         if (portal != null) StartPortalSource(portal, process);
         if (_switch) KillProcess();   // asked to share something else while this one was starting
         process.ErrorDataReceived += (_, e) =>
@@ -441,6 +448,7 @@ public sealed class ScreenSharer : IDisposable
         try { encoder = new InProcessEncoder(picture.Width, picture.Height, _options); }
         catch (Exception) { KillProcess(); throw; }   // no NVIDIA encoder to use: the next way of encoding is tried
         using var disposeEncoder = encoder;
+        EncoderStarted?.Invoke();
 
         var stdout = process.StandardOutput.BaseStream;
         var buffer = new byte[encoder.PictureBytes];

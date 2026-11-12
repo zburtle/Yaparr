@@ -126,10 +126,12 @@ public partial class MainWindow
             var what = options.Portal?.IsWindow ?? options.WindowHandle != null ? "window" : "screen";
             var sharer = ScreenSharer.Start(_node, room, $"{_settings.DisplayName}'s {what}", options, ffmpeg);
             _log.Write($"sharing your {what}: {options.Fps} fps, {options.Kbps} kbit/s, up to {options.MaxWidth}x{options.MaxHeight}, FFmpeg {ffmpeg}");
+            // Which encoder is really in use (not only which was asked for): in this program, a separate FFmpeg, or the next one after a failure.
+            sharer.EncoderStarted += () => _log.Write($"screen sharing encoder: {ScreenCodecs.Describe(sharer.Codec, sharer.Encoder)}{(sharer.InProcess ? ", in this program" : ", separate FFmpeg")}{(sharer.FallbackReason is { } reason ? $" (not used: {reason})" : "")}");
             sharer.Ended += ex => UI(() =>
             {
                 if (_sharer != sharer) return;
-                _log.Write($"screen sharing ended: {ScreenCodecs.Describe(sharer.Codec, sharer.Encoder)}{(sharer.FallbackReason is { } why ? $" (not used: {why})" : "")}, {sharer.Frames} frames sent");
+                _log.Write($"screen sharing ended: {ScreenCodecs.Describe(sharer.Codec, sharer.Encoder)}{(sharer.InProcess ? ", in this program" : "")}{(sharer.FallbackReason is { } why ? $" (not used: {why})" : "")}, {sharer.Frames} frames sent");
                 StopSharingCore();
                 if (ex != null)
                 {
