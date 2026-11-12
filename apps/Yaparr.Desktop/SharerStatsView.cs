@@ -81,7 +81,7 @@ public sealed class SharerStatsView : Border
         // A gap far over the frame time means FFmpeg itself stalled (capture or encoding), whatever the network does.
         bool behind = fps < _targetFps * 0.9 || gap > 3000.0 / Math.Max(1, _targetFps);
         bool card = _sharer.Codec is ScreenCodec.H264 or ScreenCodec.Av1 && _sharer.Encoder != null;
-        string encoder = card ? $"{HardwareEncoders.Maker(_sharer.Encoder!.Value)} graphics card · {(_sharer.Codec == ScreenCodec.Av1 ? "AV1" : "H.264")}" : "Processor · VP8";
+        string encoder = card ? $"{HardwareEncoders.Maker(_sharer.Encoder!.Value)} graphics card · {(_sharer.Codec == ScreenCodec.Av1 ? "AV1" : "H.264")}{(_sharer.InProcess ? " · in this program" : "")}" : "Processor · VP8";
         _how.Text = encoder;
         _rate.Text = $"{fps:0} / {_targetFps} fps · {(kbps >= 1000 ? $"{kbps / 1000:0.0} Mbit/s" : $"{kbps:0} kbit/s")}";
         var viewers = _sharer.Source.Viewers;
@@ -98,7 +98,7 @@ public sealed class SharerStatsView : Border
         _warning.IsVisible = problems.Count > 0;
 
         // The full figures, for anyone who wants them.
-        ToolTip.SetTip(this, $"Key frames: {_sharer.KeyFrames}\nLongest wait for a frame from FFmpeg: {gap} ms\nWatchers directly connected: {status.Children.Count}\nPackets sent again this second: {resent}, dropped in all: {status.Dropped}");
+        ToolTip.SetTip(this, $"Key frames: {_sharer.KeyFrames}{(_sharer.InProcess ? $" ({_sharer.KeyFramesForced} made because a viewer asked)" : "")}\nLongest wait for a frame from FFmpeg: {gap} ms\nWatchers directly connected: {status.Children.Count}\nPackets sent again this second: {resent}, dropped in all: {status.Dropped}");
     }
 
     // One entry per person, leaving out the sharer's own devices.

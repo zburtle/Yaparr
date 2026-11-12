@@ -4,6 +4,12 @@
     "Yaparr (your profile)": {
       "commandName": "Project"
     },
+    "Yaparr (your profile, in-process encoder)": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "YAPARR_INPROCESS": "1"
+      }
+    },
     "alice (separate profile)": {
       "commandName": "Project",
       "commandLineArgs": "--name alice --data \"%TEMP%\\yaparr-desktop\\alice\""
