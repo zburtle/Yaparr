@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Threading;
+using Yaparr.AppCore;
 using Yaparr.Chat;
 using Yaparr.Screen;
 using Yaparr.Voice;
@@ -86,6 +87,14 @@ public partial class ScreenViewControl : UserControl
 
     private bool _wasAttached, _connectionLost;
 
+    /// <summary>
+    /// The picture stopped for a couple of seconds although the watch is still going (the sharer restarted, a relay hiccuped, packets were lost): a notice is shown over the
+    /// last picture until pictures come again. The seconds are how long it has been stopped (when it was noticed), and how long it was (when it is over).
+    /// </summary>
+    public event Action<double>? StreamInterrupted, StreamResumed;
+
+    private readonly StreamInterruptionWatch _interruptions = new();
+
     /// <summary>Raised when watching ends, so the owner can mark the share as not watched any more.</summary>
     public event Action? Stopped;
 
@@ -153,6 +162,8 @@ public partial class ScreenViewControl : UserControl
         Picture.InvalidateVisual();
         Waiting.IsVisible = false;
         _shown++;
+        var (change, seconds) = _interruptions.PictureShown(Environment.TickCount64);
+        if (change == InterruptionChange.Resumed) { Interrupted.IsVisible = false; StreamResumed?.Invoke(seconds); }
     }
 
     private void UpdateInfo()
@@ -181,6 +192,10 @@ public partial class ScreenViewControl : UserControl
             Waiting.IsVisible = true;
             ConnectionLost?.Invoke();
         }
+        // The picture stopped while the connection is still there (a lost connection has its own notice, and an ended stream needs none).
+        var (interruption, stoppedFor) = _interruptions.Tick(now, suppressed: _connectionLost || IsEnded);
+        if (interruption == InterruptionChange.Interrupted) { Interrupted.IsVisible = true; StreamInterrupted?.Invoke(stoppedFor); }
+        else if (interruption == InterruptionChange.Cleared) Interrupted.IsVisible = false;
         // A small figure over the picture: how many pictures a second are really drawn.
         FpsBadge.IsVisible = _shown > 0 && !_connectionLost;
         FpsText.Text = $"{shownFps:0} fps";
@@ -206,6 +221,7 @@ public partial class ScreenViewControl : UserControl
         Picture.Source = null;
         _bitmap = null;
         FpsBadge.IsVisible = false;
+        Interrupted.IsVisible = false;
         Waiting.Text = "This stream has ended";
         Waiting.FontSize = 22;
         Waiting.Foreground = Avalonia.Media.Brushes.White;
