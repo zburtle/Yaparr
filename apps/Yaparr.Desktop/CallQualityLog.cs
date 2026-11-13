@@ -156,9 +156,14 @@ public sealed class CallQualityLog
             _watchBefore[watch] = (now, tick);
             double seconds = Math.Max(1, (tick - at) / 1000.0);
             double arriving = (now.FramesIn - was.FramesIn) / seconds, drawn = (now.Shown - was.Shown) / seconds, kbps = (now.BytesIn - was.BytesIn) * 8 / 1000.0 / seconds;
-            long skipped = now.Skipped - was.Skipped, lost = now.Lost - was.Lost, late = now.Late - was.Late, dropped = now.Dropped - was.Dropped;
+            long lost = now.Lost - was.Lost, late = now.Late - was.Late, dropped = now.Dropped - was.Dropped;
+            // Skipped is worked out from totals (frames that never arrived minus those counted as lost), so the difference of two of them can dip under zero; this one cannot.
+            long skipped = Math.Max(0, (now.Missed - was.Missed) - lost);
             // Frames lost, or too late, or dropped by the decoder; pictures drawn far fewer than arrive (or hardly any at all); a decoder that is behind; no path to the sharer.
-            bool bad = !now.Attached || lost > 0 || dropped > 0 || late > 10 || now.DecodeQueue > 5 || drawn < 10 || (arriving > 0 && drawn < arriving * 0.6);
+            // A frame lost or late now and then is not a problem (the viewer's own verdict, in the line, is what says whether the picture is good): more than one in
+            // twenty is, as is a viewer that judged itself in trouble.
+            long frames = (long)Math.Round(arriving * seconds);
+            bool bad = !now.Attached || dropped > 0 || (lost + late) * 20 > frames + lost || now.DecodeQueue > 5 || drawn < 10 || (arriving > 0 && drawn < arriving * 0.6) || (now.Judged.Known && now.Judged.Troubled);
             // Written every minute while watching, with or without trouble, so that a good minute can be set beside a bad one.
             if (bad) problem = true;
             var packets = now with
