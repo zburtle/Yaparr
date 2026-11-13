@@ -140,6 +140,9 @@ public sealed partial class ScreenSharer
             SenderRate = rate;
             var own = new OwnLink((status.Retransmitted - first.Resent) / packets, status.Dropped - first.Dropped, status.Children.Count, behind);
             (_room, _ownLink) = (room, own);
+            // The viewers are told with the state of the room whether this computer's own link is fine, so that one that is the only one in trouble is told so only when
+            // the cause is not here.
+            _source.OwnLinkFine = !_policy.OwnLinkInTrouble(own) && !own.SenderBehind;
 
             var decision = _policy.Tick(now, new RoomQuality(room.Viewers, room.Troubled, room.WorstFps, room.Lossy), own, _source.Viewers.Count);
             string level = LevelOf(_policy.Step).Describe();

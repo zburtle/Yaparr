@@ -9,6 +9,11 @@
                 Background="#CC000000" IsHitTestVisible="False" IsVisible="False">
             <TextBlock x:Name="InterruptedText" Foreground="White" FontSize="14" Text="The stream was interrupted. Reconnecting…" />
         </Border>
+        <Border x:Name="Struggling" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="16,64,16,0" Padding="14,6" CornerRadius="6"
+                Background="#CC000000" IsHitTestVisible="False" IsVisible="False">
+            <TextBlock Foreground="White" FontSize="14" TextWrapping="Wrap" TextAlignment="Center"
+                       Text="The picture is struggling on your connection. The others are fine." />
+        </Border>
         <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="8" Padding="6,2" CornerRadius="4"
                 Background="#55000000" IsHitTestVisible="False" IsVisible="False" x:Name="FpsBadge">
             <TextBlock x:Name="FpsText" Foreground="#AAFFFFFF" FontSize="11" />

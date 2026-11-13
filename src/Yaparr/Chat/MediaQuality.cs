@@ -14,6 +14,34 @@ public readonly record struct MediaQuality(int Viewers, int Troubled, double Wor
         WorstFps == 0 ? other.WorstFps : other.WorstFps == 0 ? WorstFps : Math.Min(WorstFps, other.WorstFps), Lossy + other.Lossy);
 }
 
+/// <summary>
+/// What the root of a stream says about the room, passed down the tree to every viewer (see <see cref="MediaView.RoomState"/>): how many viewers reported, how many
+/// of them are in trouble, and whether the sharer's own link is fine (it had no trouble sending). Counts only, a few bytes, every five seconds.
+/// </summary>
+public readonly record struct RoomState(int Reported, int Troubled, bool OwnLinkFine);
+
+/// <summary>
+/// When a viewer may be told that it is the only one in trouble: it has had trouble itself, and the room's state says exactly one viewer is in trouble (so it is
+/// this one, whose report is in the count), at least two others reported and are fine, and the sharer's own link had no trouble, all of that for fifteen seconds
+/// in a row. Said only when it is certain: a small room, a room whose state has not come, or a sharer with trouble of its own say nothing. Pure: the clock is passed in.
+/// </summary>
+public sealed class LoneStrugglerWatch
+{
+    /// <summary>How long it has to hold before it is said.</summary>
+    public const long ConfirmMs = 15_000;
+
+    private long _since = -1;
+
+    /// <summary>Whether to say it now. <paramref name="room"/> is null when no state has come (or it is old).</summary>
+    public bool Update(long nowMs, ViewerQualitySample mine, RoomState? room)
+    {
+        bool certain = mine.Known && mine.Troubled && room is { Reported: >= 3, Troubled: 1, OwnLinkFine: true };
+        if (!certain) { _since = -1; return false; }
+        if (_since < 0) _since = nowMs;
+        return nowMs - _since >= ConfirmMs;
+    }
+}
+
 /// <summary>How one viewer judges its own picture over the last seconds (see <see cref="ViewerQualityMeter"/>); <see cref="Known"/> is false while there is nothing to judge by.</summary>
 public readonly record struct ViewerQualitySample(bool Known, bool Troubled, double Fps, bool Lossy)
 {
