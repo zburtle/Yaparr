@@ -262,4 +262,22 @@ public class QualityPolicyTests
                 Assert.True(now.Kbps <= before.Kbps && now.Fps <= before.Fps && now.Width <= before.Width && now.Height <= before.Height, $"{kbps}/{fps}/{h} step {s}");
             }
     }
+
+    [Fact]
+    public void A_sender_that_is_behind_holds_the_quality_and_counts_nothing_until_it_is_sending_what_it_should()
+    {
+        var policy = new QualityPolicy();
+        long now = 0;
+        var behind = new OwnLink(0, 0, 1, SenderBehind: true);
+        // A viewer in trouble for a minute, but the sharer itself is not sending its pictures: nothing changes, and the decision says why.
+        Assert.Empty(Run(policy, ref now, 60, new RoomQuality(1, 1), behind, viewers: 1));
+        now += 1000;
+        Assert.True(policy.Tick(now, new RoomQuality(1, 1), behind, 1).SenderBehind);
+        // Sending again: trouble counts from here (ten seconds, not ten seconds less the minute that went by).
+        Assert.Empty(Run(policy, ref now, 9, new RoomQuality(1, 1), viewers: 1));
+        Assert.Equal(new[] { (1, 1) }, Run(policy, ref now, 1, new RoomQuality(1, 1), viewers: 1));
+        // And it is not raised again while the sender is behind, however quiet the viewers are.
+        Assert.Empty(Run(policy, ref now, 90, new RoomQuality(1, 0), behind, viewers: 1));
+        Assert.Equal(1, policy.Step);
+    }
 }

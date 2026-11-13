@@ -135,6 +135,7 @@ public partial class MainWindow
             _log.Write($"sharing your {what}: {options.Fps} fps, {options.Kbps} kbit/s, up to {options.MaxWidth}x{options.MaxHeight}, a key frame every {options.KeyFrameSeconds:0.##} s, "
                        + $"asked for: {options.Codec}{(options.Encoder is { } asked ? " on " + asked : "")}{(options.GpuScale ? ", scaling on the card" : "")}{(options.InProcessCapture ? (options.CaptureOnCard ? ", capturing and encoding in this program, pictures kept on the card" : ", capturing and encoding in this program, pictures copied to memory") : options.InProcessEncoder ? ", encoding in this program" : "")}, "
                        + $"{(options.ShareSound ? "with sound" : "no sound")}, {(options.ShowCursor ? "with" : "without")} the pointer, FFmpeg {ffmpeg}");
+            _log.Write($"key frames are sent at {Yaparr.Chat.ChatNode.FramePaceMultiple:0.##} times the bitrate{(Yaparr.Screen.ProcessPower.KeepResponsive() is { } power ? "; " + power : "")}");
             if (options.Portal == null)
                 _log.Write(options.WindowHandle != null ? "what is shared: a window" : options.Display is { Width: > 0 } shown ? $"what is shared: a monitor of {shown.Width}x{shown.Height} at {shown.X},{shown.Y}{(shown.Primary ? ", the primary one" : "")}" : "what is shared: a monitor");
             if (options.Encoder is null or Yaparr.Screen.HardwareEncoder.Nvenc)

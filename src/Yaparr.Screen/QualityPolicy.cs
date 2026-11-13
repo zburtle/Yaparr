@@ -10,11 +10,15 @@ public readonly record struct RoomQuality(int Reported, int Troubled, double Wor
     public static RoomQuality None => default;
 }
 
-/// <summary>What the sharer sees of its own link over the last few seconds: the share of what it sent that it had to send again, packets it dropped, and how many viewers it sends to directly.</summary>
-public readonly record struct OwnLink(double ResentFraction, long Dropped, int DirectViewers);
+/// <summary>
+/// What the sharer sees of its own link over the last few seconds: the share of what it sent that it had to send again, packets it dropped, and how many
+/// viewers it sends to directly. <paramref name="SenderBehind"/>: this computer is not sending the pictures a second it was set to, without the encoder being
+/// too slow for them (the capture or the clock is late), so what the viewers lose is not for the quality to fix.
+/// </summary>
+public readonly record struct OwnLink(double ResentFraction, long Dropped, int DirectViewers, bool SenderBehind = false);
 
 /// <summary>What the policy decided this second: the step (0 is the quality asked for), whether it changed, and why, in words for a log or a panel.</summary>
-public readonly record struct QualityDecision(int Step, bool Changed, string? Why, bool AtFloor = false);
+public readonly record struct QualityDecision(int Step, bool Changed, string? Why, bool AtFloor = false, bool SenderBehind = false);
 
 /// <summary>
 /// When to lower the quality of a share for the viewers and when to raise it again. A pure function of what it is told and the time it is told it at,
@@ -73,6 +77,14 @@ public sealed class QualityPolicy
     /// <summary>Called about once a second. <paramref name="viewers"/> is how many viewers the sharer knows of (from the tree), reported or not.</summary>
     public QualityDecision Tick(long nowMs, RoomQuality room, OwnLink own, int viewers)
     {
+        // A sharer that is not producing its own frame rate is the cause of what the viewers lose, whatever their links are: lowering the quality for them would
+        // change nothing they can see, so nothing is counted either way (trouble or quiet) until it is sending what it should again.
+        if (own.SenderBehind)
+        {
+            _troubleSince = -1;
+            _quietSince = -1;
+            return new QualityDecision(Step, false, null, SenderBehind: true);
+        }
         bool roomTrouble = RoomInTrouble(room), ownTrouble = OwnLinkInTrouble(own);
         if (room.Reported > 0) _lastReportAt = nowMs;
         else if (viewers > 0 && !ownTrouble && nowMs - _lastReportAt <= _s.CarrySeconds * 1000L)

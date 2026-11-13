@@ -31,7 +31,12 @@ public sealed partial class ScreenSharer
         var l = LevelOf(step);
         return _options.WithQuality(l.Kbps, l.Fps, l.Width, l.Height);
     }
-    private readonly Queue<(long At, long Bytes, long Resent, long Dropped)> _linkWindow = new();
+    private readonly Queue<(long At, long Bytes, long Resent, long Dropped, long Frames, long Encodes, long OverBudget)> _linkWindow = new();
+    private long _runStartedMs;
+    private bool _senderWasBehind;
+
+    /// <summary>The share of the pictures a second this computer was set to send that it sent over the last ten seconds, or 1 when that is not known (a run that began a moment ago).</summary>
+    public double SenderRate { get; private set; } = 1;
     private Timer? _qualityTimer;
     private MediaQuality _room;
     private OwnLink _ownLink;
@@ -62,6 +67,8 @@ public sealed partial class ScreenSharer
     internal void SetAppliedStepForTest(int step) => _appliedStep = step;
     internal int PendingKbpsForTest => Volatile.Read(ref _pendingKbps);
     internal void SetEncoderLiveForTest(bool live) => _encoderLive = live;
+    internal void SetRunStartedForTest(long tickMs) => Volatile.Write(ref _runStartedMs, tickMs);
+    internal void AddFramesForTest(long frames) => Interlocked.Add(ref _frames, frames);
 
     /// <summary>Whether the policy's decisions are carried out: the setting is on and the encoder is in this program (else they are only written down).</summary>
     public bool ActingOnQuality => _options.AdaptQuality && _options.InProcessEncoder && _encoderLive;
@@ -118,17 +125,34 @@ public sealed partial class ScreenSharer
             var status = _source.Status;
             var room = _source.Room;
             // The sharer's own link over the last ten seconds: the share of what it sent that it sent again (packets, counted from the bytes), and what it dropped.
-            _linkWindow.Enqueue((now, Interlocked.Read(ref _bytes), status.Retransmitted, status.Dropped));
+            var shareFigures = Figures();
+            _linkWindow.Enqueue((now, Interlocked.Read(ref _bytes), status.Retransmitted, status.Dropped, Interlocked.Read(ref _frames), shareFigures.Encodes, shareFigures.OverBudget));
             while (_linkWindow.Count > 1 && now - _linkWindow.Peek().At > 10_000) _linkWindow.Dequeue();
             var first = _linkWindow.Peek();
             double packets = Math.Max(1, (Interlocked.Read(ref _bytes) - first.Bytes) / (double)Math.Max(200, _source.MaxPayload));
-            var own = new OwnLink((status.Retransmitted - first.Resent) / packets, status.Dropped - first.Dropped, status.Children.Count);
+            // The sender's own rate over the window, once the run has had ten seconds to settle: below nine in ten of what it was set to, with the encoder keeping up
+            // (fewer than one picture in fifty over its time), the capture or the clock is late, and no quality step will change that.
+            double windowSeconds = (now - first.At) / 1000.0;
+            bool settled = Volatile.Read(ref _runStartedMs) is > 0 and var startedAt && first.At - startedAt >= 0 && windowSeconds >= 8;
+            double rate = settled ? (Interlocked.Read(ref _frames) - first.Frames) / windowSeconds / Math.Max(1, RunFps) : 1;
+            long encodedInWindow = shareFigures.Encodes - first.Encodes, overInWindow = shareFigures.OverBudget - first.OverBudget;
+            bool behind = settled && rate < 0.9 && overInWindow * 50 <= Math.Max(1, encodedInWindow);
+            SenderRate = rate;
+            var own = new OwnLink((status.Retransmitted - first.Resent) / packets, status.Dropped - first.Dropped, status.Children.Count, behind);
             (_room, _ownLink) = (room, own);
 
             var decision = _policy.Tick(now, new RoomQuality(room.Viewers, room.Troubled, room.WorstFps, room.Lossy), own, _source.Viewers.Count);
             string level = LevelOf(_policy.Step).Describe();
             bool acting = ActingOnQuality;
-            _qualityNote = $"{(acting ? "acting on the presets" : "shadow mode, nothing is changed")}: {(room.Viewers == 0 ? "no viewer has reported" : $"{room.Viewers} viewers reported, {room.Troubled} in trouble, worst {room.WorstFps:0} fps")}; "
+            if (decision.SenderBehind != _senderWasBehind)
+            {
+                _senderWasBehind = decision.SenderBehind;
+                QualityDecided?.Invoke(decision.SenderBehind
+                    ? $"adaptive quality: this computer is sending {SenderRate * RunFps:0} of {RunFps} pictures a second although the encoder keeps up, so what the viewers lose is not for the quality to fix; nothing is changed"
+                    : $"adaptive quality: this computer is sending its pictures a second again ({SenderRate * RunFps:0} of {RunFps})");
+            }
+            _qualityNote = (decision.SenderBehind ? $"this computer is sending only {SenderRate * RunFps:0} of {RunFps} pictures a second, so the quality is held; " : "")
+                           + $"{(acting ? "acting on the presets" : "shadow mode, nothing is changed")}: {(room.Viewers == 0 ? "no viewer has reported" : $"{room.Viewers} viewers reported, {room.Troubled} in trouble, worst {room.WorstFps:0} fps")}; "
                            + (_policy.Step == 0 ? $"{(acting ? "at" : "would be at")} the quality asked for" : $"{(acting ? "at" : "would be at")} step {_policy.Step} of {QualityLadder.Steps - 1}: {level}");
             if (decision.Changed)
             {

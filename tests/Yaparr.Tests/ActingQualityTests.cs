@@ -104,6 +104,38 @@ public class ActingQualityTests(Xunit.Abstractions.ITestOutputHelper output)
     }
 
     [Fact]
+    public async Task A_sender_that_sends_fewer_pictures_than_it_should_does_not_lower_the_quality_for_the_viewers_it_says_so_once()
+    {
+        using var c = await MediaTreeTests.Cluster.StartAsync(4, fanout: 3, rootFanout: 3);
+        using var source = c.Root.StartMedia(c.Rooms[0], "screen", "screen", kbps: 6000);
+        var views = await c.WatchAllAsync(source.Info.Id);
+        using var sharer = new ScreenSharer(source, Options(), "ffmpeg-that-is-never-started");
+        var said = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        sharer.QualityDecided += said.Enqueue;
+        using var cts = new CancellationTokenSource();
+        try
+        {
+            views[0].QualityProvider = () => Bad;
+            views[1].QualityProvider = () => Bad;
+            views[2].QualityProvider = () => Good;
+            sharer.SetRunStartedForTest(Environment.TickCount64 - 30_000);
+            sharer.StartQualityWatchForTest();
+            // 40 of the 60 pictures a second, for as long as the test runs; the encoder is never over its time.
+            _ = Task.Run(async () => { while (!cts.IsCancellationRequested) { sharer.AddFramesForTest(4); await Task.Delay(100); } });
+            await TestUtil.WaitFor(() => !said.IsEmpty, 60_000);
+            await Task.Delay(14_000);   // longer than the ten seconds that it takes to act
+            Assert.Single(said);
+            Assert.Matches(@"is sending \d+ of 60 pictures a second", said.First());
+            Assert.Contains("of 60 pictures a second although the encoder keeps up", said.First());
+            Assert.Equal(0, sharer.AppliedStep);
+            Assert.Equal(0, sharer.PendingKbpsForTest);
+            Assert.InRange(sharer.SenderRate, 0.6, 0.75);
+            Assert.Contains("so the quality is held", sharer.QualityNote);
+        }
+        finally { cts.Cancel(); foreach (var v in views) v.Dispose(); }
+    }
+
+    [Fact]
     public void When_the_steps_are_acted_on_the_policy_stops_at_the_second()
     {
         var policy = new QualityPolicy(new QualityPolicy.Settings { MaxStep = ScreenSharer.ActedSteps });

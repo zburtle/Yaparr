@@ -46,6 +46,7 @@ public sealed partial class ScreenSharer : IDisposable
         FfmpegArgs.Capture(options); // checks the numbers before anything is announced
         if (options.Portal != null) { if (PortalPipeline.Missing() is { } missing) throw new PlatformNotSupportedException(missing); }
         else if (options.WindowHandle is { } handle && !ShareWindows.Exists(handle)) throw new InvalidOperationException("That window is not open any more.");
+        ProcessPower.KeepResponsive();
         var source = node.StartMedia(room, "screen", name, signed: true, upstream: false, kbps: options.Kbps, channel: room.ScreenShareChannel);
         var sharer = new ScreenSharer(source, options, ffmpegPath);
         if (options.ShareSound) sharer.StartSound(node, room);
@@ -244,6 +245,7 @@ public sealed partial class ScreenSharer : IDisposable
         text.AppendLine($"  How the encoder was set up: {(EncoderDetails.Length > 0 ? EncoderDetails : "not started yet")}");
         text.AppendLine($"  Longest wait for a frame from FFmpeg since this was last asked: {Interlocked.Read(ref _maxGapMs)} ms; running: {(IsRunning ? "yes" : "no")}");
         text.AppendLine($"  Adaptive quality: {QualityNote ?? "not started"}");
+        text.AppendLine($"  Key frames are sent at {Yaparr.Chat.ChatNode.FramePaceMultiple:0.##} times the bitrate{(ProcessPower.KeepResponsive() is { } power ? "; " + power : "")}");
         text.AppendLine($"  Sound: {(SharingSound ? "shared" : SoundProblem ?? "not shared")}");
         if (_options.Portal != null)
         {
@@ -513,6 +515,7 @@ public sealed partial class ScreenSharer : IDisposable
     {
         // At a lower level of adaptive quality the capture and the encoder are built again for the size and frame rate of that level.
         var run = RunOptions();
+        Volatile.Write(ref _runStartedMs, Environment.TickCount64);
         InProcessCapture capture;
         try { capture = new InProcessCapture(run, onCard); }
         catch (Exception ex) when (!ct.IsCancellationRequested) { throw CaptureFailed(ex.Message); }

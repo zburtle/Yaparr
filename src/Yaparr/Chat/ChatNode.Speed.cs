@@ -105,6 +105,9 @@ public sealed partial class ChatNode
     /// </summary>
     public static int DirectViewersAt(long? measuredUpload, int kbps) => UploadPlan.RootFanout(measuredUpload, kbps, 3, mayGrow: true);
 
+    /// <summary>How many times the stream's bitrate each frame of a share is sent at (3, or what YAPARR_FRAME_PACE says), for the log.</summary>
+    public static double FramePaceMultiple => UploadPlan.PaceMultiple;
+
     public long? MeasuredUploadBytesPerSecond => Interlocked.Read(ref _measuredUpload) is var v and > 0 ? v : null;
 
     /// <summary>What this device passes on for other members, in kilobytes per second: from its measured upload, or the configured amount.</summary>
