@@ -450,6 +450,10 @@
                 <TextBlock x:Name="WatchTitle" Margin="16,56,16,10" FontWeight="SemiBold" FontSize="16" Foreground="White" TextTrimming="CharacterEllipsis" />
                 <Grid x:Name="WatchArea" Grid.Row="1">
                     <local:ScreenSurfaceHost x:Name="WatchHost" HorizontalAlignment="Center" VerticalAlignment="Center" Width="2" Height="2" />
+                    <Border x:Name="WatchInterrupted" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="16,12,16,0" Padding="14,6" CornerRadius="6"
+                            Background="#CC000000" IsHitTestVisible="False" IsVisible="False">
+                        <TextBlock Foreground="White" FontSize="14" TextAlignment="Center" TextWrapping="Wrap" Text="The stream was interrupted. Reconnecting&#8230;" />
+                    </Border>
                     <TextBlock x:Name="WatchStatus" Text="Waiting for the picture&#8230;" Foreground="#CCFFFFFF" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center" Margin="24" />
                 </Grid>
                 <Button Grid.Row="2" Content="Stop watching" Margin="16,10,16,24" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="4,12" Background="#33FFFFFF" Foreground="White" Click="WatchStopClicked" />
