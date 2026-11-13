@@ -65,6 +65,8 @@ public partial class ShareDialog : Window
         }
         ApplyAv1Check();
         FillChoices(selectFirst: true);
+        // On X11, the window chosen in the desktop's picker does not say which program it is, so the sound can be picked by program, as on Wayland.
+        if (_current == null) WhatBox.SelectionChanged += (_, _) => UpdateSoundForChoice();
         foreach (var q in Qualities) QualityBox.Items.Add(q.Label);
         // The best quality that this connection can send to three people at once, or the lowest when none can (or the upload is not known yet).
         int best = 0;
@@ -135,10 +137,32 @@ public partial class ShareDialog : Window
         foreach (var d in _displays)
             WhatBox.Items.Add($"Monitor {d.Index + 1}{(d.Primary ? " (main)" : "")}: {d.Width} x {d.Height}");
         foreach (var w in _windows) WhatBox.Items.Add("Window: " + w.Label);
+        // On an X11 session with the desktop's portal: one more way to share a window, which follows it when it is resized or covered (x11grab stops when it gets smaller).
+        _portalChoiceAt = -1;
+        if (OperatingSystem.IsLinux() && ScreenCapture.OffersPortalWindowOnX11)
+        {
+            _portalChoiceAt = WhatBox.Items.Count;
+            WhatBox.Items.Add(PortalWindowChoice);
+        }
         WhatBox.SelectedIndex = selectFirst ? 0 : Math.Max(0, WhatBox.Items.IndexOf(keep.Item1));
     }
 
     private void Refresh_Click(object? sender, RoutedEventArgs e) => FillChoices(selectFirst: false);
+
+    // On X11 a window from the list has its program (the sound of that program is shared); one chosen in the desktop's picker has none, so the person can name the program.
+    private void UpdateSoundForChoice()
+    {
+        if (ScreenCapture.UsesPortal || !OperatingSystem.IsLinux() || !ScreenSound.IsSupported) return;
+        bool picker = _portalChoiceAt >= 0 && WhatBox.SelectedIndex == _portalChoiceAt;
+        SoundBox.IsVisible = picker;
+        if (picker) FillSoundChoices();
+        SoundNote.Text = picker
+            ? "The sound of your computer is shared too, except Yaparr's own, so the voice chat does not go round. The desktop's picker does not say which program a window belongs to, so to share only one program's sound, pick it below (it must be playing now)."
+            : "The sound of a shared window is shared too (not the voice chat, which is another program); a whole monitor shares the sound of your computer, except Yaparr's own.";
+    }
+
+    private const string PortalWindowChoice = "A window, chosen in the desktop's picker (keeps up when it is resized)";
+    private int _portalChoiceAt = -1;
 
     // Under Wayland: everything except Yaparr, or one of the programs that are playing sound now.
     private const string EverythingElse = "Sound: everything except Yaparr";
@@ -163,13 +187,13 @@ public partial class ShareDialog : Window
 
     public ScreenOptions? Result { get; private set; }
 
-    /// <summary>Under Wayland: whether the desktop's picker should offer windows rather than monitors.</summary>
+    /// <summary>Whether the desktop's picker should be asked for a window: under Wayland, when "A window" was chosen; under X11, when the window chosen in the desktop's picker was.</summary>
     public bool PortalWindow { get; private set; }
 
     private void Share_Click(object? sender, RoutedEventArgs e)
     {
         int what = WhatBox.SelectedIndex;
-        PortalWindow = ScreenCapture.UsesPortal && what == 1;
+        PortalWindow = ScreenCapture.UsesPortal ? what == 1 : _portalChoiceAt >= 0 && what == _portalChoiceAt;
         int windowAt = what - _displays.Count;
         var window = windowAt >= 0 && windowAt < _windows.Count ? _windows[windowAt] : null;
         if (_current != null)

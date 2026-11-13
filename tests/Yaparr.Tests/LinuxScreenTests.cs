@@ -311,8 +311,11 @@ public class LinuxScreenTests(Xunit.Abstractions.ITestOutputHelper output)
     // A Wayland share with no FFmpeg in it: a stand-in gst-launch-1.0 (a script that writes black NV12 pictures of the size it is asked for) takes the place of GStreamer,
     // and a portal with no desktop behind it the place of the desktop's stream. The pictures are paced into the encoder in this program, which goes through the levels of
     // adaptive quality and back. Does nothing where this is not Linux, or the libraries, FFmpeg's program (only to be found) or an NVIDIA card are missing.
-    [Fact]
-    public async Task A_Wayland_share_is_encoded_in_this_program_with_no_FFmpeg_capturing_and_goes_through_the_levels_of_adaptive_quality()
+    // The same share on an X11 session (DISPLAY is set) whose window was chosen in the desktop's picker: the portal's stream is what is shared, and nothing of x11grab is used.
+    [Theory]
+    [InlineData(null)]
+    [InlineData(":0")]
+    public async Task A_Wayland_share_is_encoded_in_this_program_with_no_FFmpeg_capturing_and_goes_through_the_levels_of_adaptive_quality(string? x11Display)
     {
         if (!OperatingSystem.IsLinux() || !FfmpegLibraries.IsAvailable || FfmpegLocator.Find() is not { } ffmpeg) return;
         var dir = Directory.CreateTempSubdirectory("yaparr-gst-").FullName;
@@ -342,7 +345,7 @@ public class LinuxScreenTests(Xunit.Abstractions.ITestOutputHelper output)
             using var portal = PortalScreenCast.ForTest(File.OpenHandle("/dev/null"), node: 57, width: 1280, height: 720);
             var asked = new ScreenOptions
             {
-                Portal = portal, X11Display = null, Fps = 60, Kbps = 6000, KeyFrameSeconds = 1, MaxWidth = 1920, MaxHeight = 1080,
+                Portal = portal, X11Display = x11Display, Fps = 60, Kbps = 6000, KeyFrameSeconds = 1, MaxWidth = 1920, MaxHeight = 1080,
                 Codec = ScreenCodec.H264, Encoder = HardwareEncoder.Nvenc, InProcessEncoder = true,
             };
             using var cluster = await MediaTreeTests.Cluster.StartAsync(2, fanout: 2, rootFanout: 2);
@@ -470,6 +473,15 @@ public class LinuxScreenTests(Xunit.Abstractions.ITestOutputHelper output)
         Assert.DoesNotContain("I420", line);
         Assert.EndsWith("! fdsink fd=1 sync=false", line);
     }
+
+    [Theory]
+    [InlineData(true, false, true, null, true)]                 // an X11 session with the portal and GStreamer: offered
+    [InlineData(true, true, true, null, false)]                 // Wayland has its own picker for everything
+    [InlineData(true, false, false, null, false)]               // no portal on the session bus
+    [InlineData(true, false, true, "install gstreamer", false)] // GStreamer's PipeWire source is missing
+    [InlineData(false, false, true, null, false)]               // not Linux
+    public void A_window_chosen_in_the_desktops_picker_is_offered_on_X11_only_where_the_portal_and_GStreamer_are_there(bool linux, bool wayland, bool portal, string? gstreamerMissing, bool offered)
+        => Assert.Equal(offered, ScreenCapture.OffersPortalWindowOnX11For(linux, wayland, portal, gstreamerMissing));
 
     [Fact]
     public void FfmpegEncodesTheRawPicturesFromGStreamer()

@@ -24,6 +24,8 @@ public static class ScreenDiagnostics
             Line($"  Packaged as: {(File.Exists("/.flatpak-info") ? "Flatpak (sandbox)" : Environment.GetEnvironmentVariable("SNAP") != null ? "Snap" : "a normal install")}");
             if (ScreenCapture.UsesPortal)
                 Line($"  GStreamer: {PortalPipeline.Missing() ?? "gst-launch-1.0 and its PipeWire source are there"}");
+            else
+                Line($"  A window chosen in the desktop's portal (X11): {(ScreenCapture.OffersPortalWindowOnX11 ? "offered in the share dialog" : "not offered (no portal on the session bus, or GStreamer's PipeWire source is missing)")}");
             Line($"  Programs: xrandr {Where("xrandr")}, xprop {Where("xprop")}, pactl {Where("pactl")}, parec {Where("parec")}, gst-launch-1.0 {Where("gst-launch-1.0")}");
             Line($"  Graphics devices: {Dri()}");
         }
