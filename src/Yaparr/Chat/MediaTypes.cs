@@ -36,7 +36,7 @@ public sealed record MediaFrame(PeerId Origin, uint Id, ReadOnlyMemory<byte> Dat
 /// </param>
 public sealed record MediaStatus(string Group, bool IsRoot, PeerId? Parent, IReadOnlyList<PeerId> Children, long Delivered, long Forwarded, long Dropped, long Duplicates,
     long Retransmitted = 0, long Recovered = 0, bool OverServer = false,
-    long PacketsSeen = 0, long GapsNoticed = 0, long BigGaps = 0, long ArrivedLate = 0, long RepairedAfterAsking = 0, long NacksSent = 0, long PacketsAsked = 0, long GaveUp = 0)
+    long PacketsSeen = 0, long GapsNoticed = 0, long BigGaps = 0, long ArrivedLate = 0, long RepairedAfterAsking = 0, long NacksSent = 0, long PacketsAsked = 0, long GaveUp = 0, long RepairsRefused = 0)
 {
     public bool Attached => IsRoot || Parent != null;
 }

@@ -80,6 +80,11 @@ internal sealed class MediaGroup
     public readonly Dictionary<uint, int> ReplayAskCount = new();
     public long LastReplayPacketAt;
     public long Retransmitted, Recovered;
+    /// <summary>Packets that were asked for again and not sent because repairs had used the share of the stream they may use (see <see cref="ChatNode.RepairShare"/>).</summary>
+    public long RepairsRefused;
+    /// <summary>What the stream carries now, in kbit/s, when that is not what it was announced with (a sharer that lowered the bitrate); 0 means the announced one.</summary>
+    public int EffectiveKbps;
+    public TokenBucket? RepairBucket;
     // What the receiving end saw of the packets, to tell a link that loses them from one that only delivers them late, and a viewer that asks for
     // too much from one that asks for too little: packets that came, gaps noticed when a later one came first, gaps too big to ask about, packets that
     // then arrived by themselves (late) or after being asked for, packets never seen at all, and the requests made.
@@ -184,6 +189,16 @@ public sealed class MediaSource : IDisposable
     public event Action? KeyFrameRequested;
 
     public MediaStatus Status => _node.StatusOf(_group);
+
+    /// <summary>
+    /// What the stream carries now in kbit/s, when the sharer has lowered or raised it from what was announced: repairs may use a quarter of it (see
+    /// <see cref="ChatNode.RepairShare"/>). Set it whenever the encoder is given a new bitrate.
+    /// </summary>
+    public int EffectiveKbps
+    {
+        get { lock (_group.Gate) return _group.EffectiveKbps > 0 ? _group.EffectiveKbps : _group.Info.Kbps; }
+        set => _node.SetEffectiveKbps(_group, value);
+    }
 
     /// <summary>
     /// What the viewers say about how the stream is going, folded: how many reported, how many are in trouble (see <see cref="MediaQuality"/>). Only viewers that
@@ -395,7 +410,7 @@ public sealed partial class ChatNode
     {
         lock (g.Gate)
             return new MediaStatus(g.Id, g.IsRoot, g.Parent, g.Children.Keys.ToList(), g.Delivered, g.Forwarded, g.Dropped, g.Duplicates, g.Retransmitted, g.Recovered, g.ServerBlocked,
-                g.PacketsSeen, g.GapsNoticed, g.BigGaps, g.ArrivedLate, g.RepairedAfterAsking, g.NacksSent, g.PacketsAsked, g.GaveUp);
+                g.PacketsSeen, g.GapsNoticed, g.BigGaps, g.ArrivedLate, g.RepairedAfterAsking, g.NacksSent, g.PacketsAsked, g.GaveUp, g.RepairsRefused);
     }
 
     // ---- starting, announcing, ending -------------------------------------------------------
@@ -779,8 +794,36 @@ public sealed partial class ChatNode
 
     internal const int ResendFirstAtOnce = 4;
 
+    /// <summary>
+    /// What repairs may use, as a share of the stream: a quarter. Repairs used to be paced at the stream's own rate, so a sender facing loss could double what it put
+    /// on a link that was already full, which made more loss and more repairs (a viewer on a link that carried about 6 Mbit/s took a 6 Mbit/s share to half its packets
+    /// lost, with the repairs on top). What is not repaired in time is lost and costs a key frame; what is repaired at the cost of the stream is lost too.
+    /// </summary>
+    internal const double RepairShare = 0.25;
+
+    // The most repairs for a group in bytes per second, from the stream it carries (a floor so that a thin stream can still be repaired), and a bucket of a quarter
+    // of a second of it so that a burst of requests after a gap is answered.
+    internal static double RepairBytesPerSecond(int kbps) => Math.Max(32_000, Math.Max(8, kbps) * 125.0 * RepairShare);
+
+    private TokenBucket RepairBucketOf(MediaGroup g)
+    {
+        lock (g.Gate)
+        {
+            if (g.RepairBucket != null) return g.RepairBucket;
+            double rate = RepairBytesPerSecond(g.EffectiveKbps > 0 ? g.EffectiveKbps : g.Info.Kbps);
+            return g.RepairBucket = new TokenBucket(Math.Max(16_000, rate * 0.25), rate);
+        }
+    }
+
+    /// <summary>The stream now carries this much (the sharer lowered or raised its bitrate): the share repairs may use follows it.</summary>
+    internal void SetEffectiveKbps(MediaGroup g, int kbps)
+    {
+        lock (g.Gate) { g.EffectiveKbps = kbps; g.RepairBucket = null; }
+    }
+
     private async Task ResendPaced(PeerState peer, MediaGroup g, List<byte[]> packets, int freeCount, double rate)
     {
+        var bucket = RepairBucketOf(g);
         long started = System.Diagnostics.Stopwatch.GetTimestamp();
         long sent = 0;
         for (int i = 0; i < packets.Count; i++)
@@ -791,6 +834,7 @@ public sealed partial class ChatNode
                 double ahead = sent * 1000.0 / rate - System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
                 if (ahead > 2) { try { await Task.Delay((int)ahead, _cts.Token).ConfigureAwait(false); } catch (OperationCanceledException) { return; } }
             }
+            if (!bucket.TryTake(packet.Length)) { lock (g.Gate) g.RepairsRefused++; continue; }
             if (!MediaBudget.TryTake(packet.Length, Environment.TickCount64)) { lock (g.Gate) g.Dropped++; continue; }
             try { peer.Connection.SendUnreliable(ChannelIds.Media, packet); }
             catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return; }
