@@ -7,6 +7,9 @@ public class QualityPolicyTests
 {
     private static readonly OwnLink FineLink = new(0, 0, 3);
 
+    // The other rules are checked without the settle time after a change (tests of it follow), so that their numbers are those of the rules alone.
+    private static readonly QualityPolicy.Settings NoSettle = new() { SettleSeconds = 0 };
+
     /// <summary>Runs the policy for <paramref name="seconds"/> seconds of the same room; returns the seconds (from the start of this call) at which the step changed, with the step.</summary>
     private static List<(int Second, int Step)> Run(QualityPolicy policy, ref long now, int seconds, RoomQuality room, OwnLink? own = null, int viewers = 10)
     {
@@ -36,7 +39,7 @@ public class QualityPolicyTests
     [Fact]
     public void Half_the_room_in_trouble_lowers_the_quality_after_ten_seconds_and_not_before_and_again_after_another_ten()
     {
-        var policy = new QualityPolicy();
+        var policy = new QualityPolicy(NoSettle);
         long now = 0;
         var changes = Run(policy, ref now, 25, new RoomQuality(10, 5, 15, 5));
         Assert.Equal(new[] { (10, 1), (20, 2) }, changes);
@@ -88,7 +91,7 @@ public class QualityPolicyTests
     [Fact]
     public void A_quiet_half_minute_raises_it_one_step_not_before_and_the_next_after_another_half_minute()
     {
-        var policy = new QualityPolicy();
+        var policy = new QualityPolicy(NoSettle);
         long now = 0;
         Run(policy, ref now, 25, new RoomQuality(10, 5));   // down to step 2
         Assert.Equal(2, policy.Step);
@@ -113,7 +116,7 @@ public class QualityPolicyTests
     [Fact]
     public void A_step_up_that_is_followed_by_trouble_makes_the_next_try_wait_twice_as_long_and_so_on_to_a_quarter_of_an_hour()
     {
-        var policy = new QualityPolicy();
+        var policy = new QualityPolicy(NoSettle);
         long now = 0;
         Run(policy, ref now, 11, new RoomQuality(10, 6));   // step 1
         int[] waits = new int[7];
@@ -134,7 +137,7 @@ public class QualityPolicyTests
     [Fact]
     public void The_wait_falls_back_to_half_a_minute_after_half_an_hour_without_trouble()
     {
-        var policy = new QualityPolicy();
+        var policy = new QualityPolicy(NoSettle);
         long now = 0;
         Run(policy, ref now, 11, new RoomQuality(10, 6));
         Run(policy, ref now, 31, new RoomQuality(10, 0));   // up
@@ -183,7 +186,7 @@ public class QualityPolicyTests
     [Fact]
     public void A_gap_in_the_reports_holds_the_count_of_quiet_where_it_is_too()
     {
-        var policy = new QualityPolicy();
+        var policy = new QualityPolicy(NoSettle);
         long now = 0;
         Run(policy, ref now, 12, new RoomQuality(10, 6));   // step 1
         Assert.Equal(1, policy.Step);
@@ -213,7 +216,7 @@ public class QualityPolicyTests
     [Fact]
     public void At_the_bottom_of_the_ladder_it_says_so_and_stays()
     {
-        var policy = new QualityPolicy();
+        var policy = new QualityPolicy(NoSettle);
         long now = 0;
         var changes = Run(policy, ref now, 200, new RoomQuality(10, 9));
         Assert.Equal(new[] { (10, 1), (20, 2), (30, 3) }, changes);
@@ -284,5 +287,40 @@ public class QualityPolicyTests
         // And it is not raised again while the sender is behind, however quiet the viewers are.
         Assert.Empty(Run(policy, ref now, 90, new RoomQuality(1, 0), behind, viewers: 1));
         Assert.Equal(1, policy.Step);
+    }
+
+    [Fact]
+    public void After_a_change_what_the_viewers_say_is_not_counted_for_twelve_seconds_so_one_step_is_not_three()
+    {
+        var policy = new QualityPolicy();
+        long now = 0;
+        // Trouble all the time (as a viewer's last ten seconds still say just after a change): the step down comes after ten seconds, and the next one only after
+        // twelve seconds of settling and ten of trouble, not ten seconds later.
+        Assert.Equal(new[] { (10, 1), (31, 2) }, Run(policy, ref now, 40, new RoomQuality(1, 1), viewers: 1));
+    }
+
+    [Fact]
+    public void A_level_that_is_clean_once_the_old_figures_have_gone_stays()
+    {
+        var policy = new QualityPolicy();
+        long now = 0;
+        Assert.Equal(new[] { (10, 1) }, Run(policy, ref now, 10, new RoomQuality(1, 1), viewers: 1));
+        // The viewer still says trouble for the first ten seconds or so (its window holds the level before), then the new level shows as clean.
+        Assert.Empty(Run(policy, ref now, 11, new RoomQuality(1, 1), viewers: 1));
+        Assert.Empty(Run(policy, ref now, 20, new RoomQuality(1, 0), viewers: 1));
+        Assert.Equal(1, policy.Step);
+    }
+
+    [Fact]
+    public void After_a_step_up_the_trouble_of_the_first_twelve_seconds_is_not_counted_either()
+    {
+        var policy = new QualityPolicy();
+        long now = 0;
+        Run(policy, ref now, 10, new RoomQuality(1, 1), viewers: 1);   // down to step 1
+        int quiet = 0;
+        while (policy.Step == 1) { Run(policy, ref now, 1, new RoomQuality(1, 0), viewers: 1); Assert.True(++quiet < 200); }
+        Assert.Equal(0, policy.Step);
+        Assert.Empty(Run(policy, ref now, 11, new RoomQuality(1, 1), viewers: 1));
+        Assert.Equal(new[] { (10, 1) }, Run(policy, ref now, 10, new RoomQuality(1, 1), viewers: 1));
     }
 }
