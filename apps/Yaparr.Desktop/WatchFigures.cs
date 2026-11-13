@@ -10,7 +10,7 @@ namespace Yaparr.Desktop;
 public sealed record WatchFigures(string Name, long StartedAt, long Shown, long FramesIn, long BytesIn, long Lost, long Recovered, long Late, long Dropped,
     int DecodeQueue, bool Attached, PeerId? Parent, long Missed = 0, string? PictureKind = null,
     long PacketsSeen = 0, long GapsNoticed = 0, long BigGaps = 0, long ArrivedLate = 0, long RepairedAfterAsking = 0, long NacksSent = 0, long PacketsAsked = 0, long GaveUp = 0,
-    ViewerQualitySample Judged = default)
+    ViewerQualitySample Judged = default, long Duplicates = 0)
 {
     /// <summary>
     /// How this viewer judges its own picture, which is what it tells the sharer about (see <see cref="ViewerQualityMeter"/>): "in trouble, 22 pictures a second",
@@ -27,7 +27,7 @@ public sealed record WatchFigures(string Name, long StartedAt, long Shown, long 
     /// </summary>
     public string DescribePackets() =>
         $"{PacketsSeen} packets came, {GapsNoticed} were missing when a later one arrived ({ArrivedLate} turned up by themselves, {RepairedAfterAsking} after being asked for, {GaveUp} never), "
-        + $"{NacksSent} resend requests for {PacketsAsked} packets, {BigGaps} gaps too big to ask about";
+        + $"{NacksSent} resend requests for {PacketsAsked} packets, {BigGaps} gaps too big to ask about, {Duplicates} copies refused (a packet already taken, or one from too far back)";
 
     /// <summary>Frames thrown away while waiting for a key frame after a loss (everything missed, less the frames given up on).</summary>
     public long Skipped => Math.Max(0, Missed - Lost);
