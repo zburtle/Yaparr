@@ -65,6 +65,8 @@ public partial class ShareDialog : Window
         }
         ApplyAv1Check();
         FillChoices(selectFirst: true);
+        // On X11, the window chosen in the desktop's picker does not say which program it is, so the sound can be picked by program, as on Wayland.
+        if (_current == null) WhatBox.SelectionChanged += (_, _) => UpdateSoundForChoice();
         foreach (var q in Qualities) QualityBox.Items.Add(q.Label);
         // The best quality that this connection can send to three people at once, or the lowest when none can (or the upload is not known yet).
         int best = 0;
@@ -146,6 +148,18 @@ public partial class ShareDialog : Window
     }
 
     private void Refresh_Click(object? sender, RoutedEventArgs e) => FillChoices(selectFirst: false);
+
+    // On X11 a window from the list has its program (the sound of that program is shared); one chosen in the desktop's picker has none, so the person can name the program.
+    private void UpdateSoundForChoice()
+    {
+        if (ScreenCapture.UsesPortal || !OperatingSystem.IsLinux() || !ScreenSound.IsSupported) return;
+        bool picker = _portalChoiceAt >= 0 && WhatBox.SelectedIndex == _portalChoiceAt;
+        SoundBox.IsVisible = picker;
+        if (picker) FillSoundChoices();
+        SoundNote.Text = picker
+            ? "The sound of your computer is shared too, except Yaparr's own, so the voice chat does not go round. The desktop's picker does not say which program a window belongs to, so to share only one program's sound, pick it below (it must be playing now)."
+            : "The sound of a shared window is shared too (not the voice chat, which is another program); a whole monitor shares the sound of your computer, except Yaparr's own.";
+    }
 
     private const string PortalWindowChoice = "A window, chosen in the desktop's picker (keeps up when it is resized)";
     private int _portalChoiceAt = -1;
