@@ -96,6 +96,12 @@ internal sealed class MediaGroup
     /// <summary>At the root: what the viewers say, folded, and when it was last worked out.</summary>
     public MediaQuality RoomQuality;
     public long RoomQualityAt;
+    /// <summary>At the root: whether the sharer's own link is fine, as the sharer measures it (see <see cref="MediaSource.OwnLinkFine"/>), and when the room state was last sent down.</summary>
+    public bool OwnLinkFine = true;
+    public long RoomSentAt;
+    /// <summary>What the root last said about the room (see <see cref="RoomState"/>), as it came from the parent, and when.</summary>
+    public RoomState RoomStateIn;
+    public long RoomStateAt;
 
     public uint Seq;
     public readonly Dictionary<ulong, SeqWindow> Windows = new();
@@ -207,6 +213,16 @@ public sealed class MediaSource : IDisposable
     /// </summary>
     public MediaQuality Room => _node.RoomQualityOf(_group);
 
+    /// <summary>
+    /// Whether the sharer's own link is fine (it had no trouble sending), as the sharer measures it. Said to the viewers with the state of the room, so that one that is the
+    /// only one in trouble can be told so only when the cause is not the sharer's own link. True until set.
+    /// </summary>
+    public bool OwnLinkFine
+    {
+        get { lock (_group.Gate) return _group.OwnLinkFine; }
+        set { lock (_group.Gate) _group.OwnLinkFine = value; }
+    }
+
     /// <summary>Everyone who is watching now, however far down the tree they sit, as far as the reports up the tree have said.</summary>
     public IReadOnlyList<PeerId> Viewers => _node.ViewersOf(_group);
 
@@ -257,6 +273,12 @@ public sealed class MediaView : IDisposable, IMediaFrameSource
         get { lock (_group.Gate) return _group.QualityProvider; }
         set { lock (_group.Gate) _group.QualityProvider = value; }
     }
+
+    /// <summary>
+    /// What the root last said about the room (how many viewers reported, how many are in trouble, whether the sharer's own link is fine), or null when nothing came
+    /// in the last fifteen seconds (an older sharer or relay does not send it). It is what lets a viewer be told that it is the only one in trouble (see <see cref="LoneStrugglerWatch"/>).
+    /// </summary>
+    public RoomState? RoomState => _node.RoomStateOf(_group);
 
     /// <summary>A packet arrived. It can come from any thread.</summary>
     public event Action<MediaPacket>? Received;
@@ -663,6 +685,7 @@ public sealed partial class ChatNode
             case "nack": OnMediaNack(peer, g, m); break;
             case "replay": OnMediaReplay(peer, g, m); break;
             case "quality": OnMediaQuality(peer, g, m); break;
+            case "room": OnMediaRoom(peer, g, m); break;
         }
     }
 
@@ -722,12 +745,52 @@ public sealed partial class ChatNode
         if (root)
         {
             var room = FoldQuality(g, now, includeOwn: false);
-            lock (g.Gate) { g.RoomQuality = room; g.RoomQualityAt = now; }
+            bool send;
+            bool fine;
+            lock (g.Gate)
+            {
+                g.RoomQuality = room; g.RoomQualityAt = now;
+                send = room.Viewers > 0 && now - g.RoomSentAt >= RoomEveryMs - QualityEveryMs / 2;
+                if (send) g.RoomSentAt = now;
+                fine = g.OwnLinkFine;
+            }
+            if (send) PassRoomDown(g, new WireMedia { Op = "room", Viewers = room.Viewers, Troubled = room.Troubled, Fine = fine });
             return;
         }
         var folded = FoldQuality(g, now, includeOwn: true);
         if (folded.Viewers < 1 || parent is not { } up) return;
         SendMedia(up, g, new WireMedia { Op = "quality", Viewers = folded.Viewers, Troubled = folded.Troubled, WorstTenths = (int)Math.Round(folded.WorstFps * 10), Lossy = folded.Lossy });
+    }
+
+    // ---- what the root says about the room, down the tree -------------------------------------------------------
+
+    // The root says it every five seconds (the loop that sends it runs every two, so the guard is a little under); a state is good for fifteen.
+    private const long RoomEveryMs = 5_000, RoomFreshMs = 15_000;
+
+    // A parent tells how the room is doing. Kept as it came, and passed on to the children (only from the parent we have: a message from anyone else is ignored, which
+    // also means it cannot go round in a circle). An old version has no such operation and ignores it, and so does not pass it on.
+    private void OnMediaRoom(PeerState peer, MediaGroup g, WireMedia m)
+    {
+        if (m.Viewers is < 1 or > MaxViewersInReport || m.Troubled < 0 || m.Troubled > m.Viewers) return;
+        lock (g.Gate)
+        {
+            if (g.IsRoot || g.Parent != peer.Id) return;
+            g.RoomStateIn = new RoomState(m.Viewers, m.Troubled, m.Fine);
+            g.RoomStateAt = Environment.TickCount64;
+        }
+        PassRoomDown(g, new WireMedia { Op = "room", Viewers = m.Viewers, Troubled = m.Troubled, Fine = m.Fine });
+    }
+
+    private void PassRoomDown(MediaGroup g, WireMedia body)
+    {
+        List<PeerId> children;
+        lock (g.Gate) children = g.Children.Keys.ToList();
+        foreach (var child in children) SendMedia(child, g, new WireMedia { Op = body.Op, Viewers = body.Viewers, Troubled = body.Troubled, Fine = body.Fine });
+    }
+
+    internal RoomState? RoomStateOf(MediaGroup g)
+    {
+        lock (g.Gate) return g.RoomStateAt != 0 && Environment.TickCount64 - g.RoomStateAt <= RoomFreshMs ? g.RoomStateIn : null;
     }
 
     internal MediaQuality RoomQualityOf(MediaGroup g)

@@ -324,6 +324,9 @@ public partial class MainWindow
             control.ConnectionLost += () => { _log.Write($"lost the connection to the screen {share.Name}"); _sounds.ConnectionLost(); };
             control.ConnectionRestored += () => { _log.Write($"connection to the screen {share.Name} restored"); _sounds.ConnectionBack(); };
             control.StreamInterrupted += seconds => _log.Write($"the picture of the screen {share.Name} has stopped for {seconds:0.0} s, the viewer says it is reconnecting");
+            control.OnlyOneStrugglingChanged += lone => _log.Write(lone
+                ? $"the picture of the screen {share.Name} has been struggling for this viewer alone for 15 s while the room is fine and the sharer's own link has no trouble: told so"
+                : $"the picture of the screen {share.Name} is no longer struggling for this viewer alone");
             control.StreamResumed += seconds => _log.Write($"the picture of the screen {share.Name} is back after {seconds:0.0} s");
             var watch = new ScreenWatch { Id = share.Id, Share = share, Conv = conv, Control = control };
             _screenViews[share.Id] = watch;

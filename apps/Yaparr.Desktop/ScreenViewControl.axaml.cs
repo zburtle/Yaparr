@@ -95,6 +95,15 @@ public partial class ScreenViewControl : UserControl
 
     private readonly StreamInterruptionWatch _interruptions = new();
 
+    /// <summary>
+    /// This viewer is the only one in trouble, and the room is fine (see <see cref="LoneStrugglerWatch"/>): true when the notice is shown, false when it goes. It is only said
+    /// when it is certain, so a small room, a sharer with trouble of its own, or a room whose state has not come say nothing.
+    /// </summary>
+    public event Action<bool>? OnlyOneStrugglingChanged;
+
+    private readonly LoneStrugglerWatch _lone = new();
+    private bool _saidLone;
+
     /// <summary>Raised when watching ends, so the owner can mark the share as not watched any more.</summary>
     public event Action? Stopped;
 
@@ -196,6 +205,9 @@ public partial class ScreenViewControl : UserControl
         var (interruption, stoppedFor) = _interruptions.Tick(now, suppressed: _connectionLost || IsEnded);
         if (interruption == InterruptionChange.Interrupted) { Interrupted.IsVisible = true; StreamInterrupted?.Invoke(stoppedFor); }
         else if (interruption == InterruptionChange.Cleared) Interrupted.IsVisible = false;
+        // The only one in trouble: the room's state came down the tree from the sharer, and this viewer's own judgement is the other half.
+        bool lone = !_connectionLost && !IsEnded && _lone.Update(now, _quality.Sample, _view.RoomState);
+        if (lone != _saidLone) { _saidLone = lone; Struggling.IsVisible = lone; OnlyOneStrugglingChanged?.Invoke(lone); }
         // A small figure over the picture: how many pictures a second are really drawn.
         FpsBadge.IsVisible = _shown > 0 && !_connectionLost;
         FpsText.Text = $"{shownFps:0} fps";
@@ -222,6 +234,7 @@ public partial class ScreenViewControl : UserControl
         _bitmap = null;
         FpsBadge.IsVisible = false;
         Interrupted.IsVisible = false;
+        Struggling.IsVisible = false;
         Waiting.Text = "This stream has ended";
         Waiting.FontSize = 22;
         Waiting.Foreground = Avalonia.Media.Brushes.White;

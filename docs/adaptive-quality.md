@@ -77,6 +77,8 @@ Below the last step the stream stays where it is and the log says the room canno
 
 To let a viewer say that, the root sends a tiny `room` state down the tree with the stream, every 5 s: how many reported, how many are in trouble, whether its own link is fine. It is a few bytes, and a viewer on an old version ignores it.
 
+Built (computer app): the `room` control operation (`WireMedia.Fine` says whether the sharer's own link is fine, as `ScreenSharer` measures it: no resending over the limit, no drops, and the sender is not behind) goes from the root to each child, and each relay passes it on to its children; only a message from a viewer's own parent is accepted, so it cannot go round, and a state is good for 15 s (`MediaView.RoomState`). `LoneStrugglerWatch` decides, once a second, on this viewer's own judgement and the state: the viewer has been in trouble, the room says exactly one viewer is in trouble (this one: its report is in the count, so a room that says none while this viewer is in trouble is not known), at least two others reported, and the sharer's own link is fine, for 15 s in a row; anything that breaks it starts the count again and takes the notice away. It shows *The picture is struggling on your connection. The others are fine.* over the picture and writes a line to the log when it starts and stops. Android's viewer does not judge its own picture yet (it sends no report), so it neither is counted in the room nor can be told. A parent that lies can say it to a viewer that is not alone; that costs a message and nothing else.
+
 ## Trust
 
 A report is a claim by a member of the room. A person in the room who wants to ruin a share could report trouble. So:
