@@ -19,6 +19,20 @@ public static class ScreenCapture
     public static bool UsesPortal => OperatingSystem.IsLinux()
         && IsWayland(Environment.GetEnvironmentVariable("XDG_SESSION_TYPE"), Environment.GetEnvironmentVariable("WAYLAND_DISPLAY"));
 
+    /// <summary>
+    /// Whether the share dialog on an X11 session can also offer "a window, chosen in the desktop's picker": the portal is there (GNOME and KDE have it on X11 too)
+    /// and so is GStreamer. A window shared that way keeps being shared when it is resized or covered, which <c>x11grab</c> cannot do (it stops when the window gets
+    /// smaller). Found out once, the first time it is asked.
+    /// </summary>
+    public static bool OffersPortalWindowOnX11 => _portalWindowOnX11.Value;
+
+    private static readonly Lazy<bool> _portalWindowOnX11 = new(() =>
+        OffersPortalWindowOnX11For(OperatingSystem.IsLinux(), UsesPortal, OperatingSystem.IsLinux() && PortalScreenCast.IsAvailable(), OperatingSystem.IsLinux() ? PortalPipeline.Missing() : "not Linux"));
+
+    /// <summary>The decision, apart from the environment so that it can be checked on any system.</summary>
+    public static bool OffersPortalWindowOnX11For(bool linux, bool wayland, bool portalAvailable, string? gstreamerMissing)
+        => linux && !wayland && portalAvailable && gstreamerMissing == null;
+
     public static bool IsWayland(string? sessionType, string? waylandDisplay) =>
         string.Equals(sessionType, "wayland", StringComparison.OrdinalIgnoreCase)
         || (string.IsNullOrEmpty(sessionType) && !string.IsNullOrEmpty(waylandDisplay));

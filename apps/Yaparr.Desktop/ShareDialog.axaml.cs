@@ -135,10 +135,20 @@ public partial class ShareDialog : Window
         foreach (var d in _displays)
             WhatBox.Items.Add($"Monitor {d.Index + 1}{(d.Primary ? " (main)" : "")}: {d.Width} x {d.Height}");
         foreach (var w in _windows) WhatBox.Items.Add("Window: " + w.Label);
+        // On an X11 session with the desktop's portal: one more way to share a window, which follows it when it is resized or covered (x11grab stops when it gets smaller).
+        _portalChoiceAt = -1;
+        if (OperatingSystem.IsLinux() && ScreenCapture.OffersPortalWindowOnX11)
+        {
+            _portalChoiceAt = WhatBox.Items.Count;
+            WhatBox.Items.Add(PortalWindowChoice);
+        }
         WhatBox.SelectedIndex = selectFirst ? 0 : Math.Max(0, WhatBox.Items.IndexOf(keep.Item1));
     }
 
     private void Refresh_Click(object? sender, RoutedEventArgs e) => FillChoices(selectFirst: false);
+
+    private const string PortalWindowChoice = "A window, chosen in the desktop's picker (keeps up when it is resized)";
+    private int _portalChoiceAt = -1;
 
     // Under Wayland: everything except Yaparr, or one of the programs that are playing sound now.
     private const string EverythingElse = "Sound: everything except Yaparr";
@@ -163,13 +173,13 @@ public partial class ShareDialog : Window
 
     public ScreenOptions? Result { get; private set; }
 
-    /// <summary>Under Wayland: whether the desktop's picker should offer windows rather than monitors.</summary>
+    /// <summary>Whether the desktop's picker should be asked for a window: under Wayland, when "A window" was chosen; under X11, when the window chosen in the desktop's picker was.</summary>
     public bool PortalWindow { get; private set; }
 
     private void Share_Click(object? sender, RoutedEventArgs e)
     {
         int what = WhatBox.SelectedIndex;
-        PortalWindow = ScreenCapture.UsesPortal && what == 1;
+        PortalWindow = ScreenCapture.UsesPortal ? what == 1 : _portalChoiceAt >= 0 && what == _portalChoiceAt;
         int windowAt = what - _displays.Count;
         var window = windowAt >= 0 && windowAt < _windows.Count ? _windows[windowAt] : null;
         if (_current != null)

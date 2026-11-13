@@ -120,8 +120,8 @@ public partial class MainWindow
             _data.SaveSettings(_settings);
         }
 
-        // Under Wayland the desktop's own picker decides what is shared.
-        if (ScreenCapture.UsesPortal)
+        // Under Wayland the desktop's own picker decides what is shared (and under X11 when a window chosen in it was asked for).
+        if (ScreenCapture.UsesPortal || dialog.PortalWindow)
         {
             var portal = await AskDesktopWhatToShareAsync(dialog.PortalWindow);
             if (portal == null) return;
@@ -421,7 +421,7 @@ public partial class MainWindow
         var dialog = new ShareDialog(sharer.Options);
         if (!await dialog.ShowDialog<bool>(this) || dialog.Result == null || _sharer != sharer) return;
         var next = dialog.Result;
-        if (ScreenCapture.UsesPortal)
+        if (ScreenCapture.UsesPortal || dialog.PortalWindow)
         {
             var portal = await AskDesktopWhatToShareAsync(dialog.PortalWindow);
             if (portal == null || _sharer != sharer) { portal?.Dispose(); return; }
