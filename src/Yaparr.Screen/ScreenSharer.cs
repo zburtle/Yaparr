@@ -294,7 +294,7 @@ public sealed partial class ScreenSharer : IDisposable
                 for (int i = 0; i < attempts.Count; i++)
                 {
                     var (attempt, card, onCard, inProcess, captureHere) = attempts[i];
-                    try { await (captureHere ? RunInProcessCaptureAsync(onCard, ct) : inProcess ? RunInProcessAsync(ct) : RunAsync(attempt, card, onCard, ct)).ConfigureAwait(false); break; }
+                    try { await (captureHere ? RunInProcessCaptureAsync(onCard, ct) : inProcess ? RunInProcessAsync(card ?? HardwareEncoder.Nvenc, ct) : RunAsync(attempt, card, onCard, ct)).ConfigureAwait(false); break; }
                     catch (Exception) when (_switch) { break; }   // stopped on purpose to share something else
                     catch (Exception ex) when (!ct.IsCancellationRequested && i < attempts.Count - 1 && Interlocked.Read(ref _frames) == before && !WindowGone)
                     {
@@ -482,9 +482,10 @@ public sealed partial class ScreenSharer : IDisposable
     private readonly KeyFramePacer _pacer = new();
     private readonly Action _onKeyRequested;
 
-    /// <summary>The in-process encoder is asked for and there is something to do it with: NVIDIA's H.264 on Windows or X11, and FFmpeg's libraries.</summary>
+    /// <summary>The in-process encoder is asked for and there is something to do it with: H.264 on NVIDIA's encoder (or, on Linux, on an Intel or AMD card through VA-API), on Windows or X11, and FFmpeg's libraries.</summary>
     private static bool WantsInProcess(ScreenOptions options, ScreenCodec codec, HardwareEncoder? encoder)
-        => options.InProcessEncoder && options.Portal == null && codec == ScreenCodec.H264 && encoder == HardwareEncoder.Nvenc && FfmpegLibraries.IsAvailable
+        => options.InProcessEncoder && codec == ScreenCodec.H264
+           && (encoder == HardwareEncoder.Nvenc || (encoder == HardwareEncoder.Vaapi && OperatingSystem.IsLinux())) && FfmpegLibraries.IsAvailable
            && (options.InProcessAsked || InProcessGuard.Allowed);
 
     /// <summary>The capture in this program is asked for as well, and can be done: Windows Graphics Capture, H.264 on NVIDIA, and the libraries.</summary>
@@ -530,6 +531,8 @@ public sealed partial class ScreenSharer : IDisposable
         using var disposeEncoder = encoder;
         _picture = (capture.Width, capture.Height);
         _shape = new RunShape(run.Fps, run.MaxWidth, run.MaxHeight);
+        _liveBitrate = encoder.LiveBitrate;
+        _canRestart = true;
         Volatile.Write(ref _pendingKbps, 0);
         _encoderLive = true;
         _encoderDetails = $"in this program: {encoder.Describe()}; capture: in this program{(onCard ? ", pictures kept on the graphics card" : "")}, {capture.Graph}";
@@ -576,6 +579,7 @@ public sealed partial class ScreenSharer : IDisposable
         }
         _captureHere = null;
         _encoderLive = false;
+        _canRestart = false;
         // Adaptive quality asked for another size or frame rate: this run ends and the next one is built for it (see PumpAsync).
         if (_levelRestart) { _levelRestart = false; _switch = true; }
         if (!ct.IsCancellationRequested && !_switch) throw CaptureFailed(capture.EndedBecause ?? "The capture stopped.");
@@ -595,10 +599,10 @@ public sealed partial class ScreenSharer : IDisposable
 
     // Capture is still FFmpeg, as a separate program that writes raw pictures; the encoding is done here, one picture at a time, so that a
     // viewer's request for a key frame is answered on the very next picture.
-    private async Task RunInProcessAsync(CancellationToken ct)
+    private async Task RunInProcessAsync(HardwareEncoder kind, CancellationToken ct)
     {
         _codec = ScreenCodec.H264;
-        _hardware = HardwareEncoder.Nvenc;
+        _hardware = kind;
         _inProcess = true;
         _captureInProcess = false;
         _captureOnCard = false;
@@ -606,14 +610,17 @@ public sealed partial class ScreenSharer : IDisposable
         Interlocked.Increment(ref _runs);
         lock (_gate) _errors.Clear();
         InProcessGuard.Begin();
-        try { await RunInProcessEncoderCoreAsync(ct).ConfigureAwait(false); }
+        try { await (_options.Portal != null ? RunInProcessPortalCoreAsync(kind, ct) : RunInProcessEncoderCoreAsync(kind, ct)).ConfigureAwait(false); }
         finally { InProcessGuard.End(); }
     }
 
-    private async Task RunInProcessEncoderCoreAsync(CancellationToken ct)
+    private async Task RunInProcessEncoderCoreAsync(HardwareEncoder kind, CancellationToken ct)
     {
+        // At a lower level of adaptive quality the capture program is started again for the size and frame rate of that level.
+        var run = RunOptions();
+        Volatile.Write(ref _runStartedMs, Environment.TickCount64);
         var psi = new ProcessStartInfo(_ffmpeg) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
-        foreach (var a in FfmpegArgs.CaptureRaw(_options)) psi.ArgumentList.Add(a);
+        foreach (var a in FfmpegArgs.CaptureRaw(run)) psi.ArgumentList.Add(a);
         _lastArguments = string.Join(' ', psi.ArgumentList) + "  (encoded in this program)";
         _startedAt = DateTime.UtcNow;
         var process = Process.Start(psi) ?? throw new InvalidOperationException("FFmpeg did not start.");
@@ -642,10 +649,14 @@ public sealed partial class ScreenSharer : IDisposable
         try { picture = await size.Task.WaitAsync(TimeSpan.FromSeconds(20), ct).ConfigureAwait(false); }
         catch (Exception) when (!ct.IsCancellationRequested) { KillProcess(); throw Stopped(process); }
         InProcessEncoder encoder;
-        try { encoder = new InProcessEncoder(picture.Width, picture.Height, _options); }
-        catch (Exception) { KillProcess(); throw; }   // no NVIDIA encoder to use: the next way of encoding is tried
+        try { encoder = new InProcessEncoder(picture.Width, picture.Height, run, kind); }
+        catch (Exception) { KillProcess(); throw; }   // no such encoder to use: the next way of encoding is tried
         using var disposeEncoder = encoder;
         _picture = picture;
+        _shape = new RunShape(run.Fps, run.MaxWidth, run.MaxHeight);
+        _liveBitrate = encoder.LiveBitrate;
+        _canRestart = true;
+        Volatile.Write(ref _pendingKbps, 0);
         _encoderLive = true;
         _encoderDetails = $"in this program: {encoder.Describe()}; capture: {_lastArguments}";
         EncoderStarted?.Invoke();
@@ -659,7 +670,7 @@ public sealed partial class ScreenSharer : IDisposable
         void Collect(byte[] frame, bool key) => ready.Add((frame, key));
         try
         {
-            while (true)
+            while (!_levelRestart)
             {
                 long waitStart = Stopwatch.GetTimestamp();
                 try { await stdout.ReadExactlyAsync(buffer, ct).ConfigureAwait(false); }
@@ -681,6 +692,8 @@ public sealed partial class ScreenSharer : IDisposable
                     await DeliverAsync(frame, isKey, ct).ConfigureAwait(false);
                 }
             }
+            // Adaptive quality asked for another size, frame rate or bitrate that the encoder cannot take while it runs: this run ends and the next is built for it.
+            if (_levelRestart) { _levelRestart = false; _switch = true; }
             if (!ct.IsCancellationRequested && !_switch)
             {
                 // x11grab cannot follow a window that changes size: it stops, and capture starts again at the new size (see RunAsync).
@@ -694,7 +707,7 @@ public sealed partial class ScreenSharer : IDisposable
                 throw Stopped(process);
             }
         }
-        finally { _encoderLive = false; KillProcess(); }
+        finally { _encoderLive = false; _canRestart = false; KillProcess(); }
     }
 
     // The picture of a Wayland share: GStreamer reads the portal's PipeWire stream (it inherits the connection) and its raw
@@ -702,10 +715,14 @@ public sealed partial class ScreenSharer : IDisposable
     private Process? _gstreamer;
 
     private void StartPortalSource(PortalScreenCast portal, Process ffmpeg)
+        => StartPortalSource(portal, _options, ffmpeg.StandardInput.BaseStream, nv12: false, () => { try { ffmpeg.StandardInput.Close(); } catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException) { } });
+
+    // GStreamer's pictures, paced to the frame rate, go to <paramref name="target"/>: FFmpeg's standard input, or (NV12) the pipe the encoder in this program reads.
+    private void StartPortalSource(PortalScreenCast portal, ScreenOptions options, Stream target, bool nv12, Action done)
     {
         int fd = PortalPipeline.AllowInherit(portal.PipeWireFd);
         var psi = new ProcessStartInfo("gst-launch-1.0") { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
-        foreach (var a in PortalPipeline.GstArguments(portal.Stream, fd, _options)) psi.ArgumentList.Add(a);
+        foreach (var a in PortalPipeline.GstArguments(portal.Stream, fd, options, nv12)) psi.ArgumentList.Add(a);
         var gst = Process.Start(psi) ?? throw new InvalidOperationException("GStreamer did not start.");
         lock (_gate) _gstreamer = gst;
         gst.ErrorDataReceived += (_, e) =>
@@ -714,7 +731,73 @@ public sealed partial class ScreenSharer : IDisposable
             lock (_gate) { _errors.Enqueue("GStreamer: " + e.Data); while (_errors.Count > 5) _errors.Dequeue(); }
         };
         gst.BeginErrorReadLine();
-        _ = Task.Run(() => PaceAsync(gst.StandardOutput.BaseStream, ffmpeg.StandardInput.BaseStream, PortalPipeline.FrameSize(portal.Stream, _options), _options.Fps, () => { try { ffmpeg.StandardInput.Close(); } catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException) { } }));
+        _ = Task.Run(() => PaceAsync(gst.StandardOutput.BaseStream, target, PortalPipeline.FrameSize(portal.Stream, options), options.Fps, done));
+    }
+
+    // Wayland, encoded in this program, with no FFmpeg at all: GStreamer reads the desktop's stream, scales it and hands over NV12 pictures (paced by PaceAsync into a
+    // pipe), and the encoder here takes each one as it is. A new level of adaptive quality ends the run, and the next starts GStreamer again at the new size and rate.
+    private async Task RunInProcessPortalCoreAsync(HardwareEncoder kind, CancellationToken ct)
+    {
+        var run = RunOptions();
+        Volatile.Write(ref _runStartedMs, Environment.TickCount64);
+        var portal = run.Portal ?? throw new InvalidOperationException("There is no stream from the desktop to share.");
+        var size = PortalPipeline.FrameSize(portal.Stream, run);
+        _lastArguments = "gst-launch-1.0 " + string.Join(' ', PortalPipeline.GstArguments(portal.Stream, 0, run, nv12: true)) + "  (encoded in this program, no FFmpeg)";
+        _startedAt = DateTime.UtcNow;
+
+        InProcessEncoder encoder;
+        try { encoder = new InProcessEncoder(size.Width, size.Height, run, kind); }
+        catch (Exception) { throw; }   // no such encoder to use: the next way of encoding is tried
+        using var disposeEncoder = encoder;
+        using var pipe = new System.IO.Pipes.AnonymousPipeServerStream(System.IO.Pipes.PipeDirection.Out);
+        using var reader = new System.IO.Pipes.AnonymousPipeClientStream(System.IO.Pipes.PipeDirection.In, pipe.ClientSafePipeHandle);
+        _picture = size;
+        _shape = new RunShape(run.Fps, run.MaxWidth, run.MaxHeight);
+        _liveBitrate = encoder.LiveBitrate;
+        _canRestart = true;
+        Volatile.Write(ref _pendingKbps, 0);
+        _encoderLive = true;
+        _encoderDetails = $"in this program: {encoder.Describe()}; capture: {_lastArguments}";
+        EncoderStarted?.Invoke();
+        if (_switch) return;
+        StartPortalSource(portal, run, pipe, nv12: true, () => { try { pipe.Dispose(); } catch (Exception ex) when (ex is IOException or ObjectDisposedException) { } });
+
+        var buffer = new byte[encoder.PictureBytes];
+        bool started = false;
+        var ready = new List<(byte[] Frame, bool Key)>(2);
+        void Collect(byte[] frame, bool key) => ready.Add((frame, key));
+        try
+        {
+            while (!_levelRestart)
+            {
+                long waitStart = Stopwatch.GetTimestamp();
+                try { await reader.ReadExactlyAsync(buffer, ct).ConfigureAwait(false); }
+                catch (EndOfStreamException) { break; }
+                _stats.Waited(Stopwatch.GetElapsedTime(waitStart).Ticks, TimeSpan.FromMilliseconds(FrameBudgetMs).Ticks);
+                bool force = _pacer.ShouldForce(Environment.TickCount64);
+                ready.Clear();
+                ApplyPendingBitrate(encoder);
+                long encodeStart = Stopwatch.GetTimestamp();
+                encoder.Encode(buffer, force, Collect);
+                var took = Stopwatch.GetElapsedTime(encodeStart);
+                _stats.Encoded(took.Ticks, took.TotalMilliseconds > FrameBudgetMs);
+                foreach (var (frame, key) in ready)
+                {
+                    bool isKey = key && ScreenCodecs.IsKeyFrame(ScreenCodec.H264, frame);
+                    if (!started && !isKey) continue;
+                    started = true;
+                    await DeliverAsync(frame, isKey, ct).ConfigureAwait(false);
+                }
+            }
+            if (_levelRestart) { _levelRestart = false; _switch = true; }
+            if (!ct.IsCancellationRequested && !_switch)
+            {
+                try { await Task.Delay(200, ct).ConfigureAwait(false); } catch (OperationCanceledException) { }   // GStreamer's last words
+                throw _portalGone ? new InvalidOperationException("The screen share was stopped from the desktop.")
+                                  : new InvalidOperationException("GStreamer stopped. " + LastErrors);
+            }
+        }
+        finally { _encoderLive = false; _canRestart = false; KillProcess(); }
     }
 
     /// <summary>

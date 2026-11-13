@@ -105,7 +105,7 @@ public class FfmpegIntegrationTests
     [Fact]
     public async Task The_options_given_to_each_graphics_card_encoder_exist_in_the_real_ffmpeg()
     {
-        if (FfmpegLocator.Find() is not { } ffmpeg) return;
+        if (!OperatingSystem.IsWindows() || FfmpegLocator.Find() is not { } ffmpeg) return;   // Windows capture and encoders
         var display = new Display(0, "x", 0, 0, 1920, 1080, true, Handle: 0x1A2B);
         var generic = new HashSet<string> { "bf" };   // FFmpeg's own options for every encoder, not listed in the encoder's help
         foreach (var encoder in HardwareEncoders.InOrder)
@@ -173,7 +173,7 @@ public class FfmpegIntegrationTests
     [Fact]
     public async Task The_real_ffmpeg_knows_the_graphics_capture_filter()
     {
-        if (FfmpegLocator.Find() is not { } ffmpeg) return;
+        if (!OperatingSystem.IsWindows() || FfmpegLocator.Find() is not { } ffmpeg) return;   // Windows capture and encoders
         var text = await FfmpegLocator.RunAsync(ffmpeg, new[] { "-hide_banner", "-filters" });
         Assert.Contains("gfxcapture", text);
         var help = await FfmpegLocator.RunAsync(ffmpeg, new[] { "-hide_banner", "-h", "filter=gfxcapture" });

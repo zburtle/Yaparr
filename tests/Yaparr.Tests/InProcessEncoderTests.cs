@@ -143,7 +143,7 @@ public class InProcessEncoderTests
     [Fact]
     public void The_real_encoder_makes_key_frames_a_viewer_can_start_from_and_makes_one_on_the_very_next_picture_when_asked()
     {
-        if (!OperatingSystem.IsWindows() || !FfmpegLibraries.IsAvailable) return;
+        if (!FfmpegLibraries.IsAvailable) return;
         const int w = 1280, h = 720;
         InProcessEncoder encoder;
         try { encoder = new InProcessEncoder(w, h, new ScreenOptions { Fps = 30, Kbps = 3000, KeyFrameSeconds = 2 }); }
@@ -235,7 +235,7 @@ public class InProcessEncoderTests
     [Fact]
     public void An_encoder_refuses_a_picture_of_the_wrong_size()
     {
-        if (!OperatingSystem.IsWindows() || !FfmpegLibraries.IsAvailable) return;
+        if (!FfmpegLibraries.IsAvailable) return;
         InProcessEncoder encoder;
         try { encoder = new InProcessEncoder(640, 360, new ScreenOptions { Fps = 30, Kbps = 1000 }); }
         catch (Exception ex) when (ex is InvalidOperationException or PlatformNotSupportedException) { return; }
@@ -260,7 +260,7 @@ public class InProcessEncoderTests
     [Fact]
     public void The_bitrate_follows_a_new_value_while_encoding_in_both_directions()
     {
-        if (!OperatingSystem.IsWindows() || !FfmpegLibraries.IsAvailable) return;
+        if (!FfmpegLibraries.IsAvailable) return;
         const int w = 1280, h = 720, fps = 30;
         InProcessEncoder encoder;
         try { encoder = new InProcessEncoder(w, h, new ScreenOptions { Fps = fps, Kbps = 6000, KeyFrameSeconds = 2 }); }
@@ -294,6 +294,36 @@ public class InProcessEncoderTests
             double back = Phase(3);
             Assert.True(back > low * 2.5, $"{back:0} kbit/s after asking for 6000 again, {low:0} before");
             Assert.Throws<ArgumentOutOfRangeException>(() => encoder.SetBitrate(10));
+        }
+    }
+
+    /// <summary>
+    /// The VA-API encoder (Linux, Intel and AMD cards): where there is a card, it makes key frames on request and says it cannot be given a new bitrate while it runs;
+    /// where there is none, it says so plainly and does not crash. Does nothing without the libraries or off Linux.
+    /// </summary>
+    [Fact]
+    public void The_VA_API_encoder_works_where_there_is_a_card_and_says_so_plainly_where_there_is_not()
+    {
+        if (!OperatingSystem.IsLinux() || !FfmpegLibraries.IsAvailable) return;
+        const int w = 640, h = 360;
+        InProcessEncoder encoder;
+        try { encoder = new InProcessEncoder(w, h, new ScreenOptions { Fps = 30, Kbps = 1500, KeyFrameSeconds = 2 }, HardwareEncoder.Vaapi); }
+        catch (Exception ex) when (ex is InvalidOperationException or PlatformNotSupportedException)
+        {
+            Assert.True(ex.Message.Contains("VA-API") || ex.Message.Contains("graphics card"), ex.Message);
+            return;   // no Intel or AMD card here
+        }
+        using (encoder)
+        {
+            Assert.Equal(HardwareEncoder.Vaapi, encoder.Kind);
+            Assert.False(encoder.LiveBitrate);
+            Assert.Throws<NotSupportedException>(() => encoder.SetBitrate(1000));
+            var packets = new List<(byte[] Frame, bool Key)>();
+            for (int n = 0; n < 60; n++)
+                encoder.Encode(Picture(w, h, n), forceKey: n == 30, (frame, key) => packets.Add((frame, key)));
+            Assert.True(packets.Count >= 55, $"{packets.Count} packets for 60 pictures");
+            Assert.True(packets[0].Key, "the first packet is a key frame");
+            Assert.True(packets.Count(p => p.Key) >= 2, "a key frame was asked for");
         }
     }
 }

@@ -121,7 +121,7 @@ public sealed class RawSizeParser
 }
 
 /// <summary>
-/// H.264 on NVIDIA's encoder, run inside this program through FFmpeg's libraries instead of as a separate FFmpeg: the same options
+/// H.264 on NVIDIA's encoder (or, on Linux, on an Intel or AMD card through VA-API), run inside this program through FFmpeg's libraries instead of as a separate FFmpeg: the same options
 /// (see <see cref="FfmpegArgs.NvencH264Options"/>), but each picture is handed over and each packet comes straight back, so a
 /// key frame can be asked for on the very next picture (<see cref="Encode"/>), which the command-line FFmpeg cannot do, and the
 /// encoder can be told a new bitrate later. Pictures go in as NV12, <see cref="PictureBytes"/> bytes each.
@@ -129,6 +129,8 @@ public sealed class RawSizeParser
 public sealed unsafe class InProcessEncoder : IDisposable
 {
     private AVCodecContext* _context;
+    private AVBufferRef* _hardwareDevice, _uploadFrames;
+    private AVFrame* _uploaded;
     private AVFrame* _frame;
     private AVPacket* _packet;
     private long _pts;
@@ -150,21 +152,35 @@ public sealed unsafe class InProcessEncoder : IDisposable
 
     public InProcessEncoder(int width, int height, ScreenOptions options) : this(width, height, options, null) { }
 
+    /// <summary>The graphics card this encoder runs on: NVIDIA's, or an Intel or AMD one through VA-API (Linux; the pictures are handed over as NV12 bytes and uploaded to the card).</summary>
+    public HardwareEncoder Kind { get; private set; } = HardwareEncoder.Nvenc;
+
+    /// <summary>Whether <see cref="SetBitrate"/> takes effect while encoding. NVIDIA's encoder is reconfigured on the fly; VA-API's rate control is set when the encoder starts, so a new bitrate there needs a new encoder.</summary>
+    public bool LiveBitrate => Kind == HardwareEncoder.Nvenc;
+
+    /// <summary>An encoder for a card that takes NV12 bytes (see <see cref="Kind"/>).</summary>
+    public InProcessEncoder(int width, int height, ScreenOptions options, HardwareEncoder kind) : this(width, height, options, null, kind) { }
+
     /// <summary>
     /// With <paramref name="capture"/> keeping its pictures on the card, the encoder takes Direct3D 11 pictures from it as they are (NVENC converts them
     /// itself); otherwise it takes NV12 bytes.
     /// </summary>
-    public InProcessEncoder(int width, int height, ScreenOptions options, InProcessCapture? capture)
+    public InProcessEncoder(int width, int height, ScreenOptions options, InProcessCapture? capture) : this(width, height, options, capture, HardwareEncoder.Nvenc) { }
+
+    private InProcessEncoder(int width, int height, ScreenOptions options, InProcessCapture? capture, HardwareEncoder kind)
     {
         if (!FfmpegLibraries.TryLoad(out var why)) throw new PlatformNotSupportedException(why);
         if (width < 16 || height < 16 || width % 2 != 0 || height % 2 != 0) throw new ArgumentException($"A picture of {width}x{height} cannot be encoded.");
+        if (kind is not (HardwareEncoder.Nvenc or HardwareEncoder.Vaapi)) throw new PlatformNotSupportedException($"The encoder in this program does not do {kind} yet.");
         Width = width;
         Height = height;
-        var codec = ffmpeg.avcodec_find_encoder_by_name("h264_nvenc");
-        if (codec == null) throw new PlatformNotSupportedException("These FFmpeg libraries have no NVIDIA H.264 encoder.");
+        Kind = kind;
+        var codec = ffmpeg.avcodec_find_encoder_by_name(kind == HardwareEncoder.Vaapi ? "h264_vaapi" : "h264_nvenc");
+        if (codec == null) throw new PlatformNotSupportedException(kind == HardwareEncoder.Vaapi ? "These FFmpeg libraries have no VA-API H.264 encoder." : "These FFmpeg libraries have no NVIDIA H.264 encoder.");
         _context = ffmpeg.avcodec_alloc_context3(codec);
         try
         {
+            if (kind == HardwareEncoder.Vaapi) { StartVaapi(codec, width, height, options); return; }
             _context->width = width;
             _context->height = height;
             _context->time_base = new AVRational { num = 1, den = options.Fps };
@@ -202,6 +218,63 @@ public sealed unsafe class InProcessEncoder : IDisposable
         }
     }
 
+    // VA-API: the card is opened through its render node (/dev/dri/renderD128 and so on, or the one YAPARR_VAAPI_DEVICE names), the encoder takes pictures that live
+    // in the card's memory, and each NV12 picture handed over is uploaded into one first. The settings are those of the command line (HardwareEncoders, Ffmpeg.cs):
+    // High profile, no B-frames, access unit delimiters, one picture in flight.
+    private void StartVaapi(AVCodec* codec, int width, int height, ScreenOptions options)
+    {
+        string device = HardwareEncoders.VaapiDevice();
+        AVBufferRef* hardware = null;
+        Check(ffmpeg.av_hwdevice_ctx_create(&hardware, AVHWDeviceType.AV_HWDEVICE_TYPE_VAAPI, device, null, 0), $"opening the graphics card {device} for VA-API");
+        _hardwareDevice = hardware;
+        var frames = ffmpeg.av_hwframe_ctx_alloc(_hardwareDevice);
+        if (frames == null) throw new InvalidOperationException("allocating the pictures on the graphics card failed.");
+        var framesContext = (AVHWFramesContext*)frames->data;
+        framesContext->format = AVPixelFormat.AV_PIX_FMT_VAAPI;
+        framesContext->sw_format = AVPixelFormat.AV_PIX_FMT_NV12;
+        framesContext->width = width;
+        framesContext->height = height;
+        framesContext->initial_pool_size = 8;
+        int init = ffmpeg.av_hwframe_ctx_init(frames);
+        if (init < 0) { var f = frames; ffmpeg.av_buffer_unref(&f); Check(init, "preparing the pictures on the graphics card"); }
+        _uploadFrames = frames;
+
+        _context->width = width;
+        _context->height = height;
+        _context->time_base = new AVRational { num = 1, den = options.Fps };
+        _context->framerate = new AVRational { num = options.Fps, den = 1 };
+        _context->pix_fmt = AVPixelFormat.AV_PIX_FMT_VAAPI;
+        _context->hw_frames_ctx = ffmpeg.av_buffer_ref(_uploadFrames);
+        Kbps = options.Kbps;
+        _context->bit_rate = options.Kbps * 1000L;
+        _context->rc_max_rate = options.Kbps * 1500L;
+        _context->rc_buffer_size = (int)(options.Kbps * 1500L);
+        _context->gop_size = Math.Max(1, (int)Math.Round(options.Fps * options.KeyFrameSeconds));
+        _context->max_b_frames = 0;
+        _context->profile = 100;   // High
+        SetOption("aud", "1");
+        SetOption("async_depth", "1");
+        Check(ffmpeg.avcodec_open2(_context, codec, null), "starting the VA-API encoder");
+        _description = $"h264_vaapi {width}x{height} at {options.Fps} fps, {options.Kbps} kbit/s (at most {options.Kbps * 1.5:0}, buffer {options.Kbps * 1.5:0}), "
+                       + $"a key frame every {_context->gop_size} pictures, options profile=high bf=0 aud=1 async_depth=1; card {device}; libraries {FfmpegLibraries.Describe()}";
+        _frame = ffmpeg.av_frame_alloc();
+        _frame->format = (int)AVPixelFormat.AV_PIX_FMT_NV12;
+        _frame->width = width;
+        _frame->height = height;
+        Check(ffmpeg.av_frame_get_buffer(_frame, 0), "allocating a picture");
+        _uploaded = ffmpeg.av_frame_alloc();
+        _packet = ffmpeg.av_packet_alloc();
+    }
+
+    // Copies the NV12 picture in _frame to a picture on the card, which is what the encoder takes.
+    private AVFrame* UploadFrame()
+    {
+        ffmpeg.av_frame_unref(_uploaded);
+        Check(ffmpeg.av_hwframe_get_buffer(_uploadFrames, _uploaded, 0), "getting a picture on the graphics card");
+        Check(ffmpeg.av_hwframe_transfer_data(_uploaded, _frame, 0), "copying a picture to the graphics card");
+        return _uploaded;
+    }
+
     private void SetOption(string name, string value) => Check(ffmpeg.av_opt_set(_context->priv_data, name, value, 0), $"setting the encoder option {name}");
 
     private static void Check(int result, string what)
@@ -227,9 +300,10 @@ public sealed unsafe class InProcessEncoder : IDisposable
             CopyPlane(source, Width, _frame->data[0], _frame->linesize[0], Height);
             CopyPlane(source + (long)Width * Height, Width, _frame->data[1], _frame->linesize[1], Height / 2);
         }
-        _frame->pts = _pts++;
-        _frame->pict_type = forceKey ? AVPictureType.AV_PICTURE_TYPE_I : AVPictureType.AV_PICTURE_TYPE_NONE;
-        Check(ffmpeg.avcodec_send_frame(_context, _frame), "encoding a picture");
+        var toSend = Kind == HardwareEncoder.Vaapi ? UploadFrame() : _frame;
+        toSend->pts = _pts++;
+        toSend->pict_type = forceKey ? AVPictureType.AV_PICTURE_TYPE_I : AVPictureType.AV_PICTURE_TYPE_NONE;
+        Check(ffmpeg.avcodec_send_frame(_context, toSend), "encoding a picture");
         ReceivePackets(output);
     }
 
@@ -261,6 +335,7 @@ public sealed unsafe class InProcessEncoder : IDisposable
     public void SetBitrate(int kbps)
     {
         if (_context == null) throw new ObjectDisposedException(nameof(InProcessEncoder));
+        if (!LiveBitrate) throw new NotSupportedException("This encoder cannot be given a new bitrate while it runs.");
         if (kbps < 50) throw new ArgumentOutOfRangeException(nameof(kbps));
         _context->bit_rate = kbps * 1000L;
         _context->rc_max_rate = kbps * 1500L;
@@ -289,8 +364,11 @@ public sealed unsafe class InProcessEncoder : IDisposable
 
     public void Dispose()
     {
+        if (_uploaded != null) { var u = _uploaded; ffmpeg.av_frame_free(&u); _uploaded = null; }
         if (_frame != null) { var f = _frame; ffmpeg.av_frame_free(&f); _frame = null; }
         if (_packet != null) { var p = _packet; ffmpeg.av_packet_free(&p); _packet = null; }
         if (_context != null) { var c = _context; ffmpeg.avcodec_free_context(&c); _context = null; }
+        if (_uploadFrames != null) { var fr = _uploadFrames; ffmpeg.av_buffer_unref(&fr); _uploadFrames = null; }
+        if (_hardwareDevice != null) { var d = _hardwareDevice; ffmpeg.av_buffer_unref(&d); _hardwareDevice = null; }
     }
 }

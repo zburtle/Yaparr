@@ -19,6 +19,9 @@ public sealed partial class ScreenSharer
     private volatile RunShape? _shape;
     private volatile bool _levelRestart;
     private bool _restartableForTest;
+    // The capture can be started again at another size (in this program, or a capture program that is run again), and whether the encoder takes a new bitrate while it runs.
+    private volatile bool _canRestart;
+    private volatile bool _liveBitrate = true;
 
     /// <summary>The frame rate this share runs at now: the one asked for, or the one of the level it was lowered to.</summary>
     public int RunFps => _shape?.Fps ?? _options.Fps;
@@ -85,7 +88,9 @@ public sealed partial class ScreenSharer
     private void ApplyStep(int step, string why)
     {
         var next = LevelOf(step);
-        bool restart = (_captureHere != null || _restartableForTest) && _shape is { } shape && (shape.Fps != next.Fps || shape.Width != next.Width || shape.Height != next.Height);
+        int running = _source.EffectiveKbps;
+        bool restart = (_canRestart || _restartableForTest) && _shape is { } shape
+                       && (shape.Fps != next.Fps || shape.Width != next.Width || shape.Height != next.Height || (!_liveBitrate && next.Kbps != running));
         _appliedStep = step;
         _appliedWhy = why;
         _source.EffectiveKbps = next.Kbps;
@@ -99,7 +104,7 @@ public sealed partial class ScreenSharer
     private void ApplyPendingBitrate(InProcessEncoder encoder)
     {
         int kbps = Interlocked.Exchange(ref _pendingKbps, 0);
-        if (kbps <= 0 || kbps == encoder.Kbps) return;
+        if (kbps <= 0 || kbps == encoder.Kbps || !encoder.LiveBitrate) return;
         try { encoder.SetBitrate(kbps); }
         catch (Exception) { }   // an encoder that refuses keeps what it had
     }
