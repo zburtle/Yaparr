@@ -836,7 +836,9 @@ public sealed partial class ChatNode
                 if (ahead > 2) { try { await Task.Delay((int)ahead, _cts.Token).ConfigureAwait(false); } catch (OperationCanceledException) { return; } }
             }
             if (!bucket.TryTake(packet.Length)) { lock (g.Gate) g.RepairsRefused++; continue; }
-            if (!MediaBudget.TryTake(packet.Length, Environment.TickCount64)) { lock (g.Gate) g.Dropped++; continue; }
+            // What a device passes on for others is limited so that it does not use all its upload for them; the stream it shares itself is its own (its first
+            // sends are not charged either), so its repairs are only held to the share of the stream they may use.
+            if (!g.IsRoot && !MediaBudget.TryTake(packet.Length, Environment.TickCount64)) { lock (g.Gate) g.Dropped++; continue; }
             try { peer.Connection.SendUnreliable(ChannelIds.Media, packet); }
             catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return; }
             lock (g.Gate) g.Retransmitted++;
