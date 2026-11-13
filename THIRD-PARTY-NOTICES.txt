@@ -283,7 +283,7 @@ LGPL are accepted. Setting YAPARR_INPROCESS to 0 turns the use inside Yaparr off
 On Linux Yaparr does the same: it loads FFmpeg's shared libraries (the .so files libavcodec.so.63 and the others, in a folder next to the
 ffmpeg program: in the Flatpak /app/lib/yaparr-ffmpeg, otherwise the folder the app downloaded the build to) and encodes H.264 inside its own
 process, on NVIDIA's encoder or on an Intel or AMD card through VA-API, and runs the ffmpeg program beside them as a separate program for the
-rest (copying an X11 screen, the pictures GStreamer reads on Wayland, VP8 in software, AV1, showing a screen). They are separate files, not linked
+rest (VP8 in software, AV1, showing a screen). It copies an X11 screen itself, with the libraries' x11grab, and on Wayland GStreamer's pictures go straight to the encoder. They are separate files, not linked
 into Yaparr's own programs, and can be replaced in the same way (YAPARR_FFMPEG_LIBS names the folder, YAPARR_FFMPEG another ffmpeg program).
 The Windows installer carries the build of FFmpeg that Yaparr makes itself, with only the parts Yaparr uses; where it is missing, the app offers
 to download the same build into your own application data folder. The Flatpak builds the same FFmpeg commit from source (the "ffmpeg" module

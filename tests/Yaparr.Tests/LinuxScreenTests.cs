@@ -216,6 +216,44 @@ public class LinuxScreenTests(Xunit.Abstractions.ITestOutputHelper output)
         }
     }
 
+    // The X11 capture inside this program (x11grab through FFmpeg's libraries): pictures at the size asked for (even, the shape kept, never above the screen), steadily, and
+    // taken again and again as the share's clock does. Does nothing where this is not Linux, or the libraries or Xvfb are missing.
+    [Fact]
+    public async Task The_X11_capture_in_this_program_gives_even_sized_NV12_pictures_of_a_virtual_screen()
+    {
+        if (!OperatingSystem.IsLinux() || !FfmpegLibraries.IsAvailable || FindOnPath("Xvfb") is not { } xvfb) return;
+        const string display = ":95";
+        using var server = Process.Start(new ProcessStartInfo(xvfb, $"{display} -screen 0 800x600x24") { UseShellExecute = false, RedirectStandardError = true })!;
+        try
+        {
+            await Task.Delay(1500);
+            var options = new ScreenOptions { X11Display = display, Display = new Display(0, "screen", 0, 0, 800, 600, true), Fps = 30, MaxWidth = 400, MaxHeight = 400, InProcessEncoder = true, InProcessCapture = true };
+            using var capture = new InProcessCapture(options);
+            await capture.WaitForFirstAsync(TimeSpan.FromSeconds(20), CancellationToken.None);
+            // 800x600 into a 400x400 box: 400x300, the shape kept
+            Assert.Equal((400, 300), (capture.Width, capture.Height));
+            Assert.Equal(400 * 300 * 3 / 2, capture.PictureBytes);
+            Assert.Contains("x11grab", capture.Graph);
+            int taken = 0, fresh = 0;
+            var until = DateTime.UtcNow.AddSeconds(2);
+            while (DateTime.UtcNow < until)
+            {
+                using var picture = capture.TakeNewest(out bool isNew, out _);
+                Assert.NotNull(picture);
+                Assert.Equal((400, 300), (picture!.Width, picture.Height));
+                taken++; if (isNew) fresh++;
+                await Task.Delay(8);
+            }
+            Assert.True(fresh >= 40, $"{fresh} new pictures in two seconds at 30 a second");
+            Assert.True(taken > fresh, "the same picture is there to be taken again between two new ones");
+            Assert.Null(capture.EndedBecause);
+        }
+        finally
+        {
+            try { server.Kill(); } catch (InvalidOperationException) { }
+        }
+    }
+
     // A real share of a virtual X screen, encoded in this program (NVIDIA's encoder through FFmpeg's libraries, a separate FFmpeg capturing with x11grab), taken
     // through the levels of adaptive quality and back: each level with another frame rate or size starts the capture and the encoder again.
     // Does nothing where this is not Linux, or the libraries, FFmpeg, Xvfb or an NVIDIA card are missing.
@@ -240,6 +278,8 @@ public class LinuxScreenTests(Xunit.Abstractions.ITestOutputHelper output)
             catch (TimeoutException) { output.WriteLine(sharer.Describe()); throw; }
             output.WriteLine(sharer.Describe());
             if (!sharer.InProcess) return;   // no NVIDIA encoder here, or the libraries are not usable
+            Assert.True(sharer.CaptureInProcess, "the X11 capture runs in this program too: " + sharer.FallbackReason);
+            Assert.Contains("capture: in this program", sharer.EncoderDetails);
             Assert.Contains("h264_nvenc", sharer.EncoderDetails);
             Assert.Equal(60, sharer.RunFps);
 

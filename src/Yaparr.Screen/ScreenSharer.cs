@@ -294,7 +294,7 @@ public sealed partial class ScreenSharer : IDisposable
                 for (int i = 0; i < attempts.Count; i++)
                 {
                     var (attempt, card, onCard, inProcess, captureHere) = attempts[i];
-                    try { await (captureHere ? RunInProcessCaptureAsync(onCard, ct) : inProcess ? RunInProcessAsync(card ?? HardwareEncoder.Nvenc, ct) : RunAsync(attempt, card, onCard, ct)).ConfigureAwait(false); break; }
+                    try { await (captureHere ? RunInProcessCaptureAsync(onCard, card ?? HardwareEncoder.Nvenc, ct) : inProcess ? RunInProcessAsync(card ?? HardwareEncoder.Nvenc, ct) : RunAsync(attempt, card, onCard, ct)).ConfigureAwait(false); break; }
                     catch (Exception) when (_switch) { break; }   // stopped on purpose to share something else
                     catch (Exception ex) when (!ct.IsCancellationRequested && i < attempts.Count - 1 && Interlocked.Read(ref _frames) == before && !WindowGone)
                     {
@@ -490,15 +490,16 @@ public sealed partial class ScreenSharer : IDisposable
 
     /// <summary>The capture in this program is asked for as well, and can be done: Windows Graphics Capture, H.264 on NVIDIA, and the libraries.</summary>
     private static bool WantsInProcessCapture(ScreenOptions options, ScreenCodec codec, HardwareEncoder? encoder)
-        => options.InProcessCapture && OperatingSystem.IsWindows() && options.X11Display == null && WantsInProcess(options, codec, encoder);
+        => options.InProcessCapture && ((OperatingSystem.IsWindows() && options.X11Display == null) || (OperatingSystem.IsLinux() && options.X11Display is { Length: > 0 }))
+           && options.Portal == null && WantsInProcess(options, codec, encoder);
 
     // Capture here as well: FFmpeg's capture filter runs as a filter graph in this program (see InProcessCapture), and its pictures go to the encoder as
     // they are. The capture hands over a picture when the screen changes, so the share's own clock decides when a picture is encoded, and the last
     // one is repeated when there is none: the encoder gets an even 60 a second instead of the bursts of copies the command-line FFmpeg makes.
-    private async Task RunInProcessCaptureAsync(bool onCard, CancellationToken ct)
+    private async Task RunInProcessCaptureAsync(bool onCard, HardwareEncoder kind, CancellationToken ct)
     {
         _codec = ScreenCodec.H264;
-        _hardware = HardwareEncoder.Nvenc;
+        _hardware = kind;
         _inProcess = true;
         _captureInProcess = true;
         _captureOnCard = onCard;
@@ -508,11 +509,11 @@ public sealed partial class ScreenSharer : IDisposable
         _startedAt = DateTime.UtcNow;
         // The program ending in the middle of this (native code crashing) is what InProcessGuard is for: the mark is taken away when the share ends here.
         InProcessGuard.Begin();
-        try { await RunInProcessCaptureCoreAsync(onCard, ct).ConfigureAwait(false); }
+        try { await RunInProcessCaptureCoreAsync(onCard, kind, ct).ConfigureAwait(false); }
         finally { InProcessGuard.End(); }
     }
 
-    private async Task RunInProcessCaptureCoreAsync(bool onCard, CancellationToken ct)
+    private async Task RunInProcessCaptureCoreAsync(bool onCard, HardwareEncoder kind, CancellationToken ct)
     {
         // At a lower level of adaptive quality the capture and the encoder are built again for the size and frame rate of that level.
         var run = RunOptions();
@@ -526,7 +527,7 @@ public sealed partial class ScreenSharer : IDisposable
         try { await capture.WaitForFirstAsync(TimeSpan.FromSeconds(20), ct).ConfigureAwait(false); }
         catch (Exception ex) when (!ct.IsCancellationRequested) { throw CaptureFailed(capture.EndedBecause ?? ex.Message); }
         InProcessEncoder encoder;
-        try { encoder = new InProcessEncoder(capture.Width, capture.Height, run, capture); }
+        try { encoder = new InProcessEncoder(capture.Width, capture.Height, run, capture, kind); }
         catch (Exception) { throw; }   // no NVIDIA encoder to use, or it will not read pictures from the card: the next way is tried
         using var disposeEncoder = encoder;
         _picture = (capture.Width, capture.Height);
@@ -539,7 +540,7 @@ public sealed partial class ScreenSharer : IDisposable
         EncoderStarted?.Invoke();
 
         long frameTicks = Math.Max(1, Stopwatch.Frequency / Math.Max(1, run.Fps));
-        long due = Stopwatch.GetTimestamp(), lastArrival = 0;
+        long due = Stopwatch.GetTimestamp(), lastArrival = 0, startedAtMs = Environment.TickCount64;
         bool started = false;
         var ready = new List<(byte[] Frame, bool Key)>(2);
         void Collect(byte[] frame, bool key) => ready.Add((frame, key));
@@ -582,6 +583,15 @@ public sealed partial class ScreenSharer : IDisposable
         _canRestart = false;
         // Adaptive quality asked for another size or frame rate: this run ends and the next one is built for it (see PumpAsync).
         if (_levelRestart) { _levelRestart = false; _switch = true; }
+        // x11grab cannot follow a window that changes size: it stops, and the capture starts again at the new size (viewers pick the new size up at the next key frame).
+        // Only if pictures were flowing for a while and the window is still open; otherwise this is a real failure and ends the share.
+        if (!ct.IsCancellationRequested && !_switch && OperatingSystem.IsLinux() && started && run.WindowHandle is { } window
+            && Environment.TickCount64 - startedAtMs > 1000 && ShareWindows.Exists(window))
+        {
+            await Task.Delay(300, ct).ConfigureAwait(false);
+            _switch = true;
+            return;
+        }
         if (!ct.IsCancellationRequested && !_switch) throw CaptureFailed(capture.EndedBecause ?? "The capture stopped.");
     }
 
