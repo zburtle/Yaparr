@@ -35,9 +35,9 @@ public sealed class QualityPolicy
         public int MinSecondsBetweenChanges { get; init; } = 20;
         /// <summary>A step up followed by trouble within this long doubles the wait before the next.</summary>
         public int FlapSeconds { get; init; } = 60;
-        public int BackoffMaxSeconds { get; init; } = 300;
+        public int BackoffMaxSeconds { get; init; } = 900;
         /// <summary>After this long without trouble the wait for a step up falls back to <see cref="QuietSeconds"/>.</summary>
-        public int BackoffResetSeconds { get; init; } = 600;
+        public int BackoffResetSeconds { get; init; } = 1800;
         /// <summary>
         /// When no report arrives with viewers there (a report late over a link that loses much of what it carries), the count of trouble or quiet is held for
         /// this long, so that a gap does not wipe out seconds that were counted; after it, no report is no information and the count starts again.

@@ -28,6 +28,7 @@ public sealed class CallQualityLog
     private readonly Dictionary<PeerId, VoiceQuality> _before = new();
     private VoiceSession? _watched;
     private long _frames, _bytes, _resent, _dropped, _at, _refused;
+    private (double FpsSeconds, double Seconds) _wantedBefore;
     private ShareFigures _figures;
     private TimeSpan _appCpu, _captureCpu, _gcPause, _previewBefore;
     private (int Gen0, int Gen1, int Gen2) _gc;
@@ -88,6 +89,7 @@ public sealed class CallQualityLog
             (_frames, _bytes, _resent, _dropped, _at) = sharer == null ? (0, 0, 0, 0, Environment.TickCount64)
                 : (sharer.Frames, sharer.Bytes, sharer.Source.Status.Retransmitted, sharer.Source.Status.Dropped, Environment.TickCount64);
             _refused = sharer?.Source.Status.RepairsRefused ?? 0;
+            _wantedBefore = sharer?.WantedFpsTotals ?? default;
             sharer?.TakeLongestGapMs();
             if (sharer != null)
             {
@@ -111,7 +113,10 @@ public sealed class CallQualityLog
             double fps = (frames - _frames) / seconds, kbps = (bytes - _bytes) * 8 / 1000.0 / seconds;
             long resent = status.Retransmitted - _resent, dropped = status.Dropped - _dropped;
             long gap = sharer.TakeLongestGapMs();
-            double wanted = Math.Max(1, sharer.RunFps);
+            // What it was meant to send over this minute: averaged over the levels it ran at, so that a minute with a restart is not judged against one of them.
+            var wantedNow = sharer.WantedFpsTotals;
+            double wanted = Math.Max(1, wantedNow.Seconds - _wantedBefore.Seconds >= 1 ? (wantedNow.FpsSeconds - _wantedBefore.FpsSeconds) / (wantedNow.Seconds - _wantedBefore.Seconds) : sharer.RunFps);
+            _wantedBefore = wantedNow;
             var figures = sharer.Figures();
             var interval = figures.Since(_figures);
             _figures = figures;

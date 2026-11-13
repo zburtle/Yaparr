@@ -111,13 +111,13 @@ public class QualityPolicyTests
     }
 
     [Fact]
-    public void A_step_up_that_is_followed_by_trouble_makes_the_next_try_wait_twice_as_long_and_so_on_to_five_minutes()
+    public void A_step_up_that_is_followed_by_trouble_makes_the_next_try_wait_twice_as_long_and_so_on_to_a_quarter_of_an_hour()
     {
         var policy = new QualityPolicy();
         long now = 0;
         Run(policy, ref now, 11, new RoomQuality(10, 6));   // step 1
-        int[] waits = new int[5];
-        for (int round = 0; round < 5; round++)
+        int[] waits = new int[7];
+        for (int round = 0; round < 7; round++)
         {
             // quiet until it goes up
             int quiet = 0;
@@ -127,12 +127,12 @@ public class QualityPolicyTests
             Run(policy, ref now, 15, new RoomQuality(10, 6));
             Assert.Equal(1, policy.Step);
         }
-        Assert.Equal(new[] { 30, 60, 120, 240, 300 }, waits);
-        Assert.Equal(300, policy.UpWaitSeconds);
+        Assert.Equal(new[] { 30, 60, 120, 240, 480, 900, 900 }, waits);
+        Assert.Equal(900, policy.UpWaitSeconds);
     }
 
     [Fact]
-    public void The_wait_falls_back_to_half_a_minute_after_ten_quiet_minutes()
+    public void The_wait_falls_back_to_half_a_minute_after_half_an_hour_without_trouble()
     {
         var policy = new QualityPolicy();
         long now = 0;
@@ -140,7 +140,9 @@ public class QualityPolicyTests
         Run(policy, ref now, 31, new RoomQuality(10, 0));   // up
         Run(policy, ref now, 15, new RoomQuality(10, 6));   // trouble again within the minute: the wait doubles
         Assert.Equal(60, policy.UpWaitSeconds);
-        Run(policy, ref now, 601, new RoomQuality(10, 0));
+        Run(policy, ref now, 1000, new RoomQuality(10, 0));
+        Assert.Equal(60, policy.UpWaitSeconds);   // not yet: it is a step that failed a quarter of an hour ago
+        Run(policy, ref now, 801, new RoomQuality(10, 0));
         Assert.Equal(30, policy.UpWaitSeconds);
     }
 

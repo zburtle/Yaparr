@@ -969,6 +969,7 @@ public partial class MainView : UserControl
     private StreamInterruptionWatch _interruptions = new();
     private readonly DispatcherTimer _interruptionTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private long _lastDrawn;
+    private bool _wasAttached, _connectionLost;
 
     private void CheckInterruption()
     {
@@ -979,10 +980,22 @@ public partial class MainView : UserControl
             _lastDrawn = drawn;
             if (_interruptions.PictureShown(now).Change == InterruptionChange.Resumed) WatchInterrupted.IsVisible = false;
         }
-        // Not while a notice of the watch's own is up (it could not start, or it failed).
-        var (change, _) = _interruptions.Tick(now, suppressed: WatchStatus.IsVisible);
-        if (change == InterruptionChange.Interrupted) WatchInterrupted.IsVisible = true;
-        else if (change == InterruptionChange.Cleared) WatchInterrupted.IsVisible = false;
+        // The stream's own check: a parent that has not been heard from for a few seconds is let go and looked for again; that has a notice of its own.
+        if (_watch.Attached)
+        {
+            _wasAttached = true;
+            if (_connectionLost) { _connectionLost = false; WatchInterrupted.IsVisible = false; }
+        }
+        else if (_wasAttached && !_connectionLost)
+        {
+            _connectionLost = true;
+            WatchInterruptedText.Text = "Lost the connection to the screen. Reconnecting\u2026";
+            WatchInterrupted.IsVisible = true;
+        }
+        // Not while a notice of the watch's own is up (it could not start, or it failed), nor while the connection is lost.
+        var (change, _) = _interruptions.Tick(now, suppressed: WatchStatus.IsVisible || _connectionLost);
+        if (change == InterruptionChange.Interrupted) { WatchInterruptedText.Text = "The stream was interrupted. Reconnecting\u2026"; WatchInterrupted.IsVisible = true; }
+        else if (change == InterruptionChange.Cleared && !_connectionLost) WatchInterrupted.IsVisible = false;
     }
 
     private void WatchClicked(object? sender, RoutedEventArgs e)
@@ -1017,6 +1030,7 @@ public partial class MainView : UserControl
             _watch = watch;
             _interruptions = new StreamInterruptionWatch();
             _lastDrawn = 0;
+            _wasAttached = _connectionLost = false;
             _interruptionTimer.Start();
             watch.PictureSize += (w, h) => Dispatcher.UIThread.Post(() =>
             {

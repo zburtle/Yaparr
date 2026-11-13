@@ -139,6 +139,24 @@ public class ActingQualityTests(Xunit.Abstractions.ITestOutputHelper output)
     }
 
     [Fact]
+    public async Task The_frame_rate_a_share_was_meant_to_send_is_averaged_over_the_time_it_ran_at_each_level()
+    {
+        using var c = await MediaTreeTests.Cluster.StartAsync(2, fanout: 2, rootFanout: 2);
+        using var source = c.Root.StartMedia(c.Rooms[0], "screen", "screen", kbps: 6000);
+        using var sharer = new ScreenSharer(source, Options(), "ffmpeg-that-is-never-started");
+        sharer.SetRunFpsForTest(60);
+        sharer.QualityTick();
+        await Task.Delay(1100);
+        sharer.QualityTick();
+        sharer.SetRunFpsForTest(30);
+        await Task.Delay(1100);
+        sharer.QualityTick();
+        var (fpsSeconds, seconds) = sharer.WantedFpsTotals;
+        Assert.InRange(seconds, 2.0, 2.6);
+        Assert.InRange(fpsSeconds / seconds, 42, 48);   // 60 for the first second, 30 for the second: about 45, not the 30 it ended at
+    }
+
+    [Fact]
     public void When_the_steps_are_acted_on_the_policy_stops_at_the_second()
     {
         var policy = new QualityPolicy(new QualityPolicy.Settings { MaxStep = ScreenSharer.ActedSteps });

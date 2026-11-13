@@ -224,7 +224,8 @@ public sealed partial class ScreenSharer : IDisposable
     public event Action? EncoderStarted;
 
     private volatile string _lastArguments = "";
-    private DateTime _startedAt;
+    // When the share began; the figures in the report are averages over that, not over the time since the capture was last started (a new quality level does that).
+    private readonly DateTime _shareStartedAt = DateTime.UtcNow;
 
     /// <summary>
     /// A plain description of this share for a bug report: what is being shared and how, how many pictures were sent and how fast, and what
@@ -233,7 +234,7 @@ public sealed partial class ScreenSharer : IDisposable
     public string Describe()
     {
         var text = new System.Text.StringBuilder();
-        var seconds = _startedAt == default ? 0 : (DateTime.UtcNow - _startedAt).TotalSeconds;
+        var seconds = (DateTime.UtcNow - _shareStartedAt).TotalSeconds;
         text.AppendLine($"  Sharing: {(_options.Portal != null ? (_options.Portal.IsWindow ? "a window, chosen in the desktop's picker" : "a screen, chosen in the desktop's picker") : _options.WindowHandle != null ? "a window" : "a monitor")}, {_options.Fps} fps, {_options.Kbps} kbit/s, up to {_options.MaxWidth}x{_options.MaxHeight}, a key frame every {_options.KeyFrameSeconds:0.#} s");
         text.AppendLine($"  Encoder: {ScreenCodecs.Describe(Codec, Encoder)}{(InProcess ? ", in this program" : "")}{(FallbackReason is { } why ? $" (not used: {why})" : "")}");
         text.AppendLine($"  Sent: {Frames} frames, {KeyFrames} of them key frames{(InProcess ? $" ({KeyFramesForced} made because a viewer asked)" : "")}, {Bytes / 1024} KB in {seconds:0} s ({(seconds > 1 ? Frames / seconds : 0):0.0} frames per second on average)");
@@ -344,7 +345,6 @@ public sealed partial class ScreenSharer : IDisposable
         foreach (var a in FfmpegArgs.Capture(_options, codec, encoder ?? HardwareEncoder.Nvenc, gpuScale)) psi.ArgumentList.Add(a);
         _lastArguments = string.Join(' ', psi.ArgumentList);
         _encoderDetails = "a separate FFmpeg: " + _lastArguments;
-        _startedAt = DateTime.UtcNow;
         var process = Process.Start(psi) ?? throw new InvalidOperationException("FFmpeg did not start.");
         lock (_gate) _process = process;
         EncoderStarted?.Invoke();
@@ -504,7 +504,6 @@ public sealed partial class ScreenSharer : IDisposable
         _picture = null;
         Interlocked.Increment(ref _runs);
         lock (_gate) _errors.Clear();
-        _startedAt = DateTime.UtcNow;
         // The program ending in the middle of this (native code crashing) is what InProcessGuard is for: the mark is taken away when the share ends here.
         InProcessGuard.Begin();
         try { await RunInProcessCaptureCoreAsync(onCard, ct).ConfigureAwait(false); }
@@ -615,7 +614,6 @@ public sealed partial class ScreenSharer : IDisposable
         var psi = new ProcessStartInfo(_ffmpeg) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
         foreach (var a in FfmpegArgs.CaptureRaw(_options)) psi.ArgumentList.Add(a);
         _lastArguments = string.Join(' ', psi.ArgumentList) + "  (encoded in this program)";
-        _startedAt = DateTime.UtcNow;
         var process = Process.Start(psi) ?? throw new InvalidOperationException("FFmpeg did not start.");
         lock (_gate) _process = process;
         if (_switch) KillProcess();

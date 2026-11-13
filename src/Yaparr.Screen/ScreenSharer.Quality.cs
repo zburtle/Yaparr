@@ -33,6 +33,14 @@ public sealed partial class ScreenSharer
     }
     private readonly Queue<(long At, long Bytes, long Resent, long Dropped, long Frames, long Encodes, long OverBudget)> _linkWindow = new();
     private long _runStartedMs;
+    private long _lastWantedAt;
+    private double _wantedFpsSeconds, _wantedSeconds;
+
+    /// <summary>
+    /// The frame rate the share was set to send, summed over the seconds it ran at it: (rate times seconds, seconds). The change between two looks, divided, is the rate it
+    /// was meant to send in between, which is not one number in a minute that had a new quality level in it.
+    /// </summary>
+    public (double FpsSeconds, double Seconds) WantedFpsTotals { get { lock (_policy) return (_wantedFpsSeconds, _wantedSeconds); } }
     private bool _senderWasBehind;
 
     /// <summary>The share of the pictures a second this computer was set to send that it sent over the last ten seconds, or 1 when that is not known (a run that began a moment ago).</summary>
@@ -67,6 +75,7 @@ public sealed partial class ScreenSharer
     internal void SetAppliedStepForTest(int step) => _appliedStep = step;
     internal int PendingKbpsForTest => Volatile.Read(ref _pendingKbps);
     internal void SetEncoderLiveForTest(bool live) => _encoderLive = live;
+    internal void SetRunFpsForTest(int fps) => _shape = new RunShape(fps, _options.MaxWidth, _options.MaxHeight);
     internal void SetRunStartedForTest(long tickMs) => Volatile.Write(ref _runStartedMs, tickMs);
     internal void AddFramesForTest(long frames) => Interlocked.Add(ref _frames, frames);
 
@@ -122,6 +131,8 @@ public sealed partial class ScreenSharer
         try
         {
             long now = Environment.TickCount64;
+            if (_lastWantedAt != 0) { double dt = Math.Min(5, (now - _lastWantedAt) / 1000.0); _wantedFpsSeconds += RunFps * dt; _wantedSeconds += dt; }
+            _lastWantedAt = now;
             var status = _source.Status;
             var room = _source.Room;
             // The sharer's own link over the last ten seconds: the share of what it sent that it sent again (packets, counted from the bytes), and what it dropped.
