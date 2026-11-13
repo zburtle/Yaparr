@@ -10,7 +10,7 @@ public sealed record SharingMinute(
     double Fps, double WantedFps, double Kbps, string Encoder, bool InProcess, (int Width, int Height)? Picture,
     ShareFigures Interval, ShareMaxima Maxima, double FrameBudgetMs, long LongestGapMs, long Resent, long Dropped,
     int Watching, IReadOnlyList<string> DirectPaths, double AppPercent, double CapturePercent, long MemoryMb,
-    (int Gen0, int Gen1, int Gen2) Collections, double PausedMs, string? Card, bool Bad, double PreviewPercent = -1, string? PreviewKind = null, bool CaptureInProcess = false, bool CaptureOnCard = false, string? Adaptive = null)
+    (int Gen0, int Gen1, int Gen2) Collections, double PausedMs, string? Card, bool Bad, double PreviewPercent = -1, string? PreviewKind = null, bool CaptureInProcess = false, bool CaptureOnCard = false, string? Adaptive = null, long RepairsHeldBack = 0)
 {
     public string Describe()
     {
@@ -18,7 +18,7 @@ public sealed record SharingMinute(
         return $"call quality: sharing{(Bad ? " (a problem)" : "")}: {Fps:0.0} of {WantedFps:0} fps, {Kbps:0} kbit/s, {Encoder}"
                + $"{(InProcess ? ", encoded in this program" : ", encoded by a separate FFmpeg")}{(Picture is { } size ? $", picture {size.Width}x{size.Height}" : "")}; "
                + $"{Interval.DescribeKeys(Maxima)}; {(encoding.Length > 0 ? encoding + "; " : "")}longest wait for a frame {LongestGapMs} ms; "
-               + $"{Resent} packets sent again, {Dropped} dropped, {Watching} watching, {DirectPaths.Count} of them directly"
+               + $"{Resent} packets sent again, {Dropped} dropped{(RepairsHeldBack > 0 ? $", {RepairsHeldBack} repairs held back (a quarter of the stream is the most they may use)" : "")}, {Watching} watching, {DirectPaths.Count} of them directly"
                + (DirectPaths.Count > 0 ? " (" + string.Join(", ", DirectPaths) + ")" : "") + "; "
                + $"processor: this program {AppPercent:0}% of a core, {(CaptureInProcess ? $"capture in this program, pictures {(CaptureOnCard ? "kept on the card" : "copied to memory")} (no capture FFmpeg)" : $"capture FFmpeg {CapturePercent:0}%")}{(PreviewPercent >= 0 ? $", preview decoder {PreviewPercent:0}%{(PreviewKind != null ? " (" + PreviewKind + ")" : "")}" : "")}, memory {MemoryMb} MB, "
                + $"garbage collections {Collections.Gen0}/{Collections.Gen1}/{Collections.Gen2} (paused {PausedMs:0} ms), capture restarted {Interval.Restarts}x"

@@ -110,9 +110,15 @@ public partial class MainWindow
 
         var dialog = new ShareDialog(_node.MeasuredUploadBytesPerSecond);
         dialog.PreferAv1(_settings.ScreenShareAv1);
+        dialog.PreferAdaptQuality(_settings.ScreenShareAdaptQuality);
         if (!await dialog.ShowDialog<bool>(this) || dialog.Result == null) return;
         var options = dialog.Result;
-        if (_settings.ScreenShareAv1 != dialog.Av1Picked) { _settings.ScreenShareAv1 = dialog.Av1Picked; _data.SaveSettings(_settings); }
+        if (_settings.ScreenShareAv1 != dialog.Av1Picked || _settings.ScreenShareAdaptQuality != dialog.AdaptPicked)
+        {
+            _settings.ScreenShareAv1 = dialog.Av1Picked;
+            _settings.ScreenShareAdaptQuality = dialog.AdaptPicked;
+            _data.SaveSettings(_settings);
+        }
 
         // Under Wayland the desktop's own picker decides what is shared.
         if (ScreenCapture.UsesPortal)

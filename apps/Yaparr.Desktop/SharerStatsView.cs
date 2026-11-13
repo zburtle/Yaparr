@@ -20,6 +20,7 @@ public sealed class SharerStatsView : Border
     private readonly TextBlock _how = new() { FontSize = 11, Foreground = Brushes.Gray, TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly TextBlock _rate = new() { FontSize = 13 };
     private readonly TextBlock _who = new() { FontSize = 12, TextWrapping = TextWrapping.Wrap };
+    private readonly TextBlock _adapt = new() { FontSize = 11, TextWrapping = TextWrapping.Wrap, Opacity = 0.8, IsVisible = false };
     private readonly TextBlock _warning = new() { FontSize = 11, TextWrapping = TextWrapping.Wrap, Foreground = Brushes.Orange, IsVisible = false };
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private long _frames, _bytes, _at = Environment.TickCount64, _retransmitted;
@@ -51,7 +52,7 @@ public sealed class SharerStatsView : Border
         buttons.Children.Add(change);
         buttons.Children.Add(stop);
         var title = new TextBlock { Text = "You are sharing", FontWeight = FontWeight.SemiBold };
-        Child = new StackPanel { Spacing = 2, Margin = new Avalonia.Thickness(12, 10, 12, 12), Children = { title, _how, _rate, _who, _warning, buttons } };
+        Child = new StackPanel { Spacing = 2, Margin = new Avalonia.Thickness(12, 10, 12, 12), Children = { title, _how, _rate, _adapt, _who, _warning, buttons } };
         CornerRadius = new Avalonia.CornerRadius(12);
         BorderThickness = new Avalonia.Thickness(1);
         this.Bind(BackgroundProperty, this.GetResourceObservable("BubbleOther"));
@@ -84,6 +85,8 @@ public sealed class SharerStatsView : Border
         string encoder = card ? $"{HardwareEncoders.Maker(_sharer.Encoder!.Value)} graphics card · {(_sharer.Codec == ScreenCodec.Av1 ? "AV1" : "H.264")}{(_sharer.InProcess ? " · in this program" : "")}" : "Processor · VP8";
         _how.Text = encoder;
         _rate.Text = $"{fps:0} / {_targetFps} fps · {(kbps >= 1000 ? $"{kbps / 1000:0.0} Mbit/s" : $"{kbps:0} kbit/s")}";
+        _adapt.Text = _sharer.AdaptiveLine ?? "";
+        _adapt.IsVisible = _sharer.AdaptiveLine != null;
         var viewers = _sharer.Source.Viewers;
         _who.Text = "Watching: " + Names(viewers);
         var (came, went) = _watchers.Update(PeopleOf(viewers));

@@ -98,14 +98,18 @@ The policy is a pure function: reports and the sharer's own figures in, a step (
 
 ## Where it stands
 
-Built, in shadow mode (the policy runs and says what it would do; nothing is changed):
+Built (steps 1 and 2, the bitrate, are acted on; the others are in shadow mode, where the policy runs and says what it would do and nothing is changed):
 - `InProcessEncoder.SetBitrate`: the bitrate changes while encoding, no restart and no lost frame; measured with pictures that are expensive to code, 6000, 1500 and 6000 kbit/s asked for gave about 7000, 1500 and 6900 kbit/s (steps 1 and 2 of the ladder).
 - `QualityPolicy` and `QualityLadder` (`QualityPolicyTests`): the rules above as a pure function, with scripted rooms.
 - The report: `ViewerQualityMeter` (a viewer judging its own picture over ten seconds), the `quality` control operation, folded by each relay on the way up (`MediaSource.Room` at the root; `QualityReportTests` run it through a chain of relays).
 - A viewer's own log carries its verdict: the `call quality: watching` line (and "Copy sharing diagnostics") ends its figures with `judged in trouble, 22 pictures a second over the last ten seconds, and told the sharer so` (or `judged fine`, or `not judged yet`), so one viewer's log shows what that viewer reported, beside the figures it is made from.
 - `ScreenSharer` runs the policy every second from `Room` and its own link, writes `adaptive quality (shadow mode, nothing is changed): would lower to 1080p60 at 4.2 Mbit/s (step 1 of 5): 2 of 3 viewers lost frames for 10 s` to the log, and says where it is in the sharing line and the report (`ShadowQualityTests`).
 
-Still to do: the frame rate step (the share's clock encodes every second or third tick), the size step (the capture graph and the encoder built again at the new size), acting on the decisions behind a setting, the `room` state sent down the tree and the message to a viewer who is the only one in trouble, and the sharer panel line. Each is its own change; shadow mode comes first so that the numbers (how often, how fast, whether it flaps) come from real rooms before it acts.
+- Acting on steps 1 and 2: when the encoder runs in this program (`ScreenOptions.InProcessEncoder`) and the setting is on, a decision to go to step 1 or 2 sets a pending bitrate (70% or 45% of what was asked for) that the thread that encodes gives to `InProcessEncoder.SetBitrate` before its next picture, and tells the stream (`MediaSource.EffectiveKbps`) so that repairs follow it. The policy is given `MaxStep = 2` then; the steps below that are not acted on, so a room that needs more stays at step 2 (the floor of what is applied). A share whose encoder is a separate FFmpeg, or whose setting is off, runs the policy over the whole ladder in shadow mode as before. The log says `adaptive quality: lowered to 1080p60 at 4.2 Mbit/s (step 1 of 5): ...` when it acted and `adaptive quality (shadow mode, nothing is changed): would ...` when it did not (`ActingQualityTests`).
+- The setting: "Lower the quality when viewers cannot keep up" in the share dialog, on by default, remembered (`AppData.ScreenShareAdaptQuality`); the environment variable `YAPARR_ADAPT=0` turns it off for a run. The sharer panel shows `Quality lowered to 2.7 Mbit/s: ...` while the share is below what was asked for.
+- A cap on repairs: what a sender may resend is a quarter of the stream (`ChatNode.RepairShare`, a token bucket per stream, at least 32 kB/s), because repairs paced at the stream's own rate doubled the load on a link that was already full. What is held back is counted (`MediaStatus.RepairsRefused`, `N repairs held back` in the sharing line); `RepairCapTests` run it over a link that loses 35% and one that loses 3%.
+
+Still to do: the frame rate step (the share's clock encodes every second or third tick), the size step (the capture graph and the encoder built again at the new size), the `room` state sent down the tree and the message to a viewer who is the only one in trouble. Each is its own change, after the bitrate steps have been seen working on a real share.
 
 ## Questions that are open
 

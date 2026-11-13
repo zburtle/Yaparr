@@ -78,6 +78,8 @@ public sealed class AppSettings
     public int VoiceBitrateKbps { get; set; } = 64;
     /// <summary>The video format last picked when sharing a screen: true for AV1, false for Automatic. The computer app.</summary>
     public bool ScreenShareAv1 { get; set; }
+    /// <summary>Lower the bitrate of a share when the viewers cannot keep up (on unless turned off in the share dialog). The computer app.</summary>
+    public bool ScreenShareAdaptQuality { get; set; } = true;
     /// <summary>Bring everyone you hear to a similar loudness (on top of each person's own volume).</summary>
     public bool VoiceLevelSpeakers { get; set; }
 
