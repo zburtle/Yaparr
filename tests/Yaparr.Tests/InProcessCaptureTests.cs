@@ -159,7 +159,16 @@ public class InProcessCaptureTests(Xunit.Abstractions.ITestOutputHelper output)
 
         Assert.Contains("at 30 fps, 4000 kbit/s", sharer.EncoderDetails);
 
-        sharer.ApplyStepForTest(2, "test");   // 720p30
+        var atStep1 = sharer.PictureSize!.Value;
+        sharer.ApplyStepForTest(2, "test");   // the same picture at 2.8 Mbit/s: only the bitrate changes, nothing is built again
+        frames = sharer.Frames;
+        await TestUtil.WaitFor(() => sharer.PendingKbpsForTest == 0 && sharer.Frames >= frames + 60, 30_000);
+        Assert.Equal(2800, sharer.Source.EffectiveKbps);
+        Assert.Contains("at 30 fps, 4000 kbit/s", sharer.EncoderDetails);   // the description is of how the encoder was set up
+        Assert.Equal(atStep1, sharer.PictureSize!.Value);
+        Assert.True(sharer.IsRunning);
+
+        sharer.ApplyStepForTest(3, "test");   // 720p30
         frames = sharer.Frames;
         await TestUtil.WaitFor(() => sharer.PictureSize is { Height: <= 720 } && sharer.Frames >= frames + 60, 30_000);
         output.WriteLine($"step 2: {sharer.PictureSize} at {sharer.RunFps} fps, {sharer.EncoderDetails}");

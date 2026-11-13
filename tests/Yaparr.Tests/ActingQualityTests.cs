@@ -30,7 +30,7 @@ public class ActingQualityTests(Xunit.Abstractions.ITestOutputHelper output)
             Assert.Equal(6000, source.EffectiveKbps);
             await TestUtil.WaitFor(() => !said.IsEmpty, 60_000);
             output.WriteLine(said.First());
-            Assert.StartsWith("adaptive quality: lowered to 1080p30 at 4.0 Mbit/s (step 1 of 2)", said.First());
+            Assert.StartsWith("adaptive quality: lowered to 1080p30 at 4.0 Mbit/s (step 1 of 3)", said.First());
             Assert.DoesNotContain("nothing is changed", said.First());
             Assert.True(sharer.ActingOnQuality);
             Assert.Equal(1, sharer.AppliedStep);
@@ -95,6 +95,9 @@ public class ActingQualityTests(Xunit.Abstractions.ITestOutputHelper output)
             var run = sharer.RunOptions();
             Assert.Equal((4000, 30, 1920, 1080), (run.Kbps, run.Fps, run.MaxWidth, run.MaxHeight));
             sharer.SetAppliedStepForTest(2);
+            run = sharer.RunOptions();
+            Assert.Equal((2800, 30, 1920, 1080), (run.Kbps, run.Fps, run.MaxWidth, run.MaxHeight));   // the same picture at 70%
+            sharer.SetAppliedStepForTest(3);
             run = sharer.RunOptions();
             Assert.Equal((2000, 30, 1280, 720), (run.Kbps, run.Fps, run.MaxWidth, run.MaxHeight));
             sharer.SetAppliedStepForTest(0);

@@ -214,7 +214,7 @@ public class QualityPolicyTests
         var policy = new QualityPolicy();
         long now = 0;
         var changes = Run(policy, ref now, 200, new RoomQuality(10, 9));
-        Assert.Equal(new[] { (10, 1), (20, 2) }, changes);
+        Assert.Equal(new[] { (10, 1), (20, 2), (30, 3) }, changes);
         now += 1000;
         // keep it up: the next decisions after ten more seconds say that this is as low as it goes
         QualityDecision last = default;
@@ -235,26 +235,29 @@ public class QualityPolicyTests
     }
 
     [Fact]
-    public void The_ladder_goes_down_one_preset_of_the_share_dialog_at_a_time()
+    public void The_ladder_goes_down_the_presets_of_the_share_dialog_with_the_same_picture_at_70_percent_before_each_drop_in_size()
     {
-        // 1080p60 at 6 Mbit/s: 1080p30, then 720p30
+        // 1080p60 at 6 Mbit/s: 1080p30, the same at 70%, then 720p30
         Assert.Equal(new QualityLevel(6000, 60, 1920, 1080), QualityLadder.For(0, 6000, 60, 1920, 1080));
         Assert.Equal(new QualityLevel(4000, 30, 1920, 1080), QualityLadder.For(1, 6000, 60, 1920, 1080));
-        Assert.Equal(new QualityLevel(2000, 30, 1280, 720), QualityLadder.For(2, 6000, 60, 1920, 1080));
+        Assert.Equal(new QualityLevel(2800, 30, 1920, 1080), QualityLadder.For(2, 6000, 60, 1920, 1080));
+        Assert.Equal(new QualityLevel(2000, 30, 1280, 720), QualityLadder.For(3, 6000, 60, 1920, 1080));
         Assert.Equal("1080p30 at 4.0 Mbit/s", QualityLadder.For(1, 6000, 60, 1920, 1080).Describe());
-        Assert.Equal("720p30 at 2.0 Mbit/s", QualityLadder.For(2, 6000, 60, 1920, 1080).Describe());
-        // 1080p30: one preset, then the lowest one at a lower bitrate
-        Assert.Equal(new QualityLevel(2000, 30, 1280, 720), QualityLadder.For(1, 4000, 30, 1920, 1080));
-        Assert.Equal(new QualityLevel(1400, 30, 1280, 720), QualityLadder.For(2, 4000, 30, 1920, 1080));
-        // 720p30, the lowest: the same picture at 70% and 45%
-        Assert.Equal(new QualityLevel(1400, 30, 1280, 720), QualityLadder.For(1, 2000, 30, 1280, 720));
-        Assert.Equal(new QualityLevel(900, 30, 1280, 720), QualityLadder.For(2, 2000, 30, 1280, 720));
+        Assert.Equal("1080p30 at 2.8 Mbit/s", QualityLadder.For(2, 6000, 60, 1920, 1080).Describe());
+        Assert.Equal("720p30 at 2.0 Mbit/s", QualityLadder.For(3, 6000, 60, 1920, 1080).Describe());
+        // 1080p30: the same at 70%, 720p30, then that at 70%
+        Assert.Equal(new QualityLevel(2800, 30, 1920, 1080), QualityLadder.For(1, 4000, 30, 1920, 1080));
+        Assert.Equal(new QualityLevel(2000, 30, 1280, 720), QualityLadder.For(2, 4000, 30, 1920, 1080));
+        Assert.Equal(new QualityLevel(1400, 30, 1280, 720), QualityLadder.For(3, 4000, 30, 1920, 1080));
+        // 720p30, the lowest: the same picture at 70%, again and again
+        Assert.Equal(new[] { 2000, 1400, 980, 686 }, Enumerable.Range(0, QualityLadder.Steps).Select(s => QualityLadder.For(s, 2000, 30, 1280, 720).Kbps));
         // a share below every preset keeps its own size and rate and goes down in bitrate
         Assert.Equal(new QualityLevel(700, 15, 640, 360), QualityLadder.For(1, 1000, 15, 640, 360));
         // never below 500 kbit/s (or what was asked for, when that is lower), and no step is above the one before it
         Assert.Equal(500, QualityLadder.For(2, 800, 30, 1280, 720).Kbps);
         Assert.Equal(300, QualityLadder.For(2, 300, 30, 1280, 720).Kbps);
-        foreach (var (kbps, fps, w, h) in new[] { (6000, 60, 1920, 1080), (4000, 30, 1920, 1080), (2000, 30, 1280, 720), (1000, 15, 640, 360) })
+        Assert.Equal(4, QualityLadder.Levels(6000, 60, 1920, 1080).Count);
+        foreach (var (kbps, fps, w, h) in new[] { (6000, 60, 1920, 1080), (4000, 30, 1920, 1080), (2000, 30, 1280, 720), (1000, 15, 640, 360), (800, 30, 1280, 720) })
             for (int s = 1; s < QualityLadder.Steps; s++)
             {
                 var before = QualityLadder.For(s - 1, kbps, fps, w, h);

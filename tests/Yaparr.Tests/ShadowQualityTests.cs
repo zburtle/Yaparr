@@ -27,7 +27,7 @@ public class ShadowQualityTests(Xunit.Abstractions.ITestOutputHelper output)
             await TestUtil.WaitFor(() => !said.IsEmpty, 60_000);
             output.WriteLine(said.First());
             Assert.Contains("shadow mode, nothing is changed", said.First());
-            Assert.Contains("would lower to 1080p30 at 4.0 Mbit/s (step 1 of 2): 2 of 3 viewers lost frames for 10 s", said.First());
+            Assert.Contains("would lower to 1080p30 at 4.0 Mbit/s (step 1 of 3): 2 of 3 viewers lost frames for 10 s", said.First());
             Assert.Equal(1, sharer.ShadowStep);
             Assert.Equal(1, sharer.ShadowChanges);
             Assert.Contains("3 viewers reported, 2 in trouble", sharer.QualityNote);
