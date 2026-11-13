@@ -60,7 +60,7 @@ public partial class ShareDialog : Window
         if (current != null)
         {
             Title = "Change what is shared";
-            QualityLabel.IsVisible = QualityBox.IsVisible = FormatLabel.IsVisible = FormatBox.IsVisible = SoundNote.IsVisible = SoundBox.IsVisible = Note.IsVisible = false;
+            QualityLabel.IsVisible = QualityBox.IsVisible = FormatLabel.IsVisible = FormatBox.IsVisible = AdaptBox.IsVisible = AdaptHint.IsVisible = SoundNote.IsVisible = SoundBox.IsVisible = Note.IsVisible = false;
             ShareButton.Content = "Switch";
         }
         ApplyAv1Check();
@@ -89,6 +89,12 @@ public partial class ShareDialog : Window
     {
         if (prefer && FormatBox.Items[1] is ComboBoxItem { IsEnabled: true }) FormatBox.SelectedIndex = 1;
     }
+
+    /// <summary>Starts with the last choice about lowering the quality for viewers that cannot keep up.</summary>
+    public void PreferAdaptQuality(bool adapt) => AdaptBox.IsChecked = adapt;
+
+    /// <summary>Whether lowering the quality was left on in the dialog that was just answered.</summary>
+    public bool AdaptPicked => AdaptBox.IsChecked == true;
 
     /// <summary>Whether AV1 was picked in the dialog that was just answered.</summary>
     public bool Av1Picked => Result?.Codec == ScreenCodec.Av1;
@@ -181,6 +187,7 @@ public partial class ShareDialog : Window
             Codec = FormatBox.SelectedIndex == 1 ? ScreenCodec.Av1 : ScreenCodec.Auto,
             ShareSound = ScreenSound.IsSupported,
             SoundProgram = PickedProgram(),
+            AdaptQuality = AdaptBox.IsChecked == true && new ScreenOptions().AdaptQuality,
         };
         Close(true);
     }

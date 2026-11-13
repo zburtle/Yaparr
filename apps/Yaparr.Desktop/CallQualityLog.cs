@@ -27,7 +27,7 @@ public sealed class CallQualityLog
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(60) };
     private readonly Dictionary<PeerId, VoiceQuality> _before = new();
     private VoiceSession? _watched;
-    private long _frames, _bytes, _resent, _dropped, _at;
+    private long _frames, _bytes, _resent, _dropped, _at, _refused;
     private ShareFigures _figures;
     private TimeSpan _appCpu, _captureCpu, _gcPause, _previewBefore;
     private (int Gen0, int Gen1, int Gen2) _gc;
@@ -87,6 +87,7 @@ public sealed class CallQualityLog
             firstLook = sharer != null;
             (_frames, _bytes, _resent, _dropped, _at) = sharer == null ? (0, 0, 0, 0, Environment.TickCount64)
                 : (sharer.Frames, sharer.Bytes, sharer.Source.Status.Retransmitted, sharer.Source.Status.Dropped, Environment.TickCount64);
+            _refused = sharer?.Source.Status.RepairsRefused ?? 0;
             sharer?.TakeLongestGapMs();
             if (sharer != null)
             {
@@ -135,12 +136,14 @@ public sealed class CallQualityLog
             // that is over the time it has for a picture more than one time in fifty cannot keep up.
             bool slow = interval.Encodes > 0 && interval.OverBudget * 50 > interval.Encodes;
             bool bad = fps < wanted * 0.8 || fps > wanted * 1.5 || gap > 3000.0 / wanted || resent > 50 || dropped > 0 || slow;
+            long refused = status.RepairsRefused - _refused;
+            _refused = status.RepairsRefused;
             (_frames, _bytes, _resent, _dropped, _at) = (frames, bytes, status.Retransmitted, status.Dropped, now);
             string? card = gpu == null ? null : await gpu.ConfigureAwait(true);
             if (bad) problem = true;
             var paths = status.Children.Select(c => c.Short + " " + (_node()?.GetLink(c).ToString() ?? "path unknown")).ToList();
             _log.Write(new SharingMinute(fps, wanted, kbps, ScreenCodecs.Describe(sharer.Codec, sharer.Encoder), sharer.InProcess, sharer.PictureSize, interval, maxima, sharer.FrameBudgetMs,
-                gap, resent, dropped, sharer.Source.Viewers.Count, paths, appPercent, capturePercent, process.WorkingSet64 / (1024 * 1024), gcDelta, paused, card, bad, previewPercent, previewKind, sharer.CaptureInProcess, sharer.CaptureOnCard, sharer.QualityNote).Describe());
+                gap, resent, dropped, sharer.Source.Viewers.Count, paths, appPercent, capturePercent, process.WorkingSet64 / (1024 * 1024), gcDelta, paused, card, bad, previewPercent, previewKind, sharer.CaptureInProcess, sharer.CaptureOnCard, sharer.QualityNote, refused).Describe());
         }
 
         foreach (var watch in _watches().ToList())

@@ -29,6 +29,7 @@ public sealed partial class ScreenSharer : IDisposable
         _source = source;
         _options = options;
         _ffmpeg = ffmpegPath;
+        _policy = new QualityPolicy(new QualityPolicy.Settings { MaxStep = options.AdaptQuality && options.InProcessEncoder ? ActedSteps : QualityLadder.Steps - 1 });
         // Only the in-process encoder can answer it; for a separate FFmpeg the request is noted and not acted on.
         _onKeyRequested = () => { if (_inProcess) _pacer.Request(); };
         _source.KeyFrameRequested += _onKeyRequested;
@@ -523,6 +524,7 @@ public sealed partial class ScreenSharer : IDisposable
         catch (Exception) { throw; }   // no NVIDIA encoder to use, or it will not read pictures from the card: the next way is tried
         using var disposeEncoder = encoder;
         _picture = (capture.Width, capture.Height);
+        _encoderLive = true;
         _encoderDetails = $"in this program: {encoder.Describe()}; capture: in this program{(onCard ? ", pictures kept on the graphics card" : "")}, {capture.Graph}";
         EncoderStarted?.Invoke();
 
@@ -552,6 +554,7 @@ public sealed partial class ScreenSharer : IDisposable
             }
             bool force = _pacer.ShouldForce(Environment.TickCount64);
             ready.Clear();
+            ApplyPendingBitrate(encoder);
             long encodeStart = Stopwatch.GetTimestamp();
             encoder.Encode(picture, force, Collect);
             var took = Stopwatch.GetElapsedTime(encodeStart);
@@ -565,6 +568,7 @@ public sealed partial class ScreenSharer : IDisposable
             }
         }
         _captureHere = null;
+        _encoderLive = false;
         if (!ct.IsCancellationRequested && !_switch) throw CaptureFailed(capture.EndedBecause ?? "The capture stopped.");
     }
 
@@ -633,6 +637,7 @@ public sealed partial class ScreenSharer : IDisposable
         catch (Exception) { KillProcess(); throw; }   // no NVIDIA encoder to use: the next way of encoding is tried
         using var disposeEncoder = encoder;
         _picture = picture;
+        _encoderLive = true;
         _encoderDetails = $"in this program: {encoder.Describe()}; capture: {_lastArguments}";
         EncoderStarted?.Invoke();
 
@@ -653,6 +658,7 @@ public sealed partial class ScreenSharer : IDisposable
                 _stats.Waited(Stopwatch.GetElapsedTime(waitStart).Ticks, TimeSpan.FromMilliseconds(FrameBudgetMs).Ticks);
                 bool force = _pacer.ShouldForce(Environment.TickCount64);
                 ready.Clear();
+                ApplyPendingBitrate(encoder);
                 long encodeStart = Stopwatch.GetTimestamp();
                 encoder.Encode(buffer, force, Collect);
                 var took = Stopwatch.GetElapsedTime(encodeStart);
@@ -679,7 +685,7 @@ public sealed partial class ScreenSharer : IDisposable
                 throw Stopped(process);
             }
         }
-        finally { KillProcess(); }
+        finally { _encoderLive = false; KillProcess(); }
     }
 
     // The picture of a Wayland share: GStreamer reads the portal's PipeWire stream (it inherits the connection) and its raw

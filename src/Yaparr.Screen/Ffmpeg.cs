@@ -215,12 +215,19 @@ public sealed class ScreenOptions
     /// </summary>
     public bool CaptureOnCard { get; init; } = InProcessSettings.FromEnvironment().Mode == InProcessMode.CaptureOnCard;
 
+    /// <summary>
+    /// Lower the bitrate when the viewers cannot keep up, and raise it again when they can (see <see cref="QualityPolicy"/>). Only the first two steps of the
+    /// ladder are acted on so far (70% and 45% of the bitrate asked for), and only when the encoder is in this program; the rest is still written down and nothing
+    /// more. On unless <c>YAPARR_ADAPT</c> is 0 or off, and the share dialog's setting turns it off too.
+    /// </summary>
+    public bool AdaptQuality { get; init; } = !(Environment.GetEnvironmentVariable("YAPARR_ADAPT")?.Trim().ToLowerInvariant() is "0" or "off" or "no" or "false");
+
     /// <summary>The same options for another monitor or window: everything else (quality, codec, sound) stays.</summary>
     public ScreenOptions Retarget(Display? display, long? windowHandle) => new()
     {
         Display = display, WindowHandle = windowHandle, Fps = Fps, MaxWidth = MaxWidth, MaxHeight = MaxHeight, Kbps = Kbps,
         KeyFrameSeconds = KeyFrameSeconds, Codec = Codec, Encoder = Encoder, ShareSound = ShareSound, SoundProgram = SoundProgram, GpuScale = GpuScale, ShowCursor = ShowCursor,
-        X11Display = X11Display, InProcessEncoder = InProcessEncoder, InProcessCapture = InProcessCapture, CaptureOnCard = CaptureOnCard, InProcessAsked = InProcessAsked,
+        X11Display = X11Display, InProcessEncoder = InProcessEncoder, InProcessCapture = InProcessCapture, CaptureOnCard = CaptureOnCard, InProcessAsked = InProcessAsked, AdaptQuality = AdaptQuality,
     };
 
     /// <summary>The same options for another stream from the portal (the desktop asked again what to share).</summary>
@@ -228,7 +235,7 @@ public sealed class ScreenOptions
     {
         Portal = portal, Fps = Fps, MaxWidth = MaxWidth, MaxHeight = MaxHeight, Kbps = Kbps, KeyFrameSeconds = KeyFrameSeconds, Codec = Codec,
         Encoder = Encoder, ShareSound = ShareSound, SoundProgram = SoundProgram, GpuScale = false, ShowCursor = ShowCursor, X11Display = X11Display,
-        InProcessEncoder = InProcessEncoder, InProcessCapture = InProcessCapture, CaptureOnCard = CaptureOnCard, InProcessAsked = InProcessAsked,
+        InProcessEncoder = InProcessEncoder, InProcessCapture = InProcessCapture, CaptureOnCard = CaptureOnCard, InProcessAsked = InProcessAsked, AdaptQuality = AdaptQuality,
     };
 }
 

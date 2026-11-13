@@ -19,6 +19,9 @@
         </ComboBox>
         <TextBlock x:Name="FormatHint" Classes="muted small" TextWrapping="Wrap" IsVisible="False"
                    Text="AV1 looks better than H.264 at the same connection speed, but only some graphics cards can make it (NVIDIA RTX 40 and newer, AMD RX 7000 and newer, Intel Arc and newer). If yours cannot, Yaparr shares in H.264 instead. Watchers need an up to date Yaparr, and a phone that can play AV1." />
+        <CheckBox x:Name="AdaptBox" IsChecked="True" Margin="0,8,0,0" Content="Lower the quality when viewers cannot keep up" />
+        <TextBlock x:Name="AdaptHint" Classes="muted small" TextWrapping="Wrap"
+                   Text="If most of the room is losing frames, the picture is sent at a lower bitrate until they catch up, then back up again. Everyone gets the same stream, so one viewer on a bad connection is not enough to lower it for the others." />
         <TextBlock x:Name="SoundNote" Classes="muted small" TextWrapping="Wrap" Margin="0,6,0,0"
                    Text="The sound is shared too: a window's own sound, or for a monitor everything you hear except Yaparr, so the voice chat is not sent back. Needs Windows 10 version 2004 or newer." />
         <ComboBox x:Name="SoundBox" HorizontalAlignment="Stretch" IsVisible="False" DropDownOpened="SoundBox_DropDownOpened" />
