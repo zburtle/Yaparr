@@ -35,24 +35,25 @@ public sealed record FfmpegPackage(string Version, Uri Url, string Sha256, long 
         "ffmpeg-yaparr-g17a4a474f4-win64");
 
     /// <summary>
-    /// Yaparr's own Linux x86-64 build, the asset of the Yaparr.FFmpeg release ffmpeg-6 (the same FFmpeg commit as the Windows
-    /// one; see https://github.com/zburtle/Yaparr.FFmpeg). It runs on glibc 2.35 or newer and needs the computer's own libva.
+    /// Yaparr's own Linux x86-64 build, the asset of the Yaparr.FFmpeg release ffmpeg-8 (the same FFmpeg commit as the Windows
+    /// one; see https://github.com/zburtle/Yaparr.FFmpeg): the ffmpeg program and, next to it, FFmpeg's shared libraries (libavcodec.so.63 and the others), which Yaparr
+    /// loads into itself to encode. It runs on glibc 2.35 or newer and needs the computer's own libva.
     /// </summary>
     public static FfmpegPackage LinuxX64 { get; } = new(
-        "g17a4a474f4-yaparr-6-linux-x64",
-        new Uri("https://github.com/zburtle/Yaparr.FFmpeg/releases/download/ffmpeg-6/ffmpeg-yaparr-g17a4a474f4-linux-x64.zip"),
-        "22c7fdad9d24fe6edeaadcc61203100e8a972f8dfc0893e66da0468bebbb1649",
-        2_889_626,
+        "g17a4a474f4-yaparr-8-linux-x64",
+        new Uri("https://github.com/zburtle/Yaparr.FFmpeg/releases/download/ffmpeg-8/ffmpeg-yaparr-g17a4a474f4-linux-x64.zip"),
+        "96e033518b6689fceba74bef7b4b1ce8ae2d6ffd2aa52a33bb1be749cfc11e07",
+        3_248_032,
         "ffmpeg-yaparr-g17a4a474f4-linux-x64/bin/ffmpeg",
         "ffmpeg-yaparr-g17a4a474f4-linux-x64/LICENSE.txt",
         "ffmpeg-yaparr-g17a4a474f4-linux-x64");
 
     /// <summary>Yaparr's own Linux arm64 build, from the same release as <see cref="LinuxX64"/>.</summary>
     public static FfmpegPackage LinuxArm64 { get; } = new(
-        "g17a4a474f4-yaparr-6-linux-arm64",
-        new Uri("https://github.com/zburtle/Yaparr.FFmpeg/releases/download/ffmpeg-6/ffmpeg-yaparr-g17a4a474f4-linux-arm64.zip"),
-        "61968695bf0f356306c66062a078d2e27f4f9b21a04d9425e0632fb11daa270d",
-        2_436_218,
+        "g17a4a474f4-yaparr-8-linux-arm64",
+        new Uri("https://github.com/zburtle/Yaparr.FFmpeg/releases/download/ffmpeg-8/ffmpeg-yaparr-g17a4a474f4-linux-arm64.zip"),
+        "f4069482ae02efe3168b5d3b5be5d1d66993b0dd26a3719d8e27c31a63762ec7",
+        2_773_411,
         "ffmpeg-yaparr-g17a4a474f4-linux-arm64/bin/ffmpeg",
         "ffmpeg-yaparr-g17a4a474f4-linux-arm64/LICENSE.txt",
         "ffmpeg-yaparr-g17a4a474f4-linux-arm64");
