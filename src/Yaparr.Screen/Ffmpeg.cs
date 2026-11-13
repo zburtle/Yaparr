@@ -297,7 +297,7 @@ public static class FfmpegArgs
         if (o.MaxWidth < 16 || o.MaxHeight < 16) throw new ArgumentOutOfRangeException(nameof(o), "The picture box is too small.");
 
         if (o.Portal is { } portal)
-            return raw ? throw new NotSupportedException("A Wayland share is not encoded in this program yet.") : CapturePortal(o, portal.Stream, codec, encoder);
+            return raw ? throw new NotSupportedException("A Wayland share that is encoded in this program has no FFmpeg capturing: GStreamer's pictures go straight to the encoder.") : CapturePortal(o, portal.Stream, codec, encoder);
 
         // On X11 the input is x11grab, which polls the screen at the frame rate (so a still screen still gives a steady stream) and
         // delivers plain pixels; there is nothing on a graphics card to keep them on.

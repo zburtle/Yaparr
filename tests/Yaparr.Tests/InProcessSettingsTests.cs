@@ -9,7 +9,7 @@ public class InProcessSettingsTests
     [InlineData(null, true, InProcessMode.CaptureOnCard, false)]    // the default on Windows: all of it
     [InlineData("", true, InProcessMode.CaptureOnCard, false)]
     [InlineData("something else", true, InProcessMode.CaptureOnCard, false)]
-    [InlineData(null, false, InProcessMode.Off, false)]             // elsewhere: a separate FFmpeg
+    [InlineData(null, false, InProcessMode.Encoder, false)]         // elsewhere (Linux): the encoder here, a separate FFmpeg captures
     [InlineData("0", true, InProcessMode.Off, true)]
     [InlineData("off", true, InProcessMode.Off, true)]
     [InlineData("OFF", false, InProcessMode.Off, true)]
@@ -106,6 +106,7 @@ public class InProcessSettingsTests
     [Fact]
     public async Task The_libraries_in_the_package_are_kept_next_to_the_program_and_the_app_finds_them_there()
     {
+        string program = OperatingSystem.IsWindows() ? "ffmpeg.exe" : "ffmpeg";
         var dir = Path.Combine(Path.GetTempPath(), "yaparr-libs-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         try
@@ -114,19 +115,19 @@ public class InProcessSettingsTests
             using (var zip = ZipFile.Open(zipPath, ZipArchiveMode.Create))
             {
                 void Add(string name, string text) { using var w = new StreamWriter(zip.CreateEntry(name).Open()); w.Write(text); }
-                Add("pkg/bin/ffmpeg.exe", "program");
-                Add("pkg/bin/avcodec-63.dll", "library");
-                Add("pkg/bin/avutil-61.dll", "library");
+                Add("pkg/bin/" + program, "program");
+                Add("pkg/bin/" + (OperatingSystem.IsWindows() ? "avcodec-63.dll" : "libavcodec.so.63"), "library");
+                Add("pkg/bin/" + (OperatingSystem.IsWindows() ? "avutil-61.dll" : "libavutil.so.61"), "library");
                 Add("pkg/bin/notes.txt", "not a library");
                 Add("pkg/bin/sub/other.dll", "not in that folder");
                 Add("pkg/LICENSE.txt", "licence");
             }
             string sha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(zipPath)));
-            var package = new FfmpegPackage("test-shared", new Uri("https://example.invalid/pkg.zip"), sha, new FileInfo(zipPath).Length, "pkg/bin/ffmpeg.exe", "pkg/LICENSE.txt", "pkg");
+            var package = new FfmpegPackage("test-shared", new Uri("https://example.invalid/pkg.zip"), sha, new FileInfo(zipPath).Length, "pkg/bin/" + program, "pkg/LICENSE.txt", "pkg");
             var exe = await FfmpegInstaller.InstallAsync(package, null, Path.Combine(dir, "install"), new Serve(File.ReadAllBytes(zipPath)));
             var folder = Path.GetDirectoryName(exe)!;
-            Assert.True(File.Exists(Path.Combine(folder, "avcodec-63.dll")));
-            Assert.True(File.Exists(Path.Combine(folder, "avutil-61.dll")));
+            Assert.True(File.Exists(Path.Combine(folder, OperatingSystem.IsWindows() ? "avcodec-63.dll" : "libavcodec.so.63")));
+            Assert.True(File.Exists(Path.Combine(folder, OperatingSystem.IsWindows() ? "avutil-61.dll" : "libavutil.so.61")));
             Assert.False(File.Exists(Path.Combine(folder, "notes.txt")), "only libraries come with the program");
             Assert.False(File.Exists(Path.Combine(folder, "other.dll")), "only from the program's own folder in the zip");
             // The app looks for the libraries next to the FFmpeg it would run.

@@ -5,7 +5,7 @@ namespace Yaparr.Tests;
 
 // Sharing a screen on Linux under X11: the monitor list, the command line for x11grab and where sharing is refused. None of it
 // needs Linux or FFmpeg to be checked.
-public class LinuxScreenTests
+public class LinuxScreenTests(Xunit.Abstractions.ITestOutputHelper output)
 {
     private const string TwoMonitors = "Monitors: 2\n 0: +*DP-1 1920/527x1080/296+1920+0  DP-1\n 1: +HDMI-1 1280/340x1024/270+0+0  HDMI-1\n";
 
@@ -216,6 +216,130 @@ public class LinuxScreenTests
         }
     }
 
+    // A real share of a virtual X screen, encoded in this program (NVIDIA's encoder through FFmpeg's libraries, a separate FFmpeg capturing with x11grab), taken
+    // through the levels of adaptive quality and back: each level with another frame rate or size starts the capture and the encoder again.
+    // Does nothing where this is not Linux, or the libraries, FFmpeg, Xvfb or an NVIDIA card are missing.
+    [Fact]
+    public async Task A_real_share_of_a_virtual_X_screen_is_encoded_in_this_program_and_goes_through_the_levels_of_adaptive_quality()
+    {
+        if (!OperatingSystem.IsLinux() || !FfmpegLibraries.IsAvailable || FfmpegLocator.Find() is not { } ffmpeg || FindOnPath("Xvfb") is not { } xvfb) return;
+        const string display = ":96";
+        using var server = Process.Start(new ProcessStartInfo(xvfb, $"{display} -screen 0 1280x720x24") { UseShellExecute = false, RedirectStandardError = true })!;
+        try
+        {
+            await Task.Delay(1500);
+            // Asked for at the top preset: 1080p60 at 6 Mbit/s (the screen is smaller, and a picture is never scaled up).
+            var asked = new ScreenOptions
+            {
+                X11Display = display, Display = new Display(0, "screen", 0, 0, 1280, 720, true), Fps = 60, Kbps = 6000, KeyFrameSeconds = 1,
+                MaxWidth = 1920, MaxHeight = 1080, Codec = ScreenCodec.H264, Encoder = HardwareEncoder.Nvenc, InProcessEncoder = true,
+            };
+            using var cluster = await MediaTreeTests.Cluster.StartAsync(2, fanout: 2, rootFanout: 2);
+            using var sharer = ScreenSharer.Start(cluster.Root, cluster.Rooms[0], "Test screen", asked, ffmpeg);
+            try { await TestUtil.WaitFor(() => sharer.Frames >= 60 || !sharer.IsRunning, 30_000); }
+            catch (TimeoutException) { output.WriteLine(sharer.Describe()); throw; }
+            output.WriteLine(sharer.Describe());
+            if (!sharer.InProcess) return;   // no NVIDIA encoder here, or the libraries are not usable
+            Assert.Contains("h264_nvenc", sharer.EncoderDetails);
+            Assert.Equal(60, sharer.RunFps);
+
+            async Task Wait(Func<bool> done, string what)
+            {
+                long frames = sharer.Frames;
+                try { await TestUtil.WaitFor(() => done() && sharer.Frames >= frames + 40, 30_000); }
+                catch (TimeoutException) { output.WriteLine(what + ": " + sharer.Describe()); throw; }
+            }
+
+            sharer.ApplyStepForTest(1, "test");   // 1080p30 at 4 Mbit/s: another frame rate, so the capture and the encoder start again
+            await Wait(() => sharer.RunFps == 30, "step 1");
+            Assert.Contains("at 30 fps, 4000 kbit/s", sharer.EncoderDetails);
+
+            sharer.ApplyStepForTest(QualityLadder.Steps - 1, "test");   // the lowest level: 720p30 at 2 Mbit/s, another size, so the capture and the encoder start again
+            await Wait(() => sharer.EncoderDetails.Contains("at 30 fps, 2000 kbit/s"), "the lowest level");
+            Assert.Contains("1280x720", sharer.EncoderDetails);
+
+            sharer.ApplyStepForTest(0, "test");   // back to what was asked for
+            await Wait(() => sharer.RunFps == 60 && sharer.EncoderDetails.Contains("at 60 fps, 6000 kbit/s"), "step 0");
+            Assert.True(sharer.IsRunning);
+        }
+        finally
+        {
+            try { server.Kill(); } catch (InvalidOperationException) { }
+        }
+    }
+
+    // A Wayland share with no FFmpeg in it: a stand-in gst-launch-1.0 (a script that writes black NV12 pictures of the size it is asked for) takes the place of GStreamer,
+    // and a portal with no desktop behind it the place of the desktop's stream. The pictures are paced into the encoder in this program, which goes through the levels of
+    // adaptive quality and back. Does nothing where this is not Linux, or the libraries, FFmpeg's program (only to be found) or an NVIDIA card are missing.
+    [Fact]
+    public async Task A_Wayland_share_is_encoded_in_this_program_with_no_FFmpeg_capturing_and_goes_through_the_levels_of_adaptive_quality()
+    {
+        if (!OperatingSystem.IsLinux() || !FfmpegLibraries.IsAvailable || FfmpegLocator.Find() is not { } ffmpeg) return;
+        var dir = Directory.CreateTempSubdirectory("yaparr-gst-").FullName;
+        string oldPath = Environment.GetEnvironmentVariable("PATH") ?? "";
+        try
+        {
+            string Script(string name, string text)
+            {
+                var path = Path.Combine(dir, name);
+                File.WriteAllText(path, text.Replace("\r", ""));
+                File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+                return path;
+            }
+            Script("gst-inspect-1.0", "#!/bin/sh\nexit 0\n");
+            Script("gst-launch-1.0", """
+                #!/bin/sh
+                for a in "$@"; do
+                  case "$a" in
+                    video/x-raw*) w=$(echo "$a" | sed 's/.*width=\([0-9]*\).*/\1/'); h=$(echo "$a" | sed 's/.*height=\([0-9]*\).*/\1/') ;;
+                  esac
+                done
+                bytes=$((w * h * 3 / 2))
+                while true; do head -c "$bytes" /dev/zero || exit 0; sleep 0.02; done
+                """);
+            Environment.SetEnvironmentVariable("PATH", dir + Path.PathSeparator + oldPath);
+
+            using var portal = PortalScreenCast.ForTest(File.OpenHandle("/dev/null"), node: 57, width: 1280, height: 720);
+            var asked = new ScreenOptions
+            {
+                Portal = portal, X11Display = null, Fps = 60, Kbps = 6000, KeyFrameSeconds = 1, MaxWidth = 1920, MaxHeight = 1080,
+                Codec = ScreenCodec.H264, Encoder = HardwareEncoder.Nvenc, InProcessEncoder = true,
+            };
+            using var cluster = await MediaTreeTests.Cluster.StartAsync(2, fanout: 2, rootFanout: 2);
+            using var sharer = ScreenSharer.Start(cluster.Root, cluster.Rooms[0], "Test screen", asked, ffmpeg);
+            try { await TestUtil.WaitFor(() => sharer.Frames >= 60 || !sharer.IsRunning, 30_000); }
+            catch (TimeoutException) { output.WriteLine(sharer.Describe()); throw; }
+            output.WriteLine(sharer.Describe());
+            if (!sharer.InProcess) return;   // no NVIDIA encoder here
+            Assert.Contains("h264_nvenc 1280x720 at 60 fps", sharer.EncoderDetails);
+            Assert.Contains("no FFmpeg", sharer.EncoderDetails);
+            Assert.DoesNotContain("-f rawvideo", sharer.EncoderDetails.Replace("no FFmpeg", ""));   // no FFmpeg command line is in it
+
+            async Task Wait(Func<bool> done, string what)
+            {
+                long frames = sharer.Frames;
+                try { await TestUtil.WaitFor(() => done() && sharer.Frames >= frames + 40, 30_000); }
+                catch (TimeoutException) { output.WriteLine(what + ": " + sharer.Describe()); throw; }
+            }
+
+            sharer.ApplyStepForTest(1, "test");   // 1080p30: another frame rate, so GStreamer and the encoder start again
+            await Wait(() => sharer.RunFps == 30, "step 1");
+            Assert.Contains("at 30 fps, 4000 kbit/s", sharer.EncoderDetails);
+
+            sharer.ApplyStepForTest(QualityLadder.Steps - 1, "test");   // the lowest level: 720p30 at 2 Mbit/s
+            await Wait(() => sharer.EncoderDetails.Contains("at 30 fps, 2000 kbit/s"), "the lowest level");
+
+            sharer.ApplyStepForTest(0, "test");   // back to what was asked for
+            await Wait(() => sharer.RunFps == 60 && sharer.EncoderDetails.Contains("at 60 fps, 6000 kbit/s"), "step 0");
+            Assert.True(sharer.IsRunning);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PATH", oldPath);
+            try { Directory.Delete(dir, true); } catch (IOException) { }
+        }
+    }
+
     private static string? FindOnPath(string program) =>
         (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
             .Select(dir => Path.Combine(dir, program)).FirstOrDefault(File.Exists);
@@ -294,6 +418,16 @@ public class LinuxScreenTests
         string line = string.Join(' ', args);
         Assert.StartsWith("-q pipewiresrc fd=9 path=57 keepalive-time=33 do-timestamp=true ! videoconvert ! videoscale ! videorate skip-to-first=true max-duplication-time=500000000 ! ", line);
         Assert.Contains("video/x-raw,format=I420,width=1280,height=720,framerate=30/1", line);
+        Assert.EndsWith("! fdsink fd=1 sync=false", line);
+    }
+
+    [Fact]
+    public void For_the_encoder_in_this_program_GStreamer_writes_NV12_which_the_encoder_takes_as_it_is()
+    {
+        var args = PortalPipeline.GstArguments(Monitor1080, 9, new ScreenOptions { Fps = 30 }, nv12: true);
+        string line = string.Join(' ', args);
+        Assert.Contains("video/x-raw,format=NV12,width=1280,height=720,framerate=30/1", line);
+        Assert.DoesNotContain("I420", line);
         Assert.EndsWith("! fdsink fd=1 sync=false", line);
     }
 

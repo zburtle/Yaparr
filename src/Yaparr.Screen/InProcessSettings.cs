@@ -19,7 +19,9 @@ public enum InProcessMode
 /// Which <see cref="InProcessMode"/> a share starts with. On Windows it is the whole of it (capture and encoding here, the pictures on the card) wherever
 /// that can be done (FFmpeg's libraries next to the program, an NVIDIA card; anything else is a share as before, with a separate FFmpeg), and the
 /// environment variable YAPARR_INPROCESS changes it: <c>0</c> (or <c>off</c>) for a separate FFmpeg only, <c>1</c> for the encoder here only,
-/// <c>capture-cpu</c> for capture here with the pictures copied to memory, <c>capture</c> for the default spelled out. Elsewhere it is off.
+/// <c>capture-cpu</c> for capture here with the pictures copied to memory, <c>capture</c> for the default spelled out. On Linux the default is the encoder here
+/// (NVIDIA's, or an Intel or AMD card through VA-API) with a separate FFmpeg capturing the screen (X11) or the pictures GStreamer reads (Wayland); where the
+/// libraries are not there, a share is as before, with a separate FFmpeg.
 /// </summary>
 public static class InProcessSettings
 {
@@ -32,7 +34,7 @@ public static class InProcessSettings
             case "1" or "encoder": return (InProcessMode.Encoder, true);
             case "capture-cpu": return (InProcessMode.CaptureOnCpu, true);
             case "capture" or "on" or "auto" or "true": return (windows ? InProcessMode.CaptureOnCard : InProcessMode.Encoder, true);
-            default: return (windows ? InProcessMode.CaptureOnCard : InProcessMode.Off, false);
+            default: return (windows ? InProcessMode.CaptureOnCard : InProcessMode.Encoder, false);
         }
     }
 
