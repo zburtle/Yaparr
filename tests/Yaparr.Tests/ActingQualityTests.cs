@@ -30,7 +30,7 @@ public class ActingQualityTests(Xunit.Abstractions.ITestOutputHelper output)
             Assert.Equal(6000, source.EffectiveKbps);
             await TestUtil.WaitFor(() => !said.IsEmpty, 60_000);
             output.WriteLine(said.First());
-            Assert.StartsWith("adaptive quality: lowered to 1080p30 at 4.0 Mbit/s (step 1 of 2)", said.First());
+            Assert.StartsWith("adaptive quality: lowered to 1080p30 at 4.0 Mbit/s (step 1 of 3)", said.First());
             Assert.DoesNotContain("nothing is changed", said.First());
             Assert.True(sharer.ActingOnQuality);
             Assert.Equal(1, sharer.AppliedStep);
@@ -96,6 +96,9 @@ public class ActingQualityTests(Xunit.Abstractions.ITestOutputHelper output)
             Assert.Equal((4000, 30, 1920, 1080), (run.Kbps, run.Fps, run.MaxWidth, run.MaxHeight));
             sharer.SetAppliedStepForTest(2);
             run = sharer.RunOptions();
+            Assert.Equal((2800, 30, 1920, 1080), (run.Kbps, run.Fps, run.MaxWidth, run.MaxHeight));   // the same picture at 70%
+            sharer.SetAppliedStepForTest(3);
+            run = sharer.RunOptions();
             Assert.Equal((2000, 30, 1280, 720), (run.Kbps, run.Fps, run.MaxWidth, run.MaxHeight));
             sharer.SetAppliedStepForTest(0);
             Assert.Equal(60, sharer.RunOptions().Fps);
@@ -133,6 +136,24 @@ public class ActingQualityTests(Xunit.Abstractions.ITestOutputHelper output)
             Assert.Contains("so the quality is held", sharer.QualityNote);
         }
         finally { cts.Cancel(); foreach (var v in views) v.Dispose(); }
+    }
+
+    [Fact]
+    public async Task The_frame_rate_a_share_was_meant_to_send_is_averaged_over_the_time_it_ran_at_each_level()
+    {
+        using var c = await MediaTreeTests.Cluster.StartAsync(2, fanout: 2, rootFanout: 2);
+        using var source = c.Root.StartMedia(c.Rooms[0], "screen", "screen", kbps: 6000);
+        using var sharer = new ScreenSharer(source, Options(), "ffmpeg-that-is-never-started");
+        sharer.SetRunFpsForTest(60);
+        sharer.QualityTick();
+        await Task.Delay(1100);
+        sharer.QualityTick();
+        sharer.SetRunFpsForTest(30);
+        await Task.Delay(1100);
+        sharer.QualityTick();
+        var (fpsSeconds, seconds) = sharer.WantedFpsTotals;
+        Assert.InRange(seconds, 2.0, 2.6);
+        Assert.InRange(fpsSeconds / seconds, 42, 48);   // 60 for the first second, 30 for the second: about 45, not the 30 it ended at
     }
 
     [Fact]

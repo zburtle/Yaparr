@@ -962,6 +962,41 @@ public partial class MainView : UserControl
     private Chat? _watchedChat;
     private int _pictureWidth, _pictureHeight;
     private bool _watchWired;
+    private ScreenWatch? _watch;
+
+    // The picture stopped for a couple of seconds although the watch is still going (the sharer started again, a relay hiccuped, packets were lost): a notice over the
+    // last picture until pictures come again, the same as in the computer app (StreamInterruptionWatch). Looked at once a second, by the pictures the decoder has drawn.
+    private StreamInterruptionWatch _interruptions = new();
+    private readonly DispatcherTimer _interruptionTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+    private long _lastDrawn;
+    private bool _wasAttached, _connectionLost;
+
+    private void CheckInterruption()
+    {
+        if (_watch == null) return;
+        long now = Environment.TickCount64, drawn = _watch.Stats.Shown;
+        if (drawn != _lastDrawn)
+        {
+            _lastDrawn = drawn;
+            if (_interruptions.PictureShown(now).Change == InterruptionChange.Resumed) WatchInterrupted.IsVisible = false;
+        }
+        // The stream's own check: a parent that has not been heard from for a few seconds is let go and looked for again; that has a notice of its own.
+        if (_watch.Attached)
+        {
+            _wasAttached = true;
+            if (_connectionLost) { _connectionLost = false; WatchInterrupted.IsVisible = false; }
+        }
+        else if (_wasAttached && !_connectionLost)
+        {
+            _connectionLost = true;
+            WatchInterruptedText.Text = "Lost the connection to the screen. Reconnecting\u2026";
+            WatchInterrupted.IsVisible = true;
+        }
+        // Not while a notice of the watch's own is up (it could not start, or it failed), nor while the connection is lost.
+        var (change, _) = _interruptions.Tick(now, suppressed: WatchStatus.IsVisible || _connectionLost);
+        if (change == InterruptionChange.Interrupted) { WatchInterruptedText.Text = "The stream was interrupted. Reconnecting\u2026"; WatchInterrupted.IsVisible = true; }
+        else if (change == InterruptionChange.Cleared && !_connectionLost) WatchInterrupted.IsVisible = false;
+    }
 
     private void WatchClicked(object? sender, RoutedEventArgs e)
     {
@@ -972,11 +1007,13 @@ public partial class MainView : UserControl
         WatchTitle.Text = share.Name;
         WatchStatus.Text = "Waiting for the picture\u2026";
         WatchStatus.IsVisible = true;
+        WatchInterrupted.IsVisible = false;
         if (!_watchWired)
         {
             _watchWired = true;
+            _interruptionTimer.Tick += (_, _) => CheckInterruption();
             WatchHost.SurfaceReady += surface => Dispatcher.UIThread.Post(() => BeginWatching(surface));
-            WatchHost.SurfaceLost += () => _session?.StopWatching();
+            WatchHost.SurfaceLost += () => { _watch = null; WatchInterrupted.IsVisible = false; _session?.StopWatching(); };
             WatchArea.SizeChanged += (_, _) => FitWatchHost();
         }
         WatchPanel.IsVisible = true;
@@ -990,6 +1027,11 @@ public partial class MainView : UserControl
         try
         {
             var watch = _session.StartWatching(chat, share, surface);
+            _watch = watch;
+            _interruptions = new StreamInterruptionWatch();
+            _lastDrawn = 0;
+            _wasAttached = _connectionLost = false;
+            _interruptionTimer.Start();
             watch.PictureSize += (w, h) => Dispatcher.UIThread.Post(() =>
             {
                 _pictureWidth = w; _pictureHeight = h;
@@ -1017,6 +1059,9 @@ public partial class MainView : UserControl
 
     private void CloseWatch()
     {
+        _interruptionTimer.Stop();
+        _watch = null;
+        WatchInterrupted.IsVisible = false;
         _session?.StopWatching();
         WatchPanel.IsVisible = false;
         _watchedShare = null;

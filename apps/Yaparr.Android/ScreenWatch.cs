@@ -54,6 +54,9 @@ internal sealed class ScreenWatch : IDisposable
 
     public bool HasSound => _sound != null;
 
+    /// <summary>Whether the picture's stream is still joined to the sharer or whoever passes it on (false when that connection was lost and is being looked for again).</summary>
+    public bool Attached => _picture.Status.Attached;
+
     /// <summary>Pictures decoded and drawn, and frames dropped, for the diagnostics.</summary>
     public (long Shown, long Dropped) Stats => (_decoder.Shown, _decoder.Dropped);
 

@@ -447,7 +447,13 @@
         <!-- Watching a screen someone shares: the picture is drawn by the phone's video decoder on a native surface. -->
         <Border x:Name="WatchPanel" IsVisible="False" Background="Black">
             <Grid RowDefinitions="Auto,*,Auto">
-                <TextBlock x:Name="WatchTitle" Margin="16,56,16,10" FontWeight="SemiBold" FontSize="16" Foreground="White" TextTrimming="CharacterEllipsis" />
+                <StackPanel Grid.Row="0">
+                    <TextBlock x:Name="WatchTitle" Margin="16,56,16,10" FontWeight="SemiBold" FontSize="16" Foreground="White" TextTrimming="CharacterEllipsis" />
+                    <!-- The picture is drawn on a native view, which Avalonia content cannot be put over: so this notice has a place of its own, under the title. -->
+                    <Border x:Name="WatchInterrupted" Margin="16,0,16,10" Padding="12,6" CornerRadius="6" Background="#66FFAA00" IsVisible="False">
+                        <TextBlock x:Name="WatchInterruptedText" Foreground="White" FontSize="14" TextWrapping="Wrap" Text="The stream was interrupted. Reconnecting&#8230;" />
+                    </Border>
+                </StackPanel>
                 <Grid x:Name="WatchArea" Grid.Row="1">
                     <local:ScreenSurfaceHost x:Name="WatchHost" HorizontalAlignment="Center" VerticalAlignment="Center" Width="2" Height="2" />
                     <TextBlock x:Name="WatchStatus" Text="Waiting for the picture&#8230;" Foreground="#CCFFFFFF" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center" Margin="24" />

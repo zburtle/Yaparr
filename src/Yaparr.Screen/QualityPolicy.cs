@@ -35,9 +35,9 @@ public sealed class QualityPolicy
         public int MinSecondsBetweenChanges { get; init; } = 20;
         /// <summary>A step up followed by trouble within this long doubles the wait before the next.</summary>
         public int FlapSeconds { get; init; } = 60;
-        public int BackoffMaxSeconds { get; init; } = 300;
+        public int BackoffMaxSeconds { get; init; } = 900;
         /// <summary>After this long without trouble the wait for a step up falls back to <see cref="QuietSeconds"/>.</summary>
-        public int BackoffResetSeconds { get; init; } = 600;
+        public int BackoffResetSeconds { get; init; } = 1800;
         /// <summary>
         /// When no report arrives with viewers there (a report late over a link that loses much of what it carries), the count of trouble or quiet is held for
         /// this long, so that a gap does not wipe out seconds that were counted; after it, no report is no information and the count starts again.
@@ -146,13 +146,14 @@ public readonly record struct QualityLevel(int Kbps, int Fps, int Width, int Hei
 }
 
 /// <summary>
-/// The steps from the quality that was asked for down through the presets of the share dialog, one preset at a time: from 1080p at 60 frames a second the
-/// first step is 1080p30 and the second 720p30. A share that was asked for at the lowest preset (or the next to it) has no preset left for the last steps and
-/// goes down in bitrate instead (70% and 45% of the lowest preset's). Nothing goes below 500 kbit/s.
+/// The steps from the quality that was asked for down through the presets of the share dialog, one preset at a time, with the same picture at 70% of its
+/// bitrate before each drop in size: from 1080p at 60 frames a second the steps are 1080p30 at 4 Mbit/s, 1080p30 at 2.8 Mbit/s and 720p30 at 2 Mbit/s. The extra
+/// step is there because a link often carries something between two presets, and a size drop is the step a viewer notices most. A share asked for at a lower
+/// preset has fewer presets left and goes down in bitrate (70% each) for the rest. Nothing goes below 500 kbit/s, or above what was asked for.
 /// </summary>
 public static class QualityLadder
 {
-    public const int Steps = 3, FloorKbps = 500;
+    public const int Steps = 4, FloorKbps = 500;
 
     /// <summary>What the share dialog offers, lowest first: the box the picture is fitted into (never scaled up), the frame rate and the bitrate in kbit/s.</summary>
     public static readonly (int Width, int Height, int Fps, int Kbps)[] Presets =
@@ -167,23 +168,35 @@ public static class QualityLadder
     /// <paramref name="height"/>. A step never asks for more than the share did, in any of the three.
     /// </summary>
     public static QualityLevel For(int step, int kbps, int fps, int width, int height)
+        => Levels(kbps, fps, width, height)[Math.Clamp(step, 0, Steps - 1)];
+
+    /// <summary>All the levels, from the one asked for (step 0) down; always <see cref="Steps"/> of them.</summary>
+    public static IReadOnlyList<QualityLevel> Levels(int kbps, int fps, int width, int height)
     {
-        step = Math.Clamp(step, 0, Steps - 1);
-        if (step == 0) return new QualityLevel(kbps, fps, width, height);
+        var levels = new List<QualityLevel> { new(kbps, fps, width, height) };
         // The preset the share was asked for: the highest one that is not above it (none, when it is below them all).
         int asked = -1;
         for (int i = 0; i < Presets.Length; i++)
             if (Presets[i].Height <= height && Presets[i].Fps <= fps) asked = i;
-        int presetsBelow = Math.Max(asked, 0);
-        if (step <= presetsBelow)
+        for (int i = asked - 1; i >= 0 && levels.Count < Steps; i--)
         {
-            var p = Presets[asked - step];
-            return new QualityLevel(Math.Max(Math.Min(kbps, FloorKbps), Math.Min(kbps, p.Kbps)), Math.Min(fps, p.Fps), Math.Min(width, p.Width), Math.Min(height, p.Height));
+            var p = Presets[i];
+            var current = levels[^1];
+            var next = new QualityLevel(Math.Max(Math.Min(kbps, FloorKbps), Math.Min(kbps, p.Kbps)), Math.Min(fps, p.Fps), Math.Min(width, p.Width), Math.Min(height, p.Height));
+            // Before the picture gets smaller, the same picture at 70%, when that is still more than the smaller one gets.
+            if (next.Height < current.Height && levels.Count < Steps - 1)
+            {
+                int middle = Math.Max(Math.Min(current.Kbps, FloorKbps), (int)Math.Round(current.Kbps * 0.70));
+                if (middle > next.Kbps) levels.Add(current with { Kbps = middle });
+            }
+            levels.Add(next);
         }
-        // No preset left: the lowest one there is (or the share's own, when it is below them all) at a lower bitrate.
-        var low = asked >= 0 ? Presets[0] : (Width: width, Height: height, Fps: fps, Kbps: kbps);
-        int extra = step - presetsBelow;
-        int baseKbps = Math.Min(kbps, low.Kbps);
-        return new QualityLevel(Math.Max(Math.Min(baseKbps, FloorKbps), (int)Math.Round(baseKbps * (extra == 1 ? 0.70 : 0.45))), Math.Min(fps, low.Fps), Math.Min(width, low.Width), Math.Min(height, low.Height));
+        // No preset left to go to: the last level at 70% of its bitrate, again and again.
+        while (levels.Count < Steps)
+        {
+            var last = levels[^1];
+            levels.Add(last with { Kbps = Math.Max(Math.Min(last.Kbps, FloorKbps), (int)Math.Round(last.Kbps * 0.70)) });
+        }
+        return levels;
     }
 }
