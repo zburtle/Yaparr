@@ -741,7 +741,6 @@ public sealed partial class ScreenSharer : IDisposable
         var portal = run.Portal ?? throw new InvalidOperationException("There is no stream from the desktop to share.");
         var size = PortalPipeline.FrameSize(portal.Stream, run);
         _lastArguments = "gst-launch-1.0 " + string.Join(' ', PortalPipeline.GstArguments(portal.Stream, 0, run, nv12: true)) + "  (encoded in this program, no FFmpeg)";
-        _startedAt = DateTime.UtcNow;
 
         InProcessEncoder encoder;
         try { encoder = new InProcessEncoder(size.Width, size.Height, run, kind); }
