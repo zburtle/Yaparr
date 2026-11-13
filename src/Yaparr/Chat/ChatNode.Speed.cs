@@ -43,16 +43,23 @@ internal static class UploadPlan
     }
 
     /// <summary>
+    /// How many times the stream's bitrate a frame is sent at (3 unless the environment variable YAPARR_FRAME_PACE says another number, from 1.2 to 10): lower
+    /// spreads a key frame over more time, which a viewer on a weak Wi-Fi link may need, at the cost of a longer wait for each key frame.
+    /// </summary>
+    public static readonly double PaceMultiple = double.TryParse(Environment.GetEnvironmentVariable("YAPARR_FRAME_PACE"), System.Globalization.NumberStyles.Float,
+        System.Globalization.CultureInfo.InvariantCulture, out var asked) ? Math.Clamp(asked, 1.2, 10) : 3;
+
+    /// <summary>
     /// How fast the packets of one frame are spread out, in bytes per second for each copy sent. A frame goes out at three times the stream's bitrate, so a big
     /// key frame is over in a fraction of a second; but on a line that carries less than that, the burst fills the router's queue and packets are lost (a 6 Mbit/s
     /// screen went out at 18 Mbit/s from a line measured at 7.6 Mbit/s, with thousands of packets sent again a minute). So once the upload is measured the pace
     /// stays within four fifths of it, shared by <paramref name="copies"/> (the viewers the sharer sends to directly); and never under a fifth more than the
     /// stream itself, or the frames would queue behind the pace and hold the capture back. A fast line, and a stream that is far below the line, keep the 3x pace.
     /// </summary>
-    public static double FramePaceBytesPerSecond(long? measuredUpload, int kbps, int copies)
+    public static double FramePaceBytesPerSecond(long? measuredUpload, int kbps, int copies, double? multiple = null)
     {
         double stream = Math.Max(8, kbps) * 125.0;
-        double burst = Math.Max(256 * 1024, stream * 3);
+        double burst = Math.Max(256 * 1024, stream * (multiple ?? PaceMultiple));
         if (measuredUpload is not > 0) return burst;
         double line = measuredUpload.Value * 0.8 / Math.Max(1, copies);
         return Math.Min(burst, Math.Max(line, stream * 1.2));

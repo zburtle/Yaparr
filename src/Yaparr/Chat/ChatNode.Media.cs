@@ -152,9 +152,10 @@ public sealed class MediaSource : IDisposable
         uint id = Interlocked.Increment(ref _frameId);
         // Fast enough for a key frame to go out in a fraction of a second, slow enough not to overflow the buffers on the way or to fill a
         // home connection's queue, where a burst makes voice packets wait behind it.
-        int copies;
-        lock (_group.Gate) copies = _group.Children.Count;
-        double rate = UploadPlan.FramePaceBytesPerSecond(_node.MeasuredUploadBytesPerSecond, _group.Info.Kbps, copies);
+        int copies, kbps;
+        // The pace follows what the stream carries now, so that a sharer that lowered its bitrate also slows the burst of each key frame.
+        lock (_group.Gate) { copies = _group.Children.Count; kbps = _group.EffectiveKbps > 0 ? _group.EffectiveKbps : _group.Info.Kbps; }
+        double rate = UploadPlan.FramePaceBytesPerSecond(_node.MeasuredUploadBytesPerSecond, kbps, copies);
         long started = System.Diagnostics.Stopwatch.GetTimestamp();
         long sent = 0;
         for (int i = 0; i < count; i++)
