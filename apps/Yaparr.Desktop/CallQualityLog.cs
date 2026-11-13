@@ -111,7 +111,7 @@ public sealed class CallQualityLog
             double fps = (frames - _frames) / seconds, kbps = (bytes - _bytes) * 8 / 1000.0 / seconds;
             long resent = status.Retransmitted - _resent, dropped = status.Dropped - _dropped;
             long gap = sharer.TakeLongestGapMs();
-            double wanted = Math.Max(1, sharer.Options.Fps);
+            double wanted = Math.Max(1, sharer.RunFps);
             var figures = sharer.Figures();
             var interval = figures.Since(_figures);
             _figures = figures;

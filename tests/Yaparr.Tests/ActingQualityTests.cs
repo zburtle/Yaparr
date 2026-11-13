@@ -30,14 +30,14 @@ public class ActingQualityTests(Xunit.Abstractions.ITestOutputHelper output)
             Assert.Equal(6000, source.EffectiveKbps);
             await TestUtil.WaitFor(() => !said.IsEmpty, 60_000);
             output.WriteLine(said.First());
-            Assert.StartsWith("adaptive quality: lowered to 1080p60 at 4.2 Mbit/s (step 1 of 5)", said.First());
+            Assert.StartsWith("adaptive quality: lowered to 1080p30 at 4.0 Mbit/s (step 1 of 2)", said.First());
             Assert.DoesNotContain("nothing is changed", said.First());
             Assert.True(sharer.ActingOnQuality);
             Assert.Equal(1, sharer.AppliedStep);
-            Assert.Equal(4200, sharer.PendingKbpsForTest);   // waiting for the thread that encodes
-            Assert.Equal(4200, source.EffectiveKbps);
-            Assert.StartsWith("Quality lowered to 4.2 Mbit/s: 2 of 3 viewers lost frames for 10 s", sharer.AdaptiveLine);
-            Assert.Contains("acting on the first two steps", sharer.QualityNote);
+            Assert.Equal(4000, sharer.PendingKbpsForTest);   // waiting for the thread that encodes
+            Assert.Equal(4000, source.EffectiveKbps);
+            Assert.StartsWith("Quality lowered to 1080p30 at 4.0 Mbit/s: 2 of 3 viewers lost frames for 10 s", sharer.AdaptiveLine);
+            Assert.Contains("acting on the presets", sharer.QualityNote);
         }
         finally { foreach (var v in views) v.Dispose(); }
     }
@@ -68,6 +68,37 @@ public class ActingQualityTests(Xunit.Abstractions.ITestOutputHelper output)
             Assert.Equal(0, sharer.PendingKbpsForTest);
             Assert.Equal(6000, source.EffectiveKbps);
             Assert.Null(sharer.AdaptiveLine);
+        }
+        finally { foreach (var v in views) v.Dispose(); }
+    }
+
+    [Fact]
+    public async Task A_level_with_another_frame_rate_restarts_the_capture_and_one_with_the_same_only_changes_the_bitrate()
+    {
+        using var c = await MediaTreeTests.Cluster.StartAsync(4, fanout: 3, rootFanout: 3);
+        using var source = c.Root.StartMedia(c.Rooms[0], "screen", "screen", kbps: 6000);
+        var views = await c.WatchAllAsync(source.Info.Id);
+        using var sharer = new ScreenSharer(source, Options(), "ffmpeg-that-is-never-started");
+        var said = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        sharer.QualityDecided += said.Enqueue;
+        try
+        {
+            views[0].QualityProvider = () => Bad;
+            views[1].QualityProvider = () => Bad;
+            views[2].QualityProvider = () => Good;
+            sharer.SetRestartableForTest(true);   // as when the capture runs in this program, at 1080p60
+            sharer.StartQualityWatchForTest();
+            await TestUtil.WaitFor(() => !said.IsEmpty, 60_000);
+            Assert.True(sharer.RestartPendingForTest);              // 1080p60 to 1080p30: another frame rate
+            Assert.Equal(0, sharer.PendingKbpsForTest);             // the new run starts at the level's bitrate
+            Assert.Equal(1, sharer.AppliedStep);
+            var run = sharer.RunOptions();
+            Assert.Equal((4000, 30, 1920, 1080), (run.Kbps, run.Fps, run.MaxWidth, run.MaxHeight));
+            sharer.SetAppliedStepForTest(2);
+            run = sharer.RunOptions();
+            Assert.Equal((2000, 30, 1280, 720), (run.Kbps, run.Fps, run.MaxWidth, run.MaxHeight));
+            sharer.SetAppliedStepForTest(0);
+            Assert.Equal(60, sharer.RunOptions().Fps);
         }
         finally { foreach (var v in views) v.Dispose(); }
     }

@@ -6,14 +6,31 @@ namespace Yaparr.Screen;
 // down and nothing else happens (docs/adaptive-quality.md). The first release that has it is for finding out how often it would act.
 public sealed partial class ScreenSharer
 {
-    /// <summary>How many steps of the ladder are acted on so far: the bitrate ones (1 and 2). The others are only written down.</summary>
-    internal const int ActedSteps = 2;
+    /// <summary>How many steps of the ladder there are below the quality asked for; all of them are acted on when the share can (see <see cref="ActingOnQuality"/>).</summary>
+    internal const int ActedSteps = QualityLadder.Steps - 1;
 
     private readonly QualityPolicy _policy;
     // The encoder of this program is running (and takes a new bitrate between pictures); the request waits here for the thread that encodes.
     private volatile bool _encoderLive;
     private int _pendingKbps;
     private volatile int _appliedStep;
+    // What the capture and the encoder of this run were built for (the frame rate and the box of the picture), and whether the next level needs another run.
+    private sealed record RunShape(int Fps, int Width, int Height);
+    private volatile RunShape? _shape;
+    private volatile bool _levelRestart;
+    private bool _restartableForTest;
+
+    /// <summary>The frame rate this share runs at now: the one asked for, or the one of the level it was lowered to.</summary>
+    public int RunFps => _shape?.Fps ?? _options.Fps;
+
+    // The options for a run of the capture: the ones asked for, or at a lower level of adaptive quality those of the level.
+    internal ScreenOptions RunOptions()
+    {
+        int step = _appliedStep;
+        if (step == 0) return _options;
+        var l = LevelOf(step);
+        return _options.WithQuality(l.Kbps, l.Fps, l.Width, l.Height);
+    }
     private readonly Queue<(long At, long Bytes, long Resent, long Dropped)> _linkWindow = new();
     private Timer? _qualityTimer;
     private MediaQuality _room;
@@ -40,6 +57,9 @@ public sealed partial class ScreenSharer
     public string? QualityNote => _qualityNote;
 
     internal void StartQualityWatchForTest() { _encoderLive = true; StartQualityWatch(); }
+    internal bool RestartPendingForTest => _levelRestart;
+    internal void SetRestartableForTest(bool restartable) { _restartableForTest = restartable; _shape = new RunShape(_options.Fps, _options.MaxWidth, _options.MaxHeight); }
+    internal void SetAppliedStepForTest(int step) => _appliedStep = step;
     internal int PendingKbpsForTest => Volatile.Read(ref _pendingKbps);
     internal void SetEncoderLiveForTest(bool live) => _encoderLive = live;
 
@@ -50,10 +70,23 @@ public sealed partial class ScreenSharer
     public int AppliedStep => _appliedStep;
 
     /// <summary>What the share is doing about its viewers, in words, or null while it is at the quality asked for: "Quality lowered to 2.7 Mbit/s: 3 of 4 viewers lost frames for 10 s".</summary>
-    public string? AdaptiveLine => _appliedStep == 0 ? null : $"Quality lowered to {Describe(LevelOf(_appliedStep).Kbps)}: {_appliedWhy}";
+    public string? AdaptiveLine => _appliedStep == 0 ? null : $"Quality lowered to {LevelOf(_appliedStep).Describe()}: {_appliedWhy}";
     private volatile string _appliedWhy = "";
 
-    private static string Describe(int kbps) => kbps >= 1000 ? $"{kbps / 1000.0:0.#} Mbit/s" : $"{kbps} kbit/s";
+    // Puts a level into effect. A level with another frame rate or size needs the capture and the encoder built again (a second or so without pictures, then a
+    // key frame); one with the same only needs the encoder told the bitrate. Where the capture is not here, only the bitrate can follow.
+    private void ApplyStep(int step, string why)
+    {
+        var next = LevelOf(step);
+        bool restart = (_captureHere != null || _restartableForTest) && _shape is { } shape && (shape.Fps != next.Fps || shape.Width != next.Width || shape.Height != next.Height);
+        _appliedStep = step;
+        _appliedWhy = why;
+        _source.EffectiveKbps = next.Kbps;
+        if (restart) { Volatile.Write(ref _pendingKbps, 0); _levelRestart = true; }
+        else Volatile.Write(ref _pendingKbps, next.Kbps);
+    }
+
+    internal void ApplyStepForTest(int step, string why) => ApplyStep(step, why);
 
     // Called on the thread that encodes, between two pictures.
     private void ApplyPendingBitrate(InProcessEncoder encoder)
@@ -74,11 +107,7 @@ public sealed partial class ScreenSharer
     }
 
     // The level a step stands for, for the picture this share has (before the first picture, the largest the options allow).
-    private QualityLevel LevelOf(int step)
-    {
-        var (width, height) = _picture ?? (_options.MaxWidth, _options.MaxHeight);
-        return QualityLadder.For(step, _options.Kbps, _options.Fps, width, height);
-    }
+    private QualityLevel LevelOf(int step) => QualityLadder.For(step, _options.Kbps, _options.Fps, _options.MaxWidth, _options.MaxHeight);
 
     internal void QualityTick()
     {
@@ -99,7 +128,7 @@ public sealed partial class ScreenSharer
             var decision = _policy.Tick(now, new RoomQuality(room.Viewers, room.Troubled, room.WorstFps, room.Lossy), own, _source.Viewers.Count);
             string level = LevelOf(_policy.Step).Describe();
             bool acting = ActingOnQuality;
-            _qualityNote = $"{(acting ? "acting on the first two steps (the bitrate)" : "shadow mode, nothing is changed")}: {(room.Viewers == 0 ? "no viewer has reported" : $"{room.Viewers} viewers reported, {room.Troubled} in trouble, worst {room.WorstFps:0} fps")}; "
+            _qualityNote = $"{(acting ? "acting on the presets" : "shadow mode, nothing is changed")}: {(room.Viewers == 0 ? "no viewer has reported" : $"{room.Viewers} viewers reported, {room.Troubled} in trouble, worst {room.WorstFps:0} fps")}; "
                            + (_policy.Step == 0 ? $"{(acting ? "at" : "would be at")} the quality asked for" : $"{(acting ? "at" : "would be at")} step {_policy.Step} of {QualityLadder.Steps - 1}: {level}");
             if (decision.Changed)
             {
@@ -107,11 +136,7 @@ public sealed partial class ScreenSharer
                 bool lowering = decision.Step > _lastShadowStep;
                 if (acting && decision.Step <= ActedSteps)
                 {
-                    int kbps = LevelOf(decision.Step).Kbps;
-                    Volatile.Write(ref _pendingKbps, kbps);
-                    _source.EffectiveKbps = kbps;
-                    _appliedStep = decision.Step;
-                    _appliedWhy = decision.Why ?? "";
+                    ApplyStep(decision.Step, decision.Why ?? "");
                     string done = decision.Step == 0 ? "back to the quality asked for" : $"{(lowering ? "lowered" : "raised")} to {level} (step {decision.Step} of {QualityLadder.Steps - 1})";
                     QualityDecided?.Invoke($"adaptive quality: {done}: {decision.Why}");
                 }

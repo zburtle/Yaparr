@@ -134,26 +134,44 @@ public readonly record struct QualityLevel(int Kbps, int Fps, int Width, int Hei
 }
 
 /// <summary>
-/// The steps from the quality that was asked for down to the floor: first the bitrate (nobody notices), then the frame rate, and last the size (the
-/// only step that makes a viewer's decoder start again). Nothing goes below 500 kbit/s, 15 frames a second or 540 lines.
+/// The steps from the quality that was asked for down through the presets of the share dialog, one preset at a time: from 1080p at 60 frames a second the
+/// first step is 1080p30 and the second 720p30. A share that was asked for at the lowest preset (or the next to it) has no preset left for the last steps and
+/// goes down in bitrate instead (70% and 45% of the lowest preset's). Nothing goes below 500 kbit/s.
 /// </summary>
 public static class QualityLadder
 {
-    public const int Steps = 6, FloorKbps = 500, FloorFps = 15, FloorHeight = 540;
+    public const int Steps = 3, FloorKbps = 500;
 
-    /// <summary>The level of <paramref name="step"/> for a share asked for with <paramref name="kbps"/> and <paramref name="fps"/>, with a picture of <paramref name="width"/> x <paramref name="height"/>.</summary>
+    /// <summary>What the share dialog offers, lowest first: the box the picture is fitted into (never scaled up), the frame rate and the bitrate in kbit/s.</summary>
+    public static readonly (int Width, int Height, int Fps, int Kbps)[] Presets =
+    {
+        (1280, 720, 30, 2000),
+        (1920, 1080, 30, 4000),
+        (1920, 1080, 60, 6000),
+    };
+
+    /// <summary>
+    /// The level of <paramref name="step"/> for a share asked for with <paramref name="kbps"/> and <paramref name="fps"/>, in a box of <paramref name="width"/> x
+    /// <paramref name="height"/>. A step never asks for more than the share did, in any of the three.
+    /// </summary>
     public static QualityLevel For(int step, int kbps, int fps, int width, int height)
     {
         step = Math.Clamp(step, 0, Steps - 1);
-        double bitrate = step switch { 0 => 1.0, 1 => 0.70, 2 => 0.45, 3 => 0.45, 4 => 0.30, _ => 0.45 };
-        int divisor = step switch { 3 => 2, 4 => 3, _ => 1 };
-        int w = width, h = height;
-        if (step == 5)
+        if (step == 0) return new QualityLevel(kbps, fps, width, height);
+        // The preset the share was asked for: the highest one that is not above it (none, when it is below them all).
+        int asked = -1;
+        for (int i = 0; i < Presets.Length; i++)
+            if (Presets[i].Height <= height && Presets[i].Fps <= fps) asked = i;
+        int presetsBelow = Math.Max(asked, 0);
+        if (step <= presetsBelow)
         {
-            // One size down: 1080 to 720, 720 to 540, and nothing below 540. The shape is kept, both sides even.
-            int to = height > 720 ? 720 : height > FloorHeight ? FloorHeight : height;
-            if (to < height) { w = Math.Max(2, (int)Math.Round(width * (double)to / height) / 2 * 2); h = to; }
+            var p = Presets[asked - step];
+            return new QualityLevel(Math.Max(Math.Min(kbps, FloorKbps), Math.Min(kbps, p.Kbps)), Math.Min(fps, p.Fps), Math.Min(width, p.Width), Math.Min(height, p.Height));
         }
-        return new QualityLevel(Math.Max(Math.Min(kbps, FloorKbps), (int)Math.Round(kbps * bitrate)), Math.Max(Math.Min(fps, FloorFps), fps / divisor), w, h);
+        // No preset left: the lowest one there is (or the share's own, when it is below them all) at a lower bitrate.
+        var low = asked >= 0 ? Presets[0] : (Width: width, Height: height, Fps: fps, Kbps: kbps);
+        int extra = step - presetsBelow;
+        int baseKbps = Math.Min(kbps, low.Kbps);
+        return new QualityLevel(Math.Max(Math.Min(baseKbps, FloorKbps), (int)Math.Round(baseKbps * (extra == 1 ? 0.70 : 0.45))), Math.Min(fps, low.Fps), Math.Min(width, low.Width), Math.Min(height, low.Height));
     }
 }

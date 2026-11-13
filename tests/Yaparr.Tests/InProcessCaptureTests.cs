@@ -130,4 +130,47 @@ public class InProcessCaptureTests(Xunit.Abstractions.ITestOutputHelper output)
         Assert.Equal(TimeSpan.Zero, sharer.CaptureCpu);
         Assert.Equal(0, figures.Restarts);
     }
+
+    [Fact]
+    public async Task A_real_share_lowered_to_another_frame_rate_and_size_builds_the_capture_and_encoder_again_and_goes_on_sending()
+    {
+        if (!OperatingSystem.IsWindows() || !FfmpegLibraries.IsAvailable) return;
+        if (FfmpegLocator.Find() is not { } ffmpeg) return;
+        if (Displays.List().FirstOrDefault() is not { } display) return;
+
+        // Asked for at the top preset: 1080p60 at 6 Mbit/s (the pictures are the monitor's, scaled down to the box).
+        var asked = new ScreenOptions
+        {
+            Display = display, X11Display = null, Fps = 60, Kbps = 6000, KeyFrameSeconds = 1, MaxWidth = 1920, MaxHeight = 1080,
+            Codec = ScreenCodec.H264, Encoder = HardwareEncoder.Nvenc, InProcessEncoder = true, InProcessCapture = true, CaptureOnCard = true,
+        };
+        using var cluster = await MediaTreeTests.Cluster.StartAsync(2, fanout: 2, rootFanout: 2);
+        using var sharer = ScreenSharer.Start(cluster.Root, cluster.Rooms[0], "Test screen", asked, ffmpeg);
+        try { await TestUtil.WaitFor(() => sharer.Frames >= 120, 30_000); }
+        catch (TimeoutException) { output.WriteLine(sharer.Describe()); throw; }
+        if (!sharer.InProcess || !sharer.CaptureInProcess) return;   // no NVIDIA encoder here, or libraries too old for the capture
+        Assert.Equal(60, sharer.RunFps);
+        var before = sharer.PictureSize!.Value;
+
+        sharer.ApplyStepForTest(1, "test");   // 1080p30
+        long frames = sharer.Frames;
+        await TestUtil.WaitFor(() => sharer.RunFps == 30 && sharer.Frames >= frames + 60, 30_000);
+        output.WriteLine($"step 1: {sharer.PictureSize} at {sharer.RunFps} fps, {sharer.EncoderDetails}");
+
+        Assert.Contains("at 30 fps, 4000 kbit/s", sharer.EncoderDetails);
+
+        sharer.ApplyStepForTest(2, "test");   // 720p30
+        frames = sharer.Frames;
+        await TestUtil.WaitFor(() => sharer.PictureSize is { Height: <= 720 } && sharer.Frames >= frames + 60, 30_000);
+        output.WriteLine($"step 2: {sharer.PictureSize} at {sharer.RunFps} fps, {sharer.EncoderDetails}");
+        Assert.Contains("at 30 fps, 2000 kbit/s", sharer.EncoderDetails);
+        Assert.True(sharer.PictureSize!.Value.Width <= 1280 && sharer.PictureSize.Value.Height <= 720);
+
+        sharer.ApplyStepForTest(0, "test");   // back to what was asked for
+        frames = sharer.Frames;
+        await TestUtil.WaitFor(() => sharer.RunFps == 60 && sharer.Frames >= frames + 120, 30_000);
+        Assert.Equal(before, sharer.PictureSize!.Value);
+        Assert.Contains("at 60 fps, 6000 kbit/s", sharer.EncoderDetails);
+        Assert.True(sharer.IsRunning);
+    }
 }
