@@ -167,7 +167,8 @@ public sealed unsafe class InProcessEncoder : IDisposable
     /// </summary>
     public InProcessEncoder(int width, int height, ScreenOptions options, InProcessCapture? capture) : this(width, height, options, capture, HardwareEncoder.Nvenc) { }
 
-    private InProcessEncoder(int width, int height, ScreenOptions options, InProcessCapture? capture, HardwareEncoder kind)
+    /// <summary>An encoder for a card (see <see cref="Kind"/>) that takes the pictures of <paramref name="capture"/> as they are (NV12 in memory, or on NVIDIA's card).</summary>
+    public InProcessEncoder(int width, int height, ScreenOptions options, InProcessCapture? capture, HardwareEncoder kind)
     {
         if (!FfmpegLibraries.TryLoad(out var why)) throw new PlatformNotSupportedException(why);
         if (width < 16 || height < 16 || width % 2 != 0 || height % 2 != 0) throw new ArgumentException($"A picture of {width}x{height} cannot be encoded.");
@@ -267,11 +268,14 @@ public sealed unsafe class InProcessEncoder : IDisposable
     }
 
     // Copies the NV12 picture in _frame to a picture on the card, which is what the encoder takes.
-    private AVFrame* UploadFrame()
+    private AVFrame* UploadFrame() => UploadFrom(_frame);
+
+    // The same for any NV12 picture in memory (the capture's, as it is).
+    private AVFrame* UploadFrom(AVFrame* picture)
     {
         ffmpeg.av_frame_unref(_uploaded);
         Check(ffmpeg.av_hwframe_get_buffer(_uploadFrames, _uploaded, 0), "getting a picture on the graphics card");
-        Check(ffmpeg.av_hwframe_transfer_data(_uploaded, _frame, 0), "copying a picture to the graphics card");
+        Check(ffmpeg.av_hwframe_transfer_data(_uploaded, picture, 0), "copying a picture to the graphics card");
         return _uploaded;
     }
 
@@ -319,6 +323,16 @@ public sealed unsafe class InProcessEncoder : IDisposable
         var format = _onCard ? AVPixelFormat.AV_PIX_FMT_D3D11 : AVPixelFormat.AV_PIX_FMT_NV12;
         if (frame->format != (int)format || frame->width != Width || frame->height != Height)
             throw new ArgumentException($"The encoder takes {(_onCard ? "Direct3D 11" : "NV12")} pictures of {Width}x{Height}, not {frame->width}x{frame->height}.", nameof(picture));
+        if (Kind == HardwareEncoder.Vaapi)
+        {
+            // Up to the card first (the capture's picture is not changed: it may be repeated by the share's clock), and that is what is encoded.
+            var onCard = UploadFrom(frame);
+            onCard->pts = _pts++;
+            onCard->pict_type = forceKey ? AVPictureType.AV_PICTURE_TYPE_I : AVPictureType.AV_PICTURE_TYPE_NONE;
+            Check(ffmpeg.avcodec_send_frame(_context, onCard), "encoding a picture");
+            ReceivePackets(output);
+            return;
+        }
         frame->pts = _pts++;
         frame->pict_type = forceKey ? AVPictureType.AV_PICTURE_TYPE_I : AVPictureType.AV_PICTURE_TYPE_NONE;
         Check(ffmpeg.avcodec_send_frame(_context, frame), "encoding a picture");

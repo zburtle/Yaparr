@@ -9,7 +9,7 @@ public class InProcessSettingsTests
     [InlineData(null, true, InProcessMode.CaptureOnCard, false)]    // the default on Windows: all of it
     [InlineData("", true, InProcessMode.CaptureOnCard, false)]
     [InlineData("something else", true, InProcessMode.CaptureOnCard, false)]
-    [InlineData(null, false, InProcessMode.Encoder, false)]         // elsewhere (Linux): the encoder here, a separate FFmpeg captures
+    [InlineData(null, false, InProcessMode.CaptureOnCpu, false)]    // elsewhere (Linux): the encoder and the X11 capture here
     [InlineData("0", true, InProcessMode.Off, true)]
     [InlineData("off", true, InProcessMode.Off, true)]
     [InlineData("OFF", false, InProcessMode.Off, true)]
@@ -19,7 +19,7 @@ public class InProcessSettingsTests
     [InlineData("capture-cpu", true, InProcessMode.CaptureOnCpu, true)]
     [InlineData("capture", true, InProcessMode.CaptureOnCard, true)]
     [InlineData(" Capture ", true, InProcessMode.CaptureOnCard, true)]
-    [InlineData("capture", false, InProcessMode.Encoder, true)]     // capture here is Windows only so far
+    [InlineData("capture", false, InProcessMode.CaptureOnCpu, true)] // on Linux the pictures are in memory (an X11 screen)
     public void The_environment_variable_says_how_much_is_done_in_this_program(string? value, bool windows, InProcessMode mode, bool asked)
         => Assert.Equal((mode, asked), InProcessSettings.Parse(value, windows));
 

@@ -5,9 +5,11 @@ using FFmpeg.AutoGen;
 namespace Yaparr.Screen;
 
 /// <summary>
-/// Windows Graphics Capture inside this program, through FFmpeg's libraries instead of a separate FFmpeg that writes raw pictures to a pipe: the same
+/// Windows Graphics Capture, or on Linux an X11 screen (FFmpeg's <c>x11grab</c> device), inside this program, through FFmpeg's libraries instead of a separate FFmpeg that writes raw pictures to a pipe: the same
 /// filter chain (<see cref="FfmpegArgs.CaptureFilter"/>: capture, copy back to memory, scale to fit, NV12), run as a filter graph whose output is pulled
-/// here, so a picture goes from the capture to the encoder without a child process, a pipe, or a copy in between.
+/// here, so a picture goes from the capture to the encoder without a child process, a pipe, or a copy in between. (On X11 the pictures are read from the
+/// device, put into a graph that scales and converts them the same way, and pulled from it: x11grab hands over a picture at the frame rate whether or not the
+/// screen changed, and there is nothing on a graphics card to keep them on.)
 /// <para>
 /// The capture hands over pictures when the screen changes (about 50 a second when something moves, none when nothing does), so a thread pulls them
 /// and keeps the newest; <see cref="TakeNewest"/> gives the share the picture to encode at each tick of its own clock, which repeats the last one when
@@ -33,6 +35,11 @@ public sealed unsafe class InProcessCapture : IDisposable
     private readonly TaskCompletionSource _first = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private long _pictures, _emptyPolls;
     private AVBufferRef* _hardwareFrames;   // with pictures on the card: what the encoder needs to read them
+    private const int BuffersrcKeepRef = 8;   // AV_BUFFERSRC_FLAG_KEEP_REF
+    private AVFormatContext* _x11;          // on X11: the screen grabber that the pictures are read from
+    private AVFilterContext* _x11Source;    // and where they go into the graph
+    private AVPixelFormat _x11Format;
+    private int _x11Width, _x11Height;
 
     /// <summary>The size of the pictures (known once the first has come; see <see cref="WaitForFirstAsync"/>).</summary>
     public int Width { get; private set; }
@@ -59,34 +66,41 @@ public sealed unsafe class InProcessCapture : IDisposable
     public InProcessCapture(ScreenOptions options, bool onCard = false)
     {
         OnCard = onCard;
-        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Capture in this program is only for Windows Graphics Capture so far.");
+        bool x11 = OperatingSystem.IsLinux() && options.X11Display is { Length: > 0 };
+        if (!x11 && !OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Capture in this program is for Windows Graphics Capture and, on Linux, for an X11 screen.");
+        if (x11 && onCard) throw new InvalidOperationException("An X11 screen is read from memory: there is no graphics card to keep its pictures on.");
         if (!FfmpegLibraries.TryLoad(out var why)) throw new PlatformNotSupportedException(why);
-        Graph = (onCard ? FfmpegArgs.CaptureFilterOnCard(options) : FfmpegArgs.CaptureFilter(options, raw: true))
-                ?? throw new InvalidOperationException("The size of the picture is not known, so it cannot be scaled on the graphics card.");
+        Graph = x11 ? X11GraphText(options)
+                    : (onCard ? FfmpegArgs.CaptureFilterOnCard(options) : FfmpegArgs.CaptureFilter(options, raw: true))
+                      ?? throw new InvalidOperationException("The size of the picture is not known, so it cannot be scaled on the graphics card.");
         _graph = ffmpeg.avfilter_graph_alloc();
         try
         {
             AVFilterContext* sink = null;
             Check(ffmpeg.avfilter_graph_create_filter(&sink, ffmpeg.avfilter_get_by_name("buffersink"), "out", null, null, _graph), "creating the end of the capture graph");
             _sink = sink;
-            var inputs = ffmpeg.avfilter_inout_alloc();
-            inputs->name = ffmpeg.av_strdup("out");
-            inputs->filter_ctx = sink;
-            inputs->pad_idx = 0;
-            inputs->next = null;
-            AVFilterInOut* outputs = null;
-            // Where FFmpeg lacks the capture filter or the options of the October 2026 fixes it says so here; the message is kept as it is, because the share
-            // looks for those words to tell the person that the libraries are too old.
-            int parsed = ffmpeg.avfilter_graph_parse_ptr(_graph, Graph, &inputs, &outputs, null);
-            ffmpeg.avfilter_inout_free(&inputs);
-            ffmpeg.avfilter_inout_free(&outputs);
-            Check(parsed, "building the capture graph");
-            Check(ffmpeg.avfilter_graph_config(_graph, null), "starting the capture");
-            if (onCard)
+            if (x11) BuildX11(options, sink);
+            else
             {
-                var frames = ffmpeg.av_buffersink_get_hw_frames_ctx(_sink);
-                if (frames == null) throw new InvalidOperationException("The capture does not keep its pictures on the graphics card.");
-                _hardwareFrames = ffmpeg.av_buffer_ref(frames);
+                var inputs = ffmpeg.avfilter_inout_alloc();
+                inputs->name = ffmpeg.av_strdup("out");
+                inputs->filter_ctx = sink;
+                inputs->pad_idx = 0;
+                inputs->next = null;
+                AVFilterInOut* outputs = null;
+                // Where FFmpeg lacks the capture filter or the options of the October 2026 fixes it says so here; the message is kept as it is, because the share
+                // looks for those words to tell the person that the libraries are too old.
+                int parsed = ffmpeg.avfilter_graph_parse_ptr(_graph, Graph, &inputs, &outputs, null);
+                ffmpeg.avfilter_inout_free(&inputs);
+                ffmpeg.avfilter_inout_free(&outputs);
+                Check(parsed, "building the capture graph");
+                Check(ffmpeg.avfilter_graph_config(_graph, null), "starting the capture");
+                if (onCard)
+                {
+                    var frames = ffmpeg.av_buffersink_get_hw_frames_ctx(_sink);
+                    if (frames == null) throw new InvalidOperationException("The capture does not keep its pictures on the graphics card.");
+                    _hardwareFrames = ffmpeg.av_buffer_ref(frames);
+                }
             }
         }
         catch
@@ -94,10 +108,130 @@ public sealed unsafe class InProcessCapture : IDisposable
             Dispose();
             throw;
         }
-        // Without this the wait for the next picture is a sleep of up to 15 ms, which is nearly a whole picture at 60 a second.
-        if (timeBeginPeriod(1) == 0) _timerRaised = true;
-        _thread = new Thread(Pull) { IsBackground = true, Name = "Screen capture" };
+        // Without this the wait for the next picture is a sleep of up to 15 ms, which is nearly a whole picture at 60 a second (Windows).
+        if (OperatingSystem.IsWindows() && timeBeginPeriod(1) == 0) _timerRaised = true;
+        _thread = new Thread(x11 ? PullX11 : Pull) { IsBackground = true, Name = "Screen capture" };
         _thread.Start();
+    }
+
+    // ---- X11
+
+    private static string X11Input(ScreenOptions o)
+        => o.WindowHandle != null ? o.X11Display! : $"{o.X11Display}+{(o.Display?.X ?? 0).ToString(System.Globalization.CultureInfo.InvariantCulture)},{(o.Display?.Y ?? 0).ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+
+    // The filter chain after the grabber, the same text the command line uses (FfmpegArgs.CaptureX11): scale to fit the box (never up, the shape kept, even numbers), NV12.
+    private static string X11Scale(ScreenOptions o) => $"scale='min({o.MaxWidth},iw)':'min({o.MaxHeight},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=nv12";
+
+    private static string X11GraphText(ScreenOptions o)
+    {
+        if (o.WindowHandle == null && o.Display == null) throw new ArgumentException("Choose a monitor or a window to share.", nameof(o));
+        string window = o.WindowHandle is { } w ? $" -window_id 0x{w.ToString("X", System.Globalization.CultureInfo.InvariantCulture)}" : o.Display is { Width: > 0, Height: > 0 } d ? $" -video_size {d.Width}x{d.Height}" : "";
+        return $"x11grab -framerate {o.Fps} -draw_mouse {(o.ShowCursor ? 1 : 0)}{window} -i {X11Input(o)}  ->  {X11Scale(o)}";
+    }
+
+    // Opens the screen grabber with the options of the command line, and makes the graph its pictures go through.
+    private void BuildX11(ScreenOptions o, AVFilterContext* sink)
+    {
+        ffmpeg.avdevice_register_all();
+        var format = ffmpeg.av_find_input_format("x11grab");
+        if (format == null) throw new PlatformNotSupportedException("These FFmpeg libraries cannot copy an X11 screen (no x11grab).");
+        AVDictionary* options = null;
+        var c = System.Globalization.CultureInfo.InvariantCulture;
+        ffmpeg.av_dict_set(&options, "framerate", o.Fps.ToString(c), 0);
+        ffmpeg.av_dict_set(&options, "draw_mouse", o.ShowCursor ? "1" : "0", 0);
+        if (o.WindowHandle is { } window) ffmpeg.av_dict_set(&options, "window_id", "0x" + window.ToString("X", c), 0);   // the window keeps the size it had when sharing began
+        else if (o.Display is { Width: > 0, Height: > 0 } shown) ffmpeg.av_dict_set(&options, "video_size", $"{shown.Width}x{shown.Height}", 0);
+        AVFormatContext* context = null;
+        int opened = ffmpeg.avformat_open_input(&context, X11Input(o), format, &options);
+        ffmpeg.av_dict_free(&options);
+        Check(opened, "opening the X11 screen");
+        _x11 = context;
+        if (context->nb_streams < 1) throw new InvalidOperationException("The X11 screen gave no picture.");
+        var parameters = context->streams[0]->codecpar;
+        (_x11Width, _x11Height, _x11Format) = (parameters->width, parameters->height, (AVPixelFormat)parameters->format);
+        var timeBase = context->streams[0]->time_base;
+        string args = $"video_size={_x11Width}x{_x11Height}:pix_fmt={(int)_x11Format}:time_base={timeBase.num}/{timeBase.den}:pixel_aspect=1/1";
+        AVFilterContext* source = null;
+        Check(ffmpeg.avfilter_graph_create_filter(&source, ffmpeg.avfilter_get_by_name("buffer"), "in", args, null, _graph), "creating the start of the capture graph");
+        _x11Source = source;
+        var inputs = ffmpeg.avfilter_inout_alloc();
+        var outputs = ffmpeg.avfilter_inout_alloc();
+        outputs->name = ffmpeg.av_strdup("in");
+        outputs->filter_ctx = source;
+        outputs->pad_idx = 0;
+        outputs->next = null;
+        inputs->name = ffmpeg.av_strdup("out");
+        inputs->filter_ctx = sink;
+        inputs->pad_idx = 0;
+        inputs->next = null;
+        int parsed = ffmpeg.avfilter_graph_parse_ptr(_graph, X11Scale(o), &inputs, &outputs, null);
+        ffmpeg.avfilter_inout_free(&inputs);
+        ffmpeg.avfilter_inout_free(&outputs);
+        Check(parsed, "building the capture graph");
+        Check(ffmpeg.avfilter_graph_config(_graph, null), "starting the capture");
+    }
+
+    // The thread of an X11 share: reads a picture from the grabber (which waits for the next frame time), puts it through the graph and keeps the newest.
+    private void PullX11()
+    {
+        var packet = ffmpeg.av_packet_alloc();
+        var raw = ffmpeg.av_frame_alloc();
+        var frame = ffmpeg.av_frame_alloc();
+        try
+        {
+            int rowBytes = ffmpeg.av_image_get_linesize(_x11Format, _x11Width, 0);
+            while (!_stop)
+            {
+                int result = ffmpeg.av_read_frame(_x11, packet);
+                if (result == ffmpeg.AVERROR(ffmpeg.EAGAIN)) { Interlocked.Increment(ref _emptyPolls); Thread.Sleep(1); continue; }
+                if (result < 0) { Finish("The capture ended (the window was closed or changed size, or the screen is no longer there)."); return; }
+                if (packet->stream_index != 0 || packet->size < rowBytes * _x11Height) { ffmpeg.av_packet_unref(packet); continue; }
+                // The grabber's bytes are one picture of plain pixels: wrapped in a frame that owns nothing, and copied by the graph's source as it takes it in.
+                raw->format = (int)_x11Format;
+                raw->width = _x11Width;
+                raw->height = _x11Height;
+                raw->data[0] = packet->data;
+                raw->linesize[0] = rowBytes;
+                raw->pts = packet->pts;
+                int added = ffmpeg.av_buffersrc_add_frame_flags(_x11Source, raw, BuffersrcKeepRef);
+                raw->data[0] = null;
+                ffmpeg.av_frame_unref(raw);
+                ffmpeg.av_packet_unref(packet);
+                if (added < 0) { Finish("The capture stopped: " + Error(added)); return; }
+                while (!_stop)
+                {
+                    result = ffmpeg.av_buffersink_get_frame(_sink, frame);
+                    if (result == ffmpeg.AVERROR(ffmpeg.EAGAIN)) break;
+                    if (result < 0) { Finish("The capture stopped: " + Error(result)); return; }
+                    if (frame->format != (int)AVPixelFormat.AV_PIX_FMT_NV12) { ffmpeg.av_frame_unref(frame); Finish("The capture gave pictures that are not NV12."); return; }
+                    long at = Stopwatch.GetTimestamp();
+                    lock (_gate)
+                    {
+                        if (_newest != null) { var old = _newest; ffmpeg.av_frame_free(&old); }
+                        _newest = ffmpeg.av_frame_clone(frame);
+                        _newestSeq++;
+                        _newestAt = at;
+                        if (Width == 0) { Width = frame->width; Height = frame->height; }
+                    }
+                    ffmpeg.av_frame_unref(frame);
+                    Interlocked.Increment(ref _pictures);
+                    _first.TrySetResult();
+                }
+            }
+        }
+        finally
+        {
+            var p = packet; ffmpeg.av_packet_free(&p);
+            var r = raw; ffmpeg.av_frame_free(&r);
+            var f = frame; ffmpeg.av_frame_free(&f);
+        }
+    }
+
+    private static string Error(int result)
+    {
+        byte* buffer = stackalloc byte[256];
+        ffmpeg.av_strerror(result, buffer, 256);
+        return Marshal.PtrToStringAnsi((IntPtr)buffer) ?? "error " + result;
     }
 
     private static void Check(int result, string what)
@@ -183,6 +317,7 @@ public sealed unsafe class InProcessCapture : IDisposable
             if (_newest != null) { var f = _newest; ffmpeg.av_frame_free(&f); _newest = null; }
         }
         if (_graph != null && threadGone) { var g = _graph; ffmpeg.avfilter_graph_free(&g); _graph = null; }
+        if (_x11 != null && threadGone) { var x = _x11; ffmpeg.avformat_close_input(&x); _x11 = null; }
         if (_hardwareFrames != null && threadGone) { var h = _hardwareFrames; ffmpeg.av_buffer_unref(&h); _hardwareFrames = null; }
         if (_timerRaised) { _timerRaised = false; timeEndPeriod(1); }
         _first.TrySetCanceled();
