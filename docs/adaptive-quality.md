@@ -57,18 +57,17 @@ One decision a second, on the sharer, from two things: the room (the reports) an
 
 **Step up** after 30 s with nobody in trouble (and at least 20 s since the last change), one step at a time. If a step up is followed by trouble within 60 s, the wait before the next try doubles (30, 60, 120 s, at most 5 minutes), so a link that cannot take the higher quality is not tried every half minute. The wait falls back to 30 s after 10 minutes without trouble. The gap between stepping down (10 s) and up (30 s and more) is the "wide gap" that stops it flapping.
 
-**The ladder**, from what the person asked for (the ceiling, 100%):
+**The ladder** goes down the presets of the share dialog, one at a time (`QualityLadder`), from what the person asked for (the ceiling):
 
-| step | what changes | cost of the change |
+| asked for | step 1 | step 2 |
 |---|---|---|
-| 0 | the settings: for example 1080p60 at 6 Mbit/s | |
-| 1 | bitrate to 70% | none: `SetBitrate`, no key frame |
-| 2 | bitrate to 45% | none |
-| 3 | frame rate halved (60 to 30; the share's clock encodes every second tick) | none: the encoder is not restarted, picture times keep counting in ticks |
-| 4 | bitrate to 30% and the frame rate at a third (60 to 20) | none |
-| 5 | resolution one step down (1080p to 720p, 720p to 540p), bitrate and frame rate as step 2 | the capture graph is built again at the new size and the encoder restarted: about half a second without a picture, then a key frame; viewers restart their decoder on the new size, which they already do for any size change |
+| 1080p60 at 6 Mbit/s | 1080p30 at 4 Mbit/s | 720p30 at 2 Mbit/s |
+| 1080p30 at 4 Mbit/s | 720p30 at 2 Mbit/s | 720p30 at 1.4 Mbit/s (70%) |
+| 720p30 at 2 Mbit/s | 720p30 at 1.4 Mbit/s (70%) | 720p30 at 0.9 Mbit/s (45%) |
 
-Floors: 500 kbit/s, 15 fps, 540p; below that the stream stays where it is and the sharer's panel says the room cannot be served. The ceiling is whatever the settings say, and adapting never goes above it. Steps 1 to 4 are invisible to viewers; step 5 is the only one a viewer notices, which is why it is last.
+A share asked for below every preset keeps its own size and frame rate and goes down in bitrate (70%, then 45%). No step asks for more than the share did, and nothing goes below 500 kbit/s. A step that changes only the bitrate costs nothing: `SetBitrate`, no key frame. A step that changes the frame rate or the size builds the capture and the encoder again (the share's run ends and the next is made for the new level, about a second without a picture, then a key frame); viewers restart their decoder on a new size, which they already do for any size change. Going back up uses the same table the other way.
+
+Below the last step the stream stays where it is and the log says the room cannot be served at a lower quality. The ceiling is whatever the settings say, and adapting never goes above it.
 
 ## What a person sees
 
@@ -91,31 +90,31 @@ Two liars in a room of three could still lower the stream. That is the price of 
 ## Rolling it out
 
 1. **Shadow mode first.** The report and the policy run, the decisions go to the log (`would lower to ...`), and nothing changes. One release of that shows how often the policy would act in real rooms, and whether it flaps, before it acts.
-2. Steps 1 and 2 (bitrate), then step 3 (frame rate), then step 5 (resolution), each its own change and each behind the same setting.
+2. The ladder (the bitrate first, then the presets), behind a setting in the share dialog.
 3. The message to a lone struggler.
 
 The policy is a pure function: reports and the sharer's own figures in, a step (or no change) out, with the clock passed in. It is tested with scripted rooms: one weak viewer among ten (no change), half the room (step down after 10 s, not after 9), the room recovering (step up after 30 s, not after 29), a link that cannot take step 0 (the wait doubles), no reports at all (no change), a single viewer (that viewer decides), two liars in three. The cluster tests that already drop packets between nodes (`OutboundFilter`) exercise the whole path on a simulated bad link.
 
 ## Where it stands
 
-Built (steps 1 and 2, the bitrate, are acted on; the others are in shadow mode, where the policy runs and says what it would do and nothing is changed):
+Built (the steps are acted on when the encoder runs in this program; otherwise the policy runs in shadow mode and says what it would do, and nothing is changed):
 - `InProcessEncoder.SetBitrate`: the bitrate changes while encoding, no restart and no lost frame; measured with pictures that are expensive to code, 6000, 1500 and 6000 kbit/s asked for gave about 7000, 1500 and 6900 kbit/s (steps 1 and 2 of the ladder).
 - `QualityPolicy` and `QualityLadder` (`QualityPolicyTests`): the rules above as a pure function, with scripted rooms.
 - The report: `ViewerQualityMeter` (a viewer judging its own picture over ten seconds), the `quality` control operation, folded by each relay on the way up (`MediaSource.Room` at the root; `QualityReportTests` run it through a chain of relays).
 - A viewer's own log carries its verdict: the `call quality: watching` line (and "Copy sharing diagnostics") ends its figures with `judged in trouble, 22 pictures a second over the last ten seconds, and told the sharer so` (or `judged fine`, or `not judged yet`), so one viewer's log shows what that viewer reported, beside the figures it is made from.
-- `ScreenSharer` runs the policy every second from `Room` and its own link, writes `adaptive quality (shadow mode, nothing is changed): would lower to 1080p60 at 4.2 Mbit/s (step 1 of 5): 2 of 3 viewers lost frames for 10 s` to the log, and says where it is in the sharing line and the report (`ShadowQualityTests`).
+- `ScreenSharer` runs the policy every second from `Room` and its own link, writes `adaptive quality (shadow mode, nothing is changed): would lower to 1080p30 at 4.0 Mbit/s (step 1 of 2): 2 of 3 viewers lost frames for 10 s` to the log, and says where it is in the sharing line and the report (`ShadowQualityTests`).
 
-- Acting on steps 1 and 2: when the encoder runs in this program (`ScreenOptions.InProcessEncoder`) and the setting is on, a decision to go to step 1 or 2 sets a pending bitrate (70% or 45% of what was asked for) that the thread that encodes gives to `InProcessEncoder.SetBitrate` before its next picture, and tells the stream (`MediaSource.EffectiveKbps`) so that repairs follow it. The policy is given `MaxStep = 2` then; the steps below that are not acted on, so a room that needs more stays at step 2 (the floor of what is applied). A share whose encoder is a separate FFmpeg, or whose setting is off, runs the policy over the whole ladder in shadow mode as before. The log says `adaptive quality: lowered to 1080p60 at 4.2 Mbit/s (step 1 of 5): ...` when it acted and `adaptive quality (shadow mode, nothing is changed): would ...` when it did not (`ActingQualityTests`).
-- The setting: "Lower the quality when viewers cannot keep up" in the share dialog, on by default, remembered (`AppData.ScreenShareAdaptQuality`); the environment variable `YAPARR_ADAPT=0` turns it off for a run. The sharer panel shows `Quality lowered to 2.7 Mbit/s: ...` while the share is below what was asked for.
+- Acting on the ladder: when the encoder runs in this program (`ScreenOptions.InProcessEncoder`) and the setting is on, a decision to go to a step takes effect in one of two ways. A level with the same frame rate and size as the running capture only gets a pending bitrate, which the thread that encodes gives to `InProcessEncoder.SetBitrate` before its next picture. A level with another frame rate or size sets a restart: the capture loop ends, `PumpAsync` runs again, and `RunInProcessCaptureCoreAsync` builds the capture and the encoder from `RunOptions()` (the options asked for, at the level's box, frame rate and bitrate), so the share's clock, the encoder's time base and the key frame spacing all follow the new frame rate. Either way the stream is told (`MediaSource.EffectiveKbps`), so repairs and the pace of each key frame follow the bitrate. Where the capture is a separate FFmpeg the restart is not possible and only the bitrate follows. A share whose encoder is a separate FFmpeg, or whose setting is off, runs the policy in shadow mode as before. The log says `adaptive quality: lowered to 1080p30 at 4.0 Mbit/s (step 1 of 2): ...` when it acted and `adaptive quality (shadow mode, nothing is changed): would ...` when it did not (`ActingQualityTests`; `InProcessCaptureTests` runs a real share through 1080p60, 1080p30, 720p30 and back).
+- The setting: "Lower the quality when viewers cannot keep up" in the share dialog, on by default, remembered (`AppData.ScreenShareAdaptQuality`); the environment variable `YAPARR_ADAPT=0` turns it off for a run. The sharer panel shows `Quality lowered to 720p30 at 2.0 Mbit/s: ...` while the share is below what was asked for.
 - A cap on repairs: what a sender may resend is a quarter of the stream (`ChatNode.RepairShare`, a token bucket per stream, at least 32 kB/s), because repairs paced at the stream's own rate doubled the load on a link that was already full. What is held back is counted (`MediaStatus.RepairsRefused`, `N repairs held back` in the sharing line); `RepairCapTests` run it over a link that loses 35% and one that loses 3%.
 
-Still to do: the frame rate step (the share's clock encodes every second or third tick), the size step (the capture graph and the encoder built again at the new size), the `room` state sent down the tree and the message to a viewer who is the only one in trouble. Each is its own change, after the bitrate steps have been seen working on a real share.
+Still to do: the `room` state sent down the tree and the message to a viewer who is the only one in trouble.
 
 ## Questions that are open
 
 - Is 10 s the right time to wait? Too short and every Wi-Fi hiccup lowers the room; too long and a viewer watches a bad picture. Shadow mode has the numbers.
 - 5% of the sharer's traffic sent again as "its own link is the cause": the figure comes from one Wi-Fi viewer (about 7% missing, #228); it needs real rooms.
-- Should step 5 (resolution) wait longer than the others (say 30 s of trouble)? It is the only visible one.
+- Should a step that restarts the capture (another frame rate or size) wait longer than one that only changes the bitrate (say 30 s of trouble)? It costs a second without a picture.
 - A viewer far down the tree behind a relay that has trouble of its own: the relay's children all report trouble; the policy sees "3 of 6" and might lower the stream for a fault in one relay. Reports could carry how many of the troubled sit under one parent, and the policy could discount a subtree that is troubled all together. Not designed yet.
 
 ## Later: a second, lower stream

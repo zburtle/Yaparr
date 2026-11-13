@@ -216,11 +216,19 @@ public sealed class ScreenOptions
     public bool CaptureOnCard { get; init; } = InProcessSettings.FromEnvironment().Mode == InProcessMode.CaptureOnCard;
 
     /// <summary>
-    /// Lower the bitrate when the viewers cannot keep up, and raise it again when they can (see <see cref="QualityPolicy"/>). Only the first two steps of the
-    /// ladder are acted on so far (70% and 45% of the bitrate asked for), and only when the encoder is in this program; the rest is still written down and nothing
-    /// more. On unless <c>YAPARR_ADAPT</c> is 0 or off, and the share dialog's setting turns it off too.
+    /// Lower the quality when the viewers cannot keep up, and raise it again when they can (see <see cref="QualityPolicy"/>): one preset of the share dialog at a
+    /// time (see <see cref="QualityLadder"/>), and only when the encoder is in this program; otherwise what the policy would do is written down and nothing more.
+    /// On unless <c>YAPARR_ADAPT</c> is 0 or off, and the share dialog's setting turns it off too.
     /// </summary>
     public bool AdaptQuality { get; init; } = !(Environment.GetEnvironmentVariable("YAPARR_ADAPT")?.Trim().ToLowerInvariant() is "0" or "off" or "no" or "false");
+
+    /// <summary>The same options at another level of adaptive quality (see <see cref="QualityLadder"/>): the bitrate, the frame rate and the box of the picture.</summary>
+    public ScreenOptions WithQuality(int kbps, int fps, int maxWidth, int maxHeight) => new()
+    {
+        Display = Display, WindowHandle = WindowHandle, Portal = Portal, Fps = fps, MaxWidth = maxWidth, MaxHeight = maxHeight, Kbps = kbps,
+        KeyFrameSeconds = KeyFrameSeconds, Codec = Codec, Encoder = Encoder, ShareSound = ShareSound, SoundProgram = SoundProgram, GpuScale = GpuScale, ShowCursor = ShowCursor,
+        X11Display = X11Display, InProcessEncoder = InProcessEncoder, InProcessCapture = InProcessCapture, CaptureOnCard = CaptureOnCard, InProcessAsked = InProcessAsked, AdaptQuality = AdaptQuality,
+    };
 
     /// <summary>The same options for another monitor or window: everything else (quality, codec, sound) stays.</summary>
     public ScreenOptions Retarget(Display? display, long? windowHandle) => new()

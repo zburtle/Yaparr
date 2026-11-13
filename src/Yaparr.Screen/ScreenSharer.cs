@@ -29,7 +29,7 @@ public sealed partial class ScreenSharer : IDisposable
         _source = source;
         _options = options;
         _ffmpeg = ffmpegPath;
-        _policy = new QualityPolicy(new QualityPolicy.Settings { MaxStep = options.AdaptQuality && options.InProcessEncoder ? ActedSteps : QualityLadder.Steps - 1 });
+        _policy = new QualityPolicy();
         // Only the in-process encoder can answer it; for a separate FFmpeg the request is noted and not acted on.
         _onKeyRequested = () => { if (_inProcess) _pacer.Request(); };
         _source.KeyFrameRequested += _onKeyRequested;
@@ -433,7 +433,7 @@ public sealed partial class ScreenSharer : IDisposable
     public ShareMaxima TakeMaxima(int reader) => _stats.TakeMaxima(reader);
 
     /// <summary>The time there is for each picture: the time between two, in milliseconds.</summary>
-    public double FrameBudgetMs => 1000.0 / Math.Max(1, _options.Fps);
+    public double FrameBudgetMs => 1000.0 / Math.Max(1, RunFps);
 
     /// <summary>The size of the pictures the encoder is given, when this program encodes them (the capture says it as it starts); otherwise null.</summary>
     public (int Width, int Height)? PictureSize => _picture;
@@ -511,8 +511,10 @@ public sealed partial class ScreenSharer : IDisposable
 
     private async Task RunInProcessCaptureCoreAsync(bool onCard, CancellationToken ct)
     {
+        // At a lower level of adaptive quality the capture and the encoder are built again for the size and frame rate of that level.
+        var run = RunOptions();
         InProcessCapture capture;
-        try { capture = new InProcessCapture(_options, onCard); }
+        try { capture = new InProcessCapture(run, onCard); }
         catch (Exception ex) when (!ct.IsCancellationRequested) { throw CaptureFailed(ex.Message); }
         using var disposeCapture = capture;
         _captureHere = capture;
@@ -520,20 +522,22 @@ public sealed partial class ScreenSharer : IDisposable
         try { await capture.WaitForFirstAsync(TimeSpan.FromSeconds(20), ct).ConfigureAwait(false); }
         catch (Exception ex) when (!ct.IsCancellationRequested) { throw CaptureFailed(capture.EndedBecause ?? ex.Message); }
         InProcessEncoder encoder;
-        try { encoder = new InProcessEncoder(capture.Width, capture.Height, _options, capture); }
+        try { encoder = new InProcessEncoder(capture.Width, capture.Height, run, capture); }
         catch (Exception) { throw; }   // no NVIDIA encoder to use, or it will not read pictures from the card: the next way is tried
         using var disposeEncoder = encoder;
         _picture = (capture.Width, capture.Height);
+        _shape = new RunShape(run.Fps, run.MaxWidth, run.MaxHeight);
+        Volatile.Write(ref _pendingKbps, 0);
         _encoderLive = true;
         _encoderDetails = $"in this program: {encoder.Describe()}; capture: in this program{(onCard ? ", pictures kept on the graphics card" : "")}, {capture.Graph}";
         EncoderStarted?.Invoke();
 
-        long frameTicks = Math.Max(1, Stopwatch.Frequency / Math.Max(1, _options.Fps));
+        long frameTicks = Math.Max(1, Stopwatch.Frequency / Math.Max(1, run.Fps));
         long due = Stopwatch.GetTimestamp(), lastArrival = 0;
         bool started = false;
         var ready = new List<(byte[] Frame, bool Key)>(2);
         void Collect(byte[] frame, bool key) => ready.Add((frame, key));
-        while (!ct.IsCancellationRequested)
+        while (!ct.IsCancellationRequested && !_levelRestart)
         {
             long wait = due - Stopwatch.GetTimestamp();
             if (wait > 0) await Task.Delay(TimeSpan.FromSeconds((double)wait / Stopwatch.Frequency), ct).ConfigureAwait(false);
@@ -569,6 +573,8 @@ public sealed partial class ScreenSharer : IDisposable
         }
         _captureHere = null;
         _encoderLive = false;
+        // Adaptive quality asked for another size or frame rate: this run ends and the next one is built for it (see PumpAsync).
+        if (_levelRestart) { _levelRestart = false; _switch = true; }
         if (!ct.IsCancellationRequested && !_switch) throw CaptureFailed(capture.EndedBecause ?? "The capture stopped.");
     }
 
