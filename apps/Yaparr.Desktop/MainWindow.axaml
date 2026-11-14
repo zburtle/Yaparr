@@ -10,6 +10,7 @@
                                                 <StackPanel.ContextMenu>
                                                     <ContextMenu Opening="VoiceMemberMenu_Opening">
                                                         <MenuItem Header="{Binding SoundboardMenuText}" Click="SoundboardMute_Click" />
+                                                        <MenuItem Header="Kick from voice…" IsVisible="{Binding CanKick}" Click="KickFromVoice_Click" />
                                                     </ContextMenu>
                                                 </StackPanel.ContextMenu>
                                                 <Border Width="28" Height="28" CornerRadius="14" Background="{Binding Avatar}"
@@ -824,6 +825,7 @@
                                 <MenuItem x:Name="RemoveAdminItem" Header="Remove _admin from this room" Click="RemoveAdmin_Click" />
                                 <MenuItem x:Name="BanPersonItem" Header="Ban from this _room…" Click="BanPerson_Click" />
                                 <MenuItem x:Name="UnbanPersonItem" Header="Unban from this _room" Click="UnbanPerson_Click" />
+                                <MenuItem x:Name="RemoveFromRoomItem" Header="Re_move from this room…" Click="RemoveFromRoom_Click" />
                                 <MenuItem x:Name="BlockPersonItem" Header="_Block" Click="BlockPerson_Click" />
                                 <MenuItem x:Name="UnblockPersonItem" Header="_Unblock" Click="UnblockPerson_Click" />
                             </ContextMenu>

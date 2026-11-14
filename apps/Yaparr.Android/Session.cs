@@ -273,6 +273,19 @@ public sealed partial class Session : IDisposable
         room.GifsChanged += () => UI(() => GifsChanged?.Invoke(chat));
         room.ChannelsChanged += () => UI(() => RefreshVoice(chat));
         room.VoiceChannelRemoved += id => UI(() => { if (_callChat == chat && chat.VoiceChannelId == id) LeaveVoice(); });
+        // The owner took you out of voice, or out of the room, without banning you (see ChatRoom.KickFromVoice and RemoveFromRoom).
+        room.VoiceKicked += () => UI(() =>
+        {
+            if (_callChat == chat) LeaveVoice();
+            Notice?.Invoke($"The owner of \"{chat.Title}\" took you out of voice. You can join again whenever you like.");
+        });
+        room.RemovedFromRoom += () => UI(async () =>
+        {
+            string title = chat.Title;
+            if (_callChat == chat) LeaveVoice();
+            await LeaveAsync(chat);
+            Notice?.Invoke($"The owner removed you from \"{title}\". You are not banned: to come back, open the room's invite again.");
+        });
 
         foreach (var m in room.GetHistory()) AddHistoryLine(chat, m, room.RoomId);
         RefreshReactions(chat);
@@ -531,6 +544,12 @@ public sealed partial class Session : IDisposable
         chat.Room is { MyRole: >= RoomRole.Admin } && _node != null && person.Id != _node.AccountId.Value && person.Role.Length == 0;
 
     public void Ban(Chat chat, Person person) => chat.Room?.Ban(new PeerId(person.Id), person.Name);
+
+    /// <summary>Only the owner can take someone out of the room without banning them (not themselves, not the owner).</summary>
+    public bool CanRemove(Chat chat, Person person) =>
+        chat.Room is { MyRole: RoomRole.Owner } && _node != null && person.Id != _node.AccountId.Value && person.Role != "Owner";
+
+    public void RemoveFromRoom(Chat chat, Person person) => chat.Room?.RemoveFromRoom(new PeerId(person.Id), person.Name);
 
     public void Unban(Chat chat, string accountId) => chat.Room?.Unban(new PeerId(accountId));
 

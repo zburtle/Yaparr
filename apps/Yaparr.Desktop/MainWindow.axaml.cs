@@ -720,6 +720,13 @@ public partial class MainWindow : Window
             if (_voiceConv == conv) LeaveVoiceCore();
             StatusText.Text = "You joined voice on another of your devices, so you left it here.";
         });
+        // The owner took you out of voice, or out of the room, without banning you (see ChatRoom.KickFromVoice and RemoveFromRoom).
+        room.VoiceKicked += () => UI(() =>
+        {
+            if (_voiceConv == conv) LeaveVoiceCore();
+            StatusText.Text = $"The owner of \"{conv.Title}\" took you out of voice. You can join again whenever you like.";
+        });
+        room.RemovedFromRoom += () => UI(() => _ = OnRemovedFromRoomAsync(conv));
         PrimeShareCues(conv, room);
         room.MediaGroupsChanged += () => UI(() => RefreshShares(conv, room));
         room.MemberRenamed += p => UI(() => { Remember(p); RefreshPeers(); });
@@ -818,8 +825,9 @@ public partial class MainWindow : Window
         var seenHere = open.People;
         var online = here.Values.Where(p => !blocked.Contains(p.Account.Value))
             .Select(p => new PeerVm(p.Account.Value, p.DisplayName, true, now, p.IsRelayed, _node.GetLink(p.Account), Role: RoleOf(p.Account.Value), BannedHere: open.IsBanned(p.Account)));
+        // Someone who has not been on for two weeks is no longer listed (see PeopleListRules); the owner and the admins stay.
         var offline = seenHere
-            .Where(k => !here.ContainsKey(k.Account.Value) && !blocked.Contains(k.Account.Value))
+            .Where(k => !here.ContainsKey(k.Account.Value) && !blocked.Contains(k.Account.Value) && PeopleListRules.ShowsInList(false, k.LastSeen, now, RoleOf(k.Account.Value)))
             .Select(k => new PeerVm(k.Account.Value, string.IsNullOrWhiteSpace(k.Name) ? k.Account.Value[..8] : k.Name, false, k.LastSeen, false, _node.GetLink(k.Account), Role: RoleOf(k.Account.Value), BannedHere: open.IsBanned(k.Account)));
         // Someone you blocked stays in the list of the rooms you met them in, marked as blocked, so that they can be unblocked.
         var metHere = seenHere.Select(k => k.Account.Value).ToHashSet();

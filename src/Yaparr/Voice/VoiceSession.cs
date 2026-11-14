@@ -50,6 +50,9 @@ public sealed class VoiceSession : IDisposable
 
     /// <summary>When this session started, on the tick clock; two of your devices that join at the same moment use it to settle which one stays.</summary>
     internal long JoinedAt { get; } = Environment.TickCount64;
+
+    /// <summary>When this session began, as unix time: an order of the owner to kick you from voice only counts if it is newer than this.</summary>
+    internal long JoinedAtUnixMs { get; } = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
     private readonly CancellationTokenSource _cts = new();
     private readonly Channel<CapturedFrame> _capture = Channel.CreateBounded<CapturedFrame>(new BoundedChannelOptions(10) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
     private readonly IOpusEncoder _encoder;
