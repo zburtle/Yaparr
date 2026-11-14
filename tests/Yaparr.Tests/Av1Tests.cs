@@ -66,7 +66,7 @@ public class Av1Tests
     {
         Assert.DoesNotContain(ScreenSharer.Plan(new ScreenOptions { X11Display = null, Display = Monitor }), p => p.Codec == ScreenCodec.Av1);
 
-        var plan = ScreenSharer.Plan(new ScreenOptions { X11Display = null, Display = Monitor, Codec = ScreenCodec.Av1 });
+        var plan = ScreenSharer.Plan(new ScreenOptions { X11Display = null, Display = Monitor, Codec = ScreenCodec.Av1 }, new[] { GpuVendor.Nvidia, GpuVendor.Amd, GpuVendor.Intel }, adaptersGiven: true);
         var cards = HardwareEncoders.InOrder;
         Assert.Equal(cards.Select(c => (ScreenCodec.Av1, (HardwareEncoder?)c))
             .Concat(cards.Select(c => (ScreenCodec.H264, (HardwareEncoder?)c)))
