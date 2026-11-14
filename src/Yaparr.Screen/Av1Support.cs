@@ -57,7 +57,8 @@ public static class Av1Support
     {
         var working = new List<HardwareEncoder>();
         var refused = new Dictionary<HardwareEncoder, string>();
-        foreach (var card in HardwareEncoders.InOrder)
+        // Only the encoders this computer can have hardware for (see GraphicsAdapters): the others would only each take their half second to fail.
+        foreach (var card in GraphicsAdapters.Installed(GraphicsAdapters.Vendors))
         {
             if (InProcessEncoder.Probe(ScreenCodec.Av1, card, out var why)) working.Add(card);
             else refused[card] = why;

@@ -316,11 +316,15 @@ public sealed partial class ScreenSharer : IDisposable
         Ended?.Invoke(failure);
     }
 
-    /// <summary>What is tried, in order, for these options.</summary>
-    public static List<(ScreenCodec Codec, HardwareEncoder? Encoder)> Plan(ScreenOptions options)
+    /// <summary>
+    /// What is tried, in order, for these options. Auto leaves out the graphics card encoders whose maker has no adapter in this computer (each one that cannot
+    /// start costs about half a second); <paramref name="adapters"/> is what the computer has (by default, as it is asked for), null when not known; an encoder
+    /// chosen on purpose is always tried.
+    /// </summary>
+    public static List<(ScreenCodec Codec, HardwareEncoder? Encoder)> Plan(ScreenOptions options, IReadOnlyList<GpuVendor>? adapters = null, bool adaptersGiven = false)
     {
         var plan = new List<(ScreenCodec, HardwareEncoder?)>();
-        var cards = options.Encoder is { } only ? new[] { only } : HardwareEncoders.InOrder.ToArray();
+        var cards = options.Encoder is { } only ? new[] { only } : GraphicsAdapters.Installed(adaptersGiven ? adapters : GraphicsAdapters.Vendors).ToArray();
         // AV1 is only tried when it was asked for, on every card in turn, and then what Auto would have done, so a computer without a card that
         // does AV1 still shares (H.264, or VP8 in software at last).
         if (options.Codec == ScreenCodec.Av1)

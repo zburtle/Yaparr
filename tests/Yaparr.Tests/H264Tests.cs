@@ -113,7 +113,8 @@ public class H264Tests
     public void Auto_tries_the_graphics_cards_in_turn_and_software_last()
     {
         var display = new Display(0, "x", 0, 0, 1920, 1080, true, Handle: 0x1A2B);
-        var auto = ScreenSharer.Plan(new ScreenOptions { X11Display = null, Display = display });
+        // A computer with all three makers' graphics (the cards left out for a computer without them are in GraphicsAdapterTests).
+        var auto = ScreenSharer.Plan(new ScreenOptions { X11Display = null, Display = display }, new[] { GpuVendor.Nvidia, GpuVendor.Amd, GpuVendor.Intel }, adaptersGiven: true);
         // The cards tried depend on the system: NVIDIA, AMD and Intel on Windows; NVIDIA and VA-API on Linux.
         Assert.Equal(HardwareEncoders.InOrder.Select(card => (ScreenCodec.H264, (HardwareEncoder?)card)).Append((ScreenCodec.Vp8, (HardwareEncoder?)null)), auto);
         Assert.Equal(OperatingSystem.IsLinux() ? 3 : 4, auto.Count);
