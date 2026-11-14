@@ -30,7 +30,10 @@ public sealed class AppSettings
     /// <summary>The computer app: closing the window leaves Yaparr running behind an icon in the notification area (the Exit menu item and the icon's Exit end it).</summary>
     public bool CloseToTray { get; set; } = true;
 
-    /// <summary>The phone app looks for a newer version when it opens and offers it. This contacts GitHub, which sees the phone's address.</summary>
+    /// <summary>
+    /// The app looks for a newer version when it starts and offers it (the phone app and the desktop app both). This contacts GitHub, which sees the address
+    /// the app connects from. The manual check (Help, Check for updates, on the desktop) is always there.
+    /// </summary>
     public bool CheckForUpdates { get; set; } = true;
 
     /// <summary>The version of the update the phone app offered last, so that the same one is not offered again at every start.</summary>
@@ -85,6 +88,11 @@ public sealed class AppSettings
 
     /// <summary>People whose soundboard sounds you have silenced (their voice is not affected), by id.</summary>
     public List<string> SoundboardMuted { get; set; } = new();
+    /// <summary>
+    /// The sound on each of the ten number keys of a room's soundboard (1 to 9, then 0), by room key: ten sound ids, "" for an empty key. A room that is not
+    /// listed has the first ten sounds as they are listed (see <see cref="SoundSlots"/>). Yours alone: nobody else sees it.
+    /// </summary>
+    public Dictionary<string, List<string>> SoundboardSlots { get; set; } = new();
     /// <summary>Silence everybody's soundboard sounds.</summary>
     public bool SoundboardsMuted { get; set; }
     /// <summary>How loud soundboard sounds are against voices, in percent (100 is as loud as a voice).</summary>

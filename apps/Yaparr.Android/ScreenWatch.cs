@@ -101,7 +101,7 @@ internal sealed class ScreenWatch : IDisposable
         {
             if (_disposed) return;
             var st = _picture.Status;
-            _quality.Update(nowMs, new ViewerCounters(_decoder.Shown, _picture.FramesLost, _picture.FramesMissed, 0, _decoder.Dropped, st.GaveUp));
+            _quality.Update(nowMs, new ViewerCounters(_decoder.Shown, _picture.FramesLost, _picture.FramesMissed, 0, _decoder.Dropped, st.GaveUp, st.PacketsSeen));
             if (_switching is { } going)
             {
                 if (nowMs - going.StartedAt < SwitchTimeoutMs) return;

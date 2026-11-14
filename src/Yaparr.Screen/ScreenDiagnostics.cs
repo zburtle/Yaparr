@@ -33,6 +33,7 @@ public static class ScreenDiagnostics
         if (!FfmpegLibraries.TryLoad(out var why)) { Line($"  FFmpeg's libraries: {why}"); return text.ToString(); }
         Line($"  FFmpeg's libraries: {FfmpegLibraries.Describe()}");
         Line($"  Encoders they have: {string.Join(", ", FfmpegLibraries.Encoders())}");
+        Line($"  Graphics adapters: {GraphicsAdapters.Describe()}");
         Line($"  Decoders they have: {string.Join(", ", FfmpegLibraries.Decoders())}");
         Line($"  AV1: {(Av1Support.Latest?.Describe() ?? "not checked yet")}");
         if (OperatingSystem.IsLinux() && Where("xrandr") != "missing")

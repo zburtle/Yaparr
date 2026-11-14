@@ -20,6 +20,24 @@ public sealed partial class ChatNode
 
     private static string SoundsFile(string directory, ChatRoom room) => Path.Combine(directory, room.Key + ".sounds.json");
 
+    // A room's list of sounds is sealed with the history key when the app has one (as the history files and the sound files are), so a copy of the folder
+    // (a backup, a synced drive, a stolen disk) does not show the names of a room's sounds or who added them; the sealed file is tied to its own name. A list
+    // written by an earlier version is plain JSON: it is still read, and written back sealed. Returns null when the file cannot be opened (sealed with another
+    // key, or changed); <paramref name="wasPlain"/> says it was an earlier version's.
+    private byte[]? ReadSoundsFile(string path, out bool wasPlain)
+    {
+        wasPlain = false;
+        var bytes = File.ReadAllBytes(path);
+        if (!HistoryCipher.IsSealedFile(bytes.AsSpan(0, Math.Min(bytes.Length, HistoryCipher.SealedFileMagicLength))))
+        {
+            wasPlain = true;
+            return bytes;
+        }
+        if (_options.HistoryCipher is not { } cipher) return null;
+        using var stream = new MemoryStream(bytes);
+        return cipher.OpenFileRange(Path.GetFileName(path), stream, 0, int.MaxValue);
+    }
+
     private void LoadSounds(ChatRoom room)
     {
         if (_options.SoundboardDirectory is not { } directory) return;
@@ -27,9 +45,18 @@ public sealed partial class ChatNode
         {
             var path = SoundsFile(directory, room);
             if (!File.Exists(path)) return;
-            var stored = JsonSerializer.Deserialize<StoredSound[]>(File.ReadAllBytes(path), Json) ?? Array.Empty<StoredSound>();
+            var bytes = ReadSoundsFile(path, out bool wasPlain);
+            if (bytes == null)
+            {
+                // Kept aside rather than written over: the list comes back from the other members, and the file may be readable with the right key.
+                _options.Log?.Invoke("could not open the soundboard of a room (sealed with another key, or changed); it is kept aside and the list is fetched from the others");
+                File.Move(path, path + ".unreadable", overwrite: true);
+                return;
+            }
+            var stored = JsonSerializer.Deserialize<StoredSound[]>(bytes, Json) ?? Array.Empty<StoredSound>();
             lock (room.SoundGate)
                 foreach (var s in stored.Where(s => SignedSound.Verify(s, room.Key))) room.SoundEntries[s.Id] = s;
+            if (wasPlain && _options.HistoryCipher != null) SaveSounds(room);   // written back sealed
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
         {
@@ -46,7 +73,8 @@ public sealed partial class ChatNode
             lock (room.SoundGate) all = room.SoundEntries.Values.ToArray();
             Directory.CreateDirectory(directory);
             var path = SoundsFile(directory, room);
-            File.WriteAllBytes(path + ".tmp", JsonSerializer.SerializeToUtf8Bytes(all, Json));
+            var json = JsonSerializer.SerializeToUtf8Bytes(all, Json);
+            File.WriteAllBytes(path + ".tmp", _options.HistoryCipher is { } cipher ? cipher.SealFile(Path.GetFileName(path), json) : json);
             File.Move(path + ".tmp", path, overwrite: true);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -160,7 +188,8 @@ public sealed partial class ChatNode
                 if (joined.Contains(name[..^".sounds.json".Length])) continue;
                 try
                 {
-                    foreach (var s in JsonSerializer.Deserialize<StoredSound[]>(File.ReadAllBytes(file), Json) ?? Array.Empty<StoredSound>())
+                    if (ReadSoundsFile(file, out _) is not { } bytes) continue;   // one that cannot be opened keeps nothing alive
+                    foreach (var s in JsonSerializer.Deserialize<StoredSound[]>(bytes, Json) ?? Array.Empty<StoredSound>())
                         if (!s.Deleted) hashes.Add(s.Hash);
                 }
                 catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException) { }

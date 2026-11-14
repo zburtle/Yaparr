@@ -326,7 +326,7 @@ public partial class ScreenViewControl : UserControl
         double seconds = Math.Max(0.1, (now - _statsAt) / 1000.0);
         double shownFps = (shown - _statsShown) / seconds, arriveFps = (frames - _statsFrames) / seconds, kbps = (bytes - _statsBytes) * 8 / 1000.0 / seconds;
         (_statsAt, _statsShown, _statsFrames, _statsBytes) = (now, shown, frames, bytes);
-        _quality.Update(now, new ViewerCounters(shown, _view.FramesLost, _view.FramesMissed, _playout.Late, _viewer?.Dropped ?? 0, st.GaveUp));
+        _quality.Update(now, new ViewerCounters(shown, _view.FramesLost, _view.FramesMissed, _playout.Late, _viewer?.Dropped ?? 0, st.GaveUp, st.PacketsSeen));
         // Delay added by the playout queue: what waits to be drawn, at the pace they arrive.
         int delayMs = (int)(_playout.Count * _playout.IntervalMs);
         // The stream's own check: a parent that has not been heard from for a few seconds is let go, and it is looked for again.

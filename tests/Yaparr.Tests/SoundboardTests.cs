@@ -336,6 +336,52 @@ public class SoundboardTests
         Assert.True(Rms(Listen(vb, 60)) < 0.001);
     }
 
+    // Issue #48: a mute was kept per device id, so a person on two devices had to be muted on each.
+    [Fact]
+    public async Task A_soundboard_mute_is_of_the_person_so_it_holds_on_all_their_devices()
+    {
+        var hub = new InMemoryDiscoveryHub();
+        using var aliceKey = PeerIdentity.Generate();
+        using var phoneKey = aliceKey.CreateDevice();
+        using var alice = TestUtil.NewNode(hub, "alice", identity: aliceKey, soundInterval: TimeSpan.Zero);
+        using var phone = TestUtil.NewNode(hub, "alice", identity: phoneKey, soundInterval: TimeSpan.Zero);
+        using var bob = TestUtil.NewNode(hub, "bob", soundInterval: TimeSpan.Zero);
+        var ra = await alice.JoinRoomAsync("lobby");
+        var rp = await phone.JoinRoomAsync("lobby");
+        var rb = await bob.JoinRoomAsync("lobby");
+        await TestUtil.WaitFor(() => rb.Members.Count == 2 && ra.Members.Count == 2 && rp.Members.Count == 2, 30_000);
+        // Bob learns that the phone is alice's from its certificate, a moment after seeing it in the room.
+        await TestUtil.WaitFor(() => bob.AccountOf(phone.Id) == bob.AccountOf(alice.Id), 30_000);
+
+        // Alice is in voice on her phone (one device at a time: joining on another makes the first leave), and it is the phone that adds the sound.
+        var tone = rp.AddSound("tone", SoundClip.FromPcm(Tone(440, 1)));
+        await TestUtil.WaitFor(() => rb.Sounds.Any(x => x.Available), 20_000);
+        using var vp = rp.JoinVoice();
+        using var vb = rb.JoinVoice();
+        await TestUtil.WaitFor(() => rb.VoiceParticipants.Count == 2 && rp.VoiceParticipants.Count == 2, 20_000);
+
+        // Bob mutes the soundboard of alice's laptop: the sounds from her phone are silenced too, because it is alice who is muted.
+        vb.SetSoundboardMute(alice.Id, true);
+        Assert.True(vb.IsSoundboardMuted(alice.Id));
+        Assert.True(vb.IsSoundboardMuted(phone.Id));
+        Assert.True(rp.PlaySound(tone.Id));
+        await Task.Delay(800);
+        Assert.True(Rms(Listen(vb, 60)) < 0.001, "the phone's sound is not heard");
+
+        // Unmuting by the other device unmutes the person, and a person who was not muted is not affected.
+        vb.SetSoundboardMute(phone.Id, false);
+        Assert.False(vb.IsSoundboardMuted(alice.Id));
+        Assert.False(vb.IsSoundboardMuted(bob.Id));
+        Assert.True(rp.PlaySound(tone.Id));
+        await Task.Delay(800);
+        Assert.True(Rms(Listen(vb, 60)) > 0.03, "the phone's sound is heard again");
+
+        // What you play yourself is not silenced by muting another device of yours.
+        vp.SetSoundboardMute(alice.Id, true);
+        Assert.True(rp.PlaySound(tone.Id));
+        Assert.True(Rms(Listen(vp, 60)) > 0.03, "your own sound is heard");
+    }
+
     [Fact]
     public async Task Playing_a_sound_again_before_it_ends_starts_it_over_but_different_sounds_play_together()
     {

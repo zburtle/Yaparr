@@ -781,6 +781,13 @@ public sealed class ConversationVm : Observable
         foreach (var c in wanted) group.Add(c);
     }
 
+    /// <summary>
+    /// What a reply says when the message it answers is not in this conversation. There are two reasons and nothing here tells them apart: the message may be
+    /// older than the history that is kept (a quote can only be followed while a connected member still holds the message), or it may not have arrived yet
+    /// (catching up can bring a reply before the message); it is shown when it comes.
+    /// </summary>
+    public const string MissingQuoteText = "an earlier message (older than the history kept, or not received yet)";
+
     // Replies find what they answer by its key, whichever came first.
     private readonly Dictionary<string, MessageVm> _byKey = new();
     private readonly Dictionary<string, List<MessageVm>> _awaitingOriginal = new();
@@ -801,7 +808,7 @@ public sealed class ConversationVm : Observable
             if (_byKey.TryGetValue(answers, out var original)) message.SetQuote(original.Sender, original.Preview, original.IsMine);
             else
             {
-                message.SetQuote("", "an earlier message that is not here", false);
+                message.SetQuote("", MissingQuoteText, false);
                 if (!_awaitingOriginal.TryGetValue(answers, out var list)) _awaitingOriginal[answers] = list = new List<MessageVm>();
                 list.Add(message);
             }

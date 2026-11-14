@@ -99,7 +99,7 @@ public class EncoderAllCodecsTests(Xunit.Abstractions.ITestOutputHelper output)
         if (!av1) Assert.NotEmpty(whyAv1);
         var report = Av1Support.Check();
         output.WriteLine("AV1 check: " + report.Describe());
-        Assert.Equal(HardwareEncoders.InOrder.Count, report.Encoders.Count + report.Refused.Count);
+        Assert.Equal(GraphicsAdapters.Installed(GraphicsAdapters.Vendors).Count, report.Encoders.Count + report.Refused.Count);   // the encoders this computer can have hardware for
     }
 
     [Fact]

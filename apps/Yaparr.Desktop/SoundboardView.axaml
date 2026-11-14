@@ -41,9 +41,25 @@
         <Style Selector="Button.tile TextBlock.small">
             <Setter Property="FontSize" Value="10" />
         </Style>
+        <!-- A number key: dim and dashed-looking when empty, like the tiles when it holds a sound. -->
+        <Style Selector="Border.slot">
+            <Setter Property="Background" Value="{DynamicResource AppBg}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Selected}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="Border.slot.filled">
+            <Setter Property="Background" Value="{DynamicResource Selected}" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector="Border.slot:pointerover">
+            <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
+        </Style>
+        <Style Selector="Border.slot TextBlock.small">
+            <Setter Property="FontSize" Value="10" />
+        </Style>
     </UserControl.Styles>
 
-    <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="20,16,20,14">
+    <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" Margin="20,16,20,14">
         <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
             <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                 <Border Width="38" Height="38" CornerRadius="11" Background="{DynamicResource Selected}" VerticalAlignment="Center">
@@ -63,7 +79,26 @@
         <TextBox x:Name="SearchBox" Grid.Row="1" PlaceholderText="Search sounds" Margin="0,0,0,12" IsVisible="False"
                  AutomationProperties.Name="Search sounds" TextChanged="Search_Changed" />
 
-        <Grid Grid.Row="2" MinHeight="150">
+        <!-- Your ten number keys: drag a sound onto one, or one key onto another to swap them. Only you see this arrangement. -->
+        <ItemsControl x:Name="SlotBar" Grid.Row="2" Margin="0,0,0,12">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><UniformGrid Rows="1" Columns="10" /></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="local:SlotVm">
+                    <Border Classes="slot" Classes.filled="{Binding Filled}" Margin="0,0,6,0" MinHeight="48" CornerRadius="9" Padding="6,4"
+                            DragDrop.AllowDrop="True" Tapped="Slot_Tapped" ContextRequested="Slot_ContextRequested"
+                            AutomationProperties.Name="{Binding Tip}" ToolTip.Tip="{Binding Tip}">
+                        <StackPanel Spacing="1" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Key}" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource Accent}" />
+                            <TextBlock Text="{Binding Name}" Classes="small" TextTrimming="CharacterEllipsis" MaxLines="1" />
+                        </StackPanel>
+                    </Border>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <Grid Grid.Row="3" MinHeight="150">
             <ScrollViewer x:Name="TileScroll" VerticalScrollBarVisibility="Auto">
                 <ItemsControl x:Name="Tiles">
                     <ItemsControl.ItemsPanel>
@@ -74,8 +109,8 @@
                             <Button Classes="tile" Classes.playing="{Binding Playing}" IsEnabled="{Binding Available}"
                                     Click="Tile_Click" ContextRequested="Tile_ContextRequested"
                                     AutomationProperties.Name="{Binding Name}"
-                                    ToolTip.Tip="Click to play it for everyone in voice. Right-click for more.">
-                                <Grid ColumnDefinitions="Auto,*">
+                                    ToolTip.Tip="Click to play it for everyone in voice (or press its number). Right-click for more.">
+                                <Grid ColumnDefinitions="Auto,*,Auto">
                                     <Border Width="36" Height="36" CornerRadius="10" Margin="0,0,10,0" VerticalAlignment="Center" Background="{Binding TintBack}">
                                         <TextBlock Text="{Binding Initial}" Foreground="{Binding Tint}" FontSize="17" FontWeight="Bold"
                                                    HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -84,6 +119,11 @@
                                         <TextBlock Classes="name" Text="{Binding Name}" />
                                         <TextBlock Text="{Binding Caption}" Classes="muted small" TextTrimming="CharacterEllipsis" />
                                     </StackPanel>
+                                    <!-- The key that plays it while the soundboard is open. -->
+                                    <Border Grid.Column="2" IsVisible="{Binding HasShortcut}" VerticalAlignment="Top" Margin="6,-4,-4,0" MinWidth="16" Padding="4,1"
+                                            CornerRadius="5" Background="{DynamicResource AppBg}">
+                                        <TextBlock Text="{Binding Shortcut}" Classes="muted small" HorizontalAlignment="Center" />
+                                    </Border>
                                 </Grid>
                             </Button>
                         </DataTemplate>
@@ -100,7 +140,7 @@
             </StackPanel>
         </Grid>
 
-        <Border Grid.Row="3" Background="{DynamicResource AppBg}" CornerRadius="10" Padding="12,8" Margin="0,8,0,0">
+        <Border Grid.Row="4" Background="{DynamicResource AppBg}" CornerRadius="10" Padding="12,8" Margin="0,8,0,0">
             <Grid ColumnDefinitions="*,Auto">
                 <TextBlock x:Name="Footer" Classes="muted small" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,12,0" />
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">

@@ -87,7 +87,6 @@ public partial class MainWindow : Window
         {
             if (_started) return;
             _started = true;
-            _ = CheckForUpdateAsync();
             await StartAsync();
         };
         Closing += (_, e) =>
@@ -338,6 +337,26 @@ public partial class MainWindow : Window
     private async void About_Click(object? sender, RoutedEventArgs e) =>
         await Dialogs.MessageAsync(this, "About Yaparr", $"Yaparr {Updater.CurrentVersion}\nServerless peer-to-peer chat over the BitTorrent DHT.");
 
+    // Whether to look for a new version when the app starts: the person's setting, and only where there is somewhere to look (not in a Flatpak, which
+    // updates itself, nor in a build with no update repository). The manual check in the Help menu is not affected.
+    internal static bool ShouldCheckForUpdateAtStart(bool setting, bool hasRepository) => setting && hasRepository;
+
+    // Reads the setting (which is loaded by now), shows the checkbox where it means something, and checks at start unless it is off.
+    private void SetUpUpdateCheck()
+    {
+        bool available = Updater.Repository is not null;
+        UpdateCheckItem.IsVisible = available;
+        UpdateCheckItem.IsChecked = _settings.CheckForUpdates;
+        UpdateCheckItem.PropertyChanged += (_, e) =>
+        {
+            if (e.Property != Avalonia.Controls.Primitives.ToggleButton.IsCheckedProperty) return;
+            _settings.CheckForUpdates = UpdateCheckItem.IsChecked == true;
+            _data.SaveSettings(_settings);
+        };
+        if (ShouldCheckForUpdateAtStart(_settings.CheckForUpdates, available)) _ = CheckForUpdateAsync();
+        else _log.Write(available ? "not looking for a new version at start (turned off in the settings)" : "not looking for a new version at start (this build does not update itself)");
+    }
+
     private async Task CheckForUpdateAsync(bool manual = false)
     {
         try
@@ -413,6 +432,7 @@ public partial class MainWindow : Window
         VpnPanel.Attach(_vpn);
         TurnPanel.Attach(() => _node, Path.Combine(_data.Directory, "network.json"));
         SetUpReplies();
+        SetUpUpdateCheck();
 
         if (Arg("--name") == null && _settings.DisplayName == null && !_data.HasIdentity) await OfferLinkAsync();
         if (_restarting) return;
