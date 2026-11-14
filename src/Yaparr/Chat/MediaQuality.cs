@@ -50,7 +50,7 @@ public readonly record struct ViewerQualitySample(bool Known, bool Troubled, dou
 }
 
 /// <summary>The running totals of what a viewer has seen since it began (they only go up), which <see cref="ViewerQualityMeter"/> reads once a second.</summary>
-public readonly record struct ViewerCounters(long Shown, long Lost, long Skipped, long Late, long DecoderDropped, long GaveUp);
+public readonly record struct ViewerCounters(long Shown, long Lost, long Skipped, long Late, long DecoderDropped, long GaveUp, long Packets = 0);
 
 /// <summary>
 /// Judges a viewer's own picture over a window of about ten seconds, from the running totals fed to it once a second. In trouble when fewer than nine
@@ -68,6 +68,9 @@ public sealed class ViewerQualityMeter
     /// <summary>The share of the pictures sent below which a viewer is in trouble.</summary>
     public const double ShownLimit = 0.90;
 
+    /// <summary>How many packets have to arrive over the window, with no picture shown, for the stream to count as there but stalled (a share sends dozens a second).</summary>
+    public const long MinPacketsOfAStalledStream = 20;
+
     public ViewerQualitySample Sample { get { lock (_samples) return _sample; } }
 
     /// <summary>Feed the totals; call about once a second.</summary>
@@ -83,7 +86,15 @@ public sealed class ViewerQualityMeter
             long shown = totals.Shown - first.Counters.Shown;
             long notShown = (totals.Lost - first.Counters.Lost) + (totals.Skipped - first.Counters.Skipped) + (totals.Late - first.Counters.Late);
             long sent = shown + notShown;
-            if (sent <= 0) { _sample = ViewerQualitySample.Unknown; return; }   // nothing came, so there is nothing to judge: no information
+            if (sent <= 0)
+            {
+                // Nothing was shown and no picture was even counted as lost. If no packet came either, there is nothing to judge: no information. If packets
+                // kept coming (the stream is there) and none became a picture, it is the worst trouble: the link carries pieces of the key frame the picture
+                // starts from but never a whole one (measured at 40% loss: not one picture for a minute, and the viewer had judged itself fine).
+                long packets = totals.Packets - first.Counters.Packets;
+                _sample = packets >= MinPacketsOfAStalledStream ? new ViewerQualitySample(true, true, 0, true) : ViewerQualitySample.Unknown;
+                return;
+            }
             bool troubled = shown < sent * ShownLimit || totals.DecoderDropped - first.Counters.DecoderDropped >= 5;
             bool lossy = totals.GaveUp - first.Counters.GaveUp >= 10;
             _sample = new ViewerQualitySample(true, troubled, shown / seconds, lossy);
