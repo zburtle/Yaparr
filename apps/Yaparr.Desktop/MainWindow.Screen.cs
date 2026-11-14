@@ -24,6 +24,8 @@ public partial class MainWindow
         public required ConversationVm Conv { get; init; }
         public required ScreenViewControl Control { get; init; }
         public ScreenViewWindow? Window { get; set; }
+        /// <summary>It was in the main window when it went full screen, so it goes back there when it comes out.</summary>
+        public bool DockAfterFullScreen { get; set; }
     }
 
     private readonly Dictionary<string, ScreenWatch> _screenViews = new();
@@ -327,6 +329,7 @@ public partial class MainWindow
             share.Watching = true;
             control.Stopped += () => UI(() => WatchEnded(watch));
             control.StopRequested += () => EndWatch(watch);
+            control.FullScreenToggleRequested += () => ToggleFullScreen(watch);
             control.DockToggleRequested += () =>
             {
                 if (watch.Window == null) PopOut(watch); else DockIn(watch);
@@ -385,9 +388,36 @@ public partial class MainWindow
         }
         var window = new ScreenViewWindow(watch.Control);
         watch.Window = window;
+        // Out of full screen, however that happened: a picture that was in the main window before goes back there.
+        window.FullScreenChanged += full =>
+        {
+            if (full || !watch.DockAfterFullScreen) return;
+            watch.DockAfterFullScreen = false;
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => { if (watch.Window == window) DockIn(watch); });
+        };
         watch.Control.Docked = false;
         window.Show(this);
         UpdateInlineScreen();
+    }
+
+    // Full screen is a window of its own made to fill the screen: a picture in the main window moves to one first, and comes back when it leaves full screen.
+    private void ToggleFullScreen(ScreenWatch watch)
+    {
+        if (watch.Window is { WindowState: WindowState.FullScreen } full)
+        {
+            full.WindowState = WindowState.Normal;   // FullScreenChanged takes it back into the main window if it came from there
+            return;
+        }
+        if (watch.Window == null)
+        {
+            watch.DockAfterFullScreen = true;
+            PopOut(watch);
+        }
+        if (watch.Window is { } window)
+        {
+            window.WindowState = WindowState.FullScreen;
+            window.Activate();
+        }
     }
 
     private void DockIn(ScreenWatch watch)
