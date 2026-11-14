@@ -44,13 +44,16 @@ internal sealed class UiSounds
     private static readonly float[] YouLeftClip = Notes((784, 80), (659, 80), (523, 130));
 
     private readonly Func<string?> _output;
+    private readonly Func<Yaparr.Voice.VoiceSession?>? _call;
     private readonly Action<string>? _log;
     private long _lastAt;
 
-    public UiSounds(Func<string?> output, Action<string>? log)
+    /// <param name="call">The voice session of the call you are in, if any: the sounds are played through it, so that the echo canceller knows of them.</param>
+    public UiSounds(Func<string?> output, Action<string>? log, Func<Yaparr.Voice.VoiceSession?>? call = null)
     {
         _output = output;
         _log = log;
+        _call = call;
     }
 
     public bool Enabled { get; set; } = true;
@@ -91,6 +94,8 @@ internal sealed class UiSounds
             long now = Environment.TickCount64;
             if (now - Interlocked.Exchange(ref _lastAt, now) < MinGapMs) return;
         }
+        // In a call the sound goes out through the call's own speakers; otherwise (or if the call is not playing) on a device of its own.
+        if (_call?.Invoke() is { } session && session.PlayCue(clip)) return;
         var output = _output();
         // Opening a sound device takes a moment, so it is done off the UI thread.
         _ = Task.Run(() =>

@@ -73,6 +73,7 @@ public sealed class VoiceSession : IDisposable
     private float _level;
     private readonly float[] _mix = new float[FrameSamples];
     private readonly float[] _tmp = new float[FrameSamples];
+    private readonly float[] _cueMix = new float[FrameSamples];
     private readonly float[] _ring = new float[FrameSamples * 4];
     private int _ringStart, _ringCount;
     private readonly object _playLock = new();
@@ -255,6 +256,30 @@ public sealed class VoiceSession : IDisposable
     /// <summary>How loud soundboard sounds are against voices, 0 to 2.</summary>
     public float SoundboardVolume { get; set; } = 0.8f;
 
+    // The app's own sounds (a new message, someone joining) played through the call's speakers, so that they are part of what the echo canceller is
+    // given to remove; played on a device of their own they would come back through the microphone as something it knows nothing about.
+    private sealed class Cue { public float[] Samples = Array.Empty<float>(); public int Position; }
+    private readonly List<Cue> _cues = new();
+    private long _lastPulledAt;
+    private const int MaxCues = 8, MaxCueSamples = SampleRate * 4;
+
+    /// <summary>
+    /// Plays one of the app's own sounds (mono, 48 kHz) through the call's speakers, at its own level: it is not held back by deafening, by muting
+    /// soundboards or by the volume of the call. Returns false, and plays nothing, when the call is not playing (it has ended, or the speakers are
+    /// not being fed); play it some other way then.
+    /// </summary>
+    public bool PlayCue(float[] samples)
+    {
+        if (_disposed || samples.Length == 0 || samples.Length > MaxCueSamples) return false;
+        if (Environment.TickCount64 - Interlocked.Read(ref _lastPulledAt) > 500) return false;
+        lock (_playLock)
+        {
+            if (_cues.Count >= MaxCues) return false;
+            _cues.Add(new Cue { Samples = samples });
+        }
+        return true;
+    }
+
     /// <summary>How many soundboard sounds are playing right now.</summary>
     internal int SoundsPlaying { get { lock (_playLock) return _sounds.Count; } }
 
@@ -413,6 +438,7 @@ public sealed class VoiceSession : IDisposable
     public void PullPlayback(Span<float> output)
     {
         var whole = output;
+        Interlocked.Exchange(ref _lastPulledAt, Environment.TickCount64);
         lock (_playLock)
         {
             while (!output.IsEmpty)
@@ -460,11 +486,20 @@ public sealed class VoiceSession : IDisposable
             for (int i = 0; i < FrameSamples; i++) _mix[i] += _tmp[i] * soundGain;
             if (sound.Finished) _sounds.RemoveAt(k);
         }
+        Array.Clear(_cueMix);
+        for (int k = _cues.Count - 1; k >= 0; k--)
+        {
+            var cue = _cues[k];
+            int n = Math.Min(FrameSamples, cue.Samples.Length - cue.Position);
+            for (int i = 0; i < n; i++) _cueMix[i] += cue.Samples[cue.Position + i];
+            cue.Position += n;
+            if (cue.Position >= cue.Samples.Length) _cues.RemoveAt(k);
+        }
         float master = OutputGain;
         bool levelled = _levelSpeakers;
         for (int i = 0; i < FrameSamples; i++)
         {
-            float s = _mix[i] * master;
+            float s = _mix[i] * master + _cueMix[i];
             // A boosted voice that goes past full scale is bent smoothly into the last 0.25, which sounds less harsh than a hard cut;
             // so are several leveled voices that add up past it.
             if (master > 1f || levelled)
