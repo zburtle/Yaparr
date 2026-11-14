@@ -40,8 +40,14 @@ the stream is announced like a voice beacon, signed by the sharer.
   `MaxMeteredStreamKbps` (128) is not carried over a connection that runs through it. A member who can only reach the tree
   that way is not attached; `MediaStatus.OverServer` says so, and it tries again every ten seconds. Voice (declared at
   64) is carried as before. A stream sent without a declared bitrate is taken to be 1000.
-- **Voice.** When a voice channel reaches `VoiceTreeThreshold` people, the member who sorts first by id and can relay starts
-  a tree (the others wait a little longer for each place further down, so only one does). Everybody joins it and sends
+- **Voice.** When a voice channel reaches `VoiceTreeThreshold` people, the member who suits best and can relay starts
+  a tree. Each member says in its voice announcement how well it can relay (nothing if it cannot, otherwise 1 plus its
+  measured upload in megabits a second, at most 255); members who say they cannot are not counted, those who say
+  nothing (older versions) come after, and equals go by id. The others wait a little longer for each member in front
+  of them, so only one starts, and members who cannot relay do not make anyone wait. When a tree is seen to be gone, its root
+  is left out for a while (its place in the call lingers if it dropped without saying so), so the next in line, whom everyone
+  already knows, starts at once and does not wait behind it. The figure is not signed (so that
+  older versions still accept the announcement); a member passing it on could change it, which costs the next in line a wait. Everybody joins it and sends
   their audio up it; the root and the other members pass it on. The root sends to `VoiceRootFanout` (6) members. Until
   a member is attached, and whenever there is no tree, audio goes straight to each person as before. If the root
   disappears, the next one in line starts a new tree; the gap is a few seconds. When the channel shrinks to half the
