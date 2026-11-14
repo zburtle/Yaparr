@@ -80,6 +80,24 @@ public class QualityReportTests
     }
 
     [Fact]
+    public void A_stream_whose_packets_arrive_but_never_make_a_picture_is_trouble_where_one_with_no_packets_is_not()
+    {
+        // 40 packets a second, nothing shown, nothing counted as lost (not one key frame was ever whole): the worst trouble.
+        var meter = new ViewerQualityMeter();
+        for (int s = 1; s <= 12; s++) meter.Update(s * 1000L, new ViewerCounters(0, 0, 0, 0, 0, 0, Packets: s * 40L));
+        Assert.True(meter.Sample.Known);
+        Assert.True(meter.Sample.Troubled);
+        Assert.Equal(0, meter.Sample.Fps);
+        // A few packets only (a paused share, or the end of one) is not.
+        meter = new ViewerQualityMeter();
+        for (int s = 1; s <= 12; s++) meter.Update(s * 1000L, new ViewerCounters(0, 0, 0, 0, 0, 0, Packets: s / 4));
+        Assert.False(meter.Sample.Known);
+        // And once pictures come again the stall is forgotten after the window.
+        for (int s = 13; s <= 24; s++) meter.Update(s * 1000L, new ViewerCounters((s - 12) * 30L, 0, 0, 0, 0, 0, Packets: 40L * s));
+        Assert.False(meter.Sample.Troubled);
+    }
+
+    [Fact]
     public void Reports_fold_by_adding_the_counts_and_taking_the_worst_known_rate()
     {
         var a = new MediaQuality(3, 1, 20, 1);
