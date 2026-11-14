@@ -161,6 +161,8 @@ public sealed partial class ScreenSharer
             _source.OwnLinkFine = !_policy.OwnLinkInTrouble(own) && !own.SenderBehind;
 
             var decision = _policy.Tick(now, new RoomQuality(room.Viewers, room.Troubled, room.WorstFps, room.Lossy), own, _source.Viewers.Count);
+            // The lower stream is started when a viewer of the main one is in trouble, and taken away when it is not needed any more (see LowStream).
+            _low?.Tick(now, room.Troubled);
             string level = LevelOf(_policy.Step).Describe();
             bool acting = ActingOnQuality;
             if (decision.SenderBehind != _senderWasBehind)
