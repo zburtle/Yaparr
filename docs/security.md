@@ -38,6 +38,6 @@ On Windows the identity, settings (private room keys), account settings, the Wir
 
 ## Limits on what a peer can do
 
-Each connection has allowances for frames, bytes, messages, sound plays and sound lists, and a peer that keeps going past them is disconnected (`PeerLimits`). A reliable message is capped at 4 MB, a connection at 16 channels, 256 connections are kept, and silent connections are closed.
+Each connection has allowances for frames, bytes, messages, sound plays and sound lists, and a peer that keeps going past them is disconnected (`PeerLimits`) and refused when it connects again: for a minute the first time, twice as long each time it floods again soon after the ban ended (up to an hour), starting over once it has stayed away for as long as the last ban (`FloodBans`; `PeerLimits.BanFirst` and `BanLongest`, zero turns it off). It is the device that is refused, only while the program runs, and your own devices are never banned; someone who comes back with a new identity starts fresh, as before. Still open in [#30](https://github.com/zburtle/Yaparr/issues/30): limits on voice and media packets and on DHT requests, and relay limits scaled to the relay's measured upload. A reliable message is capped at 4 MB, a connection at 16 channels, 256 connections are kept, and silent connections are closed.
 
 Updates are checked before they are installed; see [Installer and updates](installer-and-updates.md). What is still open is in the [backlog](../BACKLOG.md).

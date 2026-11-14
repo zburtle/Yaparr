@@ -366,6 +366,7 @@ public sealed partial class ChatNode : IDisposable
         _peerCache = new PeerCache(_options.PeerCachePath);
         _clocks = new ClockOffsets(_options.ClockOffsetsPath);
         _blobs = new BlobStore(_options.AttachmentDirectory, _options.HistoryCipher);
+        _floodBans = new FloodBans(_options.Limits);
         _directHistory = new DirectHistory(_options.DirectHistoryDirectory, _options.MaxHistoryMessages, _options.MaxHistoryAge, _options.HistoryCipher);
         LoadPendingDirect();
         _turnOptions = _options.Traversal.Turn;
@@ -1027,6 +1028,7 @@ public sealed partial class ChatNode : IDisposable
                 _peerCache.Save();
                 long cutoff = now - 600_000;
                 foreach (var kv in _seenDirect.Where(kv => kv.Value < cutoff).ToList()) _seenDirect.TryRemove(kv.Key, out _);
+                _floodBans.Forget(now);
             }
         }
         catch (OperationCanceledException) { }
@@ -1428,6 +1430,12 @@ public sealed partial class ChatNode : IDisposable
     {
         LearnAccount(conn);
         if (IsBlocked(conn.RemoteId!.Value)) { conn.Close(notifyPeer: true); return; }
+        if (_floodBans.IsBanned(conn.RemoteId!.Value, Environment.TickCount64, out var banLeft))
+        {
+            _options.Log?.Invoke($"refusing {conn.RemoteId.Value.Short}: it was disconnected for flooding, {banLeft.TotalSeconds:0} s of the ban are left");
+            conn.Close(notifyPeer: true);
+            return;
+        }
         var state = new PeerState(conn);
         bool isNew = !_peers.TryGetValue(state.Id, out var previous);
         CountConnectionMade(conn, previous?.Connection);
@@ -1746,9 +1754,20 @@ public sealed partial class ChatNode : IDisposable
         bool close = rate.RecordDrop(out int total);
         if (total == 1 || close) _options.Log?.Invoke($"{peer.Id.Short} {what}; dropping what is over the limit");
         if (!close) return;
-        _options.Log?.Invoke($"{peer.Id.Short} kept sending past the limit; closing");
+        // It could reconnect at once and start over, so it is refused for a while (longer each time it floods again soon after). Your own devices are trusted.
+        if (_options.Limits.BanFirst > TimeSpan.Zero && !IsMyDevice(peer.Id))
+        {
+            var banned = _floodBans.Ban(peer.Id, Environment.TickCount64);
+            _options.Log?.Invoke($"{peer.Id.Short} kept sending past the limit; closing, and refusing it for {banned.TotalSeconds:0} s");
+        }
+        else _options.Log?.Invoke($"{peer.Id.Short} kept sending past the limit; closing");
         peer.Connection.Close(notifyPeer: true);
     }
+
+    private readonly FloodBans _floodBans;
+
+    /// <summary>Whether a peer that was disconnected for flooding is still being refused (for tests and the diagnostics).</summary>
+    internal bool IsBannedForFlooding(PeerId peer) => _floodBans.IsBanned(peer, Environment.TickCount64, out _);
 
     // A member of one of our rooms, or someone we sought out ourselves. Anyone else who reaches us is a stranger.
     private bool IsAcquaintance(PeerState peer) =>
