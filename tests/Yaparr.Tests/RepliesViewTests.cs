@@ -32,7 +32,8 @@ public class RepliesViewTests
         // Catching up can bring the reply before the message: it quotes it once that arrives.
         var early = Message(K3, "Carol", "me too", replyTo: new string('d', 32));
         conv.Add(early);
-        Assert.Equal("an earlier message that is not here", early.QuoteText);
+        Assert.Equal(ConversationVm.MissingQuoteText, early.QuoteText);
+        Assert.Contains("older than the history kept", early.QuoteText);   // says why, in the two ways it can be
         conv.Add(Message(new string('d', 32), "Dave", "the original"));
         Assert.Equal("Dave", early.QuoteSender);
         Assert.Equal("the original", early.QuoteText);

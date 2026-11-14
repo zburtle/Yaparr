@@ -438,7 +438,8 @@
                                 </Border>
                                 <StackPanel Grid.Column="1" Margin="10,0,6,0" VerticalAlignment="Center">
                                     <Grid ColumnDefinitions="Auto,Auto,*">
-                                        <TextBlock x:Name="NameText" MaxWidth="190" FontWeight="SemiBold" FontSize="15" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                        <TextBlock x:Name="NameText" MaxWidth="190" FontWeight="SemiBold" FontSize="15" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                                                   ToolTip.Tip="{Binding $self.Text}" />
                                         <Button x:Name="RenameButton" Grid.Column="1" Classes="ghost" Width="22" Height="22" Padding="0" BorderThickness="0" Background="Transparent" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" VerticalAlignment="Center" Margin="2,0,0,0" IsVisible="False"
                                                 ToolTip.Tip="Change my name" Click="Rename_Click">
                                             <Path Data="M1,11 V8 L8,1 L11,4 L4,11 Z M6,3 L9,6" Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.2" StrokeLineCap="Round" StrokeJoin="Round" Width="12" Height="12" HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -1102,6 +1103,8 @@
                         <StackPanel x:Name="SectionAbout" Spacing="10" IsVisible="False">
                             <TextBlock Text="About" FontSize="15" FontWeight="SemiBold" />
                             <TextBlock x:Name="AboutText" TextWrapping="Wrap" />
+                            <CheckBox x:Name="UpdateCheckItem" Content="Look for a new version when Yaparr starts"
+                                      ToolTip.Tip="This contacts GitHub, which sees the address Yaparr connects from. Help, then Check for updates, still works." />
                             <Button Content="Copy diagnostics" Click="CopyDiagnostics_Click" />
                             <Button Content="Copy sharing diagnostics" Click="CopySharingDiagnostics_Click" ToolTip.Tip="For a problem with sharing a screen or watching one: how this computer shares, what the last share did and the log lines about it" />
                             <Button Content="Open log file" Click="OpenLog_Click" />
