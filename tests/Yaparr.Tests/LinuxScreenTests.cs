@@ -41,67 +41,6 @@ public class LinuxScreenTests(Xunit.Abstractions.ITestOutputHelper output)
     }
 
     [Fact]
-    public void X11CaptureGrabsTheMonitorsRectangleAtTheFrameRate()
-    {
-        var options = new ScreenOptions { X11Display = ":0", Display = new Display(0, "DP-1", 1920, 0, 1920, 1080, true), Fps = 30, ShowCursor = false };
-        string line = string.Join(' ', FfmpegArgs.Capture(options, ScreenCodec.Vp8));
-        Assert.Contains("-f x11grab -framerate 30 -draw_mouse 0 -video_size 1920x1080 -i :0+1920,0", line);
-        Assert.Contains("-vf scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=yuv420p", line);
-        Assert.Contains("-c:v libvpx", line);
-        Assert.DoesNotContain("gfxcapture", line);
-        Assert.DoesNotContain("-filter_complex", line);
-    }
-
-    [Fact]
-    public void X11CaptureWithoutAKnownSizeGrabsTheWholeScreen()
-    {
-        var options = new ScreenOptions { X11Display = ":0.0", Display = new Display(0, "Screen", 0, 0, 0, 0, true) };
-        string line = string.Join(' ', FfmpegArgs.Capture(options, ScreenCodec.Vp8));
-        Assert.DoesNotContain("-video_size", line);
-        Assert.Contains("-i :0.0+0,0", line);
-    }
-
-    [Fact]
-    public void X11CaptureEncodesWithTheGraphicsCardLikeTheWindowsPath()
-    {
-        var options = new ScreenOptions { X11Display = ":0", Display = new Display(0, "DP-1", 0, 0, 1920, 1080, true) };
-        string nvidia = string.Join(' ', FfmpegArgs.Capture(options, ScreenCodec.H264, HardwareEncoder.Nvenc));
-        Assert.Contains("-c:v h264_nvenc", nvidia);
-        Assert.Contains("-f h264 pipe:1", nvidia);
-        Assert.Contains("format=yuv420p", nvidia);
-        Assert.Contains("format=nv12", string.Join(' ', FfmpegArgs.Capture(options, ScreenCodec.H264, HardwareEncoder.Qsv)));
-    }
-
-    [Fact]
-    public void X11CaptureGrabsAWindowByItsId()
-    {
-        string line = string.Join(' ', FfmpegArgs.Capture(new ScreenOptions { X11Display = ":0", WindowHandle = 0x3C00003 }, ScreenCodec.Vp8));
-        Assert.Contains("-f x11grab -framerate 10 -draw_mouse 1 -window_id 0x3C00003 -i :0 ", line);
-        Assert.DoesNotContain("-video_size", line);
-    }
-
-    [Fact]
-    public void X11CaptureNeedsSomethingToShare()
-    {
-        Assert.Throws<ArgumentException>(() => FfmpegArgs.Capture(new ScreenOptions { X11Display = ":0" }, ScreenCodec.Vp8));
-    }
-
-    [Fact]
-    public void VaapiUploadsTheFramesToTheRenderDevice()
-    {
-        var options = new ScreenOptions { X11Display = ":0", Display = new Display(0, "DP-1", 0, 0, 1920, 1080, true) };
-        var args = FfmpegArgs.Capture(options, ScreenCodec.H264, HardwareEncoder.Vaapi);
-        string line = string.Join(' ', args);
-        Assert.Contains("-vaapi_device /dev/dri/", line);
-        Assert.True(args.IndexOf("-vaapi_device") < args.IndexOf("-i"), "the device is named before the input");
-        Assert.Contains("format=nv12,hwupload", line);
-        Assert.Contains("-c:v h264_vaapi -profile:v high -bf 0 -aud 1", line);
-        Assert.Contains("-f h264 pipe:1", line);
-        // Only H.264 on VA-API needs the device; VP8 in software on the same options does not.
-        Assert.DoesNotContain("vaapi", string.Join(' ', FfmpegArgs.Capture(options, ScreenCodec.Vp8, HardwareEncoder.Vaapi)));
-    }
-
-    [Fact]
     public void VaapiIsNamedLikeTheOtherEncoders()
     {
         Assert.Equal("h264_vaapi", HardwareEncoders.Name(HardwareEncoder.Vaapi));
@@ -166,54 +105,10 @@ public class LinuxScreenTests(Xunit.Abstractions.ITestOutputHelper output)
     }
 
     [Fact]
-    public void WithoutAnX11DisplayTheWindowsPathIsUsed()
-    {
-        var options = new ScreenOptions { X11Display = null, Display = new Display(0, "x", 0, 0, 1920, 1080, true, Handle: 0x1A2B) };
-        string line = string.Join(' ', FfmpegArgs.Capture(options, ScreenCodec.Vp8));
-        Assert.Contains("gfxcapture=hmonitor=0x1A2B", line);
-        Assert.DoesNotContain("x11grab", line);
-    }
-
-    [Fact]
     public void ChangingTheTargetKeepsTheX11Display()
     {
         var next = new ScreenOptions { X11Display = ":1" }.Retarget(new Display(0, "x", 0, 0, 800, 600, true), null);
         Assert.Equal(":1", next.X11Display);
-    }
-
-    // The real thing on a virtual X server: FFmpeg's x11grab with the command line Yaparr builds, and the IVF frames read back.
-    // Does nothing where this is not Linux or FFmpeg or Xvfb is missing; the Linux job of the Test workflow installs them.
-    [Fact]
-    public async Task X11CaptureDeliversFramesFromAVirtualScreen()
-    {
-        if (!OperatingSystem.IsLinux() || FfmpegLocator.Find() is not { } ffmpeg || FindOnPath("Xvfb") is not { } xvfb) return;
-        const string display = ":97";
-        using var server = Process.Start(new ProcessStartInfo(xvfb, $"{display} -screen 0 640x480x24") { UseShellExecute = false, RedirectStandardError = true })!;
-        try
-        {
-            await Task.Delay(1500);
-            var options = new ScreenOptions { X11Display = display, Display = new Display(0, "screen", 0, 0, 640, 480, true), Fps = 10, MaxWidth = 320, MaxHeight = 240 };
-            var psi = new ProcessStartInfo(ffmpeg) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
-            foreach (var a in FfmpegArgs.Capture(options, ScreenCodec.Vp8)) psi.ArgumentList.Add(a);
-            using var capture = Process.Start(psi)!;
-            var errors = capture.StandardError.ReadToEndAsync();
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-            try
-            {
-                var header = await Ivf.ReadHeaderAsync(capture.StandardOutput.BaseStream, timeout.Token);
-                Assert.Equal((320, 240), (header.Width, header.Height));
-                for (int i = 0; i < 5; i++)
-                    Assert.NotNull(await Ivf.ReadFrameAsync(capture.StandardOutput.BaseStream, timeout.Token));
-            }
-            finally
-            {
-                try { capture.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
-            }
-        }
-        finally
-        {
-            try { server.Kill(); } catch (InvalidOperationException) { }
-        }
     }
 
     // The X11 capture inside this program (x11grab through FFmpeg's libraries): pictures at the size asked for (even, the shape kept, never above the screen), steadily, and
@@ -227,7 +122,7 @@ public class LinuxScreenTests(Xunit.Abstractions.ITestOutputHelper output)
         try
         {
             await Task.Delay(1500);
-            var options = new ScreenOptions { X11Display = display, Display = new Display(0, "screen", 0, 0, 800, 600, true), Fps = 30, MaxWidth = 400, MaxHeight = 400, InProcessEncoder = true, InProcessCapture = true };
+            var options = new ScreenOptions { X11Display = display, Display = new Display(0, "screen", 0, 0, 800, 600, true), Fps = 30, MaxWidth = 400, MaxHeight = 400 };
             using var capture = new InProcessCapture(options);
             await capture.WaitForFirstAsync(TimeSpan.FromSeconds(20), CancellationToken.None);
             // 800x600 into a 400x400 box: 400x300, the shape kept
@@ -260,7 +155,7 @@ public class LinuxScreenTests(Xunit.Abstractions.ITestOutputHelper output)
     [Fact]
     public async Task A_real_share_of_a_virtual_X_screen_is_encoded_in_this_program_and_goes_through_the_levels_of_adaptive_quality()
     {
-        if (!OperatingSystem.IsLinux() || !FfmpegLibraries.IsAvailable || FfmpegLocator.Find() is not { } ffmpeg || FindOnPath("Xvfb") is not { } xvfb) return;
+        if (!OperatingSystem.IsLinux() || !FfmpegLibraries.IsAvailable || FindOnPath("Xvfb") is not { } xvfb) return;
         const string display = ":96";
         using var server = Process.Start(new ProcessStartInfo(xvfb, $"{display} -screen 0 1280x720x24") { UseShellExecute = false, RedirectStandardError = true })!;
         try
@@ -270,15 +165,14 @@ public class LinuxScreenTests(Xunit.Abstractions.ITestOutputHelper output)
             var asked = new ScreenOptions
             {
                 X11Display = display, Display = new Display(0, "screen", 0, 0, 1280, 720, true), Fps = 60, Kbps = 6000, KeyFrameSeconds = 1,
-                MaxWidth = 1920, MaxHeight = 1080, Codec = ScreenCodec.H264, Encoder = HardwareEncoder.Nvenc, InProcessEncoder = true,
+                MaxWidth = 1920, MaxHeight = 1080, Codec = ScreenCodec.H264, Encoder = HardwareEncoder.Nvenc,
             };
             using var cluster = await MediaTreeTests.Cluster.StartAsync(2, fanout: 2, rootFanout: 2);
-            using var sharer = ScreenSharer.Start(cluster.Root, cluster.Rooms[0], "Test screen", asked, ffmpeg);
+            using var sharer = ScreenSharer.Start(cluster.Root, cluster.Rooms[0], "Test screen", asked);
             try { await TestUtil.WaitFor(() => sharer.Frames >= 60 || !sharer.IsRunning, 30_000); }
             catch (TimeoutException) { output.WriteLine(sharer.Describe()); throw; }
             output.WriteLine(sharer.Describe());
-            if (!sharer.InProcess) return;   // no NVIDIA encoder here, or the libraries are not usable
-            Assert.True(sharer.CaptureInProcess, "the X11 capture runs in this program too: " + sharer.FallbackReason);
+            if (sharer.Encoder != HardwareEncoder.Nvenc) return;   // no NVIDIA encoder here: another card (or VP8) took over
             Assert.Contains("capture: in this program", sharer.EncoderDetails);
             Assert.Contains("h264_nvenc", sharer.EncoderDetails);
             Assert.Equal(60, sharer.RunFps);
@@ -310,14 +204,14 @@ public class LinuxScreenTests(Xunit.Abstractions.ITestOutputHelper output)
 
     // A Wayland share with no FFmpeg in it: a stand-in gst-launch-1.0 (a script that writes black NV12 pictures of the size it is asked for) takes the place of GStreamer,
     // and a portal with no desktop behind it the place of the desktop's stream. The pictures are paced into the encoder in this program, which goes through the levels of
-    // adaptive quality and back. Does nothing where this is not Linux, or the libraries, FFmpeg's program (only to be found) or an NVIDIA card are missing.
+    // adaptive quality and back. Does nothing where this is not Linux, or the libraries or an NVIDIA card are missing.
     // The same share on an X11 session (DISPLAY is set) whose window was chosen in the desktop's picker: the portal's stream is what is shared, and nothing of x11grab is used.
     [Theory]
     [InlineData(null)]
     [InlineData(":0")]
     public async Task A_Wayland_share_is_encoded_in_this_program_with_no_FFmpeg_capturing_and_goes_through_the_levels_of_adaptive_quality(string? x11Display)
     {
-        if (!OperatingSystem.IsLinux() || !FfmpegLibraries.IsAvailable || FfmpegLocator.Find() is not { } ffmpeg) return;
+        if (!OperatingSystem.IsLinux() || !FfmpegLibraries.IsAvailable) return;
         var dir = Directory.CreateTempSubdirectory("yaparr-gst-").FullName;
         string oldPath = Environment.GetEnvironmentVariable("PATH") ?? "";
         try
@@ -346,16 +240,16 @@ public class LinuxScreenTests(Xunit.Abstractions.ITestOutputHelper output)
             var asked = new ScreenOptions
             {
                 Portal = portal, X11Display = x11Display, Fps = 60, Kbps = 6000, KeyFrameSeconds = 1, MaxWidth = 1920, MaxHeight = 1080,
-                Codec = ScreenCodec.H264, Encoder = HardwareEncoder.Nvenc, InProcessEncoder = true,
+                Codec = ScreenCodec.H264, Encoder = HardwareEncoder.Nvenc,
             };
             using var cluster = await MediaTreeTests.Cluster.StartAsync(2, fanout: 2, rootFanout: 2);
-            using var sharer = ScreenSharer.Start(cluster.Root, cluster.Rooms[0], "Test screen", asked, ffmpeg);
+            using var sharer = ScreenSharer.Start(cluster.Root, cluster.Rooms[0], "Test screen", asked);
             try { await TestUtil.WaitFor(() => sharer.Frames >= 60 || !sharer.IsRunning, 30_000); }
             catch (TimeoutException) { output.WriteLine(sharer.Describe()); throw; }
             output.WriteLine(sharer.Describe());
-            if (!sharer.InProcess) return;   // no NVIDIA encoder here
+            if (sharer.Encoder != HardwareEncoder.Nvenc) return;   // no NVIDIA encoder here: another card (or VP8) took over
             Assert.Contains("h264_nvenc 1280x720 at 60 fps", sharer.EncoderDetails);
-            Assert.Contains("no FFmpeg", sharer.EncoderDetails);
+            Assert.Contains("gst-launch-1.0", sharer.EncoderDetails);   // GStreamer reads the desktop's stream; the encoder is in this program
             Assert.DoesNotContain("-f rawvideo", sharer.EncoderDetails.Replace("no FFmpeg", ""));   // no FFmpeg command line is in it
 
             async Task Wait(Func<bool> done, string what)
@@ -419,13 +313,12 @@ public class LinuxScreenTests(Xunit.Abstractions.ITestOutputHelper output)
     }
 
     [Fact]
-    public async Task The_sharing_diagnostics_say_how_this_computer_shares_and_do_not_fail_without_ffmpeg()
+    public async Task The_sharing_diagnostics_say_how_this_computer_shares_and_what_the_libraries_can_do()
     {
-        var text = await ScreenDiagnostics.BuildAsync(ffmpegPath: Path.Combine(Path.GetTempPath(), "no-such-ffmpeg-" + Guid.NewGuid().ToString("N")));
+        var text = await ScreenDiagnostics.BuildAsync();
         Assert.Contains("Screen sharing", text);
         Assert.Contains("Way of capture here:", text);
-        Assert.Contains("FFmpeg version:", text);   // asked of a program that is not there: said so, not thrown
-        Assert.Contains("could not run", text);
+        Assert.Contains("FFmpeg's libraries:", text);   // there or not, said so, not thrown
         if (OperatingSystem.IsLinux()) Assert.Contains("Session: XDG_SESSION_TYPE=", text);
     }
 
@@ -482,24 +375,6 @@ public class LinuxScreenTests(Xunit.Abstractions.ITestOutputHelper output)
     [InlineData(false, false, true, null, false)]               // not Linux
     public void A_window_chosen_in_the_desktops_picker_is_offered_on_X11_only_where_the_portal_and_GStreamer_are_there(bool linux, bool wayland, bool portal, string? gstreamerMissing, bool offered)
         => Assert.Equal(offered, ScreenCapture.OffersPortalWindowOnX11For(linux, wayland, portal, gstreamerMissing));
-
-    [Fact]
-    public void FfmpegEncodesTheRawPicturesFromGStreamer()
-    {
-        var args = FfmpegArgs.CapturePortal(new ScreenOptions { Fps = 20 }, Monitor1080, ScreenCodec.Vp8);
-        string line = string.Join(' ', args);
-        Assert.Contains("-f rawvideo -pixel_format yuv420p -video_size 1280x720 -framerate 20 -i pipe:0", line);
-        Assert.Contains("-vf format=yuv420p", line);
-        Assert.Contains("-c:v libvpx", line);
-        Assert.DoesNotContain("-nostdin", line);   // the pictures arrive on standard input
-        Assert.DoesNotContain("x11grab", line);
-
-        var vaapi = FfmpegArgs.CapturePortal(new ScreenOptions(), Monitor1080, ScreenCodec.H264, HardwareEncoder.Vaapi);
-        Assert.True(vaapi.IndexOf("-vaapi_device") < vaapi.IndexOf("-i"));
-        Assert.Contains("-vf format=nv12,hwupload", string.Join(' ', vaapi));
-        Assert.Contains("-f h264 pipe:1", string.Join(' ', vaapi));
-        Assert.Throws<ArgumentOutOfRangeException>(() => FfmpegArgs.CapturePortal(new ScreenOptions { Fps = 0 }, Monitor1080, ScreenCodec.Vp8));
-    }
 
     private const string SinkInputs = @"Sink Input #52
 	Driver: PipeWire

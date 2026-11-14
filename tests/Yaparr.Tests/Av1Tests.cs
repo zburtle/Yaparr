@@ -62,43 +62,6 @@ public class Av1Tests
     }
 
     [Fact]
-    public void Av1_is_asked_for_on_the_graphics_card_and_written_as_ivf()
-    {
-        var options = new ScreenOptions { X11Display = null, Display = Monitor, Fps = 30, Kbps = 4000 };
-        string nvidia = string.Join(' ', FfmpegArgs.Capture(options, ScreenCodec.Av1, HardwareEncoder.Nvenc));
-        Assert.Contains("-c:v av1_nvenc", nvidia);
-        Assert.Contains("-bf 0", nvidia);
-        Assert.Contains("-g 60", nvidia);
-        Assert.EndsWith("-f ivf pipe:1", nvidia);
-        Assert.DoesNotContain("libvpx", nvidia);
-
-        Assert.Contains("-c:v av1_amf", string.Join(' ', FfmpegArgs.Capture(options, ScreenCodec.Av1, HardwareEncoder.Amf)));
-        string intel = string.Join(' ', FfmpegArgs.Capture(options, ScreenCodec.Av1, HardwareEncoder.Qsv));
-        Assert.Contains("-c:v av1_qsv", intel);
-        Assert.Contains("format=nv12", intel);   // Intel's encoder takes NV12
-        Assert.Equal("av1_vaapi", HardwareEncoders.Name(ScreenCodec.Av1, HardwareEncoder.Vaapi));
-        Assert.Equal("h264_nvenc", HardwareEncoders.Name(HardwareEncoder.Nvenc));
-    }
-
-    [Fact]
-    public void Av1_on_vaapi_names_the_render_device_and_uploads_the_picture_to_it()
-    {
-        var options = new ScreenOptions { X11Display = ":0", Display = Monitor };
-        string line = string.Join(' ', FfmpegArgs.Capture(options, ScreenCodec.Av1, HardwareEncoder.Vaapi));
-        Assert.Contains("-vaapi_device", line);
-        Assert.Contains("nv12,hwupload", line);
-        Assert.Contains("-c:v av1_vaapi", line);
-    }
-
-    [Fact]
-    public void The_viewer_decodes_av1_from_ivf()
-    {
-        Assert.Contains("-f ivf -i pipe:0", string.Join(' ', FfmpegArgs.DecodeForViewer(ScreenCodec.Av1, gpu: true)));
-        Assert.DoesNotContain("d3d11va", string.Join(' ', FfmpegArgs.DecodeForViewer(ScreenCodec.Av1, gpu: true)));
-        Assert.Contains("-f ivf -i pipe:0", string.Join(' ', FfmpegArgs.Decode(ScreenCodec.Av1)));
-    }
-
-    [Fact]
     public void Auto_never_picks_av1_and_av1_falls_back_to_what_auto_does()
     {
         Assert.DoesNotContain(ScreenSharer.Plan(new ScreenOptions { X11Display = null, Display = Monitor }), p => p.Codec == ScreenCodec.Av1);
@@ -129,35 +92,14 @@ public class Av1Tests
     }
 
     [Fact]
-    public void The_check_asks_each_card_for_a_tiny_av1_picture_in_ivf()
-    {
-        string nvidia = string.Join(' ', FfmpegArgs.ProbeEncoder(ScreenCodec.Av1, HardwareEncoder.Nvenc));
-        Assert.Contains("-c:v av1_nvenc", nvidia);
-        Assert.Contains("-f lavfi", nvidia);
-        Assert.EndsWith("-f ivf pipe:1", nvidia);
-        string vaapi = string.Join(' ', FfmpegArgs.ProbeEncoder(ScreenCodec.Av1, HardwareEncoder.Vaapi));
-        Assert.Contains("-vaapi_device", vaapi);
-        Assert.Contains("nv12,hwupload", vaapi);
-    }
-
-    [Fact]
     public void The_report_says_plainly_what_works_and_what_does_not()
     {
         var none = new Av1Report(Array.Empty<HardwareEncoder>(), new Dictionary<HardwareEncoder, string> { [HardwareEncoder.Nvenc] = "no device" }, false, null);
         Assert.False(none.CanEncode);
-        Assert.Equal("encoding: no graphics card here does it (not usable: NVIDIA: no device); decoding: FFmpeg here has no AV1 decoder", none.Describe());
+        Assert.Equal("encoding: no graphics card here does it (not usable: NVIDIA: no device); decoding: FFmpeg's libraries here have no AV1 decoder", none.Describe());
         var some = new Av1Report(new[] { HardwareEncoder.Amf }, new Dictionary<HardwareEncoder, string>(), true, "libdav1d");
         Assert.True(some.CanEncode);
         Assert.Equal("encoding: AMD; decoding: libdav1d", some.Describe());
-    }
-
-    [Fact]
-    public async Task The_check_runs_against_the_real_ffmpeg_and_gives_an_answer_for_every_card()
-    {
-        if (FfmpegLocator.Find() is not { } ffmpeg) return;
-        var report = await Av1Support.CheckAsync(ffmpeg);
-        // Every card is either usable or has a reason it is not.
-        foreach (var card in HardwareEncoders.InOrder) Assert.True(report.Encoders.Contains(card) || report.Refused.ContainsKey(card));
     }
 
     [Fact]

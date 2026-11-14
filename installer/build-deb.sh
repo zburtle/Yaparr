@@ -56,7 +56,7 @@ Architecture: $arch
 Installed-Size: $size_kb
 Maintainer: Yaparr <noreply@yaparr.invalid>
 Depends: libc6, libfontconfig1, libx11-6, libice6, libsm6, libssl3 | libssl3t64
-Recommends: libstdc++6 (>= 13.2), ffmpeg, libva2, libva-drm2, x11-xserver-utils, x11-utils, pulseaudio-utils, gstreamer1.0-tools, gstreamer1.0-pipewire
+Recommends: libstdc++6 (>= 13.2), libva2, libva-drm2, x11-xserver-utils, x11-utils, pulseaudio-utils, gstreamer1.0-tools, gstreamer1.0-pipewire
 Description: Serverless peer-to-peer chat
  Chat with friends over the BitTorrent DHT without any server. Messages are
  signed by their senders and rooms need an invite to join.

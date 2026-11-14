@@ -12,8 +12,6 @@ using Yaparr.Screen;
 
 var cli = Cli.Parse(args);
 if (!FfmpegLibraries.TryLoad(out var why)) { Console.Error.WriteLine("FFmpeg's libraries are needed (set YAPARR_FFMPEG_LIBS): " + why); return 1; }
-var ffmpeg = FfmpegLocator.Find();
-if (ffmpeg == null) Console.Error.WriteLine("No ffmpeg program was found (set YAPARR_FFMPEG): the quality (PSNR) will not be measured.");
 
 var rows = new List<Row>();
 Console.WriteLine("clip | size@fps, kbit/s | key s | buffer s | max x | made kbit/s | key avg KB | key max KB | frame max KB | peak 100 ms Mbit/s | PSNR dB | encode s");
@@ -22,23 +20,23 @@ foreach (var scene in cli.Scenes)
         foreach (var buffer in cli.Buffers)
             foreach (var maxRate in cli.MaxRates)
             {
-                var row = Run(scene, key, buffer, maxRate, cli.Seconds, ffmpeg);
+                var row = Run(scene, key, buffer, maxRate, cli.Seconds);
                 rows.Add(row);
                 Console.WriteLine(row.ToString());
             }
 if (cli.Csv != null) File.WriteAllLines(cli.Csv, new[] { Row.Header }.Concat(rows.Select(r => r.ToCsv())));
 return 0;
 
-static Row Run(Scene scene, double keySeconds, double bufferSeconds, double maxRate, int seconds, string? ffmpeg)
+static Row Run(Scene scene, double keySeconds, double bufferSeconds, double maxRate, int seconds)
 {
     var options = new ScreenOptions
     {
         Fps = scene.Fps, Kbps = scene.Kbps, MaxWidth = scene.Width, MaxHeight = scene.Height, KeyFrameSeconds = keySeconds, BufferSeconds = bufferSeconds, MaxRateMultiple = maxRate,
-        X11Display = null, InProcessEncoder = true,
+        X11Display = null,
     };
     int frames = seconds * scene.Fps;
     var sizes = new List<(int Bytes, bool Key)>();
-    var stream = new MemoryStream();
+    var packets = new List<byte[]>();
     var clock = Stopwatch.StartNew();
     using (var encoder = new InProcessEncoder(scene.Width, scene.Height, options))
     {
@@ -47,47 +45,36 @@ static Row Run(Scene scene, double keySeconds, double bufferSeconds, double maxR
         for (int n = 0; n < frames; n++)
         {
             generator.Fill(n, picture);
-            encoder.Encode(picture, false, (packet, key) => { sizes.Add((packet.Length, key)); stream.Write(packet); });
+            encoder.Encode(picture, false, (packet, key) => { sizes.Add((packet.Length, key)); packets.Add(packet); });
         }
     }
     double encodeSeconds = clock.Elapsed.TotalSeconds;
-    double psnr = ffmpeg == null ? double.NaN : Psnr(scene, stream.ToArray(), frames, ffmpeg);
+    double psnr = Psnr(scene, packets, frames);
     return Row.Of(scene, keySeconds, bufferSeconds, maxRate, seconds, sizes, psnr, encodeSeconds);
 }
 
-// The luma of what comes out of the encoder, decoded by FFmpeg, against the luma that went in (made again, the clips are deterministic).
-static double Psnr(Scene scene, byte[] h264, int frames, string ffmpeg)
+// The luma of what comes out of the encoder, decoded by the viewer's decoder in this program, against the luma that went in (made again, the clips are deterministic).
+static double Psnr(Scene scene, List<byte[]> packets, int frames)
 {
-    var input = Path.Combine(Path.GetTempPath(), "yaparr-tuning-" + Guid.NewGuid().ToString("N") + ".h264");
-    File.WriteAllBytes(input, h264);
-    try
+    using var decoder = new InProcessDecoder(ScreenCodec.H264);
+    var generator = scene.Make();
+    var source = new byte[scene.Width * scene.Height * 3 / 2];
+    int lumaBytes = scene.Width * scene.Height;
+    double sum = 0; int counted = 0;
+    foreach (var packet in packets)
     {
-        var psi = new ProcessStartInfo(ffmpeg) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
-        foreach (var a in new[] { "-hide_banner", "-loglevel", "error", "-nostdin", "-f", "h264", "-i", input, "-f", "rawvideo", "-pix_fmt", "nv12", "pipe:1" }) psi.ArgumentList.Add(a);
-        using var process = Process.Start(psi)!;
-        _ = process.StandardError.ReadToEndAsync();
-        var generator = scene.Make();
-        var source = new byte[scene.Width * scene.Height * 3 / 2];
-        var decoded = new byte[source.Length];
-        var stdout = process.StandardOutput.BaseStream;
-        double sum = 0; int counted = 0;
-        int lumaBytes = scene.Width * scene.Height;
-        for (int n = 0; n < frames; n++)
+        decoder.Decode(packet, 0, 0, (decoded, w, h) =>
         {
-            int read = 0;
-            while (read < decoded.Length) { int got = stdout.Read(decoded, read, decoded.Length - read); if (got <= 0) break; read += got; }
-            if (read < decoded.Length) break;
-            generator.Fill(n, source);
+            if (counted >= frames || w != scene.Width || h != scene.Height) return;
+            generator.Fill(counted, source);
             long squares = 0;
             for (int i = 0; i < lumaBytes; i++) { int d = source[i] - decoded[i]; squares += d * d; }
             double mse = squares / (double)lumaBytes;
             sum += mse == 0 ? 60 : Math.Min(60, 10 * Math.Log10(255.0 * 255.0 / mse));
             counted++;
-        }
-        process.WaitForExit(5000);
-        return counted == 0 ? double.NaN : sum / counted;
+        });
     }
-    finally { try { File.Delete(input); } catch (IOException) { } }
+    return counted == 0 ? double.NaN : sum / counted;
 }
 
 sealed class Cli

@@ -10,17 +10,14 @@ public class InProcessSettingsTests
     [InlineData("", true, InProcessMode.CaptureOnCard, false)]
     [InlineData("something else", true, InProcessMode.CaptureOnCard, false)]
     [InlineData(null, false, InProcessMode.CaptureOnCpu, false)]    // elsewhere (Linux): the encoder and the X11 capture here
-    [InlineData("0", true, InProcessMode.Off, true)]
-    [InlineData("off", true, InProcessMode.Off, true)]
-    [InlineData("OFF", false, InProcessMode.Off, true)]
-    [InlineData("1", true, InProcessMode.Encoder, true)]
-    [InlineData("1", false, InProcessMode.Encoder, true)]
-    [InlineData("encoder", true, InProcessMode.Encoder, true)]
+    [InlineData("0", true, InProcessMode.CaptureOnCard, false)]     // there is no separate FFmpeg to go back to: the old values mean nothing now
+    [InlineData("off", false, InProcessMode.CaptureOnCpu, false)]
+    [InlineData("encoder", true, InProcessMode.CaptureOnCard, false)]
     [InlineData("capture-cpu", true, InProcessMode.CaptureOnCpu, true)]
     [InlineData("capture", true, InProcessMode.CaptureOnCard, true)]
     [InlineData(" Capture ", true, InProcessMode.CaptureOnCard, true)]
     [InlineData("capture", false, InProcessMode.CaptureOnCpu, true)] // on Linux the pictures are in memory (an X11 screen)
-    public void The_environment_variable_says_how_much_is_done_in_this_program(string? value, bool windows, InProcessMode mode, bool asked)
+    public void The_environment_variable_says_whether_the_pictures_stay_on_the_card(string? value, bool windows, InProcessMode mode, bool asked)
         => Assert.Equal((mode, asked), InProcessSettings.Parse(value, windows));
 
     [Fact]
@@ -29,11 +26,9 @@ public class InProcessSettingsTests
         // The default (nothing set) on Windows is all of it; what the test runner's own environment says is not what is checked here.
         var (mode, _) = InProcessSettings.Parse(null, windows: true);
         Assert.Equal(InProcessMode.CaptureOnCard, mode);
-        var options = new ScreenOptions { InProcessEncoder = true, InProcessCapture = true, CaptureOnCard = true };
-        Assert.True(options.InProcessEncoder && options.InProcessCapture && options.CaptureOnCard);
+        var options = new ScreenOptions { CaptureOnCard = true, InProcessAsked = true };
         var again = options.Retarget(null, 5);
-        Assert.Equal((options.InProcessEncoder, options.InProcessCapture, options.CaptureOnCard, options.InProcessAsked),
-                     (again.InProcessEncoder, again.InProcessCapture, again.CaptureOnCard, again.InProcessAsked));
+        Assert.Equal((options.CaptureOnCard, options.InProcessAsked), (again.CaptureOnCard, again.InProcessAsked));
     }
 
     private static string TempMark() => Path.Combine(Path.GetTempPath(), "yaparr-guard-" + Guid.NewGuid().ToString("N"), "mark.txt");
@@ -101,39 +96,6 @@ public class InProcessSettingsTests
             Assert.Equal(0, InProcessGuard.UncleanEndings);
         }
         finally { InProcessGuard.UseFile(null); try { other.Kill(true); } catch (InvalidOperationException) { } try { Directory.Delete(Path.GetDirectoryName(mark)!, true); } catch (IOException) { } }
-    }
-
-    [Fact]
-    public async Task The_libraries_in_the_package_are_kept_next_to_the_program_and_the_app_finds_them_there()
-    {
-        string program = OperatingSystem.IsWindows() ? "ffmpeg.exe" : "ffmpeg";
-        var dir = Path.Combine(Path.GetTempPath(), "yaparr-libs-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        try
-        {
-            var zipPath = Path.Combine(dir, "pkg.zip");
-            using (var zip = ZipFile.Open(zipPath, ZipArchiveMode.Create))
-            {
-                void Add(string name, string text) { using var w = new StreamWriter(zip.CreateEntry(name).Open()); w.Write(text); }
-                Add("pkg/bin/" + program, "program");
-                Add("pkg/bin/" + (OperatingSystem.IsWindows() ? "avcodec-63.dll" : "libavcodec.so.63"), "library");
-                Add("pkg/bin/" + (OperatingSystem.IsWindows() ? "avutil-61.dll" : "libavutil.so.61"), "library");
-                Add("pkg/bin/notes.txt", "not a library");
-                Add("pkg/bin/sub/other.dll", "not in that folder");
-                Add("pkg/LICENSE.txt", "licence");
-            }
-            string sha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(zipPath)));
-            var package = new FfmpegPackage("test-shared", new Uri("https://example.invalid/pkg.zip"), sha, new FileInfo(zipPath).Length, "pkg/bin/" + program, "pkg/LICENSE.txt", "pkg");
-            var exe = await FfmpegInstaller.InstallAsync(package, null, Path.Combine(dir, "install"), new Serve(File.ReadAllBytes(zipPath)));
-            var folder = Path.GetDirectoryName(exe)!;
-            Assert.True(File.Exists(Path.Combine(folder, OperatingSystem.IsWindows() ? "avcodec-63.dll" : "libavcodec.so.63")));
-            Assert.True(File.Exists(Path.Combine(folder, OperatingSystem.IsWindows() ? "avutil-61.dll" : "libavutil.so.61")));
-            Assert.False(File.Exists(Path.Combine(folder, "notes.txt")), "only libraries come with the program");
-            Assert.False(File.Exists(Path.Combine(folder, "other.dll")), "only from the program's own folder in the zip");
-            // The app looks for the libraries next to the FFmpeg it would run.
-            Assert.Equal(Path.GetFullPath(folder), FfmpegLibraries.Find(Path.Combine(dir, "app"), explicitFolder: Path.Combine(dir, "nothing"), installDirectory: Path.Combine(dir, "install")));
-        }
-        finally { try { Directory.Delete(dir, true); } catch (IOException) { } }
     }
 
     private sealed class Serve(byte[] bytes) : HttpMessageHandler

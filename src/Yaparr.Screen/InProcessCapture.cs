@@ -71,7 +71,7 @@ public sealed unsafe class InProcessCapture : IDisposable
         if (x11 && onCard) throw new InvalidOperationException("An X11 screen is read from memory: there is no graphics card to keep its pictures on.");
         if (!FfmpegLibraries.TryLoad(out var why)) throw new PlatformNotSupportedException(why);
         Graph = x11 ? X11GraphText(options)
-                    : (onCard ? FfmpegArgs.CaptureFilterOnCard(options) : FfmpegArgs.CaptureFilter(options, raw: true))
+                    : (onCard ? FfmpegArgs.CaptureFilterOnCard(options) : FfmpegArgs.CaptureFilter(options))
                       ?? throw new InvalidOperationException("The size of the picture is not known, so it cannot be scaled on the graphics card.");
         _graph = ffmpeg.avfilter_graph_alloc();
         try

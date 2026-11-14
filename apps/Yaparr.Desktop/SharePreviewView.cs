@@ -27,7 +27,6 @@ public sealed class SharePreviewView : UserControl
     private readonly TextBlock _note = new() { FontSize = 11, Opacity = 0.7, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0), IsVisible = false };
 
     private ScreenSharer? _sharer;
-    private string _ffmpeg = "";
     private volatile LocalFrames? _frames;
     private ScreenViewer? _viewer;
     private WriteableBitmap? _bitmap;
@@ -43,7 +42,7 @@ public sealed class SharePreviewView : UserControl
     /// </summary>
     internal static readonly PreviewSize Size = new(640, 360, Environment.GetEnvironmentVariable("YAPARR_PREVIEW_FPS") is { } fps && int.TryParse(fps, out int n) && n > 0 ? Math.Min(n, 60) : 15);
 
-    /// <summary>The processor time the preview's decoder (a separate FFmpeg) has used since the share began, which the program's own figure does not include.</summary>
+    /// <summary>The processor time the preview's decoder has spent since the share began (it decodes in this program, so this is part of the program's own figure).</summary>
     public TimeSpan DecoderCpu => _decoderCpuDone + (_viewer?.DecoderCpu ?? default);
 
     private string? _decoderKind;
@@ -67,13 +66,12 @@ public sealed class SharePreviewView : UserControl
     }
 
     /// <summary>Starts following a share. <paramref name="wholeMonitor"/>: the picture would show itself, so the preview starts closed.</summary>
-    public void Attach(ScreenSharer sharer, string ffmpegPath, bool wholeMonitor)
+    public void Attach(ScreenSharer sharer, bool wholeMonitor)
     {
         Detach();
         _sharer = sharer;
         _decoderCpuDone = default;
         _decoderKind = null;
-        _ffmpeg = ffmpegPath;
         sharer.FrameEncoded += OnEncoded;
         IsVisible = true;
         SetKind(wholeMonitor);
@@ -122,7 +120,7 @@ public sealed class SharePreviewView : UserControl
         try
         {
             var frames = new LocalFrames();
-            var viewer = new ScreenViewer(frames, _ffmpeg, preview: Size);
+            var viewer = new ScreenViewer(frames, preview: Size);
             viewer.PictureReceived += OnPicture;
             viewer.Failed += ex => Dispatcher.UIThread.Post(() => { _waiting.Text = "The preview stopped: " + ex.Message; _waiting.IsVisible = true; });
             _viewer = viewer;

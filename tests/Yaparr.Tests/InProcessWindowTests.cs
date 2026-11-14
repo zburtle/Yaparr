@@ -108,7 +108,6 @@ public class InProcessWindowTests(Xunit.Abstractions.ITestOutputHelper output)
     public async Task A_window_that_is_moved_resized_minimised_restored_and_closed_is_shared_all_the_way_and_the_end_is_said_plainly(bool onCard)
     {
         if (!OperatingSystem.IsWindows() || !FfmpegLibraries.IsAvailable) return;
-        if (FfmpegLocator.Find() is not { } ffmpeg) return;
         using var window = new TestWindow(100, 100, 800, 500);
         if (window.Handle == IntPtr.Zero) { output.WriteLine("no window to share"); return; }
         try
@@ -120,15 +119,14 @@ public class InProcessWindowTests(Xunit.Abstractions.ITestOutputHelper output)
             var options = new ScreenOptions
             {
                 WindowHandle = handle, X11Display = null, Fps = 30, Kbps = 2000, KeyFrameSeconds = 1, MaxWidth = 1920, MaxHeight = 1080,
-                Codec = ScreenCodec.H264, Encoder = HardwareEncoder.Nvenc, InProcessEncoder = true, InProcessCapture = true, CaptureOnCard = onCard, InProcessAsked = true,
+                Codec = ScreenCodec.H264, Encoder = HardwareEncoder.Nvenc, CaptureOnCard = onCard, InProcessAsked = true,
             };
-            using var sharer = ScreenSharer.Start(cluster.Root, cluster.Rooms[0], "Test window", options, ffmpeg);
+            using var sharer = ScreenSharer.Start(cluster.Root, cluster.Rooms[0], "Test window", options);
             Exception? ended = null;
             sharer.Ended += ex => ended = ex;
             try { await TestUtil.WaitFor(() => sharer.Frames >= 45, 30_000); }
             catch (TimeoutException) { output.WriteLine(sharer.Describe()); throw; }
-            if (!sharer.InProcess) return;   // no NVIDIA encoder here
-            if (!sharer.CaptureInProcess) { Assert.Contains("too old", sharer.FallbackReason ?? ""); return; }
+            if (sharer.Encoder != HardwareEncoder.Nvenc) return;   // no NVIDIA encoder here: another card (or VP8) took over
             Assert.Equal(onCard, sharer.CaptureOnCard);
             var size = sharer.PictureSize;
             // The same picture with or without the card: the size the capture itself makes of the window (its client area, 784x461 here, made even).
@@ -170,7 +168,6 @@ public class InProcessWindowTests(Xunit.Abstractions.ITestOutputHelper output)
     public async Task A_share_after_a_share_in_this_program_works_the_same()
     {
         if (!OperatingSystem.IsWindows() || !FfmpegLibraries.IsAvailable) return;
-        if (FfmpegLocator.Find() is not { } ffmpeg) return;
         if (Displays.List().FirstOrDefault() is not { } display) return;
         using var cluster = await MediaTreeTests.Cluster.StartAsync(2, fanout: 2, rootFanout: 2);
         for (int round = 1; round <= 3; round++)
@@ -178,9 +175,9 @@ public class InProcessWindowTests(Xunit.Abstractions.ITestOutputHelper output)
             var options = new ScreenOptions
             {
                 Display = display, X11Display = null, Fps = 30, Kbps = 1500, KeyFrameSeconds = 1, MaxWidth = 960, MaxHeight = 540,
-                Codec = ScreenCodec.H264, Encoder = HardwareEncoder.Nvenc, InProcessEncoder = true, InProcessCapture = true, CaptureOnCard = true, InProcessAsked = true,
+                Codec = ScreenCodec.H264, Encoder = HardwareEncoder.Nvenc, CaptureOnCard = true, InProcessAsked = true,
             };
-            using var sharer = ScreenSharer.Start(cluster.Root, cluster.Rooms[0], "Test screen " + round, options, ffmpeg);
+            using var sharer = ScreenSharer.Start(cluster.Root, cluster.Rooms[0], "Test screen " + round, options);
             try { await TestUtil.WaitFor(() => sharer.Frames >= 30, 30_000); }
             catch (TimeoutException) { output.WriteLine(sharer.Describe()); throw; }
             if (!sharer.CaptureOnCard) return;   // not here

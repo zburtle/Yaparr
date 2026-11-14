@@ -46,11 +46,11 @@ modules:
     build-commands:
       - make PREFIX=/app LIBDIR=lib install
 
-  # Sharing a screen needs FFmpeg in two forms: the libraries (libavcodec.so and the others), which Yaparr loads into itself to encode (H.264 on an NVIDIA
-  # card, or through VA-API on an Intel or AMD one), and an ffmpeg program that copies an X11 screen (x11grab) or reads the pictures GStreamer writes
-  # (Wayland), encodes what cannot be encoded in Yaparr (AV1, VP8 in software), and on the watching side decodes VP8, H.264 and AV1 (libdav1d, the runtime's
-  # own) from a pipe and writes raw pictures. It has nothing else (no GPL parts, no network). It is LGPL 2.1; the libraries are shared libraries kept in a
-  # folder of their own (/app/lib/yaparr-ffmpeg) so that they can be replaced, and the program sits beside them (the launcher puts that folder on LD_LIBRARY_PATH). The libraries it uses (libvpx, libva,
+  # Sharing and watching a screen use FFmpeg's libraries (libavcodec.so and the others), which Yaparr loads into itself: they copy an X11 screen (x11grab),
+  # encode (H.264 and AV1 on an NVIDIA card or through VA-API on an Intel or AMD one, VP8 in software) and decode (VP8, H.264 and AV1 with dav1d, H.264 on the
+  # card through NVDEC or VA-API). On Wayland GStreamer reads the desktop's stream and hands its pictures to the encoder in Yaparr. No ffmpeg program is
+  # built (--disable-programs). It has nothing else (no GPL parts, no network). It is LGPL 2.1; the libraries are shared libraries kept in a
+  # folder of their own (/app/lib/yaparr-ffmpeg) so that they can be replaced (the launcher puts that folder on LD_LIBRARY_PATH). The libraries it uses (libvpx, libva,
   # libxcb) are the runtime's own. This is the same FFmpeg commit as the Windows build and the Linux build of Yaparr.FFmpeg (the libraries Yaparr is
   # written against), not a release: Yaparr needs the one with the newer library versions.
   - name: ffmpeg
@@ -63,12 +63,11 @@ modules:
         dest-filename: ffmpeg-SOURCE.txt
         contents: |
           This FFmpeg is the commit 17a4a474f4013bfef4393abaca282078e24efc35, built for Yaparr (https://github.com/zburtle/Yaparr) with only the parts Yaparr
-          uses to share and show a screen: the X11 screen grabber, raw picture input, the filters that scale and convert pictures, the
-          VP8 (libvpx), NVIDIA and VA-API H.264 and AV1 encoders, the VP8, H.264 and AV1 (dav1d) decoders, the IVF and H.264 readers and writers,
-          raw picture output and the pipe protocol.
+          uses to share and show a screen, as shared libraries only (no program): the X11 screen grabber, the filters that scale and convert pictures, the
+          VP8 (libvpx), NVIDIA and VA-API H.264 and AV1 encoders, the VP8, H.264 and AV1 (dav1d) decoders, and H.264 decoding on NVIDIA and VA-API cards.
           FFmpeg is licensed under the GNU Lesser General Public License, version 2.1 or later (ffmpeg-LICENSE.txt). It is
-          built without any GPL or nonfree part. The libraries (the .so files in /app/lib/yaparr-ffmpeg) are loaded by Yaparr and by the ffmpeg program next to
-          them; they can be replaced with a build of your own that has the same library versions: put yours in that folder, or point YAPARR_FFMPEG_LIBS at a folder that has them.
+          built without any GPL or nonfree part. The libraries (the .so files in /app/lib/yaparr-ffmpeg) are loaded by Yaparr;
+          they can be replaced with a build of your own that has the same library versions: put yours in that folder, or point YAPARR_FFMPEG_LIBS at a folder that has them.
           The source is https://github.com/FFmpeg/FFmpeg/commit/17a4a474f4013bfef4393abaca282078e24efc35 and the way it is built is in the "ffmpeg" module of
           installer/flatpak/com.yaparr.Yaparr.yml in the Yaparr source.
           FFmpeg is a trademark of Fabrice Bellard, originator of the FFmpeg project. Yaparr is not endorsed by the FFmpeg project.
@@ -76,20 +75,18 @@ modules:
       - >-
         ./configure --prefix=/app
         --disable-everything --disable-autodetect --disable-doc --disable-debug --disable-network
-        --disable-ffplay --disable-ffprobe --enable-shared --disable-static
+        --disable-programs --enable-shared --disable-static
         --enable-libxcb --enable-libxcb-shm --enable-libxcb-xfixes --enable-libxcb-shape
-        --enable-libvpx --enable-libdav1d --enable-vaapi --enable-ffnvcodec --enable-nvenc
+        --enable-libvpx --enable-libdav1d --enable-vaapi --enable-ffnvcodec --enable-nvenc --enable-cuda --enable-nvdec
         --enable-indev=xcbgrab
         --enable-encoder=libvpx_vp8,h264_nvenc,h264_vaapi,av1_nvenc,av1_vaapi,rawvideo
         --enable-decoder=vp8,h264,libdav1d,rawvideo
+        --enable-hwaccel=h264_nvdec,h264_vaapi
+        --enable-bsf=av1_metadata
         --enable-parser=h264,vp8,av1
-        --enable-demuxer=ivf,h264,rawvideo
-        --enable-muxer=rawvideo,ivf,h264
-        --enable-protocol=pipe
-        --enable-filter=scale,format,null,hwupload
+        --enable-filter=scale,format,null,hwupload,hwdownload,scale_vaapi
       - make -j"$FLATPAK_BUILDER_N_JOBS"
-      # The program and the libraries side by side, each library as one file under the name it is loaded by (libavcodec.so.63).
-      - install -Dm755 ffmpeg /app/lib/yaparr-ffmpeg/ffmpeg
+      # The libraries in a folder of their own, each as one file under the name it is loaded by (libavcodec.so.63).
       - |
         for lib in libavcodec libavdevice libavfilter libavformat libavutil libswresample libswscale; do
           soname="$(readelf -d "$lib/$lib.so" | sed -n 's/.*SONAME.*\[\(.*\)\].*/\1/p')"
@@ -161,7 +158,7 @@ modules:
       - type: script
         dest-filename: yaparr.sh
         commands:
-          - export YAPARR_FFMPEG="${YAPARR_FFMPEG:-/app/lib/yaparr-ffmpeg/ffmpeg}" YAPARR_FFMPEG_LIBS="${YAPARR_FFMPEG_LIBS:-/app/lib/yaparr-ffmpeg}"
+          - export YAPARR_FFMPEG_LIBS="${YAPARR_FFMPEG_LIBS:-/app/lib/yaparr-ffmpeg}"
           - export LD_LIBRARY_PATH="/app/lib/yaparr-ffmpeg${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
           - exec /app/lib/yaparr/Yaparr.Desktop "$@"
     build-commands:

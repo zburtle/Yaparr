@@ -57,24 +57,3 @@ public class Nv12Tests
         Assert.Throws<ArgumentException>(() => Nv12.ToBgra(new byte[10], 4, 4, new byte[64]));
     }
 }
-
-public class ViewerDecodeArgsTests
-{
-    [Fact]
-    public void ThePictureComesOutAsNv12()
-    {
-        foreach (var codec in new[] { ScreenCodec.Vp8, ScreenCodec.H264 })
-            Assert.Contains("-f rawvideo -pix_fmt nv12 pipe:1", string.Join(' ', FfmpegArgs.DecodeForViewer(codec, gpu: false)));
-    }
-
-    [Fact]
-    public void TheCardIsOnlyAskedForOnH264()
-    {
-        string h264 = string.Join(' ', FfmpegArgs.DecodeForViewer(ScreenCodec.H264, gpu: true));
-        Assert.Contains("-hwaccel d3d11va -hwaccel_output_format d3d11", h264);
-        Assert.Contains("hwdownload,format=nv12", h264);
-        Assert.True(h264.IndexOf("-hwaccel", StringComparison.Ordinal) < h264.IndexOf("-i pipe:0", StringComparison.Ordinal));
-        Assert.DoesNotContain("-hwaccel", string.Join(' ', FfmpegArgs.DecodeForViewer(ScreenCodec.Vp8, gpu: true)));
-        Assert.DoesNotContain("-hwaccel", string.Join(' ', FfmpegArgs.DecodeForViewer(ScreenCodec.H264, gpu: false)));
-    }
-}
