@@ -61,17 +61,20 @@
 
     <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" Margin="20,16,20,14">
         <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
-            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+            <!-- A grid, so that the name gives way (with an ellipsis) when the buttons need the room, as in a narrow window of its own. -->
+            <Grid ColumnDefinitions="Auto,*" VerticalAlignment="Center">
                 <Border Width="38" Height="38" CornerRadius="11" Background="{DynamicResource Selected}" VerticalAlignment="Center">
                     <TextBlock Text="♪" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource Accent}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Border>
-                <StackPanel VerticalAlignment="Center">
-                    <TextBlock Text="Soundboard" FontSize="17" FontWeight="SemiBold" />
+                <StackPanel Grid.Column="1" Margin="10,0,8,0" VerticalAlignment="Center">
+                    <TextBlock Text="Soundboard" FontSize="17" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                     <TextBlock x:Name="RoomText" Classes="muted small" TextTrimming="CharacterEllipsis" />
                 </StackPanel>
-            </StackPanel>
+            </Grid>
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                 <Button x:Name="DockButton" Classes="ghost" Content="⧉ Pop out" Click="Dock_Click" />
+                <Button x:Name="SettingsButton" Classes="ghost" Content="⚙ Settings" Click="Settings_Click"
+                        AutomationProperties.Name="Soundboard settings" ToolTip.Tip="Add, rename or remove sounds: the soundboard section of this room's settings" />
                 <Button x:Name="CloseButton" Classes="ghost" Content="✕" AutomationProperties.Name="Close the soundboard" ToolTip.Tip="Close (Esc)" Click="Close_Click" />
             </StackPanel>
         </Grid>

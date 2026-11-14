@@ -15,6 +15,7 @@ public partial class MainWindow
     private SoundboardWindow? _soundboardWindow;
     private IInputElement? _soundboardOpener;
     private string _soundboardRoom = "";
+    private ConversationVm? _soundboardConv;
 
     private void Soundboard_Click(object? sender, RoutedEventArgs e)
     {
@@ -25,9 +26,10 @@ public partial class MainWindow
         if (room == null || _node == null) return;
 
         _soundboardRoom = room.Name;
+        _soundboardConv = _voiceConv;
         var view = new SoundboardView();
         view.Attach(room, _node.Id, _settings, () => _data.SaveSettings(_settings), () => _voice, () => _settings.VoiceOutput,
-            ToggleSoundboardPlace, CloseSoundboard);
+            ToggleSoundboardPlace, CloseSoundboard, OpenSoundboardSettings);
         _soundboard = view;
         if (_settings.SoundboardInWindow) PopOutSoundboard(); else DockSoundboard();
     }
@@ -75,6 +77,19 @@ public partial class MainWindow
         _settings.SoundboardInWindow = toWindow;
         _data.SaveSettings(_settings);
         if (toWindow) PopOutSoundboard(); else DockSoundboard();
+    }
+
+    // The button in the soundboard: to the soundboard section of the room's settings. The board is the one of the room the voice call is in, which need not be
+    // the room on show, so that room is opened first. A board over the window is put away (the settings would be behind it); one in a window of its own stays
+    // beside the call, and the app's window is brought forward.
+    private void OpenSoundboardSettings()
+    {
+        if (_soundboardConv is not { } conv || !_conversations.Contains(conv)) return;
+        if (_soundboardWindow == null) CloseSoundboard();
+        if (_selected != conv) SelectConversation(conv);
+        if (WindowState == Avalonia.Controls.WindowState.Minimized) WindowState = Avalonia.Controls.WindowState.Normal;
+        Activate();
+        ShowRoomSettings("sounds");
     }
 
     // Puts the soundboard away, wherever it is.
