@@ -117,6 +117,9 @@ public sealed class ChatRoom
     internal readonly Dictionary<PeerId, VoiceEntry> Voice = new();
     internal readonly ConcurrentDictionary<string, MediaGroup> Media = new();
     internal long VoiceTreeWantedSince, VoiceTreeLowSince;
+    // The root of the voice tree we were attached to and when we saw the tree go: that member is left out when choosing who starts the next one.
+    internal Yaparr.Identity.PeerId? VoiceTreeLastRoot;
+    internal long VoiceTreeLostAt;
     internal Yaparr.Voice.VoiceSession? ActiveVoice;
     internal bool SelfMuted, SelfDeafened;
     internal long LastVoiceAt;

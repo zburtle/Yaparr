@@ -34,8 +34,12 @@ public sealed partial class ChatNode
     // The members that could start the tree, best first: the ones that say they cannot relay are left out, those that say nothing (older versions)
     // come after those that say how well they can, and among equals the lower id comes first. Everybody sees the same order up to what each has
     // heard so far, and if two start at once the lower root id stays (see MaintainVoiceTree).
-    private List<(PeerId Id, int Up)> RootCandidates(ChatRoom room, List<PeerId> others)
+    private List<(PeerId Id, int Up)> RootCandidates(ChatRoom room, List<PeerId> others, long now)
     {
+        // The root of the tree that has just gone is left out: its announcement of being in the call lingers for a while, and waiting for it
+        // would put the one who is next in line behind a member who is not there. Everyone has the same next in line, so it starts at once.
+        PeerId? gone = room.VoiceTreeLastRoot is { } last && last != Id && now - room.VoiceTreeLostAt < VoiceLifetime.TotalMilliseconds ? last : null;
+        if (gone != null) others = others.Where(id => id != gone).ToList();
         var list = new List<(PeerId, int)> { (Id, RelayHint()) };
         lock (room.IndirectGate)
             foreach (var id in others)
@@ -49,6 +53,8 @@ public sealed partial class ChatNode
         {
             foreach (var g in room.Media.Values.Where(g => g.Kind == "voice" && (g.Joined || g.IsRoot)).ToList()) LeaveVoiceGroup(g);
             room.VoiceTreeWantedSince = room.VoiceTreeLowSince = 0;
+            room.VoiceTreeLastRoot = null;
+            room.VoiceTreeLostAt = 0;
             return;
         }
 
@@ -59,6 +65,8 @@ public sealed partial class ChatNode
         if (live != null)
         {
             room.VoiceTreeWantedSince = 0;
+            room.VoiceTreeLastRoot = live.Info.Root;
+            room.VoiceTreeLostAt = 0;
             // Two trees at once (two members started at the same moment): the one with the lower root id stays.
             foreach (var other in room.Media.Values.Where(g => g.Kind == "voice" && !ReferenceEquals(g, live) && (g.Joined || g.IsRoot)).ToList())
                 LeaveVoiceGroup(other);
@@ -76,10 +84,11 @@ public sealed partial class ChatNode
         }
 
         room.VoiceTreeLowSince = 0;
+        if (room.VoiceTreeLastRoot != null && room.VoiceTreeLostAt == 0) room.VoiceTreeLostAt = now;
         if (count < _options.VoiceTreeThreshold || !IsRelayCapable) { room.VoiceTreeWantedSince = 0; return; }
         if (room.VoiceTreeWantedSince == 0) room.VoiceTreeWantedSince = now;
         // We wait for each member who suits better to have its turn first.
-        var candidates = RootCandidates(room, others);
+        var candidates = RootCandidates(room, others, now);
         int rank = Math.Max(0, candidates.FindIndex(c => c.Id == Id));
         if (now - room.VoiceTreeWantedSince < rank * _options.VoiceTreeRankDelay.TotalMilliseconds) return;
 
