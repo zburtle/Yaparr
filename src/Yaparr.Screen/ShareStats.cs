@@ -11,8 +11,9 @@ namespace Yaparr.Screen;
 public sealed class ShareStats
 {
     private long _keys, _keyBytes, _deltas, _deltaBytes, _encodes, _encodeTicks, _overBudget, _reads, _readTicks, _bunched, _stalled, _answers, _answerMs, _repeated;
-    private long _keyMaxEver, _deltaMaxEver, _encodeMaxEver, _readMaxEver, _answerMaxEver;
-    private readonly long[] _keyMax = new long[2], _deltaMax = new long[2], _encodeMax = new long[2], _readMax = new long[2], _answerMax = new long[2];
+    private long _sends, _sendTicks, _queueTicks, _queueLate, _dropped;
+    private long _keyMaxEver, _deltaMaxEver, _encodeMaxEver, _readMaxEver, _answerMaxEver, _sendMaxEver, _queueMaxEver;
+    private readonly long[] _keyMax = new long[2], _deltaMax = new long[2], _encodeMax = new long[2], _readMax = new long[2], _answerMax = new long[2], _sendMax = new long[2], _queueMax = new long[2];
 
     private static void Raise(ref long slot, long value)
     {
@@ -69,6 +70,26 @@ public sealed class ShareStats
     /// <summary>The share's own clock came round and the capture had nothing new, so the last picture was encoded again (capture in this program only).</summary>
     public void Repeated() => Interlocked.Increment(ref _repeated);
 
+    /// <summary>
+    /// A frame went out: <paramref name="sendTicks"/> is how long sending it took (its packets are spread out at a multiple of the bitrate, so a big frame takes
+    /// longer), and <paramref name="queuedTicks"/> how long it waited behind the frames before it. Waits longer than <paramref name="frameTicks"/>, the time between
+    /// two pictures, are counted: they are the moments when sending, not encoding, held the stream back.
+    /// </summary>
+    public void Sent(long sendTicks, long queuedTicks, long frameTicks)
+    {
+        Interlocked.Increment(ref _sends);
+        Interlocked.Add(ref _sendTicks, sendTicks);
+        Interlocked.Add(ref _queueTicks, queuedTicks);
+        if (queuedTicks > frameTicks) Interlocked.Increment(ref _queueLate);
+        Raise(ref _sendMaxEver, sendTicks);
+        Raise(_sendMax, sendTicks);
+        Raise(ref _queueMaxEver, queuedTicks);
+        Raise(_queueMax, queuedTicks);
+    }
+
+    /// <summary>Frames thrown away because sending fell more than a second behind (the queue is emptied and the next key frame is waited for).</summary>
+    public void DroppedFromQueue(int frames) => Interlocked.Add(ref _dropped, frames);
+
     /// <summary>A key frame that a viewer asked for went out, this many milliseconds after the request arrived.</summary>
     public void Answered(long ms)
     {
@@ -83,26 +104,32 @@ public sealed class ShareStats
         Interlocked.Read(ref _encodes), Interlocked.Read(ref _encodeTicks), Interlocked.Read(ref _overBudget), Interlocked.Read(ref _reads), Interlocked.Read(ref _readTicks), Interlocked.Read(ref _bunched), Interlocked.Read(ref _stalled),
         pacer.Requested, pacer.Forced, pacer.Deferred, pacer.Satisfied, Interlocked.Read(ref _answers), Interlocked.Read(ref _answerMs), restarts,
         Interlocked.Read(ref _keyMaxEver), Interlocked.Read(ref _deltaMaxEver), Interlocked.Read(ref _encodeMaxEver), Interlocked.Read(ref _readMaxEver), Interlocked.Read(ref _answerMaxEver),
-        Interlocked.Read(ref _repeated));
+        Interlocked.Read(ref _repeated),
+        Interlocked.Read(ref _sends), Interlocked.Read(ref _sendTicks), Interlocked.Read(ref _queueTicks), Interlocked.Read(ref _queueLate), Interlocked.Read(ref _dropped),
+        Interlocked.Read(ref _sendMaxEver), Interlocked.Read(ref _queueMaxEver));
 
     /// <summary>The largest values since this reader (0 or 1) last asked, and starts again from nothing.</summary>
     public ShareMaxima TakeMaxima(int reader) => new(
         Interlocked.Exchange(ref _keyMax[reader], 0), Interlocked.Exchange(ref _deltaMax[reader], 0), Interlocked.Exchange(ref _encodeMax[reader], 0),
-        Interlocked.Exchange(ref _readMax[reader], 0), Interlocked.Exchange(ref _answerMax[reader], 0));
+        Interlocked.Exchange(ref _readMax[reader], 0), Interlocked.Exchange(ref _answerMax[reader], 0),
+        Interlocked.Exchange(ref _sendMax[reader], 0), Interlocked.Exchange(ref _queueMax[reader], 0));
 }
 
-/// <summary>The largest values over a period: the key frame and the other frames in bytes, encoding and waiting in ticks (100 ns), answering in milliseconds.</summary>
-public readonly record struct ShareMaxima(long KeyBytes, long DeltaBytes, long EncodeTicks, long WaitTicks, long AnswerMs)
+/// <summary>The largest values over a period: the key frame and the other frames in bytes, encoding, waiting, sending and queueing in ticks (100 ns), answering in milliseconds.</summary>
+public readonly record struct ShareMaxima(long KeyBytes, long DeltaBytes, long EncodeTicks, long WaitTicks, long AnswerMs, long SendTicks = 0, long QueueTicks = 0)
 {
     public double EncodeMs => EncodeTicks / (double)TimeSpan.TicksPerMillisecond;
     public double WaitMs => WaitTicks / (double)TimeSpan.TicksPerMillisecond;
+    public double SendMs => SendTicks / (double)TimeSpan.TicksPerMillisecond;
+    public double QueueMs => QueueTicks / (double)TimeSpan.TicksPerMillisecond;
 }
 
 /// <summary>Totals since a share began (see <see cref="ShareStats"/>).</summary>
 public readonly record struct ShareFigures(
     long Keys, long KeyBytes, long Deltas, long DeltaBytes, long Encodes, long EncodeTicks, long OverBudget, long Reads, long ReadTicks, long Bunched, long Stalled,
     long KeyRequests, long KeysForced, long KeyRequestsHeldBack, long KeyRequestsMetByRegularKey, long Answers, long AnswerMs, int Restarts,
-    long KeyMaxEver, long DeltaMaxEver, long EncodeMaxTicksEver, long WaitMaxTicksEver, long AnswerMaxMsEver, long Repeated = 0)
+    long KeyMaxEver, long DeltaMaxEver, long EncodeMaxTicksEver, long WaitMaxTicksEver, long AnswerMaxMsEver, long Repeated = 0,
+    long Sends = 0, long SendTicks = 0, long QueueTicks = 0, long QueueLate = 0, long Dropped = 0, long SendMaxTicksEver = 0, long QueueMaxTicksEver = 0)
 {
     /// <summary>What happened between <paramref name="before"/> and now (the largest values are not totals, so they are left as they are).</summary>
     public ShareFigures Since(ShareFigures before) => this with
@@ -113,6 +140,8 @@ public readonly record struct ShareFigures(
         KeysForced = KeysForced - before.KeysForced, KeyRequestsHeldBack = KeyRequestsHeldBack - before.KeyRequestsHeldBack,
         KeyRequestsMetByRegularKey = KeyRequestsMetByRegularKey - before.KeyRequestsMetByRegularKey, Answers = Answers - before.Answers,
         AnswerMs = AnswerMs - before.AnswerMs, Restarts = Restarts - before.Restarts, Repeated = Repeated - before.Repeated,
+        Sends = Sends - before.Sends, SendTicks = SendTicks - before.SendTicks, QueueTicks = QueueTicks - before.QueueTicks, QueueLate = QueueLate - before.QueueLate,
+        Dropped = Dropped - before.Dropped,
     };
 
     private static double Kb(double bytes) => bytes / 1024.0;
@@ -123,6 +152,8 @@ public readonly record struct ShareFigures(
     public double EncodeAverageMs => Encodes == 0 ? 0 : Ms(EncodeTicks / (double)Encodes);
     public double WaitAverageMs => Reads == 0 ? 0 : Ms(ReadTicks / (double)Reads);
     public double AnswerAverageMs => Answers == 0 ? 0 : AnswerMs / (double)Answers;
+    public double SendAverageMs => Sends == 0 ? 0 : Ms(SendTicks / (double)Sends);
+    public double QueueAverageMs => Sends == 0 ? 0 : Ms(QueueTicks / (double)Sends);
 
     /// <summary>One line about the key frames: how many, how big against the others, and what became of the requests for them.</summary>
     public string DescribeKeys(ShareMaxima? maxima = null)
@@ -140,6 +171,19 @@ public readonly record struct ShareFigures(
         double encodeMax = maxima?.EncodeMs ?? Ms(EncodeMaxTicksEver), waitMax = maxima?.WaitMs ?? Ms(WaitMaxTicksEver);
         return $"encoding {EncodeAverageMs:0.0} ms per picture on average and {encodeMax:0.0} ms at most ({OverBudget} of {Encodes} over the {budgetMs:0.0} ms there is for each), "
                + $"waiting for the capture {WaitAverageMs:0.0} ms on average and {waitMax:0.0} ms at most, {Stalled} waits of more than two pictures and {Bunched} pictures that came in a burst straight after another"
-               + (Repeated > 0 ? $", {Repeated} pictures repeated because the capture had no new one" : "");
+               + (Repeated > 0 ? $", {Repeated} pictures repeated because the capture had no new one" : "")
+               + (Sends > 0 ? "; " + DescribeSending(budgetMs, maxima) : "");
+    }
+
+    /// <summary>
+    /// One part about sending: how long a frame took to go out (its packets are spread out, so a big frame takes longer), how long frames waited behind others,
+    /// and how many were thrown away because sending fell more than a second behind. Sending has a thread of its own, so it holds back the stream, never the encoder.
+    /// </summary>
+    public string DescribeSending(double budgetMs, ShareMaxima? maxima = null)
+    {
+        double sendMax = maxima?.SendMs ?? Ms(SendMaxTicksEver), queueMax = maxima?.QueueMs ?? Ms(QueueMaxTicksEver);
+        return $"sending {SendAverageMs:0.0} ms per frame on average and {sendMax:0.0} ms at most, "
+               + $"waiting to be sent {QueueAverageMs:0.0} ms on average and {queueMax:0.0} ms at most ({QueueLate} of {Sends} waited longer than the {budgetMs:0.0} ms between pictures)"
+               + (Dropped > 0 ? $", {Dropped} frames thrown away when sending fell more than a second behind" : "");
     }
 }

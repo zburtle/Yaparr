@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Threading.Channels;
 using Yaparr.Chat;
 using Yaparr.Voice;
 
@@ -49,6 +50,7 @@ public sealed partial class ScreenSharer : IDisposable
         var sharer = new ScreenSharer(source, options);
         if (options.ShareSound) sharer.StartSound(node, room);
         sharer.WatchPortal(options.Portal);
+        sharer.StartSending();
         sharer._run = Task.Run(() => sharer.PumpAsync(sharer._cts.Token));
         sharer.StartQualityWatch();
         return sharer;
@@ -318,8 +320,81 @@ public sealed partial class ScreenSharer : IDisposable
 
     private bool WindowGone => _portalGone || (_options.WindowHandle is { } handle && !ShareWindows.Exists(handle));
 
-    // Sends one encoded frame to the room and keeps the figures: how long the encoder took to produce it (a long wait means capture or
-    // encoding cannot keep up), and the counts.
+    // ---- sending, on a thread of its own ----------------------------------------------------------------------------------------------
+    //
+    // A frame's packets are spread out at a multiple of the bitrate (MediaSource.SendFrameAsync), so a big frame takes a while to go out: at 2.8 Mbit/s, three times
+    // that is about a megabyte a second, and a 180 KB frame takes 170 ms. When the encoding loop waited for that, the share's clock missed its ticks and the share
+    // sent 17 of 30 pictures a second while the encoder kept up (measured, 1.77.0). So the loop hands each frame to a queue and goes on, and the sender empties the
+    // queue frame after frame at the paced rate: over a second the stream is far below the pace, so a big frame only delays the few behind it.
+    // If sending ever falls more than a second behind (a link far slower than measured), what is queued is thrown away, a key frame is asked for, and frames are
+    // dropped until it comes: a viewer then waits a moment for the key frame instead of getting the picture later and later.
+
+    private readonly record struct Outgoing(byte[] Frame, bool IsKey, long EnqueuedAt);
+    private readonly Channel<Outgoing> _outbox = Channel.CreateUnbounded<Outgoing>(new UnboundedChannelOptions { SingleReader = false, SingleWriter = true });
+    private long _oldestQueuedAt;   // the time stamp of the frame at the head of the queue (0 when it is empty)
+    private int _queued;
+    private volatile bool _skipToKey;
+    private Task? _sending;
+
+    /// <summary>How far behind sending may fall before what is queued is thrown away and a key frame is asked for.</summary>
+    public static readonly TimeSpan MaxSendBacklog = TimeSpan.FromSeconds(1);
+
+    /// <summary>Frames waiting to be sent.</summary>
+    public int QueuedFrames => Volatile.Read(ref _queued);
+
+    internal void StartSending() => _sending ??= Task.Run(() => SendLoopAsync(_cts.Token));
+
+    // The encoding loop's side: never waits.
+    internal void Enqueue(byte[] frame, bool isKey)
+    {
+        long now = Stopwatch.GetTimestamp();
+        long oldest = Interlocked.Read(ref _oldestQueuedAt);
+        if (oldest != 0 && now - oldest > MaxSendBacklog.TotalSeconds * Stopwatch.Frequency)
+        {
+            int dropped = 0;
+            while (_outbox.Reader.TryRead(out _)) { dropped++; Interlocked.Decrement(ref _queued); }
+            Interlocked.Exchange(ref _oldestQueuedAt, 0);
+            if (dropped > 0) _stats.DroppedFromQueue(dropped);
+            _skipToKey = true;
+            _pacer.Request();
+        }
+        if (_skipToKey)
+        {
+            if (!isKey) { _stats.DroppedFromQueue(1); return; }
+            _skipToKey = false;
+        }
+        Interlocked.CompareExchange(ref _oldestQueuedAt, now, 0);
+        Interlocked.Increment(ref _queued);
+        _outbox.Writer.TryWrite(new Outgoing(frame, isKey, now));
+    }
+
+    private async Task SendLoopAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (await _outbox.Reader.WaitToReadAsync(ct).ConfigureAwait(false))
+            {
+                while (_outbox.Reader.TryRead(out var next))
+                {
+                    int left = Interlocked.Decrement(ref _queued);
+                    // The next one in line, if any, is now the oldest that waits.
+                    Interlocked.Exchange(ref _oldestQueuedAt, left > 0 && _outbox.Reader.TryPeek(out var after) ? after.EnqueuedAt : 0);
+                    long start = Stopwatch.GetTimestamp();
+                    try { await DeliverAsync(next.Frame, next.IsKey, ct).ConfigureAwait(false); }
+                    catch (OperationCanceledException) { throw; }
+                    catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ObjectDisposedException) { continue; }
+                    long end = Stopwatch.GetTimestamp();
+                    _stats.Sent(ToTicks(end - start), ToTicks(start - next.EnqueuedAt), TimeSpan.FromMilliseconds(FrameBudgetMs).Ticks);
+                }
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private static long ToTicks(long stopwatchTicks) => (long)(stopwatchTicks * (double)TimeSpan.TicksPerSecond / Stopwatch.Frequency);
+
+    // Sends one encoded frame to the room and keeps the figures: the gaps between frames (a long gap means capture, encoding or sending cannot keep
+    // up), and the counts.
     private async Task DeliverAsync(byte[] frame, bool isKey, CancellationToken ct)
     {
         long tick = Environment.TickCount64;
@@ -470,7 +545,7 @@ public sealed partial class ScreenSharer : IDisposable
                 bool isKey = key && ScreenCodecs.IsKeyFrame(codec, frame);
                 if (!started && !isKey) continue;
                 started = true;
-                await DeliverAsync(frame, isKey, ct).ConfigureAwait(false);
+                Enqueue(frame, isKey);
             }
         }
         _captureHere = null;
@@ -586,7 +661,7 @@ public sealed partial class ScreenSharer : IDisposable
                     bool isKey = key && ScreenCodecs.IsKeyFrame(codec, frame);
                     if (!started && !isKey) continue;
                     started = true;
-                    await DeliverAsync(frame, isKey, ct).ConfigureAwait(false);
+                    Enqueue(frame, isKey);
                 }
             }
             if (_levelRestart) { _levelRestart = false; _switch = true; }
@@ -686,7 +761,9 @@ public sealed partial class ScreenSharer : IDisposable
         StopQualityWatch();
         _cts.Cancel();
         KillProcess();
+        _outbox.Writer.TryComplete();
         try { _run?.Wait(TimeSpan.FromSeconds(2)); } catch (AggregateException) { }
+        try { _sending?.Wait(TimeSpan.FromSeconds(2)); } catch (AggregateException) { }
         StopSound();
         _options.Portal?.Dispose();
         _source.KeyFrameRequested -= _onKeyRequested;
