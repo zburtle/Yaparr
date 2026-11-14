@@ -85,6 +85,11 @@ public sealed class AppSettings
 
     /// <summary>People whose soundboard sounds you have silenced (their voice is not affected), by id.</summary>
     public List<string> SoundboardMuted { get; set; } = new();
+    /// <summary>
+    /// The sound on each of the ten number keys of a room's soundboard (1 to 9, then 0), by room key: ten sound ids, "" for an empty key. A room that is not
+    /// listed has the first ten sounds as they are listed (see <see cref="SoundSlots"/>). Yours alone: nobody else sees it.
+    /// </summary>
+    public Dictionary<string, List<string>> SoundboardSlots { get; set; } = new();
     /// <summary>Silence everybody's soundboard sounds.</summary>
     public bool SoundboardsMuted { get; set; }
     /// <summary>How loud soundboard sounds are against voices, in percent (100 is as loud as a voice).</summary>

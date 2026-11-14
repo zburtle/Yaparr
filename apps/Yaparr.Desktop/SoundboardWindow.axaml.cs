@@ -14,6 +14,8 @@ public sealed class SoundboardWindow : Window
         MinHeight = 300;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Content = view;
+        // The keyboard works from the start: the number keys play the sounds put on them.
+        Opened += (_, _) => Avalonia.Threading.Dispatcher.UIThread.Post(view.FocusFirst);
     }
 
     /// <summary>Set before closing when the board goes back over the main window, so closing does not end it.</summary>

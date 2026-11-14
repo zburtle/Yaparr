@@ -37,7 +37,7 @@ public partial class MainWindow
             vm.ShowVolume(saved);
             if (!p.IsSelf && saved != 100 && _voice is { } heard && _voiceConv == conv) heard.SetVolume(p.Peer.Id, (float)(saved / 100));
             vm.Muted = p.Muted;
-            vm.SoundboardMuted = IsPersonSoundboardMuted(p.Peer.Id.Value);
+            vm.SoundboardMuted = IsPersonSoundboardMuted(p.Peer.Id.Value, vm.Account);
             vm.Deafened = p.Deafened;
             vm.Where = voiceChannels.Count > 1 && voiceChannels.FirstOrDefault(c => c.Id == p.Channel)?.Name is { } where ? "\u00B7 " + where : "";
             conv.VoiceMembers.Add(vm);
