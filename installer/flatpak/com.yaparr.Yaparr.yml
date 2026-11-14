@@ -67,7 +67,10 @@ modules:
           VP8 (libvpx), NVIDIA and VA-API H.264 and AV1 encoders, the VP8, H.264 and AV1 (dav1d) decoders, and H.264 decoding on NVIDIA and VA-API cards.
           FFmpeg is licensed under the GNU Lesser General Public License, version 2.1 or later (ffmpeg-LICENSE.txt). It is
           built without any GPL or nonfree part. The libraries (the .so files in /app/lib/yaparr-ffmpeg) are loaded by Yaparr;
-          they can be replaced with a build of your own that has the same library versions: put yours in that folder, or point YAPARR_FFMPEG_LIBS at a folder that has them.
+          they can be replaced with a build of your own that has the same library versions (libavcodec.so.63 and the others). The app's own folder is
+          read-only, so put yours in ~/.var/app/com.yaparr.Yaparr/data/ffmpeg, which Yaparr uses instead when it has a libavcodec, or in any folder the app
+          can see, named by YAPARR_FFMPEG_LIBS (for example: flatpak override --user --env=YAPARR_FFMPEG_LIBS=/path/to/folder com.yaparr.Yaparr).
+          The diagnostics say which folder the libraries were loaded from.
           The source is https://github.com/FFmpeg/FFmpeg/commit/17a4a474f4013bfef4393abaca282078e24efc35 and the way it is built is in the "ffmpeg" module of
           installer/flatpak/com.yaparr.Yaparr.yml in the Yaparr source.
           FFmpeg is a trademark of Fabrice Bellard, originator of the FFmpeg project. Yaparr is not endorsed by the FFmpeg project.
@@ -158,8 +161,13 @@ modules:
       - type: script
         dest-filename: yaparr.sh
         commands:
+          # FFmpeg's libraries can be replaced (LGPL): /app is read-only, so your own build goes in the app's data folder
+          # (~/.var/app/com.yaparr.Yaparr/data/ffmpeg) or a folder named by YAPARR_FFMPEG_LIBS. That folder comes first on the library path too, so
+          # that each of your libraries finds your others and not the bundled ones.
+          - own="${XDG_DATA_HOME:-$HOME/.local/share}/ffmpeg"
+          - if [ -z "$YAPARR_FFMPEG_LIBS" ] && ls "$own"/libavcodec.so.* >/dev/null 2>&1; then export YAPARR_FFMPEG_LIBS="$own"; fi
           - export YAPARR_FFMPEG_LIBS="${YAPARR_FFMPEG_LIBS:-/app/lib/yaparr-ffmpeg}"
-          - export LD_LIBRARY_PATH="/app/lib/yaparr-ffmpeg${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          - export LD_LIBRARY_PATH="$YAPARR_FFMPEG_LIBS:/app/lib/yaparr-ffmpeg${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
           - exec /app/lib/yaparr/Yaparr.Desktop "$@"
     build-commands:
       - mkdir -p /app/lib && cp -r app /app/lib/yaparr && chmod 755 /app/lib/yaparr/Yaparr.Desktop

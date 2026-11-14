@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Threading.Channels;
 using Yaparr.Chat;
 
@@ -156,7 +157,9 @@ public sealed class ScreenViewer : IDisposable
     private void OnFrame(MediaFrame frame)
     {
         if (_preview is { KeyFramesOnly: true } && !frame.IsKey) return;   // not even copied: this preview shows key frames only
-        var data = frame.Data.ToArray();
+        // A frame is an array of its own (put together for it by the stream, or the encoder's own for a preview) that nobody changes afterwards, so it is
+        // used as it is: a copy of each frame, many of them over 85 KB in a busy game, only fed the garbage collector's full collections.
+        var data = MemoryMarshal.TryGetArray(frame.Data, out var whole) && whole.Offset == 0 && whole.Count == whole.Array!.Length ? whole.Array : frame.Data.ToArray();
         Interlocked.Increment(ref _framesIn);
         Interlocked.Add(ref _bytesIn, data.Length);
         Decoder? decoder;
@@ -244,7 +247,7 @@ public sealed class ScreenViewer : IDisposable
         /// <summary>Whether the last picture came out of the graphics card.</summary>
         public bool OnCard => _onCard;
 
-        public TimeSpan Cpu => TimeSpan.FromSeconds((double)Interlocked.Read(ref _busyTicks) / Stopwatch.Frequency);
+        public TimeSpan Cpu => TimeSpan.FromTicks(Interlocked.Read(ref _busyTicks));
 
         public void Start(CancellationToken ct)
         {
@@ -275,7 +278,9 @@ public sealed class ScreenViewer : IDisposable
                 await foreach (var frame in _input.Reader.ReadAllAsync(ct).ConfigureAwait(false))
                 {
                     Interlocked.Decrement(ref _queued);
-                    long started = Stopwatch.GetTimestamp();
+                    // The processor time of this thread (decoding, scaling, converting), not the time it took: waiting for the card, or for the processor while a
+                    // game has it, made the figure several times too big. Where the thread's time cannot be read, the time it took.
+                    long started = ThreadCpuTime.Now(), startedAt = Stopwatch.GetTimestamp();
                     bool ok = _decoder.Decode(frame, maxWidth, maxHeight, (nv12, w, h) =>
                     {
                         _onCard = _decoder.LastOnCard;
@@ -288,7 +293,8 @@ public sealed class ScreenViewer : IDisposable
                         }
                         Show(nv12, w, h);
                     });
-                    Interlocked.Add(ref _busyTicks, Stopwatch.GetTimestamp() - started);
+                    long ended = started >= 0 ? ThreadCpuTime.Now() : -1;
+                    Interlocked.Add(ref _busyTicks, ended >= 0 ? ended - started : (long)((Stopwatch.GetTimestamp() - startedAt) * (double)TimeSpan.TicksPerSecond / Stopwatch.Frequency));
                     if (ok) { _failures = 0; continue; }
                     lock (_owner._gate) { _owner._errors.Enqueue(_decoder.LastError); while (_owner._errors.Count > 5) _owner._errors.Dequeue(); }
                     // Frames that do not decode one after the other on the card: the next choice down gets to try, from the last key frame. On the processor a damaged

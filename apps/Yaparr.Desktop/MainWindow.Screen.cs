@@ -175,6 +175,9 @@ public partial class MainWindow
                 conv.Add(MessageVm.System("The sound stopped: " + ex.Message + " The picture is still shared."));
             });
             _sharer = sharer;
+            // While a share runs, the garbage collector avoids full collections that stop every thread (it does its full collections in the background
+            // unless memory runs short): 1.77.0's log had minutes with a second of pauses, which shows as frames sent late.
+            if (_latencyBeforeShare == null) { _latencyBeforeShare = System.Runtime.GCSettings.LatencyMode; System.Runtime.GCSettings.LatencyMode = System.Runtime.GCLatencyMode.SustainedLowLatency; }
             _shareStartedTicks = Stopwatch.GetTimestamp();
             using (var me = Process.GetCurrentProcess()) _shareAppCpu = me.TotalProcessorTime;
             _sharerConv = conv;
@@ -265,6 +268,8 @@ public partial class MainWindow
     private long _shareStartedTicks;
     private TimeSpan _shareAppCpu;
 
+    private System.Runtime.GCLatencyMode? _latencyBeforeShare;
+
     private string SharingSummary(ScreenSharer sharer)
     {
         double seconds = _shareStartedTicks == 0 ? 0 : Stopwatch.GetElapsedTime(_shareStartedTicks).TotalSeconds;
@@ -286,6 +291,7 @@ public partial class MainWindow
         if (sharer != null && writeSummary) _log.Write("screen sharing stopped: " + SharingSummary(sharer));
         var conv = _sharerConv;
         _sharer = null;
+        if (_latencyBeforeShare is { } latency) { System.Runtime.GCSettings.LatencyMode = latency; _latencyBeforeShare = null; }
         _sharerConv = null;
         _sharerStats = null;
         SharerPanel.Child = null;

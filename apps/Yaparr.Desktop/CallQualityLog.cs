@@ -53,6 +53,34 @@ public sealed class CallQualityLog
 
     private static (int, int, int) Collections() => (GC.CollectionCount(0), GC.CollectionCount(1), GC.CollectionCount(2));
 
+    // The streamer's log of 1.77.0 had minutes with two full collections and a second of pauses, and others with one and 60 ms; the count alone does not say
+    // which kind paused. So the last full collection of each kind that came in this minute is described: a blocking one (everything stops, and it may compact)
+    // or a background one (only two short stops).
+    private long _lastBlocking = -1, _lastBackground = -1;
+
+    private string? DescribeFullCollections()
+    {
+        var parts = new List<string>();
+        var blocking = GC.GetGCMemoryInfo(GCKind.FullBlocking);
+        if (blocking.Index > 0 && blocking.Index != _lastBlocking)
+        {
+            if (_lastBlocking >= 0)
+                parts.Add($"last blocking full collection paused {Total(blocking.PauseDurations).TotalMilliseconds:0} ms{(blocking.Compacted ? " and compacted" : "")}");
+            _lastBlocking = blocking.Index;
+        }
+        var background = GC.GetGCMemoryInfo(GCKind.Background);
+        if (background.Index > 0 && background.Index != _lastBackground)
+        {
+            if (_lastBackground >= 0) parts.Add($"last background full collection paused {Total(background.PauseDurations).TotalMilliseconds:0} ms");
+            _lastBackground = background.Index;
+        }
+        if (_lastBlocking < 0) _lastBlocking = 0;
+        if (_lastBackground < 0) _lastBackground = 0;
+        return parts.Count > 0 ? string.Join(", ", parts) : null;
+
+        static TimeSpan Total(ReadOnlySpan<TimeSpan> pauses) { var sum = TimeSpan.Zero; foreach (var p in pauses) sum += p; return sum; }
+    }
+
     private async Task SampleAsync()
     {
         bool anything = false, problem = false;
@@ -99,6 +127,7 @@ public sealed class CallQualityLog
                 _previewBefore = _previewCpu?.Invoke()?.Cpu ?? default;
                 _gc = Collections();
                 _gcPause = GC.GetTotalPauseDuration();
+                DescribeFullCollections();   // where the counts start: only what comes from here on is described
             }
         }
         if (sharer != null && firstLook) anything = true;
@@ -127,6 +156,7 @@ public sealed class CallQualityLog
             var gcDelta = (collections.Item1 - _gc.Gen0, collections.Item2 - _gc.Gen1, collections.Item3 - _gc.Gen2);
             double paused = (pause - _gcPause).TotalMilliseconds;
             (_appCpu, _captureCpu, _gc, _gcPause) = (app, capture, collections, pause);
+            string? fullCollections = DescribeFullCollections();
             // The preview's decoder runs in this program (its time is part of the figure for this program); null when there is no preview.
             double previewPercent = -1;
             string? previewKind = null;
@@ -147,7 +177,7 @@ public sealed class CallQualityLog
             if (bad) problem = true;
             var paths = status.Children.Select(c => c.Short + " " + (_node()?.GetLink(c).ToString() ?? "path unknown")).ToList();
             _log.Write(new SharingMinute(fps, wanted, kbps, ScreenCodecs.Describe(sharer.Codec, sharer.Encoder), true, sharer.PictureSize, interval, maxima, sharer.FrameBudgetMs,
-                gap, resent, dropped, sharer.Source.Viewers.Count, paths, appPercent, capturePercent, process.WorkingSet64 / (1024 * 1024), gcDelta, paused, card, bad, previewPercent, previewKind, sharer.Options.Portal == null, sharer.CaptureOnCard, sharer.QualityNote, refused).Describe());
+                gap, resent, dropped, sharer.Source.Viewers.Count, paths, appPercent, capturePercent, process.WorkingSet64 / (1024 * 1024), gcDelta, paused, card, bad, previewPercent, previewKind, sharer.Options.Portal == null, sharer.CaptureOnCard, sharer.QualityNote, refused, fullCollections).Describe());
         }
 
         foreach (var watch in _watches().ToList())

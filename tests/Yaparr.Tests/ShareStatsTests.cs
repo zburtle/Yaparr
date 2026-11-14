@@ -157,7 +157,8 @@ public class ShareStatsTests
         var interval = stats.Figures(pacer, restarts: 1).Since(new ShareFigures());
         var minute = new SharingMinute(59.8, 60, 5200, "H.264 on the NVIDIA graphics card", InProcess: true, Picture: (1920, 1080), interval, stats.TakeMaxima(1), 16.7,
             LongestGapMs: 41, Resent: 3, Dropped: 0, Watching: 2, DirectPaths: new[] { "ab12 direct" }, AppPercent: 38, CapturePercent: 22, MemoryMb: 410,
-            Collections: (12, 3, 1), PausedMs: 4.5, Card: "card 40% busy, video encoder 12% busy", Bad: false);
+            Collections: (12, 3, 1), PausedMs: 4.5, Card: "card 40% busy, video encoder 12% busy", Bad: false,
+            FullCollections: "last background full collection paused 3 ms");
 
         string line = minute.Describe();
         foreach (var part in new[]
@@ -166,7 +167,7 @@ public class ShareStatsTests
             "1 key frames (1 made because a viewer asked)", "key frame 150 KB on average", "requests from viewers 1: 1 answered with a new key frame (after 90 ms on average",
             "encoding 5.0 ms per picture on average", "waiting for the capture 11.0 ms on average", "longest wait for a frame 41 ms",
             "3 packets sent again, 0 dropped, 2 watching, 1 of them directly (ab12 direct)", "this program 38% of a core, capture by GStreamer", "memory 410 MB",
-            "garbage collections 12/3/1 (paused 5 ms)", "capture restarted 1x", "graphics card: card 40% busy, video encoder 12% busy",
+            "garbage collections 12/3/1 (paused 5 ms; last background full collection paused 3 ms)", "capture restarted 1x", "graphics card: card 40% busy, video encoder 12% busy",
         })
             Assert.Contains(part, line);
         Assert.DoesNotContain("(a problem)", line);
