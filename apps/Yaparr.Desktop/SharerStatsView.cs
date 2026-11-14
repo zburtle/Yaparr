@@ -21,6 +21,7 @@ public sealed class SharerStatsView : Border
     private readonly TextBlock _rate = new() { FontSize = 13 };
     private readonly TextBlock _who = new() { FontSize = 12, TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock _adapt = new() { FontSize = 11, TextWrapping = TextWrapping.Wrap, Opacity = 0.8, IsVisible = false };
+    private readonly TextBlock _lower = new() { FontSize = 11, TextWrapping = TextWrapping.Wrap, Opacity = 0.8, IsVisible = false };
     private readonly TextBlock _warning = new() { FontSize = 11, TextWrapping = TextWrapping.Wrap, Foreground = Brushes.Orange, IsVisible = false };
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private long _frames, _bytes, _at = Environment.TickCount64, _retransmitted;
@@ -52,7 +53,7 @@ public sealed class SharerStatsView : Border
         buttons.Children.Add(change);
         buttons.Children.Add(stop);
         var title = new TextBlock { Text = "You are sharing", FontWeight = FontWeight.SemiBold };
-        Child = new StackPanel { Spacing = 2, Margin = new Avalonia.Thickness(12, 10, 12, 12), Children = { title, _how, _rate, _adapt, _who, _warning, buttons } };
+        Child = new StackPanel { Spacing = 2, Margin = new Avalonia.Thickness(12, 10, 12, 12), Children = { title, _how, _rate, _adapt, _lower, _who, _warning, buttons } };
         CornerRadius = new Avalonia.CornerRadius(12);
         BorderThickness = new Avalonia.Thickness(1);
         this.Bind(BackgroundProperty, this.GetResourceObservable("BubbleOther"));
@@ -88,7 +89,17 @@ public sealed class SharerStatsView : Border
         _rate.Text = $"{fps:0} / {target} fps · {(kbps >= 1000 ? $"{kbps / 1000:0.0} Mbit/s" : $"{kbps:0} kbit/s")}";
         _adapt.Text = _sharer.AdaptiveLine ?? "";
         _adapt.IsVisible = _sharer.AdaptiveLine != null;
-        var viewers = _sharer.Source.Viewers;
+        // The lower-quality stream (issue #254): started on its own for viewers whose connection could not keep up; only this panel says so.
+        var low = _sharer.Low;
+        int lowViewers = low?.Viewers ?? 0;
+        _lower.Text = low is { Started: true }
+            ? lowViewers > 0
+                ? $"A lower-quality stream is running for {lowViewers} viewer{(lowViewers == 1 ? "" : "s")} whose connection could not keep up with the full picture."
+                : "A lower-quality stream was started for a viewer whose connection could not keep up; nobody is on it now."
+            : "";
+        _lower.IsVisible = low is { Started: true };
+        // Those on the lower stream are still watching: they count with the others, so moving between the streams is no "joined" or "left".
+        var viewers = low?.Source is { } lowSource ? _sharer.Source.Viewers.Concat(lowSource.Viewers).Distinct().ToList() : _sharer.Source.Viewers;
         _who.Text = "Watching: " + Names(viewers);
         var (came, went) = _watchers.Update(PeopleOf(viewers));
         if (came.Count > 0 || went.Count > 0) ViewersChanged?.Invoke(came.Count, went.Count);
