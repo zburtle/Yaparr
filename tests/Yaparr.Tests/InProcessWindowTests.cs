@@ -143,16 +143,36 @@ public class InProcessWindowTests(Xunit.Abstractions.ITestOutputHelper output)
                 Assert.Null(ended);
             }
 
-            MoveWindow((IntPtr)handle, 300, 200, 1200, 700, true);   // larger, another shape
-            await FramesKeepComing("after making it larger");
-            MoveWindow((IntPtr)handle, 300, 200, 500, 400, true);    // smaller
-            await FramesKeepComing("after making it smaller");
-            Assert.Equal(size, sharer.PictureSize);                  // the picture keeps the size it started with
+            // The window is followed (issue #102): when it has a new size and keeps it for half a second, the capture and the encoder are built again for it, and
+            // the picture is the new size (before, it kept its first size, with bars where the shape no longer fit).
+            var notes = new System.Collections.Concurrent.ConcurrentQueue<string>();
+            sharer.Note += notes.Enqueue;
+            static (int, int) Even((int Width, int Height) client) => (client.Width / 2 * 2, client.Height / 2 * 2);
+
+            async Task Follows(string what, int x, int y, int width, int height)
+            {
+                MoveWindow((IntPtr)handle, x, y, width, height, true);
+                await Task.Delay(300);
+                var wanted = Even(ShareWindows.CaptureSize(handle)!.Value);
+                try { await TestUtil.WaitFor(() => sharer.PictureSize == wanted, 15_000); }
+                catch (TimeoutException) { output.WriteLine($"{what}: the picture is {sharer.PictureSize}, wanted {wanted}\n" + sharer.Describe()); throw; }
+                output.WriteLine($"{what}: the picture follows to {sharer.PictureSize}");
+                await FramesKeepComing(what + ", once built again");
+            }
+
+            await Follows("after making it larger", 300, 200, 1200, 700);    // larger, another shape
+            await Follows("after making it smaller", 300, 200, 500, 400);    // smaller
+            Assert.NotEqual(size, sharer.PictureSize);
+            Assert.True(notes.Count >= 2, "each change was said in the log");
+            output.WriteLine("log: " + string.Join(" | ", notes));
 
             ShowWindow((IntPtr)handle, SW_MINIMIZE);
             await FramesKeepComing("while minimised");               // the capture has nothing new; the share's clock goes on
             ShowWindow((IntPtr)handle, SW_RESTORE);
             await FramesKeepComing("after restoring it");
+            var afterRestore = sharer.PictureSize;
+            await Task.Delay(1500);
+            Assert.Equal(afterRestore, sharer.PictureSize);   // back at the size it was: nothing is built again
 
             // Closing it: the share ends, and says why in plain words.
             window.Close();
