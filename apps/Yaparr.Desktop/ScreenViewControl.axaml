@@ -18,13 +18,14 @@
                 Background="#55000000" IsHitTestVisible="False" IsVisible="False" x:Name="FpsBadge">
             <TextBlock x:Name="FpsText" Foreground="#AAFFFFFF" FontSize="11" />
         </Border>
-        <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto">
+        <Grid x:Name="Controls" Grid.Row="1" ColumnDefinitions="*,Auto,Auto" Background="Black">
             <TextBlock x:Name="Info" Foreground="#999999" FontSize="11" Margin="8,4" VerticalAlignment="Center" />
             <StackPanel x:Name="SoundPanel" Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="8,4" IsVisible="False">
                 <TextBlock Text="Sound" Foreground="#999999" FontSize="11" VerticalAlignment="Center" />
                 <Slider x:Name="SoundBox" Minimum="0" Maximum="200" Value="100" Width="120" VerticalAlignment="Center" />
             </StackPanel>
             <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" Margin="8,4" VerticalAlignment="Center">
+                <Button x:Name="FullScreenButton" Content="Full screen" Padding="10,4" ToolTip.Tip="Full screen (F11, or double-click the picture). Esc leaves it." />
                 <Button x:Name="DockButton" Content="Pop out" Padding="10,4" />
                 <Button x:Name="StopButton" Content="Stop watching" Padding="10,4" />
             </StackPanel>

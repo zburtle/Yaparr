@@ -27,6 +27,11 @@ public partial class ScreenViewControl : UserControl
     {
         InitializeComponent();
         _playout = new PlayoutQueue<Picture>(picture => _viewer?.Return(picture));
+        FullScreenButton.Click += (_, _) => FullScreenToggleRequested?.Invoke();
+        Picture.DoubleTapped += (_, _) => FullScreenToggleRequested?.Invoke();
+        Waiting.DoubleTapped += (_, _) => FullScreenToggleRequested?.Invoke();
+        _hideControls.Tick += (_, _) => HideControlsWhileIdle();
+        PointerMoved += (_, _) => ShowControlsForAWhile();
     }
 
     /// <summary>What this watch has done so far, counted from when it began (null if there is no stream).</summary>
@@ -62,6 +67,47 @@ public partial class ScreenViewControl : UserControl
         DockButton.Click += (_, _) => DockToggleRequested?.Invoke();
         StopButton.Click += (_, _) => StopRequested?.Invoke();
         Docked = true;
+    }
+
+    /// <summary>The full screen button, a double-click on the picture or F11 asks for full screen, or for leaving it.</summary>
+    public event Action? FullScreenToggleRequested;
+
+    /// <summary>Asks for full screen, or for leaving it, as the button does (the window it is in calls this for F11).</summary>
+    public void RequestFullScreenToggle() => FullScreenToggleRequested?.Invoke();
+
+    // In full screen the controls under the picture go after a few seconds without the mouse moving, and the pointer with them, so that only the picture is
+    // seen; moving the mouse brings them back.
+    private readonly DispatcherTimer _hideControls = new() { Interval = TimeSpan.FromSeconds(3) };
+    private bool _fullScreen;
+
+    /// <summary>Whether the picture fills the screen; set by the window it is in, whoever changed it (the button, a key, or the desktop).</summary>
+    public bool IsFullScreen
+    {
+        get => _fullScreen;
+        set
+        {
+            _fullScreen = value;
+            FullScreenButton.Content = value ? "Exit full screen" : "Full screen";
+            DockButton.IsVisible = !value;
+            ShowControlsForAWhile();
+            if (!value) _hideControls.Stop();
+        }
+    }
+
+    private void ShowControlsForAWhile()
+    {
+        Controls.IsVisible = true;
+        Cursor = null;
+        _hideControls.Stop();
+        if (_fullScreen) _hideControls.Start();
+    }
+
+    private void HideControlsWhileIdle()
+    {
+        _hideControls.Stop();
+        if (!_fullScreen || Controls.IsPointerOver) return;
+        Controls.IsVisible = false;
+        Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.None);
     }
 
     /// <summary>The name of the share, for a window title.</summary>
