@@ -32,6 +32,9 @@ public partial class MainWindow
         RemoveAdminItem.IsVisible = canChange && person.Role == RoomRole.Admin;
         BanPersonItem.IsVisible = CanBan(person.Id, person.Role) && !person.BannedHere;
         UnbanPersonItem.IsVisible = SelectedRoom is { MyRole: >= RoomRole.Admin } && person.BannedHere;
+        // The owner takes someone out of the room without banning them; not the owner's own line, and not someone who is banned or blocked (they have their own).
+        RemoveFromRoomItem.IsVisible = SelectedRoom is { MyRole: RoomRole.Owner } && person.Role != RoomRole.Owner && !person.Blocked && !person.BannedHere
+                                       && person.Id != _node?.AccountId.Value;
     }
 
     private void MessageMenu_Opening(object? sender, System.ComponentModel.CancelEventArgs e)

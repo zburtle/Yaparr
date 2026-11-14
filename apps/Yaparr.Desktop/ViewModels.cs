@@ -865,8 +865,15 @@ public sealed class ShareVm : Observable
 
 public sealed class VoiceMemberVm : Observable
 {
-    private bool _speaking, _muted, _deafened, _soundboardMuted;
+    private bool _speaking, _muted, _deafened, _soundboardMuted, _canKick;
     private string _name;
+
+    /// <summary>The owner of the room can kick this person from voice (without banning them): shown in their right-click menu.</summary>
+    public bool CanKick
+    {
+        get => _canKick;
+        set { if (_canKick == value) return; _canKick = value; Raise(); }
+    }
 
     public VoiceMemberVm(string id, string name, bool isSelf)
     {

@@ -96,6 +96,8 @@ public sealed partial class ChatNode
         {
             if (!IsValidPeerId(s.From) || s.From == Id.Value || IsBannedIn(room, new PeerId(s.From)) || !SignedVoice.Verify(s, room.Key)) continue;
             var id = new PeerId(s.From);
+            // A state from before the owner kicked this person from voice (still travelling through the room) does not put them back; a newer one does.
+            if (IsVoiceStateKicked(room, id, s.Ts)) continue;
             lock (room.IndirectGate)
             {
                 if (room.Voice.TryGetValue(id, out var old) && old.State.Ts >= s.Ts) continue;

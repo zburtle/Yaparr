@@ -36,6 +36,55 @@ public partial class MainWindow
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { StatusText.Text = ex.Message; }
     }
 
+    // The owner of the room removed this person from it: the room goes from the list, as when they leave it themselves, and they are told. Nothing keeps them
+    // out; they come back with the invite.
+    private async Task OnRemovedFromRoomAsync(ConversationVm conv)
+    {
+        try
+        {
+            if (_voiceConv == conv) LeaveVoiceCore();
+            string title = conv.Title;
+            await LeaveConversationAsync(conv);
+            StatusText.Text = $"The owner removed you from {title}.";
+            await Dialogs.MessageAsync(this, "Removed from room", $"The owner of \"{title}\" removed you from the room. You are not banned: to come back, open the room's invite again.");
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException) { StatusText.Text = "Removed from the room, but leaving it did not finish cleanly: " + ex.Message; }
+    }
+
+    // The owner takes the person selected in the People list out of the open room, without banning them.
+    private async void RemoveFromRoom_Click(object? sender, RoutedEventArgs e)
+    {
+        if (PeopleList.SelectedItem is not PeerVm person || SelectedRoom is not { } room) return;
+        var proceed = await Dialogs.ConfirmAsync(this, "Remove " + person.Name,
+            $"Remove {person.Name} from this room? They disappear from everyone's list of people, and their Yaparr leaves the room if they are on now. This is not a ban: nothing keeps them out, and they are back as soon as they open the room's invite again. To keep someone out, ban them.",
+            "Remove", "Cancel");
+        if (!proceed) return;
+        try
+        {
+            room.RemoveFromRoom(new PeerId(person.Id), person.Name);
+            StatusText.Text = $"Removed {person.Name} from this room.";
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { StatusText.Text = ex.Message; }
+    }
+
+    // The owner takes someone out of the voice channel, without banning them. The right-click menu of a person in the voice list.
+    private async void KickFromVoice_Click(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Avalonia.Controls.Control)?.DataContext is not VoiceMemberVm member) return;
+        var room = _roomConversations.FirstOrDefault(kv => kv.Value.VoiceMembers.Contains(member)).Key;
+        if (room == null) return;
+        var proceed = await Dialogs.ConfirmAsync(this, "Kick " + member.Name,
+            $"Kick {member.Name} from voice? Their call ends and they are taken off the list of people in voice. This is not a ban: they stay in the room and can join voice again whenever they like.",
+            "Kick", "Cancel");
+        if (!proceed) return;
+        try
+        {
+            room.KickFromVoice(new PeerId(member.Account.Length > 0 ? member.Account : member.Id));
+            StatusText.Text = $"Kicked {member.Name} from voice.";
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { StatusText.Text = ex.Message; }
+    }
+
     private void UnbanPerson_Click(object? sender, RoutedEventArgs e)
     {
         if (PeopleList.SelectedItem is not PeerVm { BannedHere: true } person || SelectedRoom is not { } room) return;

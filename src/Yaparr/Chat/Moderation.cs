@@ -9,17 +9,18 @@ public sealed record BannedPerson(PeerId Account, string Name);
 
 /// <summary>
 /// An owner's or admin's signed order about the room: ban or unban an account, delete a message, delete a sound from the
-/// soundboard, or give a sound another name. Whether the signer was allowed to give it is decided by every client from the current list of admins, so an
+/// soundboard, or give a sound another name; and, from the owner only, remove an account from the room or kick it from voice without banning it. Whether the signer was allowed to give it is decided by every client from the current list of admins, so an
 /// admin who is removed takes their orders with them, and an admin cannot ban another admin or the owner.
 /// </summary>
-/// <param name="Kind">"ban", "unban", "delmsg", "delsound" or "rensound".</param>
-/// <param name="Target">An account id (ban, unban), a message key (delmsg) or a sound id (delsound, rensound).</param>
+/// <param name="Kind">"ban", "unban", "delmsg", "delsound", "rensound", "remove" or "kickvoice".</param>
+/// <param name="Target">An account id (ban, unban, remove, kickvoice), a message key (delmsg) or a sound id (delsound, rensound).</param>
 /// <param name="Label">The banned person's name as the admin saw it, so a list of bans can say who they are; for rensound, the sound's new name.</param>
 public sealed record StoredMod(string Pub, string Acct, string Cert, string Kind, string Target, string Label, long Ts, string Sig);
 
 internal static class SignedMod
 {
-    public const string Ban = "ban", Unban = "unban", DeleteMessage = "delmsg", DeleteSound = "delsound", DeleteGif = "delgif", RenameSound = "rensound";
+    public const string Ban = "ban", Unban = "unban", DeleteMessage = "delmsg", DeleteSound = "delsound", DeleteGif = "delgif", RenameSound = "rensound",
+        RemoveFromRoom = "remove", KickFromVoice = "kickvoice";
     private const int MaxLabel = 64;
     private static readonly TimeSpan MaxFutureSkew = TimeSpan.FromMinutes(5);
 
@@ -55,7 +56,7 @@ internal static class SignedMod
 
     private static bool ValidTarget(string kind, string target) => kind switch
     {
-        Ban or Unban => IsHex(target, 64),
+        Ban or Unban or RemoveFromRoom or KickFromVoice => IsHex(target, 64),
         DeleteMessage => IsHex(target, 32),
         DeleteSound or DeleteGif or RenameSound => IsHex(target, 16),
         _ => false,
@@ -93,4 +94,13 @@ internal sealed class ModView
     /// <summary>The name an owner or admin gave a sound that was not theirs, by sound id, and when (the sound's own owner can rename it again later).</summary>
     public readonly Dictionary<string, (string Name, long Ts)> SoundNames = new();
     public readonly HashSet<string> Gifs = new();
+
+    /// <summary>
+    /// Accounts the owner has removed from the room without banning them, by account, with the time of the owner's latest order. It hides the person
+    /// from the list of people until they are seen again (<see cref="ChatNode"/> works out whether they were seen after the order).
+    /// </summary>
+    public readonly Dictionary<string, long> Removed = new();
+
+    /// <summary>Accounts the owner has kicked from voice without banning them, by account, with the time of the owner's latest order: a voice state older than it does not count.</summary>
+    public readonly Dictionary<string, long> VoiceKicks = new();
 }

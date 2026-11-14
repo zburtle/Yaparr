@@ -1615,6 +1615,13 @@ public partial class MainView : UserControl
                 catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { ShowChatNote(chat, ex.Message); }
                 return Task.CompletedTask;
             }), danger: true);
+        if (_session.CanRemove(chat, person))
+            AddAction("Remove from this room", () => Ask($"Remove {person.Name} from this room? They disappear from everyone's list of people, and their Yaparr leaves the room if they are on now. This is not a ban: nothing keeps them out, and they are back as soon as they open the invite again. To keep someone out, ban them.", "Remove", () =>
+            {
+                try { _session.RemoveFromRoom(chat, person); ShowChatNote(chat, person.Name + " was removed from the room"); }
+                catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { ShowChatNote(chat, ex.Message); }
+                return Task.CompletedTask;
+            }), danger: true);
         AddAction("Block", () => AskBlock(person.Id, person.Name), danger: true);
         ActionPanel.IsVisible = true;
     }

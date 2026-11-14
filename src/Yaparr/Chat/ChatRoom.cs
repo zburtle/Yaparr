@@ -209,6 +209,35 @@ public sealed class ChatRoom
     /// <summary>Lifts a ban.</summary>
     public void Unban(PeerId account) => _node.Unban(this, account);
 
+    /// <summary>
+    /// The owner (only) takes an account out of the room without banning it: it leaves everyone's list of people, and its app leaves the room if it is on, and
+    /// is told so (<see cref="RemovedFromRoom"/>). Nothing keeps the person out: they come back by opening the invite again, which is the difference from
+    /// <see cref="Ban"/>. Throws <see cref="InvalidOperationException"/> for anyone who is not the owner, for yourself, and in a room with no owner.
+    /// </summary>
+    public void RemoveFromRoom(PeerId account, string name) => _node.RemoveFromRoom(this, account, name);
+
+    /// <summary>
+    /// The owner (only) kicks an account out of the voice channel without banning it: its app leaves the call and everyone else stops listing it there
+    /// (<see cref="VoiceKicked"/> tells it). It can join again whenever it likes. Throws <see cref="InvalidOperationException"/> for anyone who is not the
+    /// owner, for yourself, when the person is not in voice, and in a room with no owner.
+    /// </summary>
+    public void KickFromVoice(PeerId account) => _node.KickFromVoice(this, account);
+
+    /// <summary>
+    /// The owner removed you from the room (<see cref="RemoveFromRoom"/>) while you were on: leave it, and say so. Only an order that is news raises it; one
+    /// from before this room was opened here, or an old one, does not. Raised on another thread.
+    /// </summary>
+    public event Action? RemovedFromRoom;
+    internal void RaiseRemovedFromRoom() => RemovedFromRoom?.Invoke();
+
+    /// <summary>The owner kicked you from voice (<see cref="KickFromVoice"/>): your call here has ended. Raised on another thread.</summary>
+    public event Action? VoiceKicked;
+    internal void RaiseVoiceKicked() => VoiceKicked?.Invoke();
+
+    // When this room was opened here (unix time), and the newest orders about this account that have been acted on, so that none is acted on twice.
+    internal readonly long CreatedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+    internal long RemovalHandled, KickHandled;
+
     /// <summary>Deletes a message for everyone in the room (the owner and admins delete any message, everyone else their own).</summary>
     public void DeleteMessage(ChatMessage message) => _node.DeleteMessage(this, message);
 
