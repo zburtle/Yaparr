@@ -326,4 +326,31 @@ public class InProcessEncoderTests
             Assert.True(packets.Count(p => p.Key) >= 2, "a key frame was asked for");
         }
     }
+
+    [Theory]
+    [InlineData("0.5", 1.5, 0.5)]
+    [InlineData(" 2 ", 1.5, 2)]
+    [InlineData("1.25", 1.0, 1.25)]
+    [InlineData("", 1.5, 1.5)]          // nothing: the default
+    [InlineData("many", 1.5, 1.5)]      // not a number: the default
+    [InlineData("0.01", 1.5, 1.5)]      // outside what makes sense: the default
+    [InlineData("99", 1.5, 1.5)]
+    public void The_rate_settings_come_from_the_environment_only_when_they_make_sense(string text, double fallback, double expected)
+        => Assert.Equal(expected, EncoderTuning.Parse(text, fallback, 0.1, 5));
+
+    /// <summary>The buffer and the ceiling of the options are what the encoder is set up with (and what its description says), for a key frame no bigger than the buffer lets it be.</summary>
+    [Fact]
+    public void The_encoder_is_set_up_with_the_buffer_and_the_ceiling_of_the_options()
+    {
+        if (!FfmpegLibraries.IsAvailable) return;
+        InProcessEncoder encoder;
+        try { encoder = new InProcessEncoder(640, 360, new ScreenOptions { Fps = 30, Kbps = 2000, BufferSeconds = 0.5, MaxRateMultiple = 1.25, X11Display = null }); }
+        catch (Exception ex) when (ex is InvalidOperationException or PlatformNotSupportedException) { return; }   // no NVIDIA card here
+        using (encoder) Assert.Contains("(at most 2500, buffer 1000)", encoder.Describe());
+        var defaults = new ScreenOptions { Fps = 30, Kbps = 2000, X11Display = null };
+        Assert.Equal((EncoderTuning.BufferSeconds, EncoderTuning.MaxRateMultiple, EncoderTuning.KeySeconds), (defaults.BufferSeconds, defaults.MaxRateMultiple, defaults.KeyFrameSeconds));
+        // a quality level keeps them
+        var level = defaults.WithQuality(1400, 30, 1280, 720);
+        Assert.Equal((defaults.BufferSeconds, defaults.MaxRateMultiple), (level.BufferSeconds, level.MaxRateMultiple));
+    }
 }

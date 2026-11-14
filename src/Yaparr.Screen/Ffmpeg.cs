@@ -143,8 +143,21 @@ public sealed class ScreenOptions
 
     public int Kbps { get; init; } = 800;
 
-    /// <summary>Seconds between key frames. A viewer that joins or loses packets waits at most this long for one.</summary>
-    public double KeyFrameSeconds { get; init; } = 1;
+    /// <summary>
+    /// Seconds between key frames. A viewer that joins or loses packets waits at most this long for one (a viewer that asks for one gets it at once, see
+    /// <see cref="InProcessEncoder"/>). The environment variable YAPARR_KEY_SECONDS changes the default, to try another spacing.
+    /// </summary>
+    public double KeyFrameSeconds { get; init; } = EncoderTuning.KeySeconds;
+
+    /// <summary>
+    /// How much the encoder's rate buffer holds, in seconds of the bitrate (the VBV size): the smaller it is, the less the encoder may put out at once, and a key
+    /// frame is made smaller (and worse) to fit. A key frame sent as a burst is what a weak link loses packets in. The environment variable YAPARR_ENCODER_BUFFER
+    /// changes the default. See <see cref="EncoderTuning"/>.
+    /// </summary>
+    public double BufferSeconds { get; init; } = EncoderTuning.BufferSeconds;
+
+    /// <summary>The encoder's ceiling, as a multiple of the bitrate (YAPARR_ENCODER_MAXRATE changes the default). See <see cref="EncoderTuning"/>.</summary>
+    public double MaxRateMultiple { get; init; } = EncoderTuning.MaxRateMultiple;
 
     public ScreenCodec Codec { get; init; } = ScreenCodec.Auto;
 
@@ -228,6 +241,7 @@ public sealed class ScreenOptions
         Display = Display, WindowHandle = WindowHandle, Portal = Portal, Fps = fps, MaxWidth = maxWidth, MaxHeight = maxHeight, Kbps = kbps,
         KeyFrameSeconds = KeyFrameSeconds, Codec = Codec, Encoder = Encoder, ShareSound = ShareSound, SoundProgram = SoundProgram, GpuScale = GpuScale, ShowCursor = ShowCursor,
         X11Display = X11Display, InProcessEncoder = InProcessEncoder, InProcessCapture = InProcessCapture, CaptureOnCard = CaptureOnCard, InProcessAsked = InProcessAsked, AdaptQuality = AdaptQuality,
+        BufferSeconds = BufferSeconds, MaxRateMultiple = MaxRateMultiple,
     };
 
     /// <summary>The same options for another monitor or window: everything else (quality, codec, sound) stays.</summary>
@@ -236,6 +250,7 @@ public sealed class ScreenOptions
         Display = display, WindowHandle = windowHandle, Fps = Fps, MaxWidth = MaxWidth, MaxHeight = MaxHeight, Kbps = Kbps,
         KeyFrameSeconds = KeyFrameSeconds, Codec = Codec, Encoder = Encoder, ShareSound = ShareSound, SoundProgram = SoundProgram, GpuScale = GpuScale, ShowCursor = ShowCursor,
         X11Display = X11Display, InProcessEncoder = InProcessEncoder, InProcessCapture = InProcessCapture, CaptureOnCard = CaptureOnCard, InProcessAsked = InProcessAsked, AdaptQuality = AdaptQuality,
+        BufferSeconds = BufferSeconds, MaxRateMultiple = MaxRateMultiple,
     };
 
     /// <summary>The same options for another stream from the portal (the desktop asked again what to share).</summary>
@@ -244,7 +259,28 @@ public sealed class ScreenOptions
         Portal = portal, Fps = Fps, MaxWidth = MaxWidth, MaxHeight = MaxHeight, Kbps = Kbps, KeyFrameSeconds = KeyFrameSeconds, Codec = Codec,
         Encoder = Encoder, ShareSound = ShareSound, SoundProgram = SoundProgram, GpuScale = false, ShowCursor = ShowCursor, X11Display = X11Display,
         InProcessEncoder = InProcessEncoder, InProcessCapture = InProcessCapture, CaptureOnCard = CaptureOnCard, InProcessAsked = InProcessAsked, AdaptQuality = AdaptQuality,
+        BufferSeconds = BufferSeconds, MaxRateMultiple = MaxRateMultiple,
     };
+}
+
+/// <summary>
+/// The rate settings of the encoders that can be tried with environment variables: the spacing of key frames, the size of the rate buffer in seconds of the bitrate,
+/// and the ceiling as a multiple of the bitrate. The defaults are the ones docs/encoder-tuning.md measured to be best: a key frame every two seconds, a buffer of half a second
+/// and a ceiling of the bitrate itself (the encoders were set up with one second, one and a half seconds and one and a half times until then).
+/// </summary>
+public static class EncoderTuning
+{
+    public const double DefaultKeySeconds = 2, DefaultBufferSeconds = 0.5, DefaultMaxRateMultiple = 1.0;
+
+    public static double KeySeconds => Read("YAPARR_KEY_SECONDS", DefaultKeySeconds, 0.25, 10);
+    public static double BufferSeconds => Read("YAPARR_ENCODER_BUFFER", DefaultBufferSeconds, 0.1, 5);
+    public static double MaxRateMultiple => Read("YAPARR_ENCODER_MAXRATE", DefaultMaxRateMultiple, 1.0, 4);
+
+    private static double Read(string name, double fallback, double low, double high) => Parse(Environment.GetEnvironmentVariable(name), fallback, low, high);
+
+    /// <summary>A number from text, or <paramref name="fallback"/> when there is none or it is outside the range that makes sense.</summary>
+    internal static double Parse(string? text, double fallback, double low, double high)
+        => double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) && v >= low && v <= high ? v : fallback;
 }
 
 /// <summary>The command lines for FFmpeg. Kept apart from running it so that they can be checked without FFmpeg.</summary>
@@ -431,7 +467,7 @@ public static class FfmpegArgs
     {
         var rate = new[]
         {
-            "-b:v", o.Kbps + "k", "-maxrate", Num(o.Kbps * 1.5) + "k", "-bufsize", Num(o.Kbps * 1.5) + "k",
+            "-b:v", o.Kbps + "k", "-maxrate", Num(o.Kbps * o.MaxRateMultiple) + "k", "-bufsize", Num(o.Kbps * o.BufferSeconds) + "k",
             "-g", Math.Max(1, (int)Math.Round(o.Fps * o.KeyFrameSeconds)).ToString(CultureInfo.InvariantCulture),
         };
         if (codec == ScreenCodec.H264)

@@ -5,11 +5,15 @@ namespace Yaparr.Tests;
 public class ScreenTests
 {
     [Fact]
-    public void A_key_frame_every_second_is_the_default_so_a_viewer_that_loses_frames_waits_at_most_that_long()
+    public void A_key_frame_every_two_seconds_is_the_default_because_a_viewer_that_loses_frames_asks_for_one_and_gets_it_at_once()
     {
-        Assert.Equal(1, new ScreenOptions().KeyFrameSeconds);
+        Assert.Equal(2, new ScreenOptions().KeyFrameSeconds);
         var args = FfmpegArgs.Capture(new ScreenOptions { X11Display = null, Fps = 30, Display = new Display(0, "monitor", 0, 0, 1920, 1080, true, Handle: 0x1A2B) }, ScreenCodec.Vp8);
-        Assert.Equal("30", args[args.IndexOf("-g") + 1]);
+        Assert.Equal("60", args[args.IndexOf("-g") + 1]);
+        // and the rate buffer and the ceiling the measurements chose (docs/encoder-tuning.md): half a second of the bitrate, the bitrate itself
+        var h264 = FfmpegArgs.Capture(new ScreenOptions { X11Display = null, Fps = 30, Kbps = 4000, Display = new Display(0, "monitor", 0, 0, 1920, 1080, true, Handle: 0x1A2B) }, ScreenCodec.H264, HardwareEncoder.Nvenc);
+        Assert.Equal("4000k", h264[h264.IndexOf("-maxrate") + 1]);
+        Assert.Equal("2000k", h264[h264.IndexOf("-bufsize") + 1]);
     }
 
     [Fact]

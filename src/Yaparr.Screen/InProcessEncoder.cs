@@ -129,6 +129,7 @@ public sealed class RawSizeParser
 public sealed unsafe class InProcessEncoder : IDisposable
 {
     private AVCodecContext* _context;
+    private double _bufferSeconds = EncoderTuning.DefaultBufferSeconds, _maxRateMultiple = EncoderTuning.DefaultMaxRateMultiple;
     private AVBufferRef* _hardwareDevice, _uploadFrames;
     private AVFrame* _uploaded;
     private AVFrame* _frame;
@@ -191,15 +192,16 @@ public sealed unsafe class InProcessEncoder : IDisposable
             if (_onCard) _context->hw_frames_ctx = ffmpeg.av_buffer_ref(capture!.HardwareFrames);
             Kbps = options.Kbps;
             _context->bit_rate = options.Kbps * 1000L;
-            _context->rc_max_rate = (long)(options.Kbps * 1500L);
-            _context->rc_buffer_size = (int)(options.Kbps * 1500L);
+            (_bufferSeconds, _maxRateMultiple) = (options.BufferSeconds, options.MaxRateMultiple);
+            _context->rc_max_rate = (long)(options.Kbps * 1000.0 * _maxRateMultiple);
+            _context->rc_buffer_size = (int)(options.Kbps * 1000.0 * _bufferSeconds);
             _context->gop_size = Math.Max(1, (int)Math.Round(options.Fps * options.KeyFrameSeconds));
             _context->max_b_frames = 0;
             foreach (var (name, value) in FfmpegArgs.NvencH264Options) SetOption(name, value);
             // Hand each packet back as soon as it is made: by default NVENC holds two pictures back, which is two pictures of delay.
             SetOption("delay", "0");
             Check(ffmpeg.avcodec_open2(_context, codec, null), "starting the NVIDIA encoder");
-            _description = $"h264_nvenc {width}x{height} at {options.Fps} fps, {options.Kbps} kbit/s (at most {options.Kbps * 1.5:0}, buffer {options.Kbps * 1.5:0}), "
+            _description = $"h264_nvenc {width}x{height} at {options.Fps} fps, {options.Kbps} kbit/s (at most {options.Kbps * _maxRateMultiple:0}, buffer {options.Kbps * _bufferSeconds:0}), "
                            + $"a key frame every {_context->gop_size} pictures, options {string.Join(' ', FfmpegArgs.NvencH264Options.Select(o => o.Name + "=" + o.Value))} delay=0; "
                            + (_onCard ? "pictures read from the graphics card (Direct3D 11); " : "") + $"libraries {FfmpegLibraries.Describe()}";
             if (!_onCard)
@@ -248,15 +250,16 @@ public sealed unsafe class InProcessEncoder : IDisposable
         _context->hw_frames_ctx = ffmpeg.av_buffer_ref(_uploadFrames);
         Kbps = options.Kbps;
         _context->bit_rate = options.Kbps * 1000L;
-        _context->rc_max_rate = options.Kbps * 1500L;
-        _context->rc_buffer_size = (int)(options.Kbps * 1500L);
+        (_bufferSeconds, _maxRateMultiple) = (options.BufferSeconds, options.MaxRateMultiple);
+        _context->rc_max_rate = (long)(options.Kbps * 1000.0 * _maxRateMultiple);
+        _context->rc_buffer_size = (int)(options.Kbps * 1000.0 * _bufferSeconds);
         _context->gop_size = Math.Max(1, (int)Math.Round(options.Fps * options.KeyFrameSeconds));
         _context->max_b_frames = 0;
         _context->profile = 100;   // High
         SetOption("aud", "1");
         SetOption("async_depth", "1");
         Check(ffmpeg.avcodec_open2(_context, codec, null), "starting the VA-API encoder");
-        _description = $"h264_vaapi {width}x{height} at {options.Fps} fps, {options.Kbps} kbit/s (at most {options.Kbps * 1.5:0}, buffer {options.Kbps * 1.5:0}), "
+        _description = $"h264_vaapi {width}x{height} at {options.Fps} fps, {options.Kbps} kbit/s (at most {options.Kbps * _maxRateMultiple:0}, buffer {options.Kbps * _bufferSeconds:0}), "
                        + $"a key frame every {_context->gop_size} pictures, options profile=high bf=0 aud=1 async_depth=1; card {device}; libraries {FfmpegLibraries.Describe()}";
         _frame = ffmpeg.av_frame_alloc();
         _frame->format = (int)AVPixelFormat.AV_PIX_FMT_NV12;
@@ -352,8 +355,8 @@ public sealed unsafe class InProcessEncoder : IDisposable
         if (!LiveBitrate) throw new NotSupportedException("This encoder cannot be given a new bitrate while it runs.");
         if (kbps < 50) throw new ArgumentOutOfRangeException(nameof(kbps));
         _context->bit_rate = kbps * 1000L;
-        _context->rc_max_rate = kbps * 1500L;
-        _context->rc_buffer_size = (int)(kbps * 1500L);
+        _context->rc_max_rate = (long)(kbps * 1000.0 * _maxRateMultiple);
+        _context->rc_buffer_size = (int)(kbps * 1000.0 * _bufferSeconds);
         Kbps = kbps;
     }
 
