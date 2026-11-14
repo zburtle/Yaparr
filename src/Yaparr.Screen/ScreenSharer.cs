@@ -400,6 +400,9 @@ public sealed partial class ScreenSharer : IDisposable
     /// </summary>
     public event Action<long, int>? KeyFrameAnswered;
 
+    /// <summary>Something the share did on its own that is worth a line in the log (it followed a window that changed size, say). On another thread, so a handler has to be quick.</summary>
+    public event Action<string>? Note;
+
     /// <summary>How many key frames were made on the very next picture because a viewer asked for one.</summary>
     public long KeyFramesForced => _pacer.Forced;
 
@@ -445,6 +448,8 @@ public sealed partial class ScreenSharer : IDisposable
         // At a lower level of adaptive quality the capture and the encoder are built again for the size and frame rate of that level.
         var run = RunOptions();
         Volatile.Write(ref _runStartedMs, Environment.TickCount64);
+        // The window's size the capture is built for (it is read again by the capture itself a moment later; a change in between is seen by the watch below).
+        (int Width, int Height)? windowBuiltFor = run.WindowHandle is { } builtFor && OperatingSystem.IsWindows() ? ShareWindows.CaptureSize(builtFor) : null;
         InProcessCapture capture;
         try { capture = new InProcessCapture(run, onCard); }
         catch (Exception ex) when (!ct.IsCancellationRequested) { throw CaptureFailed(ex.Message); }
@@ -471,8 +476,22 @@ public sealed partial class ScreenSharer : IDisposable
         bool started = false;
         var ready = new List<(byte[] Frame, bool Key)>(2);
         void Collect(byte[] frame, bool key) => ready.Add((frame, key));
+        // A window that changes size is followed: the capture and the encoder are built again for the new size (see WindowSizeWatch). Windows only; x11grab
+        // stops by itself when a window changes size, and is started again below.
+        var windowWatch = run.WindowHandle != null && OperatingSystem.IsWindows() ? new WindowSizeWatch(windowBuiltFor, Environment.TickCount64) : null;
+        long nextWindowLook = 0;
         while (!ct.IsCancellationRequested && !_levelRestart && !_switch)
         {
+            if (windowWatch != null && Environment.TickCount64 >= nextWindowLook)
+            {
+                nextWindowLook = Environment.TickCount64 + 250;
+                if (windowWatch.Update(ShareWindows.CaptureSize(run.WindowHandle!.Value), Environment.TickCount64, out var resized))
+                {
+                    Note?.Invoke($"the shared window is now {resized.Width}x{resized.Height}: building the capture again for it");
+                    _levelRestart = true;
+                    continue;
+                }
+            }
             long wait = due - Stopwatch.GetTimestamp();
             if (wait > 0) await Task.Delay(TimeSpan.FromSeconds((double)wait / Stopwatch.Frequency), ct).ConfigureAwait(false);
             // A late tick does not make a burst afterwards: the clock skips ahead instead of catching up.

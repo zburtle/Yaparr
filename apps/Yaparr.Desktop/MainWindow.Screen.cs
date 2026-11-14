@@ -152,6 +152,7 @@ public partial class MainWindow
                 _log.Write("screen sharing encoder set up as: " + sharer.EncoderDetails);
             };
             sharer.QualityDecided += text => _log.Write(text);
+            sharer.Note += text => _log.Write("screen sharing: " + text);
             if (sharer.Low is { } lowStream)
                 lowStream.StartedChanged += started => _log.Write(started
                     ? "screen sharing: a viewer's connection could not keep up, so a lower-quality stream was started for it"
