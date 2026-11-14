@@ -351,6 +351,53 @@ public class VoiceTreeTests
         }
     }
 
+    // The one who starts the tree is chosen among the members who can relay, so that members who cannot (and sort first) are not waited for.
+    [Fact]
+    public async Task The_voice_tree_is_started_without_waiting_for_members_who_cannot_relay()
+    {
+        const int n = 8;
+        var hub = new InMemoryDiscoveryHub();
+        var nodes = new List<ChatNode>();
+        var rooms = new List<ChatRoom>();
+        var sessions = new List<VoiceSession>();
+        try
+        {
+            for (int i = 0; i < n; i++)
+                nodes.Add(TestUtil.NewNode(hub, "c" + i, media: new MediaOptions
+                {
+                    Maintenance = TimeSpan.FromMilliseconds(200), EdgeTimeout = TimeSpan.FromMilliseconds(1500), Announce = TimeSpan.FromSeconds(2),
+                    VoiceThreshold = 6, VoiceRootFanout = 8, Fanout = 2, VoiceRankDelay = TimeSpan.FromSeconds(4),
+                }));
+            // Only the member who sorts last can relay (before, the others in front of it would each have been given their four seconds).
+            var capable = nodes.OrderBy(x => x.Id.Value, StringComparer.Ordinal).Last();
+            foreach (var node in nodes) node.RelayCapableOverride = ReferenceEquals(node, capable);
+            foreach (var node in nodes) rooms.Add(await node.JoinRoomAsync("cap"));
+            await TestUtil.WaitFor(() => rooms.All(r => r.Members.Count >= 1), 20_000);
+            foreach (var room in rooms) sessions.Add(room.JoinVoice());
+            await TestUtil.WaitFor(() => rooms.All(r => r.VoiceParticipants.Count == n), 30_000);
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+
+            await TestUtil.WaitFor(() => rooms.All(r => r.Media.Values.Any(g => g.Kind == "voice" && g.Attached && g.Joined)), 40_000);
+            Assert.True(sw.Elapsed < TimeSpan.FromSeconds(12), $"the tree took {sw.Elapsed.TotalSeconds:0.0} seconds to appear");
+            var roomOfCapable = rooms[nodes.IndexOf(capable)];
+            Assert.Contains(roomOfCapable.Media.Values, g => g.Kind == "voice" && g.IsRoot);
+        }
+        finally
+        {
+            foreach (var s in sessions) s.Dispose();
+            foreach (var node in nodes) node.Dispose();
+        }
+    }
+
+    [Fact]
+    public void The_hint_about_relaying_does_not_change_what_is_signed_and_one_out_of_range_is_not_a_real_one()
+    {
+        using var identity = PeerIdentity.Generate();
+        var state = SignedVoice.Create(identity, "room-key", "x", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), true, false, false);
+        Assert.True(SignedVoice.Verify(state with { Up = 7 }, "room-key"));
+        Assert.True(SignedVoice.Verify(state with { Up = null }, "room-key"));
+    }
+
     [Fact]
     public async Task When_the_root_of_a_voice_tree_disappears_another_member_starts_a_new_tree_and_audio_flows_again()
     {

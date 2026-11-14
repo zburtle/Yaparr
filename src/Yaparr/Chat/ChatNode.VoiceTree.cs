@@ -1,3 +1,5 @@
+using Yaparr.Identity;
+
 namespace Yaparr.Chat;
 
 // A voice channel with many people cannot have a connection between every pair, so once it is big enough it uses a
@@ -24,6 +26,22 @@ public sealed partial class ChatNode
     // The voice group we are attached to, if any.
     private MediaGroup? AttachedVoiceGroup(ChatRoom room) =>
         room.Media.Values.FirstOrDefault(g => g.Kind == "voice" && g.Info.Name == VoiceTreeName(ActiveChannel(room)) && g.Joined && g.Attached);
+
+    // What we say of ourselves for choosing the root: 0 when we cannot relay, otherwise 1 plus our upload in megabits a second (1 until it is measured).
+    private int RelayHint() =>
+        !IsRelayCapable ? 0 : MeasuredUploadBytesPerSecond is { } up ? (int)Math.Min(255, 1 + up / 125_000) : 1;
+
+    // The members that could start the tree, best first: the ones that say they cannot relay are left out, those that say nothing (older versions)
+    // come after those that say how well they can, and among equals the lower id comes first. Everybody sees the same order up to what each has
+    // heard so far, and if two start at once the lower root id stays (see MaintainVoiceTree).
+    private List<(PeerId Id, int Up)> RootCandidates(ChatRoom room, List<PeerId> others)
+    {
+        var list = new List<(PeerId, int)> { (Id, RelayHint()) };
+        lock (room.IndirectGate)
+            foreach (var id in others)
+                if (room.Voice.TryGetValue(id, out var e) && e.State.Up != 0) list.Add((id, e.State.Up ?? 0));
+        return list.Where(c => c.Item2 > 0 || c.Item1 != Id).OrderByDescending(c => c.Item2).ThenBy(c => c.Item1.Value, StringComparer.Ordinal).ToList();
+    }
 
     private void MaintainVoiceTree(ChatRoom room, long now)
     {
@@ -60,7 +78,9 @@ public sealed partial class ChatNode
         room.VoiceTreeLowSince = 0;
         if (count < _options.VoiceTreeThreshold || !IsRelayCapable) { room.VoiceTreeWantedSince = 0; return; }
         if (room.VoiceTreeWantedSince == 0) room.VoiceTreeWantedSince = now;
-        int rank = others.Count(id => string.CompareOrdinal(id.Value, Id.Value) < 0);
+        // We wait for each member who suits better to have its turn first.
+        var candidates = RootCandidates(room, others);
+        int rank = Math.Max(0, candidates.FindIndex(c => c.Id == Id));
         if (now - room.VoiceTreeWantedSince < rank * _options.VoiceTreeRankDelay.TotalMilliseconds) return;
 
         _options.Log?.Invoke($"voice in '{room.Name}' has {count} people; starting a voice tree");

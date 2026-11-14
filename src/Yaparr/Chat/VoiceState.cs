@@ -5,7 +5,11 @@ namespace Yaparr.Chat;
 
 /// <summary>A signed statement that someone is in (or has left) a room's voice channel.</summary>
 /// <param name="Chan">The voice channel, or null for the first one.</param>
-public sealed record StoredVoice(string From, string Pub, string Name, long Ts, bool Active, bool Muted, bool Deafened, string Sig, string? Chan = null);
+/// <param name="Up">A hint for choosing who starts the voice tree: 0 for someone who cannot relay, otherwise how well they can (1 plus their measured
+/// upload in megabits a second, at most 255; 1 when not measured yet), or null from a version that does not say. It is not signed (so that
+/// versions that do not know it still accept the statement), and a member passing the statement on could change it; the worst that does is
+/// a wait for the next in line.</param>
+public sealed record StoredVoice(string From, string Pub, string Name, long Ts, bool Active, bool Muted, bool Deafened, string Sig, string? Chan = null, int? Up = null);
 
 internal sealed record VoiceEntry(StoredVoice State, long SeenAt);
 
