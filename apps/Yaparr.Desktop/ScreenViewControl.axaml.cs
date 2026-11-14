@@ -42,11 +42,11 @@ public partial class ScreenViewControl : UserControl
     /// <summary>How the watch went, written when it ends (for the sharing diagnostics, which are often copied after the screen is closed).</summary>
     public string? LastReport { get; private set; }
 
-    public ScreenViewControl(string name, MediaView view, string ffmpeg) : this()
+    public ScreenViewControl(string name, MediaView view) : this()
     {
         _name = name;
         _view = view;
-        _viewer = new ScreenViewer(view, ffmpeg);
+        _viewer = new ScreenViewer(view);
         // How this picture is doing, judged over ten seconds and sent up the tree with the others' (see ViewerQualityMeter), so that the sharer can tell
         // a room that struggles from one viewer that does.
         view.QualityProvider = () => _quality.Sample;

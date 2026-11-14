@@ -68,6 +68,6 @@ Not measured: the VA-API encoder (same options, a card that cannot be tried here
 ## Running it again
 
 ```
-set YAPARR_FFMPEG_LIBS=<folder with FFmpeg's libraries>   (and YAPARR_FFMPEG for the quality)
+set YAPARR_FFMPEG_LIBS=<folder with FFmpeg's libraries>
 dotnet run --project tools/Yaparr.EncoderTuning -c Release -- --clips desktop,video,game --buffer 0.25,0.5,1,1.5 --key 1,2,4 --maxrate 1.5 --seconds 12 --csv out.csv
 ```

@@ -16,11 +16,11 @@ public sealed record SharingMinute(
     {
         string encoding = Interval.DescribeEncoding(FrameBudgetMs, Maxima);
         return $"call quality: sharing{(Bad ? " (a problem)" : "")}: {Fps:0.0} of {WantedFps:0} fps, {Kbps:0} kbit/s, {Encoder}"
-               + $"{(InProcess ? ", encoded in this program" : ", encoded by a separate FFmpeg")}{(Picture is { } size ? $", picture {size.Width}x{size.Height}" : "")}; "
+               + $", encoded in this program{(Picture is { } size ? $", picture {size.Width}x{size.Height}" : "")}; "
                + $"{Interval.DescribeKeys(Maxima)}; {(encoding.Length > 0 ? encoding + "; " : "")}longest wait for a frame {LongestGapMs} ms; "
                + $"{Resent} packets sent again, {Dropped} dropped{(RepairsHeldBack > 0 ? $", {RepairsHeldBack} repairs held back (a quarter of the stream is the most they may use)" : "")}, {Watching} watching, {DirectPaths.Count} of them directly"
                + (DirectPaths.Count > 0 ? " (" + string.Join(", ", DirectPaths) + ")" : "") + "; "
-               + $"processor: this program {AppPercent:0}% of a core, {(CaptureInProcess ? $"capture in this program, pictures {(CaptureOnCard ? "kept on the card" : "copied to memory")} (no capture FFmpeg)" : $"capture FFmpeg {CapturePercent:0}%")}{(PreviewPercent >= 0 ? $", preview decoder {PreviewPercent:0}%{(PreviewKind != null ? " (" + PreviewKind + ")" : "")}" : "")}, memory {MemoryMb} MB, "
+               + $"processor: this program {AppPercent:0}% of a core, {(CaptureInProcess ? $"capture in this program, pictures {(CaptureOnCard ? "kept on the card" : "copied to memory")} (no capture FFmpeg)" : "capture by GStreamer (the desktop's stream)")}{(PreviewPercent >= 0 ? $", preview decoder {PreviewPercent:0}%{(PreviewKind != null ? " (" + PreviewKind + ")" : "")}" : "")}, memory {MemoryMb} MB, "
                + $"garbage collections {Collections.Gen0}/{Collections.Gen1}/{Collections.Gen2} (paused {PausedMs:0} ms), capture restarted {Interval.Restarts}x"
                + (Card != null ? $"; graphics card: {Card}" : "")
                + (Adaptive != null ? $"; adaptive quality, {Adaptive}" : "");

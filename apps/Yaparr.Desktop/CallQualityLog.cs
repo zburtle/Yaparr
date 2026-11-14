@@ -96,7 +96,6 @@ public sealed class CallQualityLog
                 _figures = sharer.Figures();
                 sharer.TakeMaxima(1);
                 _appCpu = Process.GetCurrentProcess().TotalProcessorTime;
-                _captureCpu = sharer.CaptureCpu;
                 _previewBefore = _previewCpu?.Invoke()?.Cpu ?? default;
                 _gc = Collections();
                 _gcPause = GC.GetTotalPauseDuration();
@@ -122,13 +121,13 @@ public sealed class CallQualityLog
             _figures = figures;
             var maxima = sharer.TakeMaxima(1);
             using var process = Process.GetCurrentProcess();
-            TimeSpan app = process.TotalProcessorTime, capture = sharer.CaptureCpu, pause = GC.GetTotalPauseDuration();
+            TimeSpan app = process.TotalProcessorTime, capture = TimeSpan.Zero, pause = GC.GetTotalPauseDuration();
             var collections = Collections();
             double appPercent = (app - _appCpu).TotalSeconds / seconds * 100, capturePercent = (capture - _captureCpu).TotalSeconds / seconds * 100;
             var gcDelta = (collections.Item1 - _gc.Gen0, collections.Item2 - _gc.Gen1, collections.Item3 - _gc.Gen2);
             double paused = (pause - _gcPause).TotalMilliseconds;
             (_appCpu, _captureCpu, _gc, _gcPause) = (app, capture, collections, pause);
-            // The preview's decoder is a separate FFmpeg that the figure for this program does not include; null when there is no preview.
+            // The preview's decoder runs in this program (its time is part of the figure for this program); null when there is no preview.
             double previewPercent = -1;
             string? previewKind = null;
             if (_previewCpu?.Invoke() is { } preview)
@@ -147,8 +146,8 @@ public sealed class CallQualityLog
             string? card = gpu == null ? null : await gpu.ConfigureAwait(true);
             if (bad) problem = true;
             var paths = status.Children.Select(c => c.Short + " " + (_node()?.GetLink(c).ToString() ?? "path unknown")).ToList();
-            _log.Write(new SharingMinute(fps, wanted, kbps, ScreenCodecs.Describe(sharer.Codec, sharer.Encoder), sharer.InProcess, sharer.PictureSize, interval, maxima, sharer.FrameBudgetMs,
-                gap, resent, dropped, sharer.Source.Viewers.Count, paths, appPercent, capturePercent, process.WorkingSet64 / (1024 * 1024), gcDelta, paused, card, bad, previewPercent, previewKind, sharer.CaptureInProcess, sharer.CaptureOnCard, sharer.QualityNote, refused).Describe());
+            _log.Write(new SharingMinute(fps, wanted, kbps, ScreenCodecs.Describe(sharer.Codec, sharer.Encoder), true, sharer.PictureSize, interval, maxima, sharer.FrameBudgetMs,
+                gap, resent, dropped, sharer.Source.Viewers.Count, paths, appPercent, capturePercent, process.WorkingSet64 / (1024 * 1024), gcDelta, paused, card, bad, previewPercent, previewKind, sharer.Options.Portal == null, sharer.CaptureOnCard, sharer.QualityNote, refused).Describe());
         }
 
         foreach (var watch in _watches().ToList())

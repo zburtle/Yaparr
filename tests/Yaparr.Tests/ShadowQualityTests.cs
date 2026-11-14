@@ -15,7 +15,7 @@ public class ShadowQualityTests(Xunit.Abstractions.ITestOutputHelper output)
         using var c = await MediaTreeTests.Cluster.StartAsync(4, fanout: 3, rootFanout: 3);
         using var source = c.Root.StartMedia(c.Rooms[0], "screen", "screen", kbps: 6000);
         var views = await c.WatchAllAsync(source.Info.Id);
-        using var sharer = new ScreenSharer(source, new ScreenOptions { Fps = 60, Kbps = 6000, MaxWidth = 1920, MaxHeight = 1080, X11Display = null, InProcessEncoder = false }, "ffmpeg-that-is-never-started");
+        using var sharer = new ScreenSharer(source, new ScreenOptions { Fps = 60, Kbps = 6000, MaxWidth = 1920, MaxHeight = 1080, X11Display = null, AdaptQuality = false });
         var said = new System.Collections.Concurrent.ConcurrentQueue<string>();
         sharer.QualityDecided += said.Enqueue;
         try
@@ -42,7 +42,7 @@ public class ShadowQualityTests(Xunit.Abstractions.ITestOutputHelper output)
         using var c = await MediaTreeTests.Cluster.StartAsync(4, fanout: 3, rootFanout: 3);
         using var source = c.Root.StartMedia(c.Rooms[0], "screen", "screen", kbps: 6000);
         var views = await c.WatchAllAsync(source.Info.Id);
-        using var sharer = new ScreenSharer(source, new ScreenOptions { Fps = 60, Kbps = 6000, MaxWidth = 1920, MaxHeight = 1080, X11Display = null, InProcessEncoder = false }, "ffmpeg-that-is-never-started");
+        using var sharer = new ScreenSharer(source, new ScreenOptions { Fps = 60, Kbps = 6000, MaxWidth = 1920, MaxHeight = 1080, X11Display = null, AdaptQuality = false });
         var said = new System.Collections.Concurrent.ConcurrentQueue<string>();
         sharer.QualityDecided += said.Enqueue;
         try

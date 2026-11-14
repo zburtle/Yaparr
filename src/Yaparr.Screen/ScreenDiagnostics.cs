@@ -9,7 +9,7 @@ namespace Yaparr.Screen;
 /// </summary>
 public static class ScreenDiagnostics
 {
-    public static async Task<string> BuildAsync(string? ffmpegPath = null, CancellationToken ct = default)
+    public static async Task<string> BuildAsync(CancellationToken ct = default)
     {
         var text = new StringBuilder();
         void Line(string line = "") => text.AppendLine(line);
@@ -30,17 +30,11 @@ public static class ScreenDiagnostics
             Line($"  Graphics devices: {Dri()}");
         }
 
-        ffmpegPath ??= FfmpegLocator.Find();
-        if (ffmpegPath == null) { Line("  FFmpeg: not found"); return text.ToString(); }
-        Line($"  FFmpeg: {ffmpegPath}");
-        var version = await RunAsync(ffmpegPath, "-hide_banner -version", ct).ConfigureAwait(false);
-        Line($"  FFmpeg version: {version.Split('\n').FirstOrDefault()?.Trim() ?? "unknown"}");
-        var encoders = await RunAsync(ffmpegPath, "-hide_banner -encoders", ct).ConfigureAwait(false);
-        var wanted = encoders.Split('\n').Select(l => l.Trim()).Where(l => l.Contains("vp8") || l.Contains("264") || l.Contains("av1") || l.Contains("vaapi") || l.Contains("nvenc")).ToList();
-        Line($"  Encoders it has: {(wanted.Count == 0 ? "none of the ones Yaparr uses" : string.Join("; ", wanted.Select(l => l.Replace("  ", " "))))}");
+        if (!FfmpegLibraries.TryLoad(out var why)) { Line($"  FFmpeg's libraries: {why}"); return text.ToString(); }
+        Line($"  FFmpeg's libraries: {FfmpegLibraries.Describe()}");
+        Line($"  Encoders they have: {string.Join(", ", FfmpegLibraries.Encoders())}");
+        Line($"  Decoders they have: {string.Join(", ", FfmpegLibraries.Decoders())}");
         Line($"  AV1: {(Av1Support.Latest?.Describe() ?? "not checked yet")}");
-        var inputs = await RunAsync(ffmpegPath, "-hide_banner -devices", ct).ConfigureAwait(false);
-        Line($"  Capture inputs it has: {string.Join(", ", inputs.Split('\n').Select(l => l.Trim()).Where(l => l.StartsWith("D") && (l.Contains("x11grab") || l.Contains("gdigrab") || l.Contains("lavfi"))).Select(l => l.Split(' ', StringSplitOptions.RemoveEmptyEntries).Skip(1).FirstOrDefault() ?? l))}");
         if (OperatingSystem.IsLinux() && Where("xrandr") != "missing")
         {
             var monitors = await RunAsync("xrandr", "--listmonitors", ct).ConfigureAwait(false);

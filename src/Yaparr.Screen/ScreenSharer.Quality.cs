@@ -19,7 +19,7 @@ public sealed partial class ScreenSharer
     private volatile RunShape? _shape;
     private volatile bool _levelRestart;
     private bool _restartableForTest;
-    // The capture can be started again at another size (in this program, or a capture program that is run again), and whether the encoder takes a new bitrate while it runs.
+    // The capture can be started again at another size, and whether the encoder takes a new bitrate while it runs.
     private volatile bool _canRestart;
     private volatile bool _liveBitrate = true;
 
@@ -83,7 +83,7 @@ public sealed partial class ScreenSharer
     internal void AddFramesForTest(long frames) => Interlocked.Add(ref _frames, frames);
 
     /// <summary>Whether the policy's decisions are carried out: the setting is on and the encoder is in this program (else they are only written down).</summary>
-    public bool ActingOnQuality => _options.AdaptQuality && _options.InProcessEncoder && _encoderLive;
+    public bool ActingOnQuality => _options.AdaptQuality && _encoderLive;
 
     /// <summary>The step the share is at now, as applied to the encoder (0 is the quality that was asked for).</summary>
     public int AppliedStep => _appliedStep;

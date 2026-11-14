@@ -70,31 +70,33 @@ public partial class MainWindow
             }
     }
 
-    // The FFmpeg program, found here or downloaded after asking. Null if there is none.
-    private async Task<string?> GetFfmpegAsync()
+    // FFmpeg's libraries, which capture, encode and decode a screen inside this program: found here, or downloaded after asking (Yaparr's FFmpeg package has
+    // them). False if they are not there.
+    private async Task<bool> GetFfmpegLibrariesAsync()
     {
-        if (FfmpegLocator.Find() is { } found) return found;
-
+        if (ScreenViewer.CanDecode(out var why)) return true;
         var package = FfmpegPackage.ForThisSystem;
         if (package == null)
         {
-            _log.Write("FFmpeg was not found and there is no download for this system");
-            await Dialogs.MessageAsync(this, "FFmpeg is needed",
-                "Sharing and watching a screen needs FFmpeg, a free video program. Install the ffmpeg package with your system's package manager (for example \"sudo apt install ffmpeg\"), then try again.");
-            return null;
+            _log.Write("cannot decode a screen: " + why);
+            await Dialogs.MessageAsync(this, "FFmpeg is needed", why);
+            return false;
         }
         bool yes = await Dialogs.ConfirmAsync(this, "FFmpeg is needed",
-            $"Sharing and watching a screen needs FFmpeg, a free video program. Yaparr can download it once ({package.SizeBytes / 1_048_576} MB) from {package.Url.Host} and keep it in its own folder.\n\nDownload it now?",
+            $"Sharing and watching a screen need FFmpeg's libraries, free video software. Yaparr can download them once ({package.SizeBytes / 1_048_576} MB) from {package.Url.Host} and keep them in its own folder.\n\nDownload them now?",
             "Download", "Not now");
-        if (!yes) return null;
-
+        if (!yes) return false;
         var (path, error) = await DownloadDialog.RunAsync(this, package);
-        if (path == null && error != null)
+        if (path == null)
         {
-            _log.Write("FFmpeg download failed: " + error);
-            await Dialogs.MessageAsync(this, "Could not get FFmpeg", error);
+            if (error != null) { _log.Write("FFmpeg download failed: " + error); await Dialogs.MessageAsync(this, "Could not get FFmpeg", error); }
+            return false;
         }
-        return path;
+        FfmpegLibraries.LookAgain();
+        if (ScreenViewer.CanDecode(out why)) return true;
+        _log.Write("cannot decode a screen after the download: " + why);
+        await Dialogs.MessageAsync(this, "Could not use FFmpeg", why);
+        return false;
     }
 
     private async void ShareScreen_Click(object? sender, RoutedEventArgs e)
@@ -105,8 +107,7 @@ public partial class MainWindow
         // From this device when it is in the call, or when another of your devices is; with none of them in voice there is nothing to share into.
         if (!room.CanShareScreen) { StatusText.Text = "Join the voice channel on one of your devices first."; return; }
 
-        var ffmpeg = await GetFfmpegAsync();
-        if (ffmpeg == null) return;
+        if (!await GetFfmpegLibrariesAsync()) return;
 
         var dialog = new ShareDialog(_node.MeasuredUploadBytesPerSecond);
         dialog.PreferAv1(_settings.ScreenShareAv1);
@@ -131,27 +132,21 @@ public partial class MainWindow
         try
         {
             var what = options.Portal?.IsWindow ?? options.WindowHandle != null ? "window" : "screen";
-            var sharer = ScreenSharer.Start(_node, room, $"{_settings.DisplayName}'s {what}", options, ffmpeg);
+            var sharer = ScreenSharer.Start(_node, room, $"{_settings.DisplayName}'s {what}", options);
             _log.Write($"sharing your {what}: {options.Fps} fps, {options.Kbps} kbit/s, up to {options.MaxWidth}x{options.MaxHeight}, a key frame every {options.KeyFrameSeconds:0.##} s, "
-                       + $"asked for: {options.Codec}{(options.Encoder is { } asked ? " on " + asked : "")}{(options.GpuScale ? ", scaling on the card" : "")}{(options.InProcessCapture ? (options.CaptureOnCard ? ", capturing and encoding in this program, pictures kept on the card" : ", capturing and encoding in this program, pictures copied to memory") : options.InProcessEncoder ? ", encoding in this program" : "")}, "
-                       + $"{(options.ShareSound ? "with sound" : "no sound")}, {(options.ShowCursor ? "with" : "without")} the pointer, FFmpeg {ffmpeg}");
+                       + $"asked for: {options.Codec}{(options.Encoder is { } asked ? " on " + asked : "")}{(options.CaptureOnCard ? ", pictures kept on the card where the encoder can read them there" : ", pictures copied to memory")}, "
+                       + $"{(options.ShareSound ? "with sound" : "no sound")}, {(options.ShowCursor ? "with" : "without")} the pointer, FFmpeg's libraries {FfmpegLibraries.Describe()}");
             _log.Write($"key frames are sent at {Yaparr.Chat.ChatNode.FramePaceMultiple:0.##} times the bitrate{(Yaparr.Screen.ProcessPower.KeepResponsive() is { } power ? "; " + power : "")}");
             if (options.Portal == null)
                 _log.Write(options.WindowHandle != null ? "what is shared: a window" : options.Display is { Width: > 0 } shown ? $"what is shared: a monitor of {shown.Width}x{shown.Height} at {shown.X},{shown.Y}{(shown.Primary ? ", the primary one" : "")}" : "what is shared: a monitor");
             if (options.Encoder is null or Yaparr.Screen.HardwareEncoder.Nvenc)
                 _ = Task.Run(async () => { if (await NvidiaSmi.InfoAsync() is { } card) _log.Write("graphics card: " + card); });
-            if (options.InProcessEncoder)
-            {
-                if (!FfmpegLibraries.TryLoad(out var libraryProblem))
-                    _log.Write($"in-process capture and encoding {(options.InProcessAsked ? "asked for" : "is the default here")} but not usable: {libraryProblem} A separate FFmpeg is used.");
-                else if (!options.InProcessAsked && !InProcessGuard.Allowed)
-                    _log.Write($"in-process capture and encoding is the default here but off: the program ended in the middle of such a share {InProcessGuard.UncleanEndings} times in a row (see {InProcessGuard.MarkFile}); a separate FFmpeg is used until a share ends well, or YAPARR_INPROCESS=capture asks for it.");
-                else _log.Write("in-process encoder: FFmpeg libraries " + FfmpegLibraries.Describe());
-            }
-            // Which encoder is really in use (not only which was asked for): in this program, a separate FFmpeg, or the next one after a failure.
+            if (options.CaptureOnCard && !options.InProcessAsked && !InProcessGuard.Allowed)
+                _log.Write($"the pictures are not kept on the graphics card: the program ended in the middle of a share {InProcessGuard.UncleanEndings} times in a row (see {InProcessGuard.MarkFile}); they are copied to memory until a share ends well, or YAPARR_INPROCESS=capture asks for the card.");
+            // Which encoder is really in use (not only which was asked for), or the next one after a failure.
             sharer.EncoderStarted += () =>
             {
-                _log.Write($"screen sharing encoder: {ScreenCodecs.Describe(sharer.Codec, sharer.Encoder)}{(sharer.InProcess ? ", in this program" : ", separate FFmpeg")}{(sharer.FallbackReason is { } reason ? $" (not used: {reason})" : "")}");
+                _log.Write($"screen sharing encoder: {ScreenCodecs.Describe(sharer.Codec, sharer.Encoder)}{(sharer.FallbackReason is { } reason ? $" (not used: {reason})" : "")}");
                 _log.Write("screen sharing encoder set up as: " + sharer.EncoderDetails);
             };
             sharer.QualityDecided += text => _log.Write(text);
@@ -163,7 +158,7 @@ public partial class MainWindow
                 StopSharingCore(writeSummary: false);
                 if (ex != null)
                 {
-                    _log.Write($"screen sharing stopped: {ex.Message} ({ex.GetType().Name})" + (sharer.LastErrors.Length > 0 ? " | FFmpeg: " + sharer.LastErrors : ""));
+                    _log.Write($"screen sharing stopped: {ex.Message} ({ex.GetType().Name})" + (sharer.LastErrors.Length > 0 ? " | the capture said: " + sharer.LastErrors : ""));
                     StatusText.Text = "Screen sharing stopped: " + ex.Message;
                 }
             });
@@ -184,7 +179,7 @@ public partial class MainWindow
             _sharerStats.StopRequested += () => StopSharingCore();
             _sharerStats.ChangeRequested += () => _ = ChangeSharedAsync(sharer, conv);
             SharerPanel.Child = _sharerStats;
-            SharePreview.Attach(sharer, ffmpeg, wholeMonitor: what == "screen");
+            SharePreview.Attach(sharer, wholeMonitor: what == "screen");
             UpdateSharerPanel();
             conv.IsSharing = true;
             conv.Add(MessageVm.System(conv.InVoice
@@ -271,9 +266,9 @@ public partial class MainWindow
         using (var me = Process.GetCurrentProcess()) used = me.TotalProcessorTime - _shareAppCpu;
         string program = seconds >= 1 ? $", this program used {used.TotalSeconds:0.0} s of processor time over {seconds:0} s ({used.TotalSeconds / seconds * 100:0}% of a core)" : "";
         var figures = sharer.Figures();
-        return $"{ScreenCodecs.Describe(sharer.Codec, sharer.Encoder)}{(sharer.InProcess ? ", in this program" : "")}{(sharer.FallbackReason is { } why ? $" (not used: {why})" : "")}, "
+        return $"{ScreenCodecs.Describe(sharer.Codec, sharer.Encoder)}{(sharer.FallbackReason is { } why ? $" (not used: {why})" : "")}, "
                + $"{sharer.Frames} frames sent; {figures.DescribeKeys()}{(figures.Encodes > 0 ? "; " + figures.DescribeEncoding(sharer.FrameBudgetMs) : "")}; "
-               + (sharer.CaptureInProcess ? (sharer.CaptureOnCard ? "capture in this program, pictures kept on the card" : "capture in this program, pictures copied to memory") : $"capture program used {sharer.CaptureCpu.TotalSeconds:0.0} s of processor time, restarted {figures.Restarts} times") + program + ", "
+               + (sharer.Options.Portal != null ? $"capture by GStreamer, restarted {figures.Restarts} times" : sharer.CaptureOnCard ? "pictures kept on the card" : "pictures copied to memory") + program + ", "
                + $"the preview's decoder {SharePreview.DecoderCpu.TotalSeconds:0.0} s{(SharePreview.DecoderKind is { } kind ? " (" + kind + ")" : "")}";
     }
 
@@ -306,14 +301,13 @@ public partial class MainWindow
 
         if (_screenViews.TryGetValue(share.Id, out var open)) { EndWatch(open); return; }
 
-        var ffmpeg = await GetFfmpegAsync();
-        if (ffmpeg == null) return;
+        if (!await GetFfmpegLibrariesAsync()) return;
 
         try
         {
             _log.Write($"watching the screen {share.Name}");
             var view = _node.WatchMedia(room, share.Id);
-            var control = new ScreenViewControl(share.Name, view, ffmpeg);
+            var control = new ScreenViewControl(share.Name, view);
             control.DecoderFailed += message => _log.Write($"the picture of the screen {share.Name} stopped: {message}");
             // The sound, if the sharer shares it, is a stream of its own that names this share.
             if (room.MediaGroups.FirstOrDefault(g => g.Kind == ScreenSharer.SoundKind && g.Name == ScreenSharer.SoundNameFor(share.Id)) is { } sound)

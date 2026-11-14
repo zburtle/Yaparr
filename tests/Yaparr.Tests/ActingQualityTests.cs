@@ -10,7 +10,7 @@ public class ActingQualityTests(Xunit.Abstractions.ITestOutputHelper output)
     private static ViewerQualitySample Good => new(true, false, 60, false);
 
     private static ScreenOptions Options(bool adapt = true, bool inProcess = true)
-        => new() { Fps = 60, Kbps = 6000, MaxWidth = 1920, MaxHeight = 1080, X11Display = null, InProcessEncoder = inProcess, AdaptQuality = adapt };
+        => new() { Fps = 60, Kbps = 6000, MaxWidth = 1920, MaxHeight = 1080, X11Display = null, AdaptQuality = adapt && inProcess };
 
     [Fact]
     public async Task When_most_of_the_room_is_in_trouble_the_bitrate_is_lowered_and_repairs_follow_it()
@@ -18,7 +18,7 @@ public class ActingQualityTests(Xunit.Abstractions.ITestOutputHelper output)
         using var c = await MediaTreeTests.Cluster.StartAsync(4, fanout: 3, rootFanout: 3);
         using var source = c.Root.StartMedia(c.Rooms[0], "screen", "screen", kbps: 6000);
         var views = await c.WatchAllAsync(source.Info.Id);
-        using var sharer = new ScreenSharer(source, Options(), "ffmpeg-that-is-never-started");
+        using var sharer = new ScreenSharer(source, Options());
         var said = new System.Collections.Concurrent.ConcurrentQueue<string>();
         sharer.QualityDecided += said.Enqueue;
         try
@@ -51,7 +51,7 @@ public class ActingQualityTests(Xunit.Abstractions.ITestOutputHelper output)
         using var c = await MediaTreeTests.Cluster.StartAsync(4, fanout: 3, rootFanout: 3);
         using var source = c.Root.StartMedia(c.Rooms[0], "screen", "screen", kbps: 6000);
         var views = await c.WatchAllAsync(source.Info.Id);
-        using var sharer = new ScreenSharer(source, Options(adapt, inProcess), "ffmpeg-that-is-never-started");
+        using var sharer = new ScreenSharer(source, Options(adapt, inProcess));
         var said = new System.Collections.Concurrent.ConcurrentQueue<string>();
         sharer.QualityDecided += said.Enqueue;
         try
@@ -78,7 +78,7 @@ public class ActingQualityTests(Xunit.Abstractions.ITestOutputHelper output)
         using var c = await MediaTreeTests.Cluster.StartAsync(4, fanout: 3, rootFanout: 3);
         using var source = c.Root.StartMedia(c.Rooms[0], "screen", "screen", kbps: 6000);
         var views = await c.WatchAllAsync(source.Info.Id);
-        using var sharer = new ScreenSharer(source, Options(), "ffmpeg-that-is-never-started");
+        using var sharer = new ScreenSharer(source, Options());
         var said = new System.Collections.Concurrent.ConcurrentQueue<string>();
         sharer.QualityDecided += said.Enqueue;
         try
@@ -112,7 +112,7 @@ public class ActingQualityTests(Xunit.Abstractions.ITestOutputHelper output)
         using var c = await MediaTreeTests.Cluster.StartAsync(4, fanout: 3, rootFanout: 3);
         using var source = c.Root.StartMedia(c.Rooms[0], "screen", "screen", kbps: 6000);
         var views = await c.WatchAllAsync(source.Info.Id);
-        using var sharer = new ScreenSharer(source, Options(), "ffmpeg-that-is-never-started");
+        using var sharer = new ScreenSharer(source, Options());
         var said = new System.Collections.Concurrent.ConcurrentQueue<string>();
         sharer.QualityDecided += said.Enqueue;
         using var cts = new CancellationTokenSource();
@@ -143,7 +143,7 @@ public class ActingQualityTests(Xunit.Abstractions.ITestOutputHelper output)
     {
         using var c = await MediaTreeTests.Cluster.StartAsync(2, fanout: 2, rootFanout: 2);
         using var source = c.Root.StartMedia(c.Rooms[0], "screen", "screen", kbps: 6000);
-        using var sharer = new ScreenSharer(source, Options(), "ffmpeg-that-is-never-started");
+        using var sharer = new ScreenSharer(source, Options());
         sharer.SetRunFpsForTest(60);
         sharer.QualityTick();
         await Task.Delay(1100);

@@ -46,65 +46,6 @@ public class InProcessEncoderTests
     }
 
     [Fact]
-    public void The_size_is_read_from_the_output_stream_and_not_from_the_input()
-    {
-        var parser = new RawSizeParser();
-        Assert.False(parser.Feed("Input #0, x11grab, from ':0':", out _, out _));
-        Assert.False(parser.Feed("  Stream #0:0: Video: rawvideo (BGR[0] / 0x30524742), bgr0, 2560x1440, 3000 kb/s, 30 fps, 1000k tbr", out _, out _));
-        Assert.False(parser.Feed("Output #0, rawvideo, to 'pipe:1':", out _, out _));
-        Assert.True(parser.Feed("  Stream #0:0: Video: rawvideo (NV12 / 0x3231564E), nv12(pc, gbr/unknown/unknown, progressive), 1920x1080 [SAR 1:1 DAR 16:9], 3110400 kb/s, 30 fps, 30 tbn", out int w, out int h));
-        Assert.Equal((1920, 1080), (w, h));
-    }
-
-    [Fact]
-    public void Nothing_is_read_as_a_size_before_the_output_is_described()
-    {
-        var parser = new RawSizeParser();
-        Assert.False(parser.Feed("  Stream #0:0: Video: rawvideo (NV12 / 0x3231564E), nv12, 1280x720, 30 fps", out _, out _));
-        Assert.False(parser.Feed("Stream mapping:", out _, out _));
-    }
-
-    [Fact]
-    public void The_raw_capture_is_the_same_capture_with_raw_pictures_instead_of_an_encoder()
-    {
-        var display = new Display(0, "x", 0, 0, 2560, 1440, true, Handle: 0x1A2B);
-        var options = new ScreenOptions { X11Display = null, Display = display, Fps = 60, MaxWidth = 1920, MaxHeight = 1080 };
-        var raw = FfmpegArgs.CaptureRaw(options);
-        var encoded = FfmpegArgs.Capture(options, ScreenCodec.H264, HardwareEncoder.Nvenc);
-
-        Assert.Equal("info", raw[raw.IndexOf("-loglevel") + 1]);   // FFmpeg only says the picture size at this level
-        Assert.Contains("-nostats", raw);
-        Assert.DoesNotContain("-c:v", raw);
-        Assert.Equal(new[] { "-f", "rawvideo", "-pix_fmt", "nv12", "pipe:1" }, raw.TakeLast(5));
-        string rawFilter = raw[raw.IndexOf("-filter_complex") + 1], encodedFilter = encoded[encoded.IndexOf("-filter_complex") + 1];
-        Assert.Equal(encodedFilter[..encodedFilter.LastIndexOf("format=")], rawFilter[..rawFilter.LastIndexOf("format=")]);   // the capture and scaling are the same
-        Assert.EndsWith("format=nv12", rawFilter);
-    }
-
-    [Fact]
-    public void The_raw_capture_on_x11_scales_and_converts_like_the_encoded_one()
-    {
-        var options = new ScreenOptions { X11Display = ":0", Display = new Display(0, "x", 0, 0, 1920, 1080, true), Fps = 30, MaxWidth = 1280, MaxHeight = 720 };
-        var raw = FfmpegArgs.CaptureRaw(options);
-        Assert.Contains("x11grab", raw);
-        Assert.Contains("scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=nv12", raw);
-        Assert.Equal(new[] { "-f", "rawvideo", "-pix_fmt", "nv12", "pipe:1" }, raw.TakeLast(5));
-    }
-
-    [Fact]
-    public void The_in_process_encoder_is_given_the_options_of_the_command_line()
-    {
-        var args = FfmpegArgs.Capture(new ScreenOptions { X11Display = null, Display = new Display(0, "x", 0, 0, 1920, 1080, true, Handle: 0x1A2B) }, ScreenCodec.H264, HardwareEncoder.Nvenc);
-        foreach (var (name, value) in FfmpegArgs.NvencH264Options)
-        {
-            string flag = "-" + (name == "profile" ? "profile:v" : name);
-            int at = args.IndexOf(flag);
-            Assert.True(at >= 0, $"the command line has no {flag}");
-            Assert.Equal(value, args[at + 1]);
-        }
-    }
-
-    [Fact]
     public void Libraries_are_found_in_an_ffmpeg_folder_next_to_the_app_or_the_one_that_is_named()
     {
         string root = Path.Combine(Path.GetTempPath(), "yaparr-libs-" + Guid.NewGuid().ToString("N"));
@@ -170,66 +111,6 @@ public class InProcessEncoderTests
             Assert.False(packets[60].Key);
             Assert.False(packets[100].Key);
         }
-    }
-
-    /// <summary>
-    /// The whole chain on this machine: a real FFmpeg captures a monitor and writes raw pictures, the size is read from what it prints, the
-    /// in-process encoder makes H.264 of them, and a real FFmpeg decodes that again to the same number of pictures. It does nothing without
-    /// Windows, a monitor, FFmpeg and its libraries, or an NVIDIA card.
-    /// </summary>
-    [Fact]
-    public async Task A_real_capture_goes_through_the_in_process_encoder_and_the_result_decodes()
-    {
-        if (!OperatingSystem.IsWindows() || !FfmpegLibraries.IsAvailable) return;
-        if (FfmpegLocator.Find() is not { } ffmpeg) return;
-        if (Displays.List().FirstOrDefault() is not { } display) return;
-        var options = new ScreenOptions { Display = display, Fps = 15, Kbps = 1000, MaxWidth = 640, MaxHeight = 360, X11Display = null };
-        using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(40));
-
-        var psi = new System.Diagnostics.ProcessStartInfo(ffmpeg) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
-        foreach (var a in FfmpegArgs.CaptureRaw(options)) psi.ArgumentList.Add(a);
-        using var capture = System.Diagnostics.Process.Start(psi)!;
-        var size = new TaskCompletionSource<(int, int)>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var parser = new RawSizeParser();
-        capture.ErrorDataReceived += (_, e) => { if (e.Data != null && parser.Feed(e.Data, out int w, out int h)) size.TrySetResult((w, h)); };
-        capture.BeginErrorReadLine();
-        var frames = new List<byte[]>();
-        try
-        {
-            var (width, height) = await size.Task.WaitAsync(limit.Token);
-            Assert.True(width <= 640 && height <= 360 && width % 2 == 0 && height % 2 == 0, $"unexpected size {width}x{height}");
-            InProcessEncoder encoder;
-            try { encoder = new InProcessEncoder(width, height, options); }
-            catch (Exception ex) when (ex is InvalidOperationException or PlatformNotSupportedException) { return; }
-            using (encoder)
-            {
-                var picture = new byte[encoder.PictureBytes];
-                var stdout = capture.StandardOutput.BaseStream;
-                for (int n = 0; n < 30; n++)
-                {
-                    await stdout.ReadExactlyAsync(picture, limit.Token);
-                    encoder.Encode(picture, forceKey: n == 20, (frame, _) => frames.Add(frame));
-                }
-            }
-            Assert.Equal(30, frames.Count);
-            Assert.True(ScreenCodecs.IsKeyFrame(ScreenCodec.H264, frames[0]));
-            Assert.True(H264.TryGetSize(frames[0], out int sw, out int sh));
-            Assert.Equal((width, height), (sw, sh));
-            Assert.True(ScreenCodecs.IsKeyFrame(ScreenCodec.H264, frames[20]));
-
-            // A real FFmpeg decodes them: 30 pictures of NV12 come out.
-            var dpsi = new System.Diagnostics.ProcessStartInfo(ffmpeg) { RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
-            foreach (var a in FfmpegArgs.DecodeForViewer(ScreenCodec.H264, gpu: false)) dpsi.ArgumentList.Add(a);
-            using var decoder = System.Diagnostics.Process.Start(dpsi)!;
-            decoder.BeginErrorReadLine();
-            var output = decoder.StandardOutput.BaseStream.CopyToAsync(Stream.Null, limit.Token);
-            foreach (var frame in frames) await decoder.StandardInput.BaseStream.WriteAsync(frame, limit.Token);
-            decoder.StandardInput.Close();
-            await output;
-            await decoder.WaitForExitAsync(limit.Token);
-            Assert.Equal(0, decoder.ExitCode);
-        }
-        finally { try { if (!capture.HasExited) capture.Kill(entireProcessTree: true); } catch (InvalidOperationException) { } }
     }
 
     [Fact]

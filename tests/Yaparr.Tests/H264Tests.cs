@@ -110,58 +110,6 @@ public class H264Tests
     }
 
     [Fact]
-    public void The_graphics_card_command_makes_a_low_latency_stream_of_whole_pictures()
-    {
-        var display = new Display(0, "x", 0, 0, 1920, 1080, true, Handle: 0x1A2B);
-        string line = string.Join(' ', FfmpegArgs.Capture(new ScreenOptions { X11Display = null, Fps = 20, Kbps = 1000, KeyFrameSeconds = 2, Display = display }, ScreenCodec.H264));
-        Assert.Contains("gfxcapture=hmonitor=0x1A2B:max_framerate=20", line);
-        Assert.Contains("-c:v h264_nvenc", line);
-        Assert.Contains("-bf 0", line);          // no reordering: a picture can be shown as soon as it arrives
-        Assert.Contains("-aud 1", line);         // the reader needs the delimiters
-        Assert.Contains("-forced-idr 1", line);
-        Assert.Contains("-rc vbr", line);        // a fixed rate would pad a still screen with filler
-        Assert.Contains("-b:v 1000k", line);
-        Assert.Contains("-g 40", line);
-        Assert.EndsWith("-f h264 pipe:1", line);
-        Assert.DoesNotContain("libvpx", line);
-    }
-
-    [Fact]
-    public void Amds_and_Intels_encoders_get_the_same_low_latency_stream_with_their_own_options()
-    {
-        var display = new Display(0, "x", 0, 0, 1920, 1080, true, Handle: 0x1A2B);
-        var options = new ScreenOptions { X11Display = null, Fps = 20, Kbps = 1000, KeyFrameSeconds = 2, Display = display };
-
-        string amd = string.Join(' ', FfmpegArgs.Capture(options, ScreenCodec.H264, HardwareEncoder.Amf));
-        Assert.Contains("-c:v h264_amf", amd);
-        Assert.Contains("-usage ultralowlatency", amd);
-        Assert.Contains("-rc vbr_latency", amd);
-        Assert.Contains("-bf 0", amd);
-        Assert.Contains("-aud 1", amd);
-        Assert.Contains("-forced_idr 1", amd);
-        Assert.Contains("format=yuv420p", amd);
-        Assert.EndsWith("-f h264 pipe:1", amd);
-
-        // Intel's encoder takes NV12, not planar YUV, so the picture is converted to that.
-        string intel = string.Join(' ', FfmpegArgs.Capture(options, ScreenCodec.H264, HardwareEncoder.Qsv));
-        Assert.Contains("-c:v h264_qsv", intel);
-        Assert.Contains("-bf 0", intel);
-        Assert.Contains("-aud 1", intel);
-        Assert.Contains("-forced_idr 1", intel);
-        Assert.Contains("format=nv12", intel);
-        Assert.DoesNotContain("yuv420p", intel);
-        Assert.EndsWith("-f h264 pipe:1", intel);
-
-        // NVIDIA's is the default and stays as it was.
-        Assert.Equal(FfmpegArgs.Capture(options, ScreenCodec.H264), FfmpegArgs.Capture(options, ScreenCodec.H264, HardwareEncoder.Nvenc));
-        Assert.Contains("-c:v h264_nvenc", string.Join(' ', FfmpegArgs.Capture(options, ScreenCodec.H264)));
-        // The encoder chosen in the options is what the plain command uses.
-        Assert.Contains("-c:v h264_qsv", string.Join(' ', FfmpegArgs.Capture(new ScreenOptions { X11Display = null, Display = display, Codec = ScreenCodec.H264, Encoder = HardwareEncoder.Qsv })));
-        // VP8 never changes with the card.
-        Assert.Equal(FfmpegArgs.Capture(options, ScreenCodec.Vp8), FfmpegArgs.Capture(options, ScreenCodec.Vp8, HardwareEncoder.Qsv));
-    }
-
-    [Fact]
     public void Auto_tries_the_graphics_cards_in_turn_and_software_last()
     {
         var display = new Display(0, "x", 0, 0, 1920, 1080, true, Handle: 0x1A2B);
@@ -232,29 +180,4 @@ public class H264Tests
         Assert.Equal(units, read);
     }
 
-    [Fact]
-    public void Unless_the_graphics_card_is_asked_for_the_picture_is_encoded_in_software()
-    {
-        var display = new Display(0, "x", 0, 0, 1920, 1080, true, Handle: 0x1A2B);
-        var options = new ScreenOptions { X11Display = null, Display = display };
-        Assert.Equal(ScreenCodec.Auto, options.Codec);
-        foreach (var codec in new[] { ScreenCodec.Auto, ScreenCodec.Vp8 })
-        {
-            string line = string.Join(' ', FfmpegArgs.Capture(options, codec));
-            Assert.Contains("-c:v libvpx", line);
-            Assert.EndsWith("-f ivf pipe:1", line);
-        }
-        Assert.Equal(FfmpegArgs.Capture(options), FfmpegArgs.Capture(options, ScreenCodec.Auto));
-    }
-
-    [Fact]
-    public void The_decoder_reads_h264_or_ivf()
-    {
-        string h264 = string.Join(' ', FfmpegArgs.Decode(ScreenCodec.H264));
-        Assert.Contains("-f h264 -i pipe:0", h264);
-        Assert.Contains("-f rawvideo -pix_fmt bgra pipe:1", h264);
-        Assert.DoesNotContain("nobuffer", h264);
-        Assert.Contains("-f ivf -i pipe:0", string.Join(' ', FfmpegArgs.Decode(ScreenCodec.Vp8)));
-        Assert.Equal(FfmpegArgs.Decode(), FfmpegArgs.Decode(ScreenCodec.Vp8));
-    }
 }

@@ -4,17 +4,20 @@ using System.Security.Cryptography;
 
 namespace Yaparr.Screen;
 
-/// <summary>A build of FFmpeg that can be downloaded: where from, and what it must look like when it has arrived.</summary>
+/// <summary>A build of FFmpeg's libraries that can be downloaded: where from, and what it must look like when it has arrived.</summary>
 /// <param name="Version">Names the folder it is installed in, so a newer build can sit next to an older one.</param>
 /// <param name="Sha256">The SHA-256 of the downloaded file in hex. A file that does not match is thrown away.</param>
-/// <param name="ExePathInZip">Where the program (ffmpeg.exe, or ffmpeg on Linux) is inside the zip.</param>
-/// <param name="LicensePathInZip">The licence file, which is kept next to the program.</param>
-/// <param name="NoticesRoot">
-/// The folder in the zip that holds the program's own notices (LICENSE.txt, SOURCE.txt, BUILD-INFO.txt and a licenses folder,
-/// as Yaparr's own build writes them). Everything in it except the bin folder is kept next to the program, so the licences and
-/// the note about where the source is travel with it. Without it the licence file is kept and a note is written.
+/// <param name="LibraryPathInZip">
+/// Where libavcodec is inside the zip (avcodec-63.dll, or libavcodec.so.63 on Linux). The libraries are the files of that folder that are libraries (the DLLs or
+/// the .so files); anything else there (an ffmpeg program, in older packages) is left out, since nothing runs it.
 /// </param>
-public sealed record FfmpegPackage(string Version, Uri Url, string Sha256, long SizeBytes, string ExePathInZip, string? LicensePathInZip, string? NoticesRoot = null)
+/// <param name="LicensePathInZip">The licence file, which is kept next to the libraries.</param>
+/// <param name="NoticesRoot">
+/// The folder in the zip that holds the build's own notices (LICENSE.txt, SOURCE.txt, BUILD-INFO.txt and a licenses folder,
+/// as Yaparr's own build writes them). Everything in it except the bin folder is kept next to the libraries, so the licences and
+/// the note about where the source is travel with them. Without it the licence file is kept and a note is written.
+/// </param>
+public sealed record FfmpegPackage(string Version, Uri Url, string Sha256, long SizeBytes, string LibraryPathInZip, string? LicensePathInZip, string? NoticesRoot = null)
 {
     /// <summary>
     /// The one build of FFmpeg that Yaparr is known to work with: Yaparr's own trimmed LGPL Windows build (no GPL parts such as
@@ -22,7 +25,7 @@ public sealed record FfmpegPackage(string Version, Uri Url, string Sha256, long 
     /// 30 October 2026, which has the Graphics Capture fixes of 24 October 2026. No numbered release has those fixes yet (8.1.3
     /// and 9.0.2 capture one frame and stop). It was checked with the FfmpegIntegration tests and the demo. Move to a numbered
     /// release when one includes the fixes. The file is the asset of the Yaparr.FFmpeg release ffmpeg-7 (the same FFmpeg as ffmpeg-3 and later, with AV1 added from ffmpeg-6: the graphics cards' AV1 encoders
-    /// and the dav1d decoder; and from ffmpeg-7 Direct3D 12 decoding and scaling on the card, and shared libraries: ffmpeg.exe and FFmpeg's DLLs side by side, which
+    /// and the dav1d decoder; and from ffmpeg-7 Direct3D 12 decoding and scaling on the card, and shared libraries, FFmpeg's DLLs (the ffmpeg.exe beside them in the zip is left out), which
     /// the app also loads into itself to share a screen without a separate program), which also holds the exact source; see README.md next to this file.
     /// </summary>
     public static FfmpegPackage Default { get; } = new(
@@ -30,13 +33,13 @@ public sealed record FfmpegPackage(string Version, Uri Url, string Sha256, long 
         new Uri("https://github.com/zburtle/Yaparr.FFmpeg/releases/download/ffmpeg-7/ffmpeg-yaparr-g17a4a474f4-win64.zip"),
         "064b72c6bbd13938be3afa203c1c28c351822b404647fd044167ab4d625ef1a9",
         6_652_814,
-        "ffmpeg-yaparr-g17a4a474f4-win64/bin/ffmpeg.exe",
+        "ffmpeg-yaparr-g17a4a474f4-win64/bin/avcodec-63.dll",
         "ffmpeg-yaparr-g17a4a474f4-win64/LICENSE.txt",
         "ffmpeg-yaparr-g17a4a474f4-win64");
 
     /// <summary>
     /// Yaparr's own Linux x86-64 build, the asset of the Yaparr.FFmpeg release ffmpeg-8 (the same FFmpeg commit as the Windows
-    /// one; see https://github.com/zburtle/Yaparr.FFmpeg): the ffmpeg program and, next to it, FFmpeg's shared libraries (libavcodec.so.63 and the others), which Yaparr
+    /// one; see https://github.com/zburtle/Yaparr.FFmpeg): FFmpeg's shared libraries (the ffmpeg program in the zip is left out) (libavcodec.so.63 and the others), which Yaparr
     /// loads into itself to encode. It runs on glibc 2.35 or newer and needs the computer's own libva.
     /// </summary>
     public static FfmpegPackage LinuxX64 { get; } = new(
@@ -44,7 +47,7 @@ public sealed record FfmpegPackage(string Version, Uri Url, string Sha256, long 
         new Uri("https://github.com/zburtle/Yaparr.FFmpeg/releases/download/ffmpeg-8/ffmpeg-yaparr-g17a4a474f4-linux-x64.zip"),
         "96e033518b6689fceba74bef7b4b1ce8ae2d6ffd2aa52a33bb1be749cfc11e07",
         3_248_032,
-        "ffmpeg-yaparr-g17a4a474f4-linux-x64/bin/ffmpeg",
+        "ffmpeg-yaparr-g17a4a474f4-linux-x64/bin/libavcodec.so.63",
         "ffmpeg-yaparr-g17a4a474f4-linux-x64/LICENSE.txt",
         "ffmpeg-yaparr-g17a4a474f4-linux-x64");
 
@@ -54,7 +57,7 @@ public sealed record FfmpegPackage(string Version, Uri Url, string Sha256, long 
         new Uri("https://github.com/zburtle/Yaparr.FFmpeg/releases/download/ffmpeg-8/ffmpeg-yaparr-g17a4a474f4-linux-arm64.zip"),
         "f4069482ae02efe3168b5d3b5be5d1d66993b0dd26a3719d8e27c31a63762ec7",
         2_773_411,
-        "ffmpeg-yaparr-g17a4a474f4-linux-arm64/bin/ffmpeg",
+        "ffmpeg-yaparr-g17a4a474f4-linux-arm64/bin/libavcodec.so.63",
         "ffmpeg-yaparr-g17a4a474f4-linux-arm64/LICENSE.txt",
         "ffmpeg-yaparr-g17a4a474f4-linux-arm64");
 
@@ -65,35 +68,39 @@ public sealed record FfmpegPackage(string Version, Uri Url, string Sha256, long 
         : null;
 }
 
-/// <summary>Downloads FFmpeg once into the user's own application data, checks it, and keeps it there.</summary>
+/// <summary>Downloads FFmpeg's libraries once into the user's own application data, checks them, and keeps them there.</summary>
 public static class FfmpegInstaller
 {
     /// <summary>The folder under which each version gets its own folder.</summary>
     public static string DefaultDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Yaparr", "ffmpeg");
 
-    private static string ExeName => OperatingSystem.IsWindows() ? "ffmpeg.exe" : "ffmpeg";
-
-    /// <summary>The installed program for this package, or null if it has not been installed.</summary>
-    public static string? Installed(FfmpegPackage package, string? directory = null)
+    /// <summary>Whether a folder has FFmpeg's libraries in it (libavcodec, by whichever version it has).</summary>
+    public static bool HasLibraries(string folder)
     {
-        var exe = Path.Combine(directory ?? DefaultDirectory, package.Version, ExeName);
-        return File.Exists(exe) ? exe : null;
+        try { return Directory.Exists(folder) && Directory.EnumerateFiles(folder, OperatingSystem.IsWindows() ? "avcodec-*.dll" : "libavcodec.so*").Any(); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
     }
 
-    /// <summary>The newest installed program of any version, or null.</summary>
+    /// <summary>The folder this package's libraries are installed in, or null if it has not been installed.</summary>
+    public static string? Installed(FfmpegPackage package, string? directory = null)
+    {
+        var folder = Path.Combine(directory ?? DefaultDirectory, package.Version);
+        return File.Exists(Path.Combine(folder, Path.GetFileName(package.LibraryPathInZip))) ? folder : null;
+    }
+
+    /// <summary>The folder of the newest installed libraries of any version, or null. (A folder from an older build with only the program in it does not count.)</summary>
     public static string? FindAny(string? directory = null)
     {
         directory ??= DefaultDirectory;
         if (!Directory.Exists(directory)) return null;
         return Directory.EnumerateDirectories(directory)
-            .Select(d => Path.Combine(d, ExeName))
-            .Where(File.Exists)
-            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .Where(HasLibraries)
+            .OrderByDescending(Directory.GetLastWriteTimeUtc)
             .FirstOrDefault();
     }
 
     /// <summary>
-    /// Downloads and installs the package unless it is there already, and returns the path of ffmpeg. Progress goes from 0 to 1.
+    /// Downloads and installs the package unless it is there already, and returns the folder of the libraries. Progress goes from 0 to 1.
     /// A download that does not have the expected hash is refused, and nothing is installed from it.
     /// </summary>
     public static async Task<string> InstallAsync(FfmpegPackage package, IProgress<double>? progress = null, string? directory = null,
@@ -139,25 +146,21 @@ public static class FfmpegInstaller
             Directory.CreateDirectory(staging);
             using (var archive = ZipFile.OpenRead(zip))
             {
-                Extract(archive, package.ExePathInZip, Path.Combine(staging, ExeName));
-                ExtractLibraries(archive, package.ExePathInZip, staging);
+                if (archive.GetEntry(package.LibraryPathInZip) == null) throw new InvalidDataException($"The download has no '{package.LibraryPathInZip}' in it.");
+                ExtractLibraries(archive, package.LibraryPathInZip, staging);
                 if (package.LicensePathInZip != null) Extract(archive, package.LicensePathInZip, Path.Combine(staging, "LICENSE.txt"), required: false);
                 if (package.NoticesRoot != null) ExtractNotices(archive, package.NoticesRoot, staging);
             }
-            // A zip does not always carry the permission to run the program.
-            if (!OperatingSystem.IsWindows())
-                File.SetUnixFileMode(Path.Combine(staging, ExeName),
-                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute | UnixFileMode.GroupRead | UnixFileMode.GroupExecute | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
             // A build that brings its own note about where the source is keeps it; otherwise one is written.
             if (!File.Exists(Path.Combine(staging, "SOURCE.txt")))
                 File.WriteAllText(Path.Combine(staging, "SOURCE.txt"),
-                    $"FFmpeg ({package.Version}), downloaded from {package.Url}.{Environment.NewLine}" +
-                    $"It is licensed under the LGPL; see LICENSE.txt. The source code and build scripts are at https://github.com/BtbN/FFmpeg-Builds and https://ffmpeg.org.{Environment.NewLine}");
+                    $"FFmpeg's libraries ({package.Version}), downloaded from {package.Url}.{Environment.NewLine}" +
+                    $"They are licensed under the LGPL; see LICENSE.txt. The source code and build scripts are at https://github.com/zburtle/Yaparr.FFmpeg and https://ffmpeg.org.{Environment.NewLine}");
 
             if (Directory.Exists(target)) Directory.Delete(target, recursive: true);
             Directory.Move(staging, target);
             progress?.Report(1);
-            return Path.Combine(target, ExeName);
+            return target;
         }
         finally
         {
@@ -165,12 +168,11 @@ public static class FfmpegInstaller
         }
     }
 
-    // The libraries of a shared build (the DLLs, or the .so files) sit in the zip next to the program and must sit next to it afterwards: Windows looks for a
-    // DLL in the folder of the program that needs it, and the app loads them from there too. Only files, only of those kinds, only from that folder.
-    private static void ExtractLibraries(ZipArchive archive, string exePathInZip, string destination)
+    // The libraries (the DLLs, or the .so files) of the folder libavcodec is in, and nothing else of it: the app loads them from where they land.
+    private static void ExtractLibraries(ZipArchive archive, string libraryPathInZip, string destination)
     {
-        int slash = exePathInZip.LastIndexOf('/');
-        string folder = slash < 0 ? "" : exePathInZip[..(slash + 1)];
+        int slash = libraryPathInZip.LastIndexOf('/');
+        string folder = slash < 0 ? "" : libraryPathInZip[..(slash + 1)];
         foreach (var entry in archive.Entries)
         {
             if (entry.FullName.EndsWith('/') || !entry.FullName.StartsWith(folder, StringComparison.Ordinal)) continue;
@@ -181,7 +183,7 @@ public static class FfmpegInstaller
         }
     }
 
-    // Everything under the root except its bin folder (the program is taken from there on its own), with the folders kept. A path
+    // Everything under the root except its bin folder (the libraries are taken from there on their own), with the folders kept. A path
     // that would land outside the destination is refused.
     private static void ExtractNotices(ZipArchive archive, string root, string destination)
     {

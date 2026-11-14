@@ -165,13 +165,12 @@ public class ShareStatsTests
             "call quality: sharing: 59.8 of 60 fps, 5200 kbit/s, H.264 on the NVIDIA graphics card, encoded in this program, picture 1920x1080",
             "1 key frames (1 made because a viewer asked)", "key frame 150 KB on average", "requests from viewers 1: 1 answered with a new key frame (after 90 ms on average",
             "encoding 5.0 ms per picture on average", "waiting for the capture 11.0 ms on average", "longest wait for a frame 41 ms",
-            "3 packets sent again, 0 dropped, 2 watching, 1 of them directly (ab12 direct)", "this program 38% of a core, capture FFmpeg 22%", "memory 410 MB",
+            "3 packets sent again, 0 dropped, 2 watching, 1 of them directly (ab12 direct)", "this program 38% of a core, capture by GStreamer", "memory 410 MB",
             "garbage collections 12/3/1 (paused 5 ms)", "capture restarted 1x", "graphics card: card 40% busy, video encoder 12% busy",
         })
             Assert.Contains(part, line);
         Assert.DoesNotContain("(a problem)", line);
         Assert.Contains("(a problem)", (minute with { Bad = true }).Describe());
-        Assert.Contains("encoded by a separate FFmpeg", (minute with { InProcess = false }).Describe());
     }
 
     [Fact]

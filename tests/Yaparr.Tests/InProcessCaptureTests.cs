@@ -13,20 +13,8 @@ public class InProcessCaptureTests(Xunit.Abstractions.ITestOutputHelper output)
     private static ScreenOptions Options(Display display, int fps = 30, bool onCard = false) => new()
     {
         Display = display, X11Display = null, Fps = fps, Kbps = 1000, KeyFrameSeconds = 1, MaxWidth = 640, MaxHeight = 360,
-        Codec = ScreenCodec.H264, Encoder = HardwareEncoder.Nvenc, InProcessEncoder = true, InProcessCapture = true, CaptureOnCard = onCard,
+        Codec = ScreenCodec.H264, Encoder = HardwareEncoder.Nvenc, CaptureOnCard = onCard,
     };
-
-    [Fact]
-    public void The_capture_filter_text_is_what_the_command_line_uses()
-    {
-        var options = Options(new Display(0, "primary", 0, 0, 1920, 1080, true, 0xAB), 60);
-        string graph = FfmpegArgs.CaptureFilter(options, raw: true);
-        Assert.StartsWith("gfxcapture=hmonitor=", graph);
-        Assert.Contains("max_framerate=60", graph);
-        Assert.Contains("dup_frames=1", graph);
-        Assert.Contains("hwdownload,format=bgra,scale='min(640,iw)':'min(360,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=nv12", graph);
-        Assert.Contains(graph, string.Join(' ', FfmpegArgs.CaptureRaw(options)));   // the command line is the same graph
-    }
 
     [Fact]
     public async Task A_capture_in_this_program_gives_even_sized_NV12_pictures_that_can_be_taken_again_and_again()
@@ -63,24 +51,15 @@ public class InProcessCaptureTests(Xunit.Abstractions.ITestOutputHelper output)
     public async Task A_real_share_with_the_capture_in_this_program_sends_an_even_stream_and_runs_no_ffmpeg()
     {
         if (!OperatingSystem.IsWindows() || !FfmpegLibraries.IsAvailable) return;
-        if (FfmpegLocator.Find() is not { } ffmpeg) return;
         if (Displays.List().FirstOrDefault() is not { } display) return;
 
         using var cluster = await MediaTreeTests.Cluster.StartAsync(2, fanout: 2, rootFanout: 2);
-        using var sharer = ScreenSharer.Start(cluster.Root, cluster.Rooms[0], "Test screen", Options(display, fps: 30), ffmpeg);
+        using var sharer = ScreenSharer.Start(cluster.Root, cluster.Rooms[0], "Test screen", Options(display, fps: 30));
         try { await TestUtil.WaitFor(() => sharer.Frames >= 60, 30_000); }
         catch (TimeoutException) { output.WriteLine(sharer.Describe()); return; }
         output.WriteLine(sharer.Describe());
-        if (!sharer.InProcess) return;   // no NVIDIA encoder here
-
-        if (!sharer.CaptureInProcess)
-        {
-            // The libraries lack what the capture needs: the share fell back to the encoder here and a separate FFmpeg capturing, and said why.
-            Assert.Contains("too old", sharer.FallbackReason ?? "");
-            return;
-        }
+        if (sharer.Encoder != HardwareEncoder.Nvenc) return;   // no NVIDIA encoder here: another card (or VP8) took over
         var figures = sharer.Figures();
-        Assert.Equal(TimeSpan.Zero, sharer.CaptureCpu);   // there is no capture program
         Assert.Contains("Capture: in this program", sharer.Describe());
         Assert.Contains("gfxcapture", sharer.EncoderDetails);
         Assert.True(figures.Encodes >= 50);
@@ -110,16 +89,14 @@ public class InProcessCaptureTests(Xunit.Abstractions.ITestOutputHelper output)
     public async Task A_real_share_with_the_pictures_kept_on_the_card_runs_without_copying_them_to_memory()
     {
         if (!OperatingSystem.IsWindows() || !FfmpegLibraries.IsAvailable) return;
-        if (FfmpegLocator.Find() is not { } ffmpeg) return;
         if (Displays.List().FirstOrDefault() is not { } display) return;
 
         using var cluster = await MediaTreeTests.Cluster.StartAsync(2, fanout: 2, rootFanout: 2);
-        using var sharer = ScreenSharer.Start(cluster.Root, cluster.Rooms[0], "Test screen", Options(display, fps: 30, onCard: true), ffmpeg);
+        using var sharer = ScreenSharer.Start(cluster.Root, cluster.Rooms[0], "Test screen", Options(display, fps: 30, onCard: true));
         try { await TestUtil.WaitFor(() => sharer.Frames >= 90, 30_000); }
         catch (TimeoutException) { output.WriteLine(sharer.Describe()); throw; }
         output.WriteLine(sharer.Describe());
-        if (!sharer.InProcess) return;   // no NVIDIA encoder here
-        if (!sharer.CaptureInProcess) { Assert.Contains("too old", sharer.FallbackReason ?? ""); return; }
+        if (sharer.Encoder != HardwareEncoder.Nvenc) return;   // no NVIDIA encoder here: another card (or VP8) took over
         Assert.True(sharer.CaptureOnCard, "the share fell back to copying the pictures to memory: " + sharer.FallbackReason);
         Assert.Contains("pictures kept on the graphics card", sharer.EncoderDetails);
         Assert.Contains("pictures read from the graphics card", sharer.EncoderDetails);
@@ -127,7 +104,6 @@ public class InProcessCaptureTests(Xunit.Abstractions.ITestOutputHelper output)
         var figures = sharer.Figures();
         Assert.True(figures.Encodes >= 80);
         Assert.True(figures.Keys >= 2, "a key frame every second");
-        Assert.Equal(TimeSpan.Zero, sharer.CaptureCpu);
         Assert.Equal(0, figures.Restarts);
     }
 
@@ -135,20 +111,19 @@ public class InProcessCaptureTests(Xunit.Abstractions.ITestOutputHelper output)
     public async Task A_real_share_lowered_to_another_frame_rate_and_size_builds_the_capture_and_encoder_again_and_goes_on_sending()
     {
         if (!OperatingSystem.IsWindows() || !FfmpegLibraries.IsAvailable) return;
-        if (FfmpegLocator.Find() is not { } ffmpeg) return;
         if (Displays.List().FirstOrDefault() is not { } display) return;
 
         // Asked for at the top preset: 1080p60 at 6 Mbit/s (the pictures are the monitor's, scaled down to the box).
         var asked = new ScreenOptions
         {
             Display = display, X11Display = null, Fps = 60, Kbps = 6000, KeyFrameSeconds = 1, MaxWidth = 1920, MaxHeight = 1080,
-            Codec = ScreenCodec.H264, Encoder = HardwareEncoder.Nvenc, InProcessEncoder = true, InProcessCapture = true, CaptureOnCard = true,
+            Codec = ScreenCodec.H264, Encoder = HardwareEncoder.Nvenc, CaptureOnCard = true,
         };
         using var cluster = await MediaTreeTests.Cluster.StartAsync(2, fanout: 2, rootFanout: 2);
-        using var sharer = ScreenSharer.Start(cluster.Root, cluster.Rooms[0], "Test screen", asked, ffmpeg);
+        using var sharer = ScreenSharer.Start(cluster.Root, cluster.Rooms[0], "Test screen", asked);
         try { await TestUtil.WaitFor(() => sharer.Frames >= 120, 30_000); }
         catch (TimeoutException) { output.WriteLine(sharer.Describe()); throw; }
-        if (!sharer.InProcess || !sharer.CaptureInProcess) return;   // no NVIDIA encoder here, or libraries too old for the capture
+        if (sharer.Encoder != HardwareEncoder.Nvenc) return;   // no NVIDIA encoder here
         Assert.Equal(60, sharer.RunFps);
         var before = sharer.PictureSize!.Value;
 

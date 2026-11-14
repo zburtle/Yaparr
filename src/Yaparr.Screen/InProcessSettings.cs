@@ -2,26 +2,20 @@ using System.Diagnostics;
 
 namespace Yaparr.Screen;
 
-/// <summary>How much of a share is done inside this program with FFmpeg's libraries (see <see cref="InProcessCapture"/> and <see cref="InProcessEncoder"/>).</summary>
+/// <summary>Where the pictures of a share go between the capture and the encoder, both of which run inside this program (see <see cref="InProcessCapture"/> and <see cref="InProcessEncoder"/>).</summary>
 public enum InProcessMode
 {
-    /// <summary>A separate FFmpeg captures, scales and encodes.</summary>
-    Off,
-    /// <summary>A separate FFmpeg captures; the encoding is done here (a key frame can be made on the very next picture).</summary>
-    Encoder,
-    /// <summary>Capture and encoding here; the pictures are copied to memory and converted by the processor.</summary>
+    /// <summary>The pictures are copied to memory and converted by the processor.</summary>
     CaptureOnCpu,
-    /// <summary>Capture and encoding here; the pictures stay on the graphics card from the capture to the encoder.</summary>
+    /// <summary>The pictures stay on the graphics card from the capture to the encoder (Windows, NVIDIA's and AMD's encoders).</summary>
     CaptureOnCard,
 }
 
 /// <summary>
-/// Which <see cref="InProcessMode"/> a share starts with. On Windows it is the whole of it (capture and encoding here, the pictures on the card) wherever
-/// that can be done (FFmpeg's libraries next to the program, an NVIDIA card; anything else is a share as before, with a separate FFmpeg), and the
-/// environment variable YAPARR_INPROCESS changes it: <c>0</c> (or <c>off</c>) for a separate FFmpeg only, <c>1</c> for the encoder here only,
-/// <c>capture-cpu</c> for capture here with the pictures copied to memory, <c>capture</c> for the default spelled out. On Linux the default is the encoder here
-/// (NVIDIA's, or an Intel or AMD card through VA-API) and the X11 capture here too (<c>x11grab</c> through the libraries, pictures in memory); on Wayland GStreamer
-/// reads the desktop's stream and its pictures go to the encoder. Where the libraries are not there, a share is as before, with a separate FFmpeg.
+/// Which <see cref="InProcessMode"/> a share starts with. On Windows the pictures stay on the graphics card wherever that can be done (an encoder that reads them
+/// there, a size known up front), and the environment variable YAPARR_INPROCESS changes it: <c>capture-cpu</c> for the pictures copied to memory, <c>capture</c>
+/// for the default spelled out (which <see cref="InProcessGuard"/> does not then turn off). On Linux the pictures are in memory: the X11 capture is <c>x11grab</c>
+/// through the libraries, and on Wayland GStreamer reads the desktop's stream. There is no separate FFmpeg program: without the libraries there is no share.
 /// </summary>
 public static class InProcessSettings
 {
@@ -30,65 +24,77 @@ public static class InProcessSettings
     {
         switch (value?.Trim().ToLowerInvariant())
         {
-            case "0" or "off" or "no" or "false": return (InProcessMode.Off, true);
-            case "1" or "encoder": return (InProcessMode.Encoder, true);
             case "capture-cpu": return (InProcessMode.CaptureOnCpu, true);
             case "capture" or "on" or "auto" or "true": return (windows ? InProcessMode.CaptureOnCard : InProcessMode.CaptureOnCpu, true);
             default: return (windows ? InProcessMode.CaptureOnCard : InProcessMode.CaptureOnCpu, false);
         }
     }
 
+    /// <summary>
+    /// Whether decoding on the graphics card was asked for in so many words (<c>YAPARR_CARD_DECODE=1</c>): then <see cref="InProcessDecodeGuard"/> does not keep a
+    /// viewer on the processor after the program ended in the middle of decoding.
+    /// </summary>
+    public static bool CardDecodeAsked => Environment.GetEnvironmentVariable("YAPARR_CARD_DECODE")?.Trim() is "1" or "on" or "yes" or "true";
+
     /// <summary>The mode from the environment of this program.</summary>
     public static (InProcessMode Mode, bool Asked) FromEnvironment() => Parse(Environment.GetEnvironmentVariable("YAPARR_INPROCESS"), OperatingSystem.IsWindows());
 }
 
 /// <summary>
-/// A share that runs inside this program has lost what a separate FFmpeg gives: when native code crashes, the program goes with it. So that a computer
-/// where it does (a driver, a card, a window of a kind nobody tried) does not lose the program every time it shares, a share that starts here leaves a
-/// mark and takes it away when it ends; a mark found at the next start means the program ended during such a share, and after <see cref="Limit"/> of
-/// those in a row the shares go back to a separate FFmpeg until one ends well (or <c>YAPARR_INPROCESS</c> asks for it in so many words). A program
-/// that is stopped from the task manager in the middle of a share counts the same, which is why it takes two.
+/// Sharing and watching run inside this program, without what a separate program gives: when native code crashes, the program goes with it. So that a computer
+/// where it does (a driver, a card, a window of a kind nobody tried) does not lose the program every time, a share (or a decoder) that starts leaves a mark and
+/// takes it away when it ends; a mark found at the next start means the program ended in the middle of one, and after <see cref="Limit"/> of those in a row the
+/// graphics card is left out (the pictures of a share are copied to memory; a viewer decodes on the processor), a driver being the likeliest cause, until one ends
+/// well. A program that is stopped from the task manager in the middle of a share counts the same, which is why it takes two.
 /// </summary>
-public static class InProcessGuard
+public sealed class NativeGuard
 {
     /// <summary>Endings in the middle of an in-process share, one after the other, that turn the default off.</summary>
     public const int Limit = 2;
 
-    private static readonly object Gate = new();
-    private static string? _file;
-    private static bool _loaded;
-    private static int _unclean;
+    public NativeGuard(string fileName) => _fileName = fileName;
+
+    private readonly object Gate = new();
+    private string? _file;
+    private readonly string _fileName;
+    private int _running;   // shares or decoders that are going on at this moment in this program
+    private bool _loaded;
+    private int _unclean;
 
     /// <summary>Where the mark is kept (one for the person on this computer, whichever profile of Yaparr runs).</summary>
-    public static string MarkFile => _file ??= Path.Combine(Path.GetDirectoryName(FfmpegInstaller.DefaultDirectory)!, "in-process-guard.txt");
+    public string MarkFile => _file ??= Path.Combine(Path.GetDirectoryName(FfmpegInstaller.DefaultDirectory)!, _fileName);
 
     /// <summary>Uses another file (for tests), and reads it again.</summary>
-    public static void UseFile(string? path)
+    public void UseFile(string? path)
     {
-        lock (Gate) { _file = path; _loaded = false; _unclean = 0; }
+        lock (Gate) { _file = path; _loaded = false; _unclean = 0; _running = 0; }
     }
 
     /// <summary>Whether shares may go on running here, as far as the endings of earlier ones say.</summary>
-    public static bool Allowed { get { Load(); lock (Gate) return _unclean < Limit; } }
+    public bool Allowed { get { Load(); lock (Gate) return _unclean < Limit; } }
 
     /// <summary>How many endings in the middle of a share, in a row, there have been.</summary>
-    public static int UncleanEndings { get { Load(); lock (Gate) return _unclean; } }
+    public int UncleanEndings { get { Load(); lock (Gate) return _unclean; } }
 
-    /// <summary>A share is starting here. Call <see cref="End"/> when it ends, however it ends.</summary>
-    public static void Begin()
+    /// <summary>A share (or a decoder) is starting here. Call <see cref="End"/> when it ends, however it ends. Any number can be going on at once.</summary>
+    public void Begin()
     {
         Load();
-        lock (Gate) Save(_unclean, Environment.ProcessId);
+        lock (Gate) { if (_running++ == 0) Save(_unclean, Environment.ProcessId); }
     }
 
-    /// <summary>The share ended, with the program still there to say so: whatever happened before is forgiven.</summary>
-    public static void End()
+    /// <summary>One ended, with the program still there to say so: when it was the last, whatever happened before is forgiven.</summary>
+    public void End()
     {
         Load();
-        lock (Gate) { _unclean = 0; Save(0, 0); }
+        lock (Gate)
+        {
+            if (_running > 0 && --_running > 0) return;   // another is still going on: the mark stays
+            _unclean = 0; Save(0, 0);
+        }
     }
 
-    private static void Load()
+    private void Load()
     {
         lock (Gate)
         {
@@ -122,7 +128,7 @@ public static class InProcessGuard
         catch (InvalidOperationException) { return false; }
     }
 
-    private static void Save(int unclean, int active)
+    private void Save(int unclean, int active)
     {
         try
         {
@@ -132,4 +138,35 @@ public static class InProcessGuard
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
+}
+
+
+/// <summary>The guard of shares (see <see cref="NativeGuard"/>): when it is closed, the pictures are not kept on the graphics card (unless <c>YAPARR_INPROCESS=capture</c> asks for it).</summary>
+public static class InProcessGuard
+{
+    private static readonly NativeGuard Guard = new("in-process-guard.txt");
+    public const int Limit = NativeGuard.Limit;
+    public static string MarkFile => Guard.MarkFile;
+    public static void UseFile(string? path) => Guard.UseFile(path);
+    public static bool Allowed => Guard.Allowed;
+    public static int UncleanEndings => Guard.UncleanEndings;
+    public static void Begin() => Guard.Begin();
+    public static void End() => Guard.End();
+}
+
+/// <summary>
+/// The guard of viewers (<see cref="InProcessDecoder"/>), kept apart from the shares': a program that ends in the middle of decoding does not turn off sharing,
+/// and the other way round. A viewer, a preview or a share's own preview counts while its decoder runs; after <see cref="NativeGuard.Limit"/> endings in the middle
+/// of decoding in a row, viewers decode on the processor, not the graphics card (a driver being the likeliest cause), until a decoder ends well (or
+/// <c>YAPARR_CARD_DECODE=1</c> asks for the card in so many words). There is no separate program to fall back to: decoding is always done here.
+/// </summary>
+public static class InProcessDecodeGuard
+{
+    private static readonly NativeGuard Guard = new("in-process-decode-guard.txt");
+    public static string MarkFile => Guard.MarkFile;
+    public static void UseFile(string? path) => Guard.UseFile(path);
+    public static bool Allowed => Guard.Allowed;
+    public static int UncleanEndings => Guard.UncleanEndings;
+    public static void Begin() => Guard.Begin();
+    public static void End() => Guard.End();
 }

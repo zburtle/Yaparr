@@ -33,14 +33,6 @@ public class WatchFiguresTests
     }
 
     [Fact]
-    public void The_cause_of_an_encoder_failing_is_the_error_not_the_closing_summary()
-    {
-        const string said = "[vost#0:0 @ 000001] Error while opening encoder: Function not implemented\n[out#0/ivf @ 0000021314] Nothing was written into output file, because at least one of its streams received no packets.";
-        Assert.Equal("[vost#0:0] Error while opening encoder: Function not implemented", Yaparr.Screen.Av1Support.CauseIn(said));
-        Assert.Equal("[out#0/ivf] Nothing was written into output file, because at least one of its streams received no packets.", Yaparr.Screen.Av1Support.CauseIn("[out#0/ivf @ 0000021314] Nothing was written into output file, because at least one of its streams received no packets."));
-    }
-
-    [Fact]
     public void A_watch_that_is_not_attached_says_so()
     {
         var figures = new WatchFigures("Zed's screen", 0, 0, 0, 0, 0, 0, 0, 0, 0, Attached: false, Parent: null);
