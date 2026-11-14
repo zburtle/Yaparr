@@ -46,6 +46,12 @@ public sealed class QualityPolicy
         /// <summary>The share of what was sent that is sent again, above which the sharer's own link is taken to be the cause.</summary>
         public double ResentLimit { get; init; } = 0.05;
         public int MaxStep { get; init; } = QualityLadder.Steps - 1;
+        /// <summary>
+        /// After a change, how long what the viewers say is not counted: a viewer judges its picture over the last ten seconds and its report takes a moment to arrive,
+        /// so for about twelve seconds after a change it still describes the level before it. Counting it made one step down into three (each level was judged by the
+        /// last one's pictures), and a level that was clean was left before it had been looked at.
+        /// </summary>
+        public int SettleSeconds { get; init; } = 12;
     }
 
     /// <summary>How often <see cref="Tick"/> is called, in milliseconds.</summary>
@@ -54,6 +60,7 @@ public sealed class QualityPolicy
     private readonly Settings _s;
     private long _troubleSince = -1, _quietSince = -1, _lastChange = long.MinValue / 2, _lastUp = long.MinValue / 2, _lastTrouble = long.MinValue / 2, _lastReportAt = long.MinValue / 2;
     private int _upWaitSeconds;
+    private long _settleUntil = long.MinValue / 2;
 
     public QualityPolicy(Settings? settings = null)
     {
@@ -99,6 +106,8 @@ public sealed class QualityPolicy
         // Quiet: nobody that reported is in trouble and the sharer's link is fine, with someone to hear from; or nobody is watching at all.
         bool quiet = !trouble && ((room.Reported > 0 && room.Troubled == 0) || viewers == 0);
         if (trouble) _lastTrouble = nowMs;
+        // Just after a change the viewers' figures still describe the level before it: they count for nothing yet, either way.
+        if (nowMs < _settleUntil) { trouble = false; quiet = false; }
         if (nowMs - _lastTrouble >= _s.BackoffResetSeconds * 1000L) _upWaitSeconds = _s.QuietSeconds;
 
         // The second just seen counts: ten seconds of trouble is the tenth one-second look that shows it, and a quiet half minute the thirtieth.
@@ -122,6 +131,7 @@ public sealed class QualityPolicy
             if (nowMs - _lastUp < _s.FlapSeconds * 1000L) _upWaitSeconds = Math.Min(_upWaitSeconds * 2, _s.BackoffMaxSeconds);
             Step++;
             _lastChange = nowMs;
+            _settleUntil = nowMs + _s.SettleSeconds * 1000L;
             _troubleSince = nowMs;
             return new QualityDecision(Step, true, why);
         }
@@ -130,6 +140,7 @@ public sealed class QualityPolicy
         {
             Step--;
             _lastChange = nowMs;
+            _settleUntil = nowMs + _s.SettleSeconds * 1000L;
             _lastUp = nowMs;
             _quietSince = nowMs;
             return new QualityDecision(Step, true, viewers == 0 ? "nobody is watching" : $"no viewer in trouble for {_upWaitSeconds} s");

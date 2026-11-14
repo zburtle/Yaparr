@@ -53,6 +53,8 @@ One decision a second, on the sharer, from two things: the room (the reports) an
 - at least half of the viewers that reported are in trouble, and at least two of them (with one viewer in the room, that viewer is the room: its trouble counts), or
 - the sharer's own link is the cause: more than 5% of what it sent was sent again, or anything was dropped, to more than one direct viewer.
 
+**Settle** after every change: for 12 s what the viewers say is not counted, either way. A viewer judges its picture over the last 10 s and its report takes a moment to arrive, so for about 12 s after a change the figures still describe the level before it. Without this one step down became three (a first real run went 4.0, 2.8, 720p30 at 10 s each, and 1080p30 at 2.8 Mbit/s, which was clean, was left before its own pictures had been looked at); with it a level is judged on its own pictures, and a step takes about 22 s when trouble goes on.
+
 **Never** step down because of one viewer among three or more, however bad. That viewer gets the message below.
 
 **Step up** after 30 s with nobody in trouble (and at least 20 s since the last change), one step at a time. If a step up is followed by trouble within 60 s, the wait before the next try doubles (30, 60, 120, 240, 480 s, at most 15 minutes), so a link that cannot take the higher quality is not tried every half minute, and a step that failed is remembered for a long while: on a viewer whose link carries 3 Mbit/s but not 4 it meant a short interruption every minute or two, from each capture restart. The wait falls back to 30 s after half an hour without trouble. The gap between stepping down (10 s) and up (30 s and more) is the "wide gap" that stops it flapping.
