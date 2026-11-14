@@ -453,6 +453,10 @@
                     <Border x:Name="WatchInterrupted" Margin="16,0,16,10" Padding="12,6" CornerRadius="6" Background="#66FFAA00" IsVisible="False">
                         <TextBlock x:Name="WatchInterruptedText" Foreground="White" FontSize="14" TextWrapping="Wrap" Text="The stream was interrupted. Reconnecting&#8230;" />
                     </Border>
+                    <!-- Shown while the share's lower-quality stream is watched (issue #254): it was chosen for this phone, and this says why. -->
+                    <Border x:Name="WatchLowNotice" Margin="16,0,16,10" Padding="12,6" CornerRadius="6" Background="#44FFFFFF" IsVisible="False">
+                        <TextBlock x:Name="WatchLowNoticeText" Foreground="White" FontSize="14" TextWrapping="Wrap" />
+                    </Border>
                 </StackPanel>
                 <Grid x:Name="WatchArea" Grid.Row="1">
                     <local:ScreenSurfaceHost x:Name="WatchHost" HorizontalAlignment="Center" VerticalAlignment="Center" Width="2" Height="2" />

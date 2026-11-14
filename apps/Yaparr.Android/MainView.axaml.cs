@@ -975,6 +975,7 @@ public partial class MainView : UserControl
     {
         if (_watch == null) return;
         long now = Environment.TickCount64, drawn = _watch.Stats.Shown;
+        _watch.Tick(now);   // judges the picture, and moves to the share's lower stream or back on its own
         if (drawn != _lastDrawn)
         {
             _lastDrawn = drawn;
@@ -1039,6 +1040,13 @@ public partial class MainView : UserControl
                 FitWatchHost();
             });
             watch.Failed += message => Dispatcher.UIThread.Post(() => { WatchStatus.Text = message; WatchStatus.IsVisible = true; });
+            WatchLowNotice.IsVisible = false;
+            watch.StreamChanged += (stream, reason) => Dispatcher.UIThread.Post(() =>
+            {
+                if (_watch != watch) return;
+                WatchLowNoticeText.Text = "Watching a lower-quality stream: " + reason;
+                WatchLowNotice.IsVisible = stream == AppCore.WatchedStream.Low;
+            });
         }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
         {
@@ -1062,6 +1070,7 @@ public partial class MainView : UserControl
         _interruptionTimer.Stop();
         _watch = null;
         WatchInterrupted.IsVisible = false;
+        WatchLowNotice.IsVisible = false;
         _session?.StopWatching();
         WatchPanel.IsVisible = false;
         _watchedShare = null;
