@@ -217,14 +217,30 @@ public sealed class VoiceSession : IDisposable
     private readonly List<SoundPlayback> _sounds = new();
     private volatile bool _allSoundboardsMuted;
 
-    /// <summary>Silences one person's soundboard sounds without muting their voice.</summary>
+    /// <summary>
+    /// Silences one person's soundboard sounds without muting their voice. It is the person who is muted, not the device: <paramref name="peer"/> may be any
+    /// of their devices (or their account), and the sounds of all their devices are silenced, including devices that are linked to the account later.
+    /// </summary>
     public void SetSoundboardMute(PeerId peer, bool muted)
     {
-        if (muted) _soundboardMuted[peer] = true; else _soundboardMuted.TryRemove(peer, out _);
-        if (muted) lock (_playLock) _sounds.RemoveAll(s => s.By == peer);
+        if (muted) _soundboardMuted[peer] = true;
+        else foreach (var key in _soundboardMuted.Keys.Where(k => SamePerson(k, peer)).ToList()) _soundboardMuted.TryRemove(key, out _);
+        if (muted) lock (_playLock) _sounds.RemoveAll(s => SamePerson(s.By, peer));
     }
 
-    public bool IsSoundboardMuted(PeerId peer) => _soundboardMuted.ContainsKey(peer);
+    public bool IsSoundboardMuted(PeerId peer) => IsMutedPerson(peer);
+
+    // The account of a device is what makes it one person with their other devices; a device that is on no account is its own person.
+    private bool SamePerson(PeerId a, PeerId b) => a == b || _node.AccountOf(a) == _node.AccountOf(b);
+
+    private bool IsMutedPerson(PeerId peer)
+    {
+        // What you play yourself is never muted by muting another device of yours.
+        if (_soundboardMuted.IsEmpty || peer == _node.Id) return false;
+        if (_soundboardMuted.ContainsKey(peer)) return true;
+        var person = _node.AccountOf(peer);
+        return _soundboardMuted.Keys.Any(k => _node.AccountOf(k) == person);
+    }
 
     /// <summary>Silences everybody's soundboard sounds (and yours) but not voices.</summary>
     public bool SoundboardsMuted
@@ -238,7 +254,7 @@ public sealed class VoiceSession : IDisposable
 
     internal void PlaySound(PeerId by, SoundClip clip)
     {
-        if (_disposed || _deafened || _allSoundboardsMuted || _soundboardMuted.ContainsKey(by)) return;
+        if (_disposed || _deafened || _allSoundboardsMuted || IsMutedPerson(by)) return;
         lock (_playLock) _sounds.Add(new SoundPlayback(by, clip));
     }
 
