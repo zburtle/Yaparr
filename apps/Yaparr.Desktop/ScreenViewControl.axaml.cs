@@ -14,8 +14,8 @@ namespace Yaparr.Desktop;
 /// <summary>One shared screen, with its sound and a line of figures. It sits inside the main window or in a <see cref="ScreenViewWindow"/>, and moves between them without the stream restarting. Stopping it ends the watching.</summary>
 public partial class ScreenViewControl : UserControl
 {
-    private readonly MediaView? _view;
-    private readonly ScreenViewer? _viewer;
+    private MediaView? _view;
+    private ScreenViewer? _viewer;
     private readonly string _name = "";
     private WriteableBitmap? _bitmap;
     private long _shown;
@@ -42,10 +42,18 @@ public partial class ScreenViewControl : UserControl
     /// <summary>How the watch went, written when it ends (for the sharing diagnostics, which are often copied after the screen is closed).</summary>
     public string? LastReport { get; private set; }
 
-    public ScreenViewControl(string name, MediaView view) : this()
+    /// <summary>
+    /// Watches <paramref name="view"/>, the share's main stream. With <paramref name="openLow"/> and <paramref name="openMain"/> (and <paramref name="lowAvailable"/> saying
+    /// whether the share has a lower stream at the moment) the view moves between the two on its own (see <see cref="StreamChoice"/>); nothing is asked of the viewer,
+    /// and a notice over the picture says when, and why, it shows the lower-quality stream.
+    /// </summary>
+    public ScreenViewControl(string name, MediaView view, Func<MediaView?>? openLow = null, Func<MediaView>? openMain = null, Func<bool>? lowAvailable = null) : this()
     {
         _name = name;
         _view = view;
+        _openLow = openLow;
+        _openMain = openMain;
+        _lowAvailable = lowAvailable;
         _viewer = new ScreenViewer(view);
         // How this picture is doing, judged over ten seconds and sent up the tree with the others' (see ViewerQualityMeter), so that the sharer can tell
         // a room that struggles from one viewer that does.
@@ -137,7 +145,7 @@ public partial class ScreenViewControl : UserControl
     private readonly PlayoutQueue<Picture> _playout;
     private readonly DispatcherTimer _draw = new() { Interval = TimeSpan.FromMilliseconds(4) };
     private long _statsAt = Environment.TickCount64, _statsShown, _statsFrames, _statsBytes;
-    private readonly ViewerQualityMeter _quality = new();
+    private ViewerQualityMeter _quality = new();
 
     private void OnPicture(Picture picture)
     {
@@ -175,6 +183,93 @@ public partial class ScreenViewControl : UserControl
         if (change == InterruptionChange.Resumed) { Interrupted.IsVisible = false; StreamResumed?.Invoke(seconds); }
     }
 
+    // ---- the lower stream (issue #254) -------------------------------------------------------------------------------------------------
+    //
+    // A move is made without a gap: the other stream is watched and decoded beside the one shown, and when its first picture comes the old one is let go and the
+    // new one shown from then on. A stream whose first picture does not come within ten seconds is given up, and the one shown stays.
+
+    private readonly Func<MediaView?>? _openLow;
+    private readonly Func<MediaView>? _openMain;
+    private readonly Func<bool>? _lowAvailable;
+    private readonly StreamChoice _choice = new();
+    private WatchedStream _watched = WatchedStream.Main;
+    private (WatchedStream To, MediaView View, ScreenViewer Viewer, long StartedAt)? _switching;
+    private readonly object _switchGate = new();
+
+    /// <summary>Which stream is shown now.</summary>
+    public WatchedStream Watched => _watched;
+
+    /// <summary>The picture moved to the other stream: which one now, and why (for the log). On the UI thread.</summary>
+    public event Action<WatchedStream, string>? StreamChanged;
+
+    private bool LowAvailable => _lowAvailable?.Invoke() ?? false;
+
+    private void ConsiderSwitch(long now)
+    {
+        if (_view == null || _released || IsEnded || _openLow == null || _openMain == null) return;
+        bool available = LowAvailable;
+        lock (_switchGate)
+        {
+            if (_switching is { } going)
+            {
+                if (now - going.StartedAt < 10_000) return;
+                _switching = null;   // its first picture never came: given up, the one shown stays
+                going.Viewer.Dispose();
+                going.View.Dispose();
+            }
+        }
+        var wanted = _choice.Update(now, available, _watched, _quality.Sample, _saidLone);
+        if (wanted != _watched) BeginSwitch(wanted);
+    }
+
+    private void BeginSwitch(WatchedStream to)
+    {
+        MediaView? view;
+        try { view = to == WatchedStream.Low ? _openLow!() : _openMain!(); }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return; }
+        if (view == null) return;
+        var viewer = new ScreenViewer(view);
+        lock (_switchGate) _switching = (to, view, viewer, Environment.TickCount64);
+        viewer.PictureReceived += picture =>
+        {
+            bool first;
+            lock (_switchGate) first = _switching is { } s && s.Viewer == viewer;
+            if (first)
+            {
+                viewer.Return(picture);
+                Dispatcher.UIThread.Post(() => CompleteSwitch(viewer));
+                return;
+            }
+            if (_viewer == viewer) OnPicture(picture); else viewer.Return(picture);
+        };
+    }
+
+    private void CompleteSwitch(ScreenViewer viewer)
+    {
+        (WatchedStream To, MediaView View, ScreenViewer Viewer, long StartedAt) going;
+        lock (_switchGate)
+        {
+            if (_switching is not { } s || s.Viewer != viewer) return;
+            going = s;
+            _switching = null;
+        }
+        if (_released || IsEnded) { going.Viewer.Dispose(); going.View.Dispose(); return; }
+        var (oldViewer, oldView) = (_viewer, _view);
+        if (oldViewer != null) oldViewer.PictureReceived -= OnPicture;
+        _viewer = going.Viewer;
+        _view = going.View;
+        _quality = new ViewerQualityMeter();   // the new stream is judged afresh
+        _view.QualityProvider = () => _quality.Sample;
+        _watched = going.To;
+        oldViewer?.Dispose();
+        oldView?.Dispose();
+        string reason = _choice.Reason ?? "";
+        LowNoticeText.Text = $"Watching a lower-quality stream: {reason}";
+        LowNotice.IsVisible = _watched == WatchedStream.Low;
+        if (_watched == WatchedStream.Low) Struggling.IsVisible = false;   // the notice about the link says what was done about it
+        StreamChanged?.Invoke(_watched, reason);
+    }
+
     private void UpdateInfo()
     {
         if (_view == null) return;
@@ -206,12 +301,13 @@ public partial class ScreenViewControl : UserControl
         if (interruption == InterruptionChange.Interrupted) { Interrupted.IsVisible = true; StreamInterrupted?.Invoke(stoppedFor); }
         else if (interruption == InterruptionChange.Cleared) Interrupted.IsVisible = false;
         // The only one in trouble: the room's state came down the tree from the sharer, and this viewer's own judgement is the other half.
-        bool lone = !_connectionLost && !IsEnded && _lone.Update(now, _quality.Sample, _view.RoomState);
+        bool lone = _watched == WatchedStream.Main && !_connectionLost && !IsEnded && _lone.Update(now, _quality.Sample, _view.RoomState);
         if (lone != _saidLone) { _saidLone = lone; Struggling.IsVisible = lone; OnlyOneStrugglingChanged?.Invoke(lone); }
         // A small figure over the picture: how many pictures a second are really drawn.
         FpsBadge.IsVisible = _shown > 0 && !_connectionLost;
         FpsText.Text = $"{shownFps:0} fps";
-        Info.Text = $"{_name}  -  {_shown} pictures, {_view.FramesLost} lost, {st.Recovered} packets recovered, {_playout.Late} late"
+        ConsiderSwitch(now);
+        Info.Text = $"{_name}{(_watched == WatchedStream.Low ? " (lower stream)" : "")}  -  {_shown} pictures, {_view.FramesLost} lost, {st.Recovered} packets recovered, {_playout.Late} late"
             + $"\nArriving {arriveFps:0.0}/s at {kbps:0} kbit/s, drawn {shownFps:0.0}/s, decoder queue {_viewer?.DecodeQueue ?? 0}, playout delay {delayMs} ms"
             + (st.Attached ? "" : "  -  connecting to the sharer...");
     }
@@ -255,6 +351,11 @@ public partial class ScreenViewControl : UserControl
         _draw.Stop();
         _viewer?.Dispose();
         _view?.Dispose();
+        lock (_switchGate)
+        {
+            if (_switching is { } going) { going.Viewer.Dispose(); going.View.Dispose(); }
+            _switching = null;
+        }
         _speaker?.Dispose();
         _sound?.Dispose();
         _soundView?.Dispose();

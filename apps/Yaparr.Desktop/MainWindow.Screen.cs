@@ -150,6 +150,10 @@ public partial class MainWindow
                 _log.Write("screen sharing encoder set up as: " + sharer.EncoderDetails);
             };
             sharer.QualityDecided += text => _log.Write(text);
+            if (sharer.Low is { } lowStream)
+                lowStream.StartedChanged += started => _log.Write(started
+                    ? "screen sharing: a viewer's connection could not keep up, so a lower-quality stream was started for it"
+                    : "screen sharing: the lower-quality stream was stopped (nobody needed it for a minute)");
             sharer.KeyFrameAnswered += (ms, bytes) => _log.Write($"screen sharing: made a key frame {ms} ms after a viewer asked for one ({bytes / 1024} KB)");
             sharer.Ended += ex => UI(() =>
             {
@@ -307,7 +311,15 @@ public partial class MainWindow
         {
             _log.Write($"watching the screen {share.Name}");
             var view = _node.WatchMedia(room, share.Id);
-            var control = new ScreenViewControl(share.Name, view);
+            // The share's lower stream, while it has one (issue #254): the sharer starts it when a viewer is in trouble; a stream named after the share.
+            MediaGroupInfo? LowGroup() => room.MediaGroups.FirstOrDefault(g => g.Kind == LowStream.Kind && g.Name == LowStream.NameFor(share.Id));
+            var control = new ScreenViewControl(share.Name, view,
+                openLow: () => LowGroup() is { } low && _node != null ? _node.WatchMedia(room, low.Id) : null,
+                openMain: () => _node!.WatchMedia(room, share.Id),
+                lowAvailable: () => LowGroup() != null);
+            control.StreamChanged += (stream, why) => _log.Write(stream == WatchedStream.Low
+                ? $"the screen {share.Name} moved to its lower stream: {why}"
+                : $"the screen {share.Name} moved back to its full stream: {why}");
             control.DecoderFailed += message => _log.Write($"the picture of the screen {share.Name} stopped: {message}");
             // The sound, if the sharer shares it, is a stream of its own that names this share.
             if (room.MediaGroups.FirstOrDefault(g => g.Kind == ScreenSharer.SoundKind && g.Name == ScreenSharer.SoundNameFor(share.Id)) is { } sound)
