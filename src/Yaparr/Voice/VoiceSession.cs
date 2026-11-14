@@ -236,10 +236,19 @@ public sealed class VoiceSession : IDisposable
     /// <summary>How loud soundboard sounds are against voices, 0 to 2.</summary>
     public float SoundboardVolume { get; set; } = 0.8f;
 
-    internal void PlaySound(PeerId by, SoundClip clip)
+    /// <summary>How many soundboard sounds are playing right now.</summary>
+    internal int SoundsPlaying { get { lock (_playLock) return _sounds.Count; } }
+
+    /// <summary>Plays a sound. Different sounds play at the same time, but a person who plays a sound that is still going starts it over instead of stacking a second copy.</summary>
+    internal void PlaySound(PeerId by, string soundId, SoundClip clip)
     {
         if (_disposed || _deafened || _allSoundboardsMuted || _soundboardMuted.ContainsKey(by)) return;
-        lock (_playLock) _sounds.Add(new SoundPlayback(by, clip));
+        var playback = new SoundPlayback(by, soundId, clip);
+        lock (_playLock)
+        {
+            int running = _sounds.FindIndex(s => s.By == by && s.SoundId == soundId);
+            if (running >= 0) _sounds[running] = playback; else _sounds.Add(playback);
+        }
     }
 
     /// <summary>How many frames of a person were decoded; one that was not among the loudest, or was muted, costs nothing.</summary>

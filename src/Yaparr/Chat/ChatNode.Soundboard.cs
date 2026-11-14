@@ -275,7 +275,7 @@ public sealed partial class ChatNode
         _seenPlays[play.Id] = Environment.TickCount64;
         foreach (var member in room.MemberStates.Values)
             Send(member.Connection, new Wire { Type = Wire.Play, Room = RefTo(room, member), Pl = play });
-        session.PlaySound(Id, clip);
+        session.PlaySound(Id, id, clip);
         room.RaiseSoundPlayed(Id, ToInfo(s));
         return true;
     }
@@ -305,7 +305,7 @@ public sealed partial class ChatNode
             _ = FetchSoundAsync(room, s);
             return;
         }
-        session.PlaySound(from, clip);
+        session.PlaySound(from, s.Id, clip);
         room.RaiseSoundPlayed(from, ToInfo(s));
     }
 
