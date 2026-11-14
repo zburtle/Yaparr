@@ -24,39 +24,39 @@ public sealed record FfmpegPackage(string Version, Uri Url, string Sha256, long 
     /// x264; see https://github.com/zburtle/Yaparr.FFmpeg) of commit 17a4a474f4 of FFmpeg's development branch, N-128212 of
     /// 30 October 2026, which has the Graphics Capture fixes of 24 October 2026. No numbered release has those fixes yet (8.1.3
     /// and 9.0.2 capture one frame and stop). It was checked with the FfmpegIntegration tests and the demo. Move to a numbered
-    /// release when one includes the fixes. The file is the asset of the Yaparr.FFmpeg release ffmpeg-7 (the same FFmpeg as ffmpeg-3 and later, with AV1 added from ffmpeg-6: the graphics cards' AV1 encoders
-    /// and the dav1d decoder; and from ffmpeg-7 Direct3D 12 decoding and scaling on the card, and shared libraries, FFmpeg's DLLs (the ffmpeg.exe beside them in the zip is left out), which
+    /// release when one includes the fixes. The file is the asset of the Yaparr.FFmpeg release ffmpeg-9 (the same FFmpeg as ffmpeg-3 and later, with AV1 added from ffmpeg-6: the graphics cards' AV1 encoders
+    /// and the dav1d decoder; and from ffmpeg-7 Direct3D 12 decoding and scaling on the card, and shared libraries, FFmpeg's DLLs (from ffmpeg-9 the zip has only the libraries; an older zip's ffmpeg.exe is left out), which
     /// the app also loads into itself to share a screen without a separate program), which also holds the exact source; see README.md next to this file.
     /// </summary>
     public static FfmpegPackage Default { get; } = new(
-        "g17a4a474f4-yaparr-7-win64",
-        new Uri("https://github.com/zburtle/Yaparr.FFmpeg/releases/download/ffmpeg-7/ffmpeg-yaparr-g17a4a474f4-win64.zip"),
-        "064b72c6bbd13938be3afa203c1c28c351822b404647fd044167ab4d625ef1a9",
-        6_652_814,
+        "g17a4a474f4-yaparr-9-win64",
+        new Uri("https://github.com/zburtle/Yaparr.FFmpeg/releases/download/ffmpeg-9/ffmpeg-yaparr-g17a4a474f4-win64.zip"),
+        "7eb32fc250fe2c359917f38dc80257c3e6ab8ba6b23e1dd5a39cd54e83e00c15",
+        6_425_284,
         "ffmpeg-yaparr-g17a4a474f4-win64/bin/avcodec-63.dll",
         "ffmpeg-yaparr-g17a4a474f4-win64/LICENSE.txt",
         "ffmpeg-yaparr-g17a4a474f4-win64");
 
     /// <summary>
-    /// Yaparr's own Linux x86-64 build, the asset of the Yaparr.FFmpeg release ffmpeg-8 (the same FFmpeg commit as the Windows
-    /// one; see https://github.com/zburtle/Yaparr.FFmpeg): FFmpeg's shared libraries (the ffmpeg program in the zip is left out) (libavcodec.so.63 and the others), which Yaparr
+    /// Yaparr's own Linux x86-64 build, the asset of the Yaparr.FFmpeg release ffmpeg-9 (the same FFmpeg commit as the Windows
+    /// one; see https://github.com/zburtle/Yaparr.FFmpeg): FFmpeg's shared libraries, with H.264 decoding on NVIDIA (NVDEC) and VA-API cards from ffmpeg-9 (libavcodec.so.63 and the others), which Yaparr
     /// loads into itself to encode. It runs on glibc 2.35 or newer and needs the computer's own libva.
     /// </summary>
     public static FfmpegPackage LinuxX64 { get; } = new(
-        "g17a4a474f4-yaparr-8-linux-x64",
-        new Uri("https://github.com/zburtle/Yaparr.FFmpeg/releases/download/ffmpeg-8/ffmpeg-yaparr-g17a4a474f4-linux-x64.zip"),
-        "96e033518b6689fceba74bef7b4b1ce8ae2d6ffd2aa52a33bb1be749cfc11e07",
-        3_248_032,
+        "g17a4a474f4-yaparr-9-linux-x64",
+        new Uri("https://github.com/zburtle/Yaparr.FFmpeg/releases/download/ffmpeg-9/ffmpeg-yaparr-g17a4a474f4-linux-x64.zip"),
+        "681dec806beb44acd335b8312376c461e86dbfc06323349af35da89431e45984",
+        3_063_726,
         "ffmpeg-yaparr-g17a4a474f4-linux-x64/bin/libavcodec.so.63",
         "ffmpeg-yaparr-g17a4a474f4-linux-x64/LICENSE.txt",
         "ffmpeg-yaparr-g17a4a474f4-linux-x64");
 
     /// <summary>Yaparr's own Linux arm64 build, from the same release as <see cref="LinuxX64"/>.</summary>
     public static FfmpegPackage LinuxArm64 { get; } = new(
-        "g17a4a474f4-yaparr-8-linux-arm64",
-        new Uri("https://github.com/zburtle/Yaparr.FFmpeg/releases/download/ffmpeg-8/ffmpeg-yaparr-g17a4a474f4-linux-arm64.zip"),
-        "f4069482ae02efe3168b5d3b5be5d1d66993b0dd26a3719d8e27c31a63762ec7",
-        2_773_411,
+        "g17a4a474f4-yaparr-9-linux-arm64",
+        new Uri("https://github.com/zburtle/Yaparr.FFmpeg/releases/download/ffmpeg-9/ffmpeg-yaparr-g17a4a474f4-linux-arm64.zip"),
+        "ec752a9e005085fd1a7d1d0ef290ec61aa257b92235bacf767f414f7e392945f",
+        2_591_055,
         "ffmpeg-yaparr-g17a4a474f4-linux-arm64/bin/libavcodec.so.63",
         "ffmpeg-yaparr-g17a4a474f4-linux-arm64/LICENSE.txt",
         "ffmpeg-yaparr-g17a4a474f4-linux-arm64");
