@@ -383,6 +383,34 @@ public class SoundboardTests
     }
 
     [Fact]
+    public async Task Playing_a_sound_again_before_it_ends_starts_it_over_but_different_sounds_play_together()
+    {
+        var hub = new InMemoryDiscoveryHub();
+        var (a, b, ra, rb) = await Pair(hub, interval: TimeSpan.Zero);
+        using var _ = a; using var __ = b;
+
+        var one = ra.AddSound("one", SoundClip.FromPcm(Tone(440, 3)));
+        var two = ra.AddSound("two", SoundClip.FromPcm(Tone(660, 3)));
+        using var va = ra.JoinVoice();
+        using var vb = rb.JoinVoice();
+        await TestUtil.WaitFor(() => ra.VoiceParticipants.Count == 2 && rb.VoiceParticipants.Count == 2);
+        await TestUtil.WaitFor(() => rb.Sounds.Count(x => x.Available) == 2, 20_000);
+
+        Assert.True(ra.PlaySound(one.Id));
+        Assert.Equal(1, va.SoundsPlaying);
+        Listen(va, 25);                       // half a second in
+        Assert.True(ra.PlaySound(one.Id));    // again, while it is still going
+        Assert.Equal(1, va.SoundsPlaying);
+        Assert.True(ra.PlaySound(two.Id));    // another sound is not held back by it
+        Assert.Equal(2, va.SoundsPlaying);
+
+        // The listener gets the same: the repeat does not add a second copy of the first sound.
+        await TestUtil.WaitFor(() => vb.SoundsPlaying == 2, 10_000);
+        await Task.Delay(500);
+        Assert.Equal(2, vb.SoundsPlaying);
+    }
+
+    [Fact]
     public async Task Someone_not_in_voice_hears_nothing_and_a_deafened_listener_hears_nothing()
     {
         var hub = new InMemoryDiscoveryHub();

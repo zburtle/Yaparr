@@ -11,13 +11,17 @@ internal sealed class SoundPlayback
     private readonly IOpusDecoder _decoder = OpusCodecFactory.CreateDecoder(VoiceSession.SampleRate, 1);
     private int _next;
 
-    public SoundPlayback(PeerId by, SoundClip clip)
+    public SoundPlayback(PeerId by, string soundId, SoundClip clip)
     {
         By = by;
+        SoundId = soundId;
         _clip = clip;
     }
 
     public PeerId By { get; }
+
+    /// <summary>Which soundboard sound this is, so that playing it again can start it over.</summary>
+    public string SoundId { get; }
 
     public bool Finished => _next >= _clip.Frames;
 
