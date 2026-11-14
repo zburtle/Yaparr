@@ -34,7 +34,7 @@ A hello is a signed statement that a temporary key belongs to its author. It pro
 
 ## Secrets on disk
 
-On Windows the identity, settings (private room keys), account settings, the WireGuard config, the TURN password and the history key are sealed with DPAPI, so only that Windows user on that PC can read them. Room and direct message history, and the pictures, GIFs and sounds, are encrypted with AES-GCM under that key (each line or 64 KB piece is tied to its file and place, so pieces cannot be moved, swapped, cut off or changed; files from earlier versions are sealed at the next start). Profile export writes the sealed files unsealed (with the history key) so a backup opens elsewhere, and importing seals them again, so keep the export zip safe.
+On Windows the identity, settings (private room keys), account settings, the WireGuard config, the TURN password and the history key are sealed with DPAPI, so only that Windows user on that PC can read them. Room and direct message history, each room's list of sounds (their names and who added them), and the pictures, GIFs and sounds, are encrypted with AES-GCM under that key (each line or 64 KB piece is tied to its file and place, so pieces cannot be moved, swapped, cut off or changed; files from earlier versions are sealed at the next start, a list of sounds sealed with another key is kept aside as `.unreadable` and fetched again from the room). Profile export writes the sealed files unsealed (with the history key) so a backup opens elsewhere, and importing seals them again, so keep the export zip safe.
 
 ## Limits on what a peer can do
 
