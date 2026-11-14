@@ -130,6 +130,7 @@ public partial class SoundboardView : UserControl
     private Func<string?> _output = () => null;
     private Action _togglePlace = () => { };
     private Action _close = () => { };
+    private Action _openSettings = () => { };
     private readonly ObservableCollection<SoundVm> _tiles = new();
     private readonly ObservableCollection<SlotVm> _slots = new();
     private string[] _slotIds = new string[SoundSlots.Count];
@@ -162,10 +163,10 @@ public partial class SoundboardView : UserControl
 
     /// <summary>Starts showing a room's sounds. <paramref name="togglePlace"/> moves the board between the window and a window of its own.</summary>
     internal void Attach(ChatRoom room, PeerId me, AppSettings settings, Action save, Func<VoiceSession?> voice, Func<string?> output,
-        Action togglePlace, Action close)
+        Action togglePlace, Action close, Action openSettings)
     {
         _room = room; _me = me; _settings = settings; _save = save; _voice = voice; _output = output;
-        _togglePlace = togglePlace; _close = close;
+        _togglePlace = togglePlace; _close = close; _openSettings = openSettings;
         RoomText.Text = room.Name;
         Tiles.ItemsSource = _tiles;
 
@@ -465,6 +466,9 @@ public partial class SoundboardView : UserControl
     private void Dock_Click(object? sender, RoutedEventArgs e) => _togglePlace();
 
     private void Close_Click(object? sender, RoutedEventArgs e) => _close();
+
+    // To the soundboard section of the room's settings, where sounds are added, renamed and removed.
+    private void Settings_Click(object? sender, RoutedEventArgs e) => _openSettings();
 
     private void MuteAll_Changed(object? sender, RoutedEventArgs e)
     {
