@@ -397,32 +397,58 @@ public partial class MainWindow
         }
     }
 
-    // On the first-start screen of a computer with no account (there is no settings page yet): sign in, fetch the newest backup and bring it back.
+    // On the first-start screen of a computer with no account (there is no settings page yet): sign in, choose which saved copy to bring back (the newest
+    // is selected; with only one there is nothing to choose) and bring it back.
     private async Task RestoreFromServerAsync()
     {
         const string title = "Restore from a server";
         if (await ServerLoginDialog.AskAsync(this) is not { } login) return;
-        var temp = Path.Combine(Path.GetTempPath(), "Yaparr-server-restore-" + Guid.NewGuid().ToString("N") + ".yapbak");
-        string staging;
-        int version;
-        try
+        string? staging = null;
+        int newest;
+        using (var client = new BackupServerClient(login.Server, login.Token))
         {
-            using var client = new BackupServerClient(login.Server, login.Token);
-            version = await client.DownloadAsync(temp);
-            staging = await Task.Run(() => _data.StageProfile(temp, login.RecoveryCode));
+            IReadOnlyList<ServerBackupVersion> versions;
+            try { versions = await client.VersionsAsync(); }
+            catch (BackupServerException ex) { await Dialogs.MessageAsync(this, title, ex.Message); return; }
+            if (versions.Count == 0) { await Dialogs.MessageAsync(this, title, "There is no backup on this server yet."); return; }
+            newest = versions[0].Version;
+
+            int? failed = null;
+            string? problem = null;
+            while (staging == null)
+            {
+                var pick = newest;
+                if (versions.Count > 1)
+                {
+                    if (await VersionPickerDialog.AskAsync(this, versions, ServerRestoreChoices.Preselect(versions, failed), problem) is not { } chosen) return;
+                    pick = chosen;
+                }
+                var temp = Path.Combine(Path.GetTempPath(), "Yaparr-server-restore-" + Guid.NewGuid().ToString("N") + ".yapbak");
+                try
+                {
+                    await client.DownloadAsync(temp, pick);
+                    staging = await Task.Run(() => _data.StageProfile(temp, login.RecoveryCode));
+                }
+                catch (BackupServerException ex) { await Dialogs.MessageAsync(this, title, ex.Message); return; }
+                // With other copies to try, the person is asked again (the next older one is selected) instead of being left with an error.
+                catch (Exception ex) when (versions.Count > 1 && ex is CryptographicException or InvalidDataException)
+                {
+                    failed = pick;
+                    problem = $"Version {pick} could not be opened: the recovery code does not open it, or that copy is damaged. Choose another version, or cancel to check the code.";
+                }
+                catch (CryptographicException)
+                {
+                    await Dialogs.MessageAsync(this, title, "That recovery code does not open the backup on the server. Check the code; if a newer backup was made with another code, use that one.");
+                    return;
+                }
+                catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+                {
+                    await Dialogs.MessageAsync(this, title, ex.Message);
+                    return;
+                }
+                finally { try { File.Delete(temp); } catch (IOException) { } }
+            }
         }
-        catch (BackupServerException ex) { await Dialogs.MessageAsync(this, title, ex.Message); return; }
-        catch (CryptographicException)
-        {
-            await Dialogs.MessageAsync(this, title, "That recovery code does not open the newest backup on the server. Check the code; if a newer backup was made with another code, use that one.");
-            return;
-        }
-        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
-        {
-            await Dialogs.MessageAsync(this, title, ex.Message);
-            return;
-        }
-        finally { try { File.Delete(temp); } catch (IOException) { } }
 
         try { _data.ApplyStagedProfile(staging); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -433,7 +459,9 @@ public partial class MainWindow
         // This computer stays signed in and keeps the code, so its next backup needs nothing typed.
         _data.SaveBackupServer(new BackupServerState
         {
-            Url = login.Server.ToString().TrimEnd('/'), Username = login.Username, Token = login.Token, RecoveryCode = login.RecoveryCode, Version = version,
+            // The newest on the server, even when an older copy was chosen: the person has seen what the server holds and chosen, so the next backup
+            // (which becomes a newer version than all of them) is not held back as one that might overwrite something unseen.
+            Url = login.Server.ToString().TrimEnd('/'), Username = login.Username, Token = login.Token, RecoveryCode = login.RecoveryCode, Version = newest,
         });
         _log.Write("restored a backup from a server");
         await Dialogs.MessageAsync(this, title, "Your account is back on this computer, as another device of it. Yaparr will restart now.");
