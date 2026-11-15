@@ -337,6 +337,15 @@ public sealed class ChatRoom
     /// <summary>Adds a picture to the room's GIF shelf (PNG, JPEG, GIF or WebP up to <see cref="GifLimits.MaxBytes"/>).</summary>
     public GifInfo AddGif(byte[] data) => _node.AddGif(this, data);
 
+    /// <summary>
+    /// The room's custom emoji, by name: pictures any member added to be written as <c>:name:</c> (see <see cref="CustomEmoji"/>). They are kept with the shelf
+    /// (the same signed list, removals and take-downs: <see cref="RemoveGif"/> and <see cref="DeleteGif"/> work on their ids), but are not pictures to send.
+    /// </summary>
+    public IReadOnlyList<GifInfo> Emoji => _node.GetEmoji(this);
+
+    /// <summary>Adds a custom emoji to the room under a name. Throws <see cref="ArgumentException"/>, with a message for the person, for a name or picture that cannot be used or a name that is taken.</summary>
+    public GifInfo AddEmoji(string name, byte[] data) => _node.AddEmoji(this, name, data);
+
     /// <summary>Removes a picture you added.</summary>
     public void RemoveGif(string id) => _node.RemoveGif(this, id);
 

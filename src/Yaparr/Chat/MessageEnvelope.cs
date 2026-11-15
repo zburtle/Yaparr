@@ -30,7 +30,7 @@ public sealed record Mention(PeerId Account, string Name)
 /// What a message says besides its words: which earlier message it answers, and which people it names.
 /// <see cref="ReplyTo"/> is the <see cref="ChatMessage.Key"/> of that message.
 /// </summary>
-public sealed record MessageParts(string Body, string? ReplyTo, IReadOnlyList<Mention> Mentions, LinkPreview? Preview = null, ReactionEvent? Reaction = null)
+public sealed record MessageParts(string Body, string? ReplyTo, IReadOnlyList<Mention> Mentions, LinkPreview? Preview = null, ReactionEvent? Reaction = null, IReadOnlyList<CustomEmoji>? Emoji = null)
 {
     public static readonly MessageParts None = new("", null, Array.Empty<Mention>());
 }
@@ -60,22 +60,27 @@ public static class MessageEnvelope
     /// The text to send for <paramref name="body"/> that answers the message with key <paramref name="replyTo"/> and names
     /// <paramref name="mentions"/>. With neither, it is the body unchanged.
     /// </summary>
-    public static string Wrap(string body, string? replyTo, IReadOnlyCollection<Mention>? mentions, LinkPreview? preview = null)
+    public static string Wrap(string body, string? replyTo, IReadOnlyCollection<Mention>? mentions, LinkPreview? preview = null, IReadOnlyCollection<CustomEmoji>? emoji = null)
     {
         var named = (mentions ?? Array.Empty<Mention>()).Select(m => new Mention(m.Account, CleanName(m.Name))).Where(m => m.Name.Length > 0)
             .GroupBy(m => m.Account).Select(g => g.First()).Take(MaxMentions).ToArray();
         if (replyTo != null && !IsKey(replyTo)) throw new ArgumentException("That is not the key of a message.", nameof(replyTo));
         var card = preview?.Normalized();
-        if (replyTo == null && named.Length == 0 && card == null) return body;
+        // The custom emoji the words use, each once, within the limits: what is carried is only what the words show.
+        var written = CustomEmojiRules.NamesIn(body);
+        var used = (emoji ?? Array.Empty<CustomEmoji>()).Where(e => CustomEmojiRules.IsAcceptable(e) && written.Contains(e.Name))
+            .GroupBy(e => e.Name).Select(g => g.First()).Take(CustomEmojiRules.MaxPerMessage).ToArray();
+        if (replyTo == null && named.Length == 0 && card == null && used.Length == 0) return body;
         // A card that does not fit loses its picture first, then goes; the words and the people they name always come first.
         foreach (var candidate in card == null ? new LinkPreview?[] { null } : new[] { card, card with { Thumbnail = null }, null })
         {
             var header = JsonSerializer.Serialize(new Header
             {
                 R = replyTo, M = named.Length == 0 ? null : named.Select(m => new HeaderMention { A = m.Account.Value, N = m.Name }).ToArray(),
+                E = used.Length == 0 ? null : used.Select(e => new HeaderEmoji { N = e.Name, H = e.Hash, S = e.Size, M = e.Mime, W = e.Width, G = e.Height }).ToArray(),
                 P = candidate == null ? null : new HeaderPreview { U = candidate.Url, T = candidate.Title, D = candidate.Description.Length == 0 ? null : candidate.Description, I = candidate.Thumbnail is { Length: > 0 } th ? Convert.ToBase64String(th) : null },
             }, Json);
-            if (replyTo == null && named.Length == 0 && candidate == null) return body;
+            if (replyTo == null && named.Length == 0 && candidate == null && used.Length == 0) return body;
             var text = Marker + header + End + body;
             if (text.Length <= MaxText) return text;
         }
@@ -137,7 +142,7 @@ public static class MessageEnvelope
             var body = text[(end + 1)..];
             // A card is for a link that is in the words; a card for some other address is not shown.
             if (preview != null && !body.Contains(preview.Url, StringComparison.Ordinal)) preview = null;
-            return new MessageParts(body, reply, mentions, preview, reaction);
+            return new MessageParts(body, reply, mentions, preview, reaction, ReadEmoji(header.E, body));
         }
         catch (JsonException) { return new MessageParts(text, null, Array.Empty<Mention>()); }
     }
@@ -152,6 +157,19 @@ public static class MessageEnvelope
             try { thumb = Convert.FromBase64String(p.I); } catch (FormatException) { }
         }
         return new LinkPreview(p.U, p.T ?? "", p.D ?? "", thumb).Normalized();
+    }
+
+    // The custom emoji from the header: only those that are within the limits and that the words actually use, each name once.
+    private static IReadOnlyList<CustomEmoji>? ReadEmoji(HeaderEmoji[]? list, string body)
+    {
+        if (list == null || list.Length == 0) return null;
+        var written = CustomEmojiRules.NamesIn(body);
+        var read = list.Take(CustomEmojiRules.MaxPerMessage * 2)
+            .Where(e => e?.N != null && e.H != null && e.M != null)
+            .Select(e => new CustomEmoji(e.N!, e.H!.ToLowerInvariant(), e.S, e.M!, e.W, e.G))
+            .Where(e => CustomEmojiRules.IsAcceptable(e) && written.Contains(e.Name))
+            .GroupBy(e => e.Name).Select(g => g.First()).Take(CustomEmojiRules.MaxPerMessage).ToList();
+        return read.Count == 0 ? null : read;
     }
 
     // A reaction from the header: a message key and an emoji of the set, or nothing.
@@ -177,6 +195,17 @@ public static class MessageEnvelope
         public string? R { get; set; }
         public HeaderMention[]? M { get; set; }
         public HeaderPreview? P { get; set; }
+        public HeaderEmoji[]? E { get; set; }   // custom emoji the words use
+    }
+
+    private sealed class HeaderEmoji
+    {
+        public string? N { get; set; }   // the name, as in :name:
+        public string? H { get; set; }   // the hash of the picture
+        public int S { get; set; }       // its size in bytes
+        public string? M { get; set; }   // its type
+        public int W { get; set; }       // its width
+        public int G { get; set; }       // its height
     }
 
     private sealed class HeaderReaction

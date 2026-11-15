@@ -225,6 +225,8 @@ public sealed class AppData
     }
     /// <summary>Where the GIF shelf (pictures kept to send again) lives.</summary>
     public string ShelfDirectory => Path.Combine(Directory, "gifshelf");
+    /// <summary>Where a person's own custom emoji live (see <c>EmojiShelf</c>).</summary>
+    public string EmojiDirectory => Path.Combine(Directory, "emojishelf");
     public string VpnConfigPath => Path.Combine(Directory, "vpn.conf");
     private string SettingsPath => Path.Combine(Directory, "settings.json");
     private string IdentityPath => Path.Combine(Directory, "identity.key");

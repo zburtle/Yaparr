@@ -19,13 +19,18 @@ public static class GifLimits
 
 /// <summary>A picture on a room's GIF shelf.</summary>
 /// <param name="Available">The file itself is on this computer, so it can be shown and sent.</param>
-public sealed record GifInfo(string Id, PeerId Owner, string OwnerName, string Hash, int Size, string Mime, int Width, int Height, bool Available)
+/// <param name="Name">For a custom emoji of the room (the <c>name</c> in <c>:name:</c>); null for a picture on the shelf.</param>
+public sealed record GifInfo(string Id, PeerId Owner, string OwnerName, string Hash, int Size, string Mime, int Width, int Height, bool Available, string? Name = null)
 {
     public bool IsGif => Mime == "image/gif";
 }
 
-/// <summary>A signed statement by a room member that a picture is on the room's GIF shelf (or has been removed from it).</summary>
-public sealed record StoredGif(string From, string Pub, string Id, string OwnerName, string Hash, int Size, string Mime, int W, int H, long Ts, bool Deleted, string Sig);
+/// <summary>
+/// A signed statement by a room member that a picture is on the room's GIF shelf (or has been removed from it). With <paramref name="Emoji"/> set the
+/// picture is a custom emoji of the room, the name in <c>:name:</c>, and not a picture for the shelf. The name is covered by the signature only when
+/// there is one, so statements about pictures are exactly what older versions sign and check, and an older version ignores the statements about emoji.
+/// </summary>
+public sealed record StoredGif(string From, string Pub, string Id, string OwnerName, string Hash, int Size, string Mime, int W, int H, long Ts, bool Deleted, string Sig, string? Emoji = null);
 
 internal static class SignedGif
 {
@@ -35,9 +40,9 @@ internal static class SignedGif
 
     public static string NewId() => Convert.ToHexString(RandomNumberGenerator.GetBytes(8)).ToLowerInvariant();
 
-    public static StoredGif Create(PeerIdentity identity, string roomKey, string id, string ownerName, string hash, int size, string mime, int width, int height, long timestamp, bool deleted)
+    public static StoredGif Create(PeerIdentity identity, string roomKey, string id, string ownerName, string hash, int size, string mime, int width, int height, long timestamp, bool deleted, string? emoji = null)
     {
-        var unsigned = new StoredGif(identity.Id.Value, Convert.ToBase64String(identity.PublicKey), id, ownerName.Length <= MaxName ? ownerName : ownerName[..MaxName], hash, size, mime, width, height, timestamp, deleted, "");
+        var unsigned = new StoredGif(identity.Id.Value, Convert.ToBase64String(identity.PublicKey), id, ownerName.Length <= MaxName ? ownerName : ownerName[..MaxName], hash, size, mime, width, height, timestamp, deleted, "", emoji);
         return unsigned with { Sig = Convert.ToBase64String(identity.Sign(Payload(roomKey, unsigned))) };
     }
 
@@ -47,6 +52,9 @@ internal static class SignedGif
         if (!IsHex(g.Id, 16) || !IsHex(g.Hash, 64) || g.OwnerName.Length > MaxName) return false;
         if (!g.Deleted && (g.Size is < 1 or > GifLimits.MaxBytes || !Mimes.Contains(g.Mime)
                            || g.W is < 1 or > ImageSniffer.MaxDimension || g.H is < 1 or > ImageSniffer.MaxDimension)) return false;
+        // A custom emoji is held to the limits of one, as well.
+        if (g.Emoji != null && (!CustomEmojiRules.IsValidName(g.Emoji)
+                                || (!g.Deleted && !CustomEmojiRules.IsAcceptable(new CustomEmoji(g.Emoji, g.Hash, g.Size, g.Mime, g.W, g.H))))) return false;
         if (g.Ts > DateTimeOffset.UtcNow.Add(MaxFutureSkew).ToUnixTimeMilliseconds()) return false;
         try
         {
@@ -63,6 +71,7 @@ internal static class SignedGif
         {
             w.Write("yaparr-gif-v1"); w.Write(roomKey); w.Write(g.From); w.Write(g.Id); w.Write(g.OwnerName); w.Write(g.Hash);
             w.Write(g.Size); w.Write(g.Mime); w.Write(g.W); w.Write(g.H); w.Write(g.Ts); w.Write(g.Deleted);
+            if (g.Emoji != null) w.Write("emoji:" + g.Emoji);
         }
         return ms.ToArray();
     }

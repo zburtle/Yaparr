@@ -638,7 +638,7 @@
                                                 <Button IsVisible="{Binding NeedsAction}" Content="{Binding ActionText}" Classes="primary"
                                                         HorizontalAlignment="Center" VerticalAlignment="Center" Click="Download_Click" />
                                             </Grid>
-                                            <local:MessageText Classes="body" Classes.bigemoji="{Binding IsBigEmoji}" IsVisible="{Binding HasText}" Body="{Binding Text}" Marks="{Binding MentionMarks}" TextWrapping="Wrap" LinkClicked="MessageLink_Clicked" />
+                                            <local:MessageText Classes="body" Classes.bigemoji="{Binding IsBigEmoji}" EmojiImages="{Binding EmojiImages}" IsVisible="{Binding HasText}" Body="{Binding Text}" Marks="{Binding MentionMarks}" TextWrapping="Wrap" LinkClicked="MessageLink_Clicked" />
                                             <Border Classes="linkpreview" IsVisible="{Binding HasPreview}" PointerReleased="PreviewCard_PointerReleased" ToolTip.Tip="{Binding Card.Url}">
                                                 <Grid ColumnDefinitions="Auto,*">
                                                     <Image Source="{Binding PreviewImage}" IsVisible="{Binding HasPreviewImage}" Width="64" Height="64" Margin="0,0,8,0" Stretch="UniformToFill" VerticalAlignment="Top" />
@@ -737,6 +737,12 @@
                                 <WrapPanel x:Name="QuickRow" HorizontalAlignment="Center" />
                                 <TextBox x:Name="EmojiSearch" Watermark="Search emoji" MaxLength="40" />
                                 <StackPanel x:Name="EmojiTabs" Orientation="Horizontal" HorizontalAlignment="Center" />
+                                <!-- from the message box only: your own emoji, and the room's -->
+                                <StackPanel x:Name="CustomTabs" Orientation="Horizontal" Spacing="4" IsVisible="False">
+                                    <Button x:Name="MyEmojiTab" Content="My emoji" Padding="10,3" CornerRadius="14" Click="MyEmoji_Click" />
+                                    <Button x:Name="RoomEmojiTab" Content="This room" Padding="10,3" CornerRadius="14" Click="RoomEmoji_Click" />
+                                    <Button x:Name="AddEmojiButton" Content="Add…" Padding="10,3" CornerRadius="14" IsVisible="False" Click="AddEmoji_Click" ToolTip.Tip="Make an emoji from a small picture" />
+                                </StackPanel>
                                 <TextBlock x:Name="EmojiTitle" Classes="muted small" Margin="4,0,0,0" />
                                 <ScrollViewer MaxHeight="230" HorizontalScrollBarVisibility="Disabled">
                                     <WrapPanel x:Name="EmojiGrid" />
@@ -769,7 +775,8 @@
                                 <ListBox.ItemTemplate>
                                     <DataTemplate x:DataType="local:EmojiSuggestion">
                                         <StackPanel Orientation="Horizontal" Spacing="10">
-                                            <TextBlock Text="{Binding Emoji}" FontFamily="Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji, Twemoji Mozilla, Segoe UI Symbol" FontSize="18" VerticalAlignment="Center" />
+                                            <Image Source="{Binding Image}" IsVisible="{Binding HasImage}" Width="22" Height="22" Stretch="Uniform" VerticalAlignment="Center" />
+                                            <TextBlock Text="{Binding Emoji}" IsVisible="{Binding !HasImage}" FontFamily="Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji, Twemoji Mozilla, Segoe UI Symbol" FontSize="18" VerticalAlignment="Center" />
                                             <TextBlock Text="{Binding Code}" VerticalAlignment="Center" />
                                         </StackPanel>
                                     </DataTemplate>

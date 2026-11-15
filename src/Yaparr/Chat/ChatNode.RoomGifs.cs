@@ -49,14 +49,44 @@ public sealed partial class ChatNode
         }
     }
 
-    private GifInfo ToInfo(StoredGif g) => new(g.Id, new PeerId(g.From), g.OwnerName, g.Hash, g.Size, g.Mime, g.W, g.H, _blobs.Has(g.Hash));
+    private GifInfo ToInfo(StoredGif g) => new(g.Id, new PeerId(g.From), g.OwnerName, g.Hash, g.Size, g.Mime, g.W, g.H, _blobs.Has(g.Hash), g.Emoji);
 
     internal IReadOnlyList<GifInfo> GetGifs(ChatRoom room)
     {
         List<StoredGif> live;
-        lock (room.GifGate) live = room.GifEntries.Values.Where(g => !g.Deleted).ToList();
+        lock (room.GifGate) live = room.GifEntries.Values.Where(g => !g.Deleted && g.Emoji == null).ToList();
         return live.Where(g => IsValidPeerId(g.From) && !IsBlocked(new PeerId(g.From)) && !IsBannedIn(room, new PeerId(g.From)) && !IsGifDeleted(room, g.Id))
             .OrderByDescending(g => g.Ts).ThenBy(g => g.Id, StringComparer.Ordinal).Select(ToInfo).ToList();
+    }
+
+    // The room's custom emoji: one picture for each name. Where two members claimed the same name, the earlier statement keeps it (then the lower id), so
+    // every member sees the same one, whoever's list arrived first.
+    internal IReadOnlyList<GifInfo> GetEmoji(ChatRoom room)
+    {
+        List<StoredGif> live;
+        lock (room.GifGate) live = room.GifEntries.Values.Where(g => !g.Deleted && g.Emoji != null).ToList();
+        return live.Where(g => IsValidPeerId(g.From) && !IsBlocked(new PeerId(g.From)) && !IsBannedIn(room, new PeerId(g.From)) && !IsGifDeleted(room, g.Id))
+            .GroupBy(g => g.Emoji!).Select(group => group.OrderBy(g => g.Ts).ThenBy(g => g.Id, StringComparer.Ordinal).First())
+            .OrderBy(g => g.Emoji, StringComparer.Ordinal).Select(ToInfo).ToList();
+    }
+
+    internal GifInfo AddEmoji(ChatRoom room, string name, byte[] data)
+    {
+        var clean = CustomEmojiRules.CleanName(name)
+                    ?? throw new ArgumentException($"A name is {CustomEmojiRules.MinNameLength} to {CustomEmojiRules.MaxNameLength} letters, digits or underscores.");
+        if (EmojiTyping.FromShortcode(clean) != null) throw new ArgumentException($":{clean}: is the name of a standard emoji. Choose another name.");
+        if (!CustomEmojiRules.TryRead(data, out var info, out var problem)) throw new ArgumentException(problem);
+        var hash = Attachment.HashOf(data);
+        var taken = GetEmoji(room).FirstOrDefault(e => e.Name == clean);
+        if (taken != null)
+        {
+            if (taken.Hash == hash) return taken;
+            throw new ArgumentException($":{clean}: is already an emoji of this room.");
+        }
+        _blobs.Save(hash, data);
+        var entry = SignedGif.Create(_identity, room.Key, SignedGif.NewId(), DisplayName, hash, data.Length, info.Mime, info.Width, info.Height, NextTimestamp(), deleted: false, emoji: clean);
+        PublishGif(room, entry);
+        return ToInfo(entry);
     }
 
     internal byte[]? ReadGif(ChatRoom room, string id)
@@ -77,7 +107,7 @@ public sealed partial class ChatNode
         var hash = Attachment.HashOf(data);
         lock (room.GifGate)
         {
-            var same = room.GifEntries.Values.FirstOrDefault(g => !g.Deleted && g.Hash == hash && !IsGifDeleted(room, g.Id));
+            var same = room.GifEntries.Values.FirstOrDefault(g => !g.Deleted && g.Emoji == null && g.Hash == hash && !IsGifDeleted(room, g.Id));
             if (same != null) return ToInfo(same);
         }
         _blobs.Save(hash, data);
@@ -93,7 +123,7 @@ public sealed partial class ChatNode
         lock (room.GifGate) room.GifEntries.TryGetValue(id, out g);
         if (g == null || g.Deleted) throw new KeyNotFoundException("There is no such picture on the shelf.");
         if (g.From != Id.Value) throw new InvalidOperationException("Only the person who added a picture can remove it.");
-        PublishGif(room, SignedGif.Create(_identity, room.Key, id, g.OwnerName, g.Hash, g.Size, g.Mime, g.W, g.H, NextTimestamp(), deleted: true));
+        PublishGif(room, SignedGif.Create(_identity, room.Key, id, g.OwnerName, g.Hash, g.Size, g.Mime, g.W, g.H, NextTimestamp(), deleted: true, emoji: g.Emoji));
     }
 
     // Only so many removed pictures per person are kept; the oldest are forgotten. Call with GifGate held.
