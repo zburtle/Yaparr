@@ -28,6 +28,9 @@ public sealed class LowStream : IDisposable
     /// <summary>How long the stream stays after its last viewer left, with nobody in trouble, before it is taken away.</summary>
     public static readonly TimeSpan Unneeded = TimeSpan.FromSeconds(60);
 
+    /// <summary>How many must be watching the share before a lower stream is started for the ones in trouble.</summary>
+    public const int MinWatchers = 2;
+
     /// <summary>Whether shares offer a lower stream: unless YAPARR_LOW_STREAM is 0 or off.</summary>
     public static bool Enabled => !(Environment.GetEnvironmentVariable("YAPARR_LOW_STREAM")?.Trim().ToLowerInvariant() is "0" or "off" or "no" or "false");
 
@@ -55,6 +58,10 @@ public sealed class LowStream : IDisposable
     private readonly ShareStats _stats = new();
     private readonly FrameSender _sender;
     private readonly object _gate = new();
+    private readonly object _mailGate = new();
+    private readonly SemaphoreSlim _wake = new(0);
+    private readonly Task _worker;
+    private CapturedPicture? _mail;   // the picture waiting for the lower stream's thread
     private PictureScaler? _scaler;
     private InProcessEncoder? _encoder;
     private ScreenCodec _codec;
@@ -78,6 +85,7 @@ public sealed class LowStream : IDisposable
         _level = LevelFor(mainOptions());
         _sender = new FrameSender(DeliverAsync, _stats, () => _keyAsked = true, () => TimeSpan.FromSeconds(1.0 / Math.Max(1, _level.Fps)).Ticks);
         _sender.Start(_cts.Token);
+        _worker = Task.Factory.StartNew(() => WorkAsync(_cts.Token), _cts.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default).Unwrap();
     }
 
     /// <summary>The stream itself (its id, its viewers), or null while it is not needed.</summary>
@@ -96,13 +104,14 @@ public sealed class LowStream : IDisposable
     /// Once a second, from the share's quality watch: <paramref name="troubled"/> is how many viewers of the main stream said they are in trouble. The stream is
     /// started when one is, and taken away when nobody is in trouble and nobody has watched it for <see cref="Unneeded"/>.
     /// </summary>
-    public void Tick(long nowMs, int troubled)
+    public void Tick(long nowMs, int troubled, int watchers = int.MaxValue)
     {
         if (_disposed) return;
         if (troubled > 0 || Viewers > 0) Interlocked.Exchange(ref _neededAt, nowMs);
         if (_source == null)
         {
-            if (troubled <= 0) return;
+            // A second stream is for a room of more than one: with a single viewer the main stream itself is lowered (see QualityPolicy).
+            if (troubled <= 0 || watchers < MinWatchers) return;
             var level = LevelFor(_mainOptions());
             MediaSource source;
             try { source = _node.StartMedia(_room, Kind, NameFor(_main.Info.Id), signed: true, upstream: false, kbps: level.Kbps, channel: _main.Info.Channel); }
@@ -144,14 +153,44 @@ public sealed class LowStream : IDisposable
     }
 
     /// <summary>A picture of the share, as the share's loop encodes it (in memory or on the card). Called on the share's loop; returns quickly when nobody watches.</summary>
-    public void Offer(CapturedPicture picture) => Offer(scaler => scaler.Scale(picture, _level.MaxWidth, _level.MaxHeight));
-
-    /// <summary>A picture of the share as NV12 bytes (a Wayland share's).</summary>
-    public void Offer(byte[] nv12, int width, int height) => Offer(scaler => scaler.Scale(nv12, width, height, _level.MaxWidth, _level.MaxHeight));
-
-    private void Offer(Action<PictureScaler> scale)
+    public void Offer(CapturedPicture picture)
     {
         if (_disposed || _source == null || !Due()) return;
+        // Scaling and encoding happen on the lower stream's own thread, so they never delay the main stream's loop (and are not counted as its encoding time).
+        // One picture waits at most: a newer one replaces it when the thread is still busy.
+        var mine = picture.Clone();
+        CapturedPicture? replaced;
+        lock (_mailGate) { replaced = _mail; _mail = mine; }
+        replaced?.Dispose();
+        try { _wake.Release(); } catch (ObjectDisposedException) { }
+    }
+
+    /// <summary>A picture of the share as NV12 bytes (a Wayland share's; the buffer is reused by the caller, so this one is done at once).</summary>
+    public void Offer(byte[] nv12, int width, int height)
+    {
+        if (_disposed || _source == null || !Due()) return;
+        Encode(scaler => scaler.Scale(nv12, width, height, _level.MaxWidth, _level.MaxHeight));
+    }
+
+    private async Task WorkAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await _wake.WaitAsync(ct).ConfigureAwait(false);
+                CapturedPicture? picture;
+                lock (_mailGate) { picture = _mail; _mail = null; }
+                if (picture == null) continue;
+                using (picture) Encode(scaler => scaler.Scale(picture, _level.MaxWidth, _level.MaxHeight));
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private void Encode(Action<PictureScaler> scale)
+    {
+        if (_disposed) return;
         lock (_gate)
         {
             try
@@ -189,7 +228,11 @@ public sealed class LowStream : IDisposable
         long lastViewer = Interlocked.Read(ref _lastViewerAt);
         if (lastViewer == 0 || now - lastViewer > Linger.TotalSeconds * Stopwatch.Frequency)
         {
-            lock (_gate) StopEncoder();
+            // Not waited for: the lower stream's thread may be in the middle of a picture, and this is the share's loop; the next picture tries again.
+            if (Monitor.TryEnter(_gate))
+            {
+                try { StopEncoder(); } finally { Monitor.Exit(_gate); }
+            }
             return false;
         }
         long interval = (long)(Stopwatch.Frequency / (double)Math.Max(1, _level.Fps) * 0.9);
@@ -240,6 +283,8 @@ public sealed class LowStream : IDisposable
         if (_disposed) return;
         _disposed = true;
         _cts.Cancel();
+        try { _worker.Wait(TimeSpan.FromSeconds(5)); } catch (AggregateException) { }
+        lock (_mailGate) { _mail?.Dispose(); _mail = null; }
         _sender.Complete();
         _sender.Wait(TimeSpan.FromSeconds(2));
         lock (_gate)

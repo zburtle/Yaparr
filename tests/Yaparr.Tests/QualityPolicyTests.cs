@@ -74,7 +74,7 @@ public class QualityPolicyTests
     {
         var policy = new QualityPolicy();
         long now = 0;
-        Assert.Equal(new[] { (10, 1) }, Run(policy, ref now, 15, new RoomQuality(1, 1, 8, 1), viewers: 1));
+        Assert.Equal(new[] { (10, QualityLadder.Steps - 1) }, Run(policy, ref now, 15, new RoomQuality(1, 1, 8, 1), viewers: 1));   // the only viewer: straight to the lowest
     }
 
     [Fact]
@@ -169,18 +169,18 @@ public class QualityPolicyTests
         // trouble for 6 s, three seconds in which nothing arrives (a report late over a bad link): the six seconds stand and the count goes on from there
         var policy = new QualityPolicy();
         long now = 0;
-        Assert.Empty(Run(policy, ref now, 6, new RoomQuality(1, 1, 30, 1), viewers: 1));
-        Assert.Empty(Run(policy, ref now, 3, RoomQuality.None, viewers: 1));
-        Assert.Empty(Run(policy, ref now, 3, new RoomQuality(1, 1, 30, 1), viewers: 1));   // nine seconds of trouble in all
-        Assert.Equal(new[] { (1, 1) }, Run(policy, ref now, 1, new RoomQuality(1, 1, 30, 1), viewers: 1));
+        Assert.Empty(Run(policy, ref now, 6, new RoomQuality(2, 2, 30, 1), viewers: 2));
+        Assert.Empty(Run(policy, ref now, 3, RoomQuality.None, viewers: 2));
+        Assert.Empty(Run(policy, ref now, 3, new RoomQuality(2, 2, 30, 1), viewers: 2));   // nine seconds of trouble in all
+        Assert.Equal(new[] { (1, 1) }, Run(policy, ref now, 1, new RoomQuality(2, 2, 30, 1), viewers: 2));
 
         // a gap longer than the carry (15 s) is no information, and the count starts again after it
         var longGap = new QualityPolicy();
         now = 0;
-        Run(longGap, ref now, 6, new RoomQuality(1, 1, 30, 1), viewers: 1);
-        Assert.Empty(Run(longGap, ref now, 20, RoomQuality.None, viewers: 1));
-        Assert.Empty(Run(longGap, ref now, 9, new RoomQuality(1, 1, 30, 1), viewers: 1));
-        Assert.Equal(new[] { (1, 1) }, Run(longGap, ref now, 1, new RoomQuality(1, 1, 30, 1), viewers: 1));
+        Run(longGap, ref now, 6, new RoomQuality(2, 2, 30, 1), viewers: 2);
+        Assert.Empty(Run(longGap, ref now, 20, RoomQuality.None, viewers: 2));
+        Assert.Empty(Run(longGap, ref now, 9, new RoomQuality(2, 2, 30, 1), viewers: 2));
+        Assert.Equal(new[] { (1, 1) }, Run(longGap, ref now, 1, new RoomQuality(2, 2, 30, 1), viewers: 2));
     }
 
     [Fact]
@@ -278,14 +278,14 @@ public class QualityPolicyTests
         long now = 0;
         var behind = new OwnLink(0, 0, 1, SenderBehind: true);
         // A viewer in trouble for a minute, but the sharer itself is not sending its pictures: nothing changes, and the decision says why.
-        Assert.Empty(Run(policy, ref now, 60, new RoomQuality(1, 1), behind, viewers: 1));
+        Assert.Empty(Run(policy, ref now, 60, new RoomQuality(2, 2), behind, viewers: 2));
         now += 1000;
-        Assert.True(policy.Tick(now, new RoomQuality(1, 1), behind, 1).SenderBehind);
+        Assert.True(policy.Tick(now, new RoomQuality(2, 2), behind, 2).SenderBehind);
         // Sending again: trouble counts from here (ten seconds, not ten seconds less the minute that went by).
-        Assert.Empty(Run(policy, ref now, 9, new RoomQuality(1, 1), viewers: 1));
-        Assert.Equal(new[] { (1, 1) }, Run(policy, ref now, 1, new RoomQuality(1, 1), viewers: 1));
+        Assert.Empty(Run(policy, ref now, 9, new RoomQuality(2, 2), viewers: 2));
+        Assert.Equal(new[] { (1, 1) }, Run(policy, ref now, 1, new RoomQuality(2, 2), viewers: 2));
         // And it is not raised again while the sender is behind, however quiet the viewers are.
-        Assert.Empty(Run(policy, ref now, 90, new RoomQuality(1, 0), behind, viewers: 1));
+        Assert.Empty(Run(policy, ref now, 90, new RoomQuality(2, 0), behind, viewers: 2));
         Assert.Equal(1, policy.Step);
     }
 
@@ -296,7 +296,7 @@ public class QualityPolicyTests
         long now = 0;
         // Trouble all the time (as a viewer's last ten seconds still say just after a change): the step down comes after ten seconds, and the next one only after
         // twelve seconds of settling and ten of trouble, not ten seconds later.
-        Assert.Equal(new[] { (10, 1), (31, 2) }, Run(policy, ref now, 40, new RoomQuality(1, 1), viewers: 1));
+        Assert.Equal(new[] { (10, 1), (31, 2) }, Run(policy, ref now, 40, new RoomQuality(2, 2), viewers: 2));
     }
 
     [Fact]
@@ -304,10 +304,10 @@ public class QualityPolicyTests
     {
         var policy = new QualityPolicy();
         long now = 0;
-        Assert.Equal(new[] { (10, 1) }, Run(policy, ref now, 10, new RoomQuality(1, 1), viewers: 1));
+        Assert.Equal(new[] { (10, 1) }, Run(policy, ref now, 10, new RoomQuality(2, 2), viewers: 2));
         // The viewer still says trouble for the first ten seconds or so (its window holds the level before), then the new level shows as clean.
-        Assert.Empty(Run(policy, ref now, 11, new RoomQuality(1, 1), viewers: 1));
-        Assert.Empty(Run(policy, ref now, 20, new RoomQuality(1, 0), viewers: 1));
+        Assert.Empty(Run(policy, ref now, 11, new RoomQuality(2, 2), viewers: 2));
+        Assert.Empty(Run(policy, ref now, 20, new RoomQuality(2, 0), viewers: 2));
         Assert.Equal(1, policy.Step);
     }
 
@@ -316,11 +316,11 @@ public class QualityPolicyTests
     {
         var policy = new QualityPolicy();
         long now = 0;
-        Run(policy, ref now, 10, new RoomQuality(1, 1), viewers: 1);   // down to step 1
+        Run(policy, ref now, 10, new RoomQuality(2, 2), viewers: 2);   // down to step 1
         int quiet = 0;
-        while (policy.Step == 1) { Run(policy, ref now, 1, new RoomQuality(1, 0), viewers: 1); Assert.True(++quiet < 200); }
+        while (policy.Step == 1) { Run(policy, ref now, 1, new RoomQuality(2, 0), viewers: 2); Assert.True(++quiet < 200); }
         Assert.Equal(0, policy.Step);
-        Assert.Empty(Run(policy, ref now, 11, new RoomQuality(1, 1), viewers: 1));
-        Assert.Equal(new[] { (10, 1) }, Run(policy, ref now, 10, new RoomQuality(1, 1), viewers: 1));
+        Assert.Empty(Run(policy, ref now, 11, new RoomQuality(2, 2), viewers: 2));
+        Assert.Equal(new[] { (10, 1) }, Run(policy, ref now, 10, new RoomQuality(2, 2), viewers: 2));
     }
 }
