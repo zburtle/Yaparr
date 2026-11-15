@@ -129,7 +129,15 @@ public sealed class QualityPolicy
             string why = roomTrouble ? $"{room.Troubled} of {room.Reported} viewers lost frames for {_s.TroubleSeconds} s" : $"this computer's own link: {own.ResentFraction * 100:0}% sent again, {own.Dropped} dropped";
             // A step up that was followed by trouble within the minute: the link cannot take it, so the next try is further off.
             if (nowMs - _lastUp < _s.FlapSeconds * 1000L) _upWaitSeconds = Math.Min(_upWaitSeconds * 2, _s.BackoffMaxSeconds);
-            Step++;
+            // The one viewer there is, in trouble: nobody else is held back by going to the lowest step at once, and no second stream is made for one person
+            // (see LowStream), so it goes straight to the bottom of the ladder instead of a step at a time.
+            bool soleViewer = roomTrouble && !ownTrouble && room.Reported == 1 && viewers <= 1;
+            if (soleViewer)
+            {
+                Step = _s.MaxStep;
+                why = $"the only viewer lost frames for {_s.TroubleSeconds} s, so straight to the lowest quality";
+            }
+            else Step++;
             _lastChange = nowMs;
             _settleUntil = nowMs + _s.SettleSeconds * 1000L;
             _troubleSince = nowMs;

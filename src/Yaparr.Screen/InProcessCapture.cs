@@ -334,6 +334,9 @@ public sealed unsafe class CapturedPicture : IDisposable
     public int Width => Frame->width;
     public int Height => Frame->height;
 
+    /// <summary>Another reference to the same picture (not a copy of its pixels), to be disposed on its own.</summary>
+    public CapturedPicture Clone() => new(ffmpeg.av_frame_clone(Frame));
+
     public void Dispose()
     {
         if (Frame == null) return;
