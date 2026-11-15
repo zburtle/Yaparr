@@ -18,6 +18,9 @@ public interface IChatHistoryStore
     /// <summary>Keeps a message. False when the room already has it. <paramref name="reactionTarget"/> is null for a message and the key of the message a reaction is on (empty when it is not a good one).</summary>
     bool Add(string roomKey, string key, StoredMessage message, string? reactionTarget);
 
+    /// <summary>Whether any message kept here, in any room or conversation, has <paramref name="text"/> in it (a picture's hash, to know whether a file is still wanted).</summary>
+    bool Mentions(string text);
+
     /// <summary>Keeps many messages at once (bringing history over from elsewhere); those already held are left alone. Returns how many were new.</summary>
     int AddMany(string roomKey, IEnumerable<(string Key, StoredMessage Message, string? Target)> messages)
     {
@@ -58,8 +61,84 @@ public interface IChatHistoryStore
 }
 
 /// <summary>Keeps messages in memory only: for a node that has no store, and for tests.</summary>
-public sealed class MemoryHistoryStore : IChatHistoryStore
+public sealed class MemoryHistoryStore : IChatHistoryStore, IDirectHistoryStore
 {
+    private readonly Dictionary<string, Dictionary<string, (DirectRecord Record, string? Target)>> _chats = new();
+
+    private Dictionary<string, (DirectRecord Record, string? Target)> Chat(string peer) =>
+        _chats.TryGetValue(peer, out var chat) ? chat : _chats[peer] = new();
+
+    public bool AddDirect(string key, DirectRecord record, string? reactionTarget)
+    {
+        lock (_gate) return Chat(record.Peer).TryAdd(key, (record, reactionTarget));
+    }
+
+    public IReadOnlyList<DirectRecord> DirectNewest(string peer, int count)
+    {
+        lock (_gate)
+            return Chat(peer).Where(kv => kv.Value.Target == null).OrderByDescending(kv => kv.Value.Record.Ts).ThenByDescending(kv => kv.Key, StringComparer.Ordinal)
+                .Take(count).Select(kv => kv.Value.Record).ToList();
+    }
+
+    public IReadOnlyList<DirectRecord> DirectBefore(string peer, long ts, string key, int count)
+    {
+        lock (_gate)
+            return Chat(peer).Where(kv => kv.Value.Target == null && (kv.Value.Record.Ts < ts || kv.Value.Record.Ts == ts && string.CompareOrdinal(kv.Key, key) < 0))
+                .OrderByDescending(kv => kv.Value.Record.Ts).ThenByDescending(kv => kv.Key, StringComparer.Ordinal).Take(count).Select(kv => kv.Value.Record).ToList();
+    }
+
+    public DirectRecord? DirectFind(string peer, string key)
+    {
+        lock (_gate) return Chat(peer).TryGetValue(key, out var v) ? v.Record : null;
+    }
+
+    public IReadOnlyList<DirectRecord> DirectReactionsTo(string peer, IReadOnlyCollection<string> targets)
+    {
+        var wanted = targets.ToHashSet();
+        lock (_gate) return Chat(peer).Values.Where(v => v.Target != null && wanted.Contains(v.Target)).Select(v => v.Record).ToList();
+    }
+
+    public DirectRecord? DirectOwn(string peer, string id)
+    {
+        lock (_gate) return Chat(peer).Values.Select(v => v.Record).FirstOrDefault(r => r.Id == id && r.Mine);
+    }
+
+    public bool DirectAny(string peer)
+    {
+        lock (_gate) return _chats.TryGetValue(peer, out var chat) && chat.Count > 0;
+    }
+
+    public long DirectNewestIncoming(string peer)
+    {
+        lock (_gate) return Chat(peer).Values.Where(v => !v.Record.Mine).Select(v => v.Record.Ts).DefaultIfEmpty(0).Max();
+    }
+
+    public IReadOnlyList<string> DirectPeers()
+    {
+        lock (_gate) return _chats.Where(kv => kv.Value.Count > 0).Select(kv => kv.Key).ToList();
+    }
+
+    public string DirectLastName(string peer)
+    {
+        lock (_gate)
+            return Chat(peer).Values.Select(v => v.Record).Where(r => !r.Mine && r.Name.Length > 0).OrderByDescending(r => r.Ts).Select(r => r.Name).FirstOrDefault() ?? "";
+    }
+
+    public IReadOnlyList<(string Key, DirectRecord Record)> DirectWindow(long sinceTs, int perChat, int reactions, int cap)
+    {
+        lock (_gate)
+        {
+            var all = new List<(string Key, DirectRecord Record)>();
+            foreach (var chat in _chats.Values)
+            {
+                var recent = chat.Where(kv => kv.Value.Record.Ts >= sinceTs).ToList();
+                all.AddRange(recent.Where(kv => kv.Value.Target == null).OrderByDescending(kv => kv.Value.Record.Ts).Take(perChat).Select(kv => (kv.Key, kv.Value.Record)));
+                all.AddRange(recent.Where(kv => kv.Value.Target != null).OrderByDescending(kv => kv.Value.Record.Ts).Take(reactions).Select(kv => (kv.Key, kv.Value.Record)));
+            }
+            return all.OrderByDescending(w => w.Record.Ts).Take(cap).ToList();
+        }
+    }
+
     private readonly object _gate = new();
     private readonly Dictionary<string, Dictionary<string, (StoredMessage Message, string? Target)>> _rooms = new();
 
@@ -74,6 +153,13 @@ public sealed class MemoryHistoryStore : IChatHistoryStore
     public void Remove(string roomKey, IReadOnlyCollection<string> keys)
     {
         lock (_gate) { var room = Room(roomKey); foreach (var k in keys) room.Remove(k); }
+    }
+
+    public bool Mentions(string text)
+    {
+        lock (_gate)
+            return _rooms.Values.Any(r => r.Values.Any(v => v.Message.Text.Contains(text, StringComparison.Ordinal)))
+                   || _chats.Values.Any(c => c.Values.Any(v => v.Record.Text.Contains(text, StringComparison.Ordinal)));
     }
 
     private static string Channel(StoredMessage m) => m.Chan ?? "";
@@ -331,6 +417,9 @@ internal sealed class RoomHistory
 
     public IReadOnlyList<StoredMessage> ReactionsTo(IReadOnlyCollection<string> targets) =>
         targets.Count == 0 ? Array.Empty<StoredMessage>() : _store.ReactionsTo(_roomKey, targets);
+
+    /// <summary>Whether any message in the store (of any room or conversation) mentions this text.</summary>
+    public bool Mentions(string text) => _store.Mentions(text);
 
     public IReadOnlyList<StoredMessage> ByAuthors(IReadOnlyCollection<string> authors) =>
         authors.Count == 0 ? Array.Empty<StoredMessage>() : _store.ByAuthors(_roomKey, authors);

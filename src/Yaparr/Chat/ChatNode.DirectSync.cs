@@ -90,18 +90,53 @@ public sealed partial class ChatNode
     public IReadOnlyList<DirectChat> StoredDirectChats =>
         _directHistory.Peers().Select(p => GetDirectChat(new PeerId(p))).ToList();
 
-    /// <summary>The reactions in a direct chat: yours and the other person's.</summary>
-    internal ReactionSet GetDirectReactions(PeerId person) =>
-        ReactionTally.Build(_directHistory.For(person.Value).Where(r => MessageEnvelope.IsReactionText(r.Text)).Select(r => (DirectHistory.Key(r), r.Mine ? AccountId.Value : person.Value, r.Ts, r.Text)),
+    /// <summary>
+    /// The reactions on the messages with these keys in a direct chat: yours and the other person's. Without keys, those on the messages
+    /// <see cref="GetDirectHistory"/> returns.
+    /// </summary>
+    internal ReactionSet GetDirectReactions(PeerId person, IReadOnlyCollection<string>? keys = null)
+    {
+        keys ??= _directHistory.Newest(person.Value, InitialHistoryPerChannel).Select(r => ChatMessage.KeyOf(r.Mine ? Id : person, r.Id)).ToList();
+        return ReactionTally.Build(_directHistory.ReactionsTo(person.Value, keys).Select(r => (DirectHistory.Key(r), r.Mine ? AccountId.Value : person.Value, r.Ts, r.Text)),
             from => new PeerId(from), account => account != AccountId && IsBlocked(account));
+    }
 
+    private ChatMessage ToDirectMessage(DirectRecord r, PeerId person) => BuildMessage(
+        r.Mine ? new PeerInfo(Id, DisplayName, null, false, AccountId) : new PeerInfo(person, r.Name.Length > 0 ? r.Name : person.Short, null, false, person),
+        null, r.Id, r.Text, DateTimeOffset.FromUnixTimeMilliseconds(r.Ts));
+
+    private bool IsShownDirect(DirectRecord r, PeerId person) => r.Mine || !IsBlocked(person);
+
+    /// <summary>The newest <see cref="InitialHistoryPerChannel"/> messages of a direct chat, oldest first.</summary>
     internal IReadOnlyList<ChatMessage> GetDirectHistory(PeerId person) =>
-        _directHistory.For(person.Value)
-            .Where(r => !MessageEnvelope.IsReactionText(r.Text) && (r.Mine || !IsBlocked(person)))
-            .Select(r => BuildMessage(
-                r.Mine ? new PeerInfo(Id, DisplayName, null, false, AccountId) : new PeerInfo(person, r.Name.Length > 0 ? r.Name : person.Short, null, false, person),
-                null, r.Id, r.Text, DateTimeOffset.FromUnixTimeMilliseconds(r.Ts)))
-            .ToList();
+        _directHistory.Newest(person.Value, InitialHistoryPerChannel).Where(r => IsShownDirect(r, person)).Select(r => FetchingDirect(r, person)).ToList();
+
+    private ChatMessage FetchingDirect(DirectRecord r, PeerId person)
+    {
+        var shown = ToDirectMessage(r, person);
+        AutoFetch(shown, trustedOnly: !r.Mine && !IsAcquaintanceAccount(person));
+        return shown;
+    }
+
+    /// <summary>Messages of a direct chat before the one with this id (<see cref="ChatMessage.Id"/>), oldest first (see <see cref="GetEarlierHistory"/>).</summary>
+    internal HistoryPage GetEarlierDirectHistory(PeerId person, string beforeId, int count)
+    {
+        if (_directHistory.FindById(person.Value, beforeId) is not { } at) return new HistoryPage(Array.Empty<ChatMessage>(), false);
+        long ts = at.Ts;
+        string key = DirectHistory.Key(at);
+        var shown = new List<ChatMessage>();
+        for (int round = 0; round < 20; round++)
+        {
+            var raw = _directHistory.Before(person.Value, ts, key, count);
+            foreach (var r in raw) if (IsShownDirect(r, person)) shown.Add(FetchingDirect(r, person));
+            if (raw.Count < count) { shown.Reverse(); return new HistoryPage(shown, false); }
+            ts = raw[^1].Ts;
+            key = DirectHistory.Key(raw[^1]);
+            if (shown.Count > 0) { shown.Reverse(); return new HistoryPage(shown, true); }
+        }
+        shown.Reverse();
+        return new HistoryPage(shown, true);
+    }
 
     internal string? DirectNameOf(PeerId person) => _directHistory.LastName(person.Value) is { Length: > 0 } name ? name : null;
 
@@ -115,7 +150,7 @@ public sealed partial class ChatNode
 
     internal void MarkDirectRead(PeerId person)
     {
-        var newest = _directHistory.For(person.Value).Where(r => !r.Mine).Select(r => r.Ts).DefaultIfEmpty(0).Max();
+        var newest = _directHistory.NewestIncoming(person.Value);
         if (newest == 0 || DirectReadUpTo(person) is { } already && already.ToUnixTimeMilliseconds() >= newest) return;
         Stamp(ReadPrefix + person.Value, newest.ToString(), deleted: false);
     }

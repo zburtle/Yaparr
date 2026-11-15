@@ -406,16 +406,50 @@ public sealed class ConversationVm : Observable
     public Func<IReadOnlyCollection<string>, ReactionSet>? ReactionSource { get; set; }
 
     /// <summary>
-    /// Reads messages from before the one with a key, in a channel (null in a chat without channels): the messages, oldest first, and whether there are still
+    /// Reads messages from before the one with a key and an id, in a channel (null in a chat without channels): the messages, oldest first, and whether there are still
     /// earlier ones. Null where there is nothing to read back to (a chat whose history is all shown).
     /// </summary>
-    public Func<string?, string, Task<(IReadOnlyList<MessageVm> Messages, bool HasMore)>>? EarlierSource { get; set; }
+    public Func<string?, string, string, Task<(IReadOnlyList<MessageVm> Messages, bool HasMore)>>? EarlierSource { get; set; }
+
+    /// <summary>
+    /// Asks the other people in the conversation for the messages before the one with this key and id (in a channel), when this device holds nothing earlier; returns how
+    /// many were asked. What they send is kept, and <see cref="NoteEarlierArrived"/> says so. Null where nobody can be asked (the history of a direct chat).
+    /// </summary>
+    public Func<string?, string, string, int>? AskOthersForEarlier { get; set; }
 
     private bool _loadingEarlier;
     private readonly HashSet<string> _nothingEarlier = new();
+    private readonly Dictionary<string, long> _askedAt = new();
 
-    /// <summary>Whether earlier messages of the channel on show can still be read.</summary>
-    public bool HasEarlier => EarlierSource != null && !_nothingEarlier.Contains(IsRoom ? CurrentChannel : "");
+    /// <summary>How long after asking the others for earlier messages they are asked again (when the list is scrolled to the top again).</summary>
+    public const long AskAgainAfterMs = 60_000;
+
+    /// <summary>
+    /// Whether earlier messages of the channel on show can still be read: those this device holds, and, a minute after the others were last asked for
+    /// more, those they may have.
+    /// </summary>
+    public bool HasEarlier
+    {
+        get
+        {
+            if (EarlierSource == null) return false;
+            string channel = IsRoom ? CurrentChannel : "";
+            return !_nothingEarlier.Contains(channel)
+                   || AskOthersForEarlier != null && Environment.TickCount64 - _askedAt.GetValueOrDefault(channel, long.MinValue / 2) >= AskAgainAfterMs;
+        }
+    }
+
+    private long _lastAskTick = long.MinValue / 2;
+
+    /// <summary>Members answer a request for earlier messages every couple of seconds; asking again sooner would be ignored.</summary>
+    public const long MinGapBetweenAsksMs = 2500;
+
+    /// <summary>The others sent earlier messages that are kept now: reading them can go on, and when those run out they are asked again at once.</summary>
+    public void NoteEarlierArrived()
+    {
+        _nothingEarlier.Clear();
+        _askedAt.Clear();
+    }
 
     /// <summary>
     /// Reads the page of messages before the oldest one shown and puts it above. Returns how many were added; 0 when there is nothing earlier, a page is
@@ -430,10 +464,26 @@ public sealed class ConversationVm : Observable
         _loadingEarlier = true;
         try
         {
-            var (messages, more) = await EarlierSource!(IsRoom ? CurrentChannel : null, oldest.Key!);
+            var (messages, more) = await EarlierSource!(IsRoom ? CurrentChannel : null, oldest.Key!, oldest.Id ?? "");
             // The room may have been switched to another channel while the page was being read: it still belongs to the channel it was read for.
             foreach (var m in messages) Add(m);
-            if (!more) _nothingEarlier.Add(channel);
+            if (!more)
+            {
+                // This device has nothing earlier: the others may have, and are asked (not again for a minute, whatever the list does).
+                _nothingEarlier.Add(channel);
+                var first = Messages.FirstOrDefault(m => m.Key != null);
+                if (first != null && AskOthersForEarlier is { } ask && Environment.TickCount64 - _askedAt.GetValueOrDefault(channel, long.MinValue / 2) >= AskAgainAfterMs)
+                {
+                    long now = Environment.TickCount64;
+                    _askedAt[channel] = now;
+                    string? askChannel = IsRoom ? channel : null;
+                    string key = first.Key!, id = first.Id ?? "";
+                    long wait = Math.Max(0, MinGapBetweenAsksMs - (now - _lastAskTick));
+                    _lastAskTick = now + wait;
+                    if (wait == 0) ask(askChannel, key, id);
+                    else _ = Task.Delay((int)wait).ContinueWith(_ => ask(askChannel, key, id), TaskScheduler.Default);
+                }
+            }
             return messages.Count;
         }
         finally { _loadingEarlier = false; }

@@ -42,6 +42,7 @@ public partial class MainWindow
             double offset = scroll.Offset.Y, extent = scroll.Extent.Height;
             int added = await conv.LoadEarlierAsync();
             if (added == 0 || _selected != conv) return;
+            RefreshReactions(conv);
             // The new messages went in above, so what was on screen is lower by as much as the list grew: the view is moved by the same amount, and
             // again once the new items have been measured (the size of rows that were not shown is only known by then).
             Dispatcher.UIThread.Post(() => KeepPlace(scroll, offset, extent), DispatcherPriority.Loaded);

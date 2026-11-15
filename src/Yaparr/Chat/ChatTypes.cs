@@ -148,7 +148,16 @@ internal sealed class Wire
 
     public const string Direct = "dm", DirectSync = "dmsync";
 
+    /// <summary>A request for the direct messages before a time (<c>Text</c> is the other person's account, <c>Ts</c> the time, <c>N</c> how many), and the answer (<c>Dm</c>, in the order of the asker's side of the conversation).</summary>
+    public const string DirectBack = "dmback";
+
     public const string Caps = "caps", Rename = "name", Account = "acct", Media = "media", Sound = "snd", Gif = "gif", Play = "play", Roles = "roles", Moderate = "mod", Channels = "chan", Rekey = "rekey", Takeover = "takeover", Speed = "speed";
+
+    /// <summary>With <see cref="Wire.Back"/>: how many earlier messages are asked for.</summary>
+    public int N { get; set; }
+
+    /// <summary>A request for the messages before one: the room's <c>Room</c>, the channel in <c>Text</c> (empty for the first), the message's time in <c>Ts</c>, its key in <c>Id</c> and how many in <c>N</c>. Answered with <see cref="History"/>.</summary>
+    public const string Back = "back";
 
     public const string Ack = "ack", Hello = "hi", Join = "join", Leave = "leave", Message = "msg", Introduce = "peers", Sync = "sync", Want = "want", History = "hist", Links = "links", Presence = "pres", Voice = "voice";
 }

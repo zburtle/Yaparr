@@ -370,7 +370,13 @@ public sealed partial class ChatNode
             voiceChanged = gone.Count > 0;
         }
 
-        if (view.Messages.Count > 0) room.History.Remove(view.Messages);
+        if (view.Messages.Count > 0)
+        {
+            // The pictures of the messages that go are deleted too, unless another message (in any room or chat) shows the same file, or it is a sound or a GIF.
+            var pictures = room.History.Find(view.Messages).Select(m => Attachment.TryParse(m.Text, out var a, out _) ? a.Hash : null).OfType<string>().Distinct().ToList();
+            room.History.Remove(view.Messages);
+            ReleasePictureFiles(pictures);
+        }
 
         // Sounds an admin took down no longer need their files.
         if (view.Sounds.Count > 0)

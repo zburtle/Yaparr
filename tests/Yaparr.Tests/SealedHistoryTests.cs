@@ -185,38 +185,52 @@ public class SealedHistoryTests : IDisposable
         Assert.Empty(store.Load("roomB"));
     }
 
+    // The files of earlier versions: one for each conversation, a line for each message, sealed with the history key (or plain, from before sealing).
+    private static void WriteDirectFile(string dir, string peer, HistoryCipher? cipher, params DirectRecord[] records)
+    {
+        var name = $"dm-{peer}.jsonl";
+        var json = new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web);
+        File.WriteAllLines(Path.Combine(dir, name), records.Select(r =>
+        {
+            var line = System.Text.Json.JsonSerializer.Serialize(r, json);
+            return cipher == null ? line : cipher.Seal(line, name);
+        }));
+    }
+
     [Fact]
-    public void Direct_history_is_sealed_on_disk_and_a_different_key_leaves_the_files_alone()
+    public void Direct_history_files_are_brought_over_and_a_different_key_leaves_them_alone()
     {
         var cipher = new HistoryCipher(new byte[32]);
         var peer = new string('a', 64);
         var record = new DirectRecord("m1", peer, "bob", true, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), "meet me at the usual place");
-        var history = new DirectHistory(_dir, 500, TimeSpan.FromDays(7), cipher);
-        Assert.True(history.TryAdd(record));
-
+        WriteDirectFile(_dir, peer, cipher, record);
         var file = Path.Combine(_dir, $"dm-{peer}.jsonl");
         var onDisk = File.ReadAllText(file);
         Assert.DoesNotContain("usual place", onDisk);
-        Assert.DoesNotContain("bob", onDisk);
-        Assert.Single(new DirectHistory(_dir, 500, TimeSpan.FromDays(7), cipher).For(peer));
 
-        var other = new DirectHistory(_dir, 500, TimeSpan.FromDays(7), new HistoryCipher([.. Enumerable.Repeat((byte)7, 32)]));
-        Assert.Empty(other.For(peer));
-        Assert.Equal(onDisk, File.ReadAllText(file));   // not deleted or rewritten: the right key can still open it
+        // Another key cannot open the lines: nothing is brought over and the file stays, for the right key.
+        var elsewhere = new MemoryHistoryStore();
+        Assert.Equal(0, DirectHistoryImport.FromFiles(elsewhere, _dir, new HistoryCipher([.. Enumerable.Repeat((byte)7, 32)])));
+        Assert.False(elsewhere.DirectAny(peer));
+        Assert.Equal(onDisk, File.ReadAllText(file));
+
+        var store = new MemoryHistoryStore();
+        Assert.Equal(1, DirectHistoryImport.FromFiles(store, _dir, cipher));
+        Assert.Equal("meet me at the usual place", store.DirectNewest(peer, 10).Single().Text);
+        Assert.False(File.Exists(file));
     }
 
     [Fact]
-    public void Direct_history_from_before_sealing_is_read_and_then_sealed()
+    public void Direct_history_from_before_sealing_is_brought_over_too()
     {
         var peer = new string('b', 64);
-        var plain = new DirectHistory(_dir, 500, TimeSpan.FromDays(7));
-        plain.TryAdd(new DirectRecord("m1", peer, "bob", false, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), "an older message"));
+        WriteDirectFile(_dir, peer, null, new DirectRecord("m1", peer, "bob", false, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), "an older message"));
         var file = Path.Combine(_dir, $"dm-{peer}.jsonl");
         Assert.Contains("an older message", File.ReadAllText(file));
 
-        var sealedHistory = new DirectHistory(_dir, 500, TimeSpan.FromDays(7), new HistoryCipher(new byte[32]));
-
-        Assert.Single(sealedHistory.For(peer));
-        Assert.DoesNotContain("an older message", File.ReadAllText(file));
+        var store = new MemoryHistoryStore();
+        Assert.Equal(1, DirectHistoryImport.FromFiles(store, _dir, new HistoryCipher(new byte[32])));
+        Assert.Equal("an older message", store.DirectNewest(peer, 10).Single().Text);
+        Assert.False(File.Exists(file));
     }
 }

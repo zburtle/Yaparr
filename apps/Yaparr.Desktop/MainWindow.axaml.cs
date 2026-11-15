@@ -740,7 +740,10 @@ public partial class MainWindow : Window
         room.RolesChanged += () => UI(() => { RefreshPeers(); RefreshMembers(); });
         room.ChannelsChanged += () => UI(() => RefreshChannels(conv, room));
         room.SecretChanged += (before, after) => UI(() => OnSecretChanged(conv, before, after));
-        conv.EarlierSource = (channel, beforeKey) => ReadEarlierAsync(room, channel, beforeKey);
+        conv.EarlierSource = (channel, beforeKey, _) => ReadEarlierAsync(room, channel, beforeKey);
+        conv.AskOthersForEarlier = (channel, key, _) => room.RequestEarlierHistory(channel, key);
+        // What the others sent is kept: it is read the same way, the next time the list is at its top (or now, if it is).
+        room.EarlierHistoryReceived += () => UI(() => { conv.NoteEarlierArrived(); RefreshReactions(conv); if (_selected == conv) MaybeLoadEarlier(); });
         room.ModerationChanged += () => UI(() => { conv.Reload(room.GetHistory().Select(ToVm).ToList(), room.WhichAreShown); RefreshReactions(conv); RefreshPeers(); RefreshMembers(); });
 
         if (_settings.RoomChannels.TryGetValue(room.RoomId, out var wantedChannel)) conv.PendingChannel = wantedChannel;
@@ -907,7 +910,14 @@ public partial class MainWindow : Window
         var kept = chat.History;
         chat.MessageReceived += m => UI(() => OnMessage(conv, ToVm(m), announce: !m.IsCatchUp));
         chat.ReactionsChanged += _ => UI(() => ScheduleReactions(conv));
-        WireReactions(conv, _ => chat.GetReactions(), (key, emoji, on, _) => chat.SendReactionAsync(key, emoji, on));
+        WireReactions(conv, chat.GetReactions, (key, emoji, on, _) => chat.SendReactionAsync(key, emoji, on));
+        conv.EarlierSource = async (_, _, beforeId) =>
+        {
+            var page = await Task.Run(() => chat.GetEarlierHistory(beforeId, 100));
+            return (page.Messages.Select(ToVm).ToList(), page.HasMore);
+        };
+        conv.AskOthersForEarlier = (_, _, id) => chat.RequestEarlierHistory(id);
+        chat.EarlierHistoryReceived += () => UI(() => { conv.NoteEarlierArrived(); RefreshReactions(conv); if (_selected == conv) MaybeLoadEarlier(); });
         UI(() =>
         {
             foreach (var m in kept) conv.Add(ToVm(m));

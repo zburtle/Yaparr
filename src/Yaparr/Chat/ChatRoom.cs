@@ -27,6 +27,23 @@ public sealed class ChatRoom
     private readonly long _startedAt = Environment.TickCount64;
     internal long SyncRequestedAt, HistoryReceivedAt;
 
+    // While earlier history has been asked for (see RequestEarlierHistory): until when, and the time before which messages that come are that history, not news.
+    internal long BackfillUntil, BackfillBefore;
+
+    /// <summary>
+    /// Messages from before what this device holds arrived from other members, because they were asked for with <see cref="RequestEarlierHistory"/>. They are
+    /// kept, not shown as new messages: read them with <see cref="GetEarlierHistory"/>.
+    /// </summary>
+    public event Action? EarlierHistoryReceived;
+    internal void RaiseEarlierHistory() => EarlierHistoryReceived?.Invoke();
+
+    /// <summary>
+    /// Asks the connected members of the room (up to three) for the messages before the one with the key <paramref name="beforeKey"/> (<see cref="ChatMessage.Key"/>),
+    /// in a text channel, when this device has nothing earlier. They answer with what they hold; it is kept and <see cref="EarlierHistoryReceived"/> is raised.
+    /// Returns how many members were asked: 0 when nobody is connected, history sync is off, or the message is not held.
+    /// </summary>
+    public int RequestEarlierHistory(string? channel, string beforeKey) => _node.RequestEarlierHistory(this, channel, beforeKey);
+
     /// <summary>
     /// Where the room is in getting going on this device, for showing that something is happening. A room that has been looked for for a
     /// minute with no one found is <see cref="RoomSyncState.NoOneOnline"/>, which is not a problem: it is just quiet.
@@ -462,8 +479,24 @@ public sealed class DirectChat
     /// <summary>The name to show: the connected person's, or else the last one they used in this conversation.</summary>
     public string DisplayName => Peer?.DisplayName ?? _node.DirectNameOf(PeerId) ?? PeerId.Short;
 
-    /// <summary>The messages of this conversation that are kept (those sent and received on any of your devices), oldest first.</summary>
+    /// <summary>The newest messages of this conversation (<see cref="ChatNode.InitialHistoryPerChannel"/> of them; those sent and received on any of your devices), oldest first. Everything is kept; earlier ones are read with <see cref="GetEarlierHistory"/>.</summary>
     public IReadOnlyList<ChatMessage> History => _node.GetDirectHistory(PeerId);
+
+    /// <summary>
+    /// Earlier messages of this conversation arrived from your other devices or from the other person's, because they were asked for with
+    /// <see cref="RequestEarlierHistory"/>. They are kept, not shown as new messages: read them with <see cref="GetEarlierHistory"/>.
+    /// </summary>
+    public event Action? EarlierHistoryReceived;
+    internal void RaiseEarlierHistory() => EarlierHistoryReceived?.Invoke();
+
+    /// <summary>
+    /// Asks your other devices and the other person's (those connected, up to four) for the messages before the one with the id <paramref name="beforeId"/>, when this
+    /// device holds nothing earlier. Returns how many were asked: 0 when none is connected, history sync is off, or the message is not held.
+    /// </summary>
+    public int RequestEarlierHistory(string beforeId) => _node.RequestEarlierDirectHistory(PeerId, beforeId);
+
+    /// <summary>The messages before the one with the id <paramref name="beforeId"/> (<see cref="ChatMessage.Id"/>), oldest first, up to <paramref name="count"/> of them.</summary>
+    public HistoryPage GetEarlierHistory(string beforeId, int count = 100) => _node.GetEarlierDirectHistory(PeerId, beforeId, Math.Clamp(count, 1, 500));
 
     /// <summary>The time of the newest message from them that you have read, on any of your devices.</summary>
     public DateTimeOffset? ReadUpTo => _node.DirectReadUpTo(PeerId);
@@ -482,6 +515,9 @@ public sealed class DirectChat
 
     /// <summary>The reactions on the messages of this conversation, yours and theirs.</summary>
     public ReactionSet GetReactions() => _node.GetDirectReactions(PeerId);
+
+    /// <summary>The reactions on the messages with these keys (<see cref="ChatMessage.Key"/>), yours and theirs.</summary>
+    public ReactionSet GetReactions(IReadOnlyCollection<string> messageKeys) => _node.GetDirectReactions(PeerId, messageKeys);
 
     /// <summary>Puts <paramref name="emoji"/> on the message with the key <paramref name="messageKey"/>, or takes it off again (<paramref name="on"/> false). The emoji has to be one of <see cref="EmojiData"/>.</summary>
     public Task<string> SendReactionAsync(string messageKey, string emoji, bool on)

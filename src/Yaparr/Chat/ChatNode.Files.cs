@@ -91,6 +91,18 @@ public sealed partial class ChatNode
         if (message.Attachment != null && !_blobs.Has(message.Attachment.Hash)) _ = StartFetch(message, force: false, trustedOnly, CancellationToken.None);
     }
 
+    // Files that no message shows any more (their messages were deleted) are removed, unless another message, a sound or a GIF still uses the same file.
+    private void ReleasePictureFiles(IReadOnlyCollection<string> hashes)
+    {
+        if (hashes.Count == 0) return;
+        var live = LiveSoundHashes();
+        foreach (var hash in hashes)
+        {
+            if (live.Contains(hash) || _directHistory.Mentions(hash) || _histories.Values.Any(h => h.Mentions(hash))) continue;
+            _blobs.Delete(hash);
+        }
+    }
+
     private void RaiseAttachment(string hash, AttachmentState state, long received, long total) =>
         AttachmentChanged?.Invoke(new AttachmentUpdate(hash, state, received, total));
 
