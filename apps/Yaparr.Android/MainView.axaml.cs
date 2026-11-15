@@ -1199,6 +1199,7 @@ public partial class MainView : UserControl
     // While an @ and some letters end the text, the people they could mean are offered.
     private void InputChanged(object? sender, TextChangedEventArgs e)
     {
+        UpdateEmojiBar();
         if (_current is not { IsRoom: true } chat || _session == null) { MentionBar.IsVisible = false; return; }
         var text = InputBox.Text ?? "";
         int caret = Math.Min(InputBox.CaretIndex, text.Length);

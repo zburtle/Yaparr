@@ -16,6 +16,12 @@ public sealed class LinkText : TextBlock
     /// <summary>A web address was tapped.</summary>
     public static readonly RoutedEvent<LinkTappedEventArgs> LinkTappedEvent = RoutedEvent.Register<LinkText, LinkTappedEventArgs>(nameof(LinkTapped), RoutingStrategies.Bubble);
 
+    /// <summary>The pictures of custom emoji by name: a <c>:name:</c> in the words that has one is drawn as the picture, a little taller than the words.</summary>
+    public static readonly StyledProperty<IReadOnlyDictionary<string, IImage>?> EmojiImagesProperty =
+        AvaloniaProperty.Register<LinkText, IReadOnlyDictionary<string, IImage>?>(nameof(EmojiImages));
+
+    public IReadOnlyDictionary<string, IImage>? EmojiImages { get => GetValue(EmojiImagesProperty); set => SetValue(EmojiImagesProperty, value); }
+
     public string? Body { get => GetValue(BodyProperty); set => SetValue(BodyProperty, value); }
 
     public event EventHandler<LinkTappedEventArgs>? LinkTapped { add => AddHandler(LinkTappedEvent, value); remove => RemoveHandler(LinkTappedEvent, value); }
@@ -30,25 +36,37 @@ public sealed class LinkText : TextBlock
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
-        if (change.Property == BodyProperty) Rebuild();
+        if (change.Property == BodyProperty || change.Property == EmojiImagesProperty || change.Property == FontSizeProperty) Rebuild();
     }
 
     private void Rebuild()
     {
         var body = Body ?? "";
         _links = LinkPreview.LinksIn(body);
-        if (_links.Count == 0) { Inlines?.Clear(); Text = body; return; }
+        var images = EmojiImages is { Count: > 0 } found ? found : null;
+        if (_links.Count == 0 && images == null) { Inlines?.Clear(); Text = body; return; }
         Text = null;
         Inlines ??= new InlineCollection();
         Inlines.Clear();
+        // A custom emoji that has arrived is its picture; one that has not stays as the :name: it was written.
+        void Words(string words)
+        {
+            if (images == null) { Inlines.Add(new Run(words)); return; }
+            foreach (var (piece, name) in CustomEmojiRules.Pieces(words))
+            {
+                if (name != null && images.TryGetValue(name, out var picture))
+                    Inlines.Add(new InlineUIContainer(new Image { Source = picture, Height = FontSize * 1.4, Stretch = Stretch.Uniform, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center }));
+                else Inlines.Add(new Run(piece));
+            }
+        }
         int at = 0;
         foreach (var link in _links)
         {
-            if (link.Start > at) Inlines.Add(new Run(body[at..link.Start]));
+            if (link.Start > at) Words(body[at..link.Start]);
             Inlines.Add(new Run(body.Substring(link.Start, link.Length)) { TextDecorations = Avalonia.Media.TextDecorations.Underline });
             at = link.Start + link.Length;
         }
-        if (at < body.Length) Inlines.Add(new Run(body[at..]));
+        if (at < body.Length) Words(body[at..]);
     }
 
     private void OnTapped(object? sender, TappedEventArgs e)
