@@ -6,6 +6,7 @@
   <Folder Name="/src/">
     <Project Path="src/Yaparr/Yaparr.csproj" />
     <Project Path="src/Yaparr.Voice.WebRtc/Yaparr.Voice.WebRtc.csproj" />
+    <Project Path="src/Yaparr.History.Sqlite/Yaparr.History.Sqlite.csproj" />
     <Project Path="src/Yaparr.Screen/Yaparr.Screen.csproj" />
     <Project Path="src/Yaparr.AppCore/Yaparr.AppCore.csproj" />
   </Folder>

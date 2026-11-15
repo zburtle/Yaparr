@@ -47,6 +47,9 @@ public sealed record DeviceInfo(PeerId Id, bool IsThisDevice, PeerLink Link);
 /// <summary>One person a message was sent to, and whether their app has confirmed it. A person with several devices is one entry.</summary>
 public sealed record DeliveryRecipient(PeerId Id, string Name, bool Delivered);
 
+/// <summary>A page of earlier history, oldest first, and whether there is more before it.</summary>
+public sealed record HistoryPage(IReadOnlyList<ChatMessage> Messages, bool HasMore);
+
 /// <param name="Channel">The text channel of a room message (<see cref="RoomChannels.DefaultText"/> for the first one and for messages from earlier versions); null for direct messages.</param>
 public sealed record ChatMessage(PeerInfo From, string? Room, string Id, string Text, DateTimeOffset Timestamp, bool IsCatchUp = false, Attachment? Attachment = null, string? Channel = null)
 {
@@ -145,7 +148,16 @@ internal sealed class Wire
 
     public const string Direct = "dm", DirectSync = "dmsync";
 
+    /// <summary>A request for the direct messages before a time (<c>Text</c> is the other person's account, <c>Ts</c> the time, <c>N</c> how many), and the answer (<c>Dm</c>, in the order of the asker's side of the conversation).</summary>
+    public const string DirectBack = "dmback";
+
     public const string Caps = "caps", Rename = "name", Account = "acct", Media = "media", Sound = "snd", Gif = "gif", Play = "play", Roles = "roles", Moderate = "mod", Channels = "chan", Rekey = "rekey", Takeover = "takeover", Speed = "speed";
+
+    /// <summary>With <see cref="Wire.Back"/>: how many earlier messages are asked for.</summary>
+    public int N { get; set; }
+
+    /// <summary>A request for the messages before one: the room's <c>Room</c>, the channel in <c>Text</c> (empty for the first), the message's time in <c>Ts</c>, its key in <c>Id</c> and how many in <c>N</c>. Answered with <see cref="History"/>.</summary>
+    public const string Back = "back";
 
     public const string Ack = "ack", Hello = "hi", Join = "join", Leave = "leave", Message = "msg", Introduce = "peers", Sync = "sync", Want = "want", History = "hist", Links = "links", Presence = "pres", Voice = "voice";
 }

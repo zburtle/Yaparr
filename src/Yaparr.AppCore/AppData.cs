@@ -201,6 +201,28 @@ public sealed class AppData
 
     public string Directory { get; }
     public string HistoryDirectory => Path.Combine(Directory, "history");
+
+    /// <summary>The database every room's messages are kept in (encrypted by SQLCipher with a key made from the history key).</summary>
+    public string HistoryDatabasePath => Path.Combine(HistoryDirectory, "history.db");
+
+    /// <summary>
+    /// Opens the history database, and brings over the history files of earlier versions (one file for each room) the first time. Keep it open for as long
+    /// as the app runs and dispose it at the end.
+    /// </summary>
+    public Yaparr.History.Sqlite.SqliteHistoryStore OpenHistoryStore(Yaparr.Identity.HistoryCipher cipher, Action<string>? log = null)
+    {
+        var key = cipher.DatabaseKey();
+        var store = Yaparr.History.Sqlite.SqliteHistoryStore.Open(HistoryDatabasePath, key, log);
+        // A backup is made from a consistent copy of the database, not from the file it is writing to.
+        _historySnapshot = path => store.SnapshotTo(path, key);
+        try
+        {
+            Yaparr.Chat.HistoryImport.FromFiles(store, HistoryDirectory, cipher, log);
+            Yaparr.Chat.DirectHistoryImport.FromFiles(store, Path.Combine(Directory, "direct"), cipher, log);
+        }
+        catch (Exception ex) when (ex is IOException or Microsoft.Data.Sqlite.SqliteException) { log?.Invoke($"could not bring over the old history: {ex.Message}"); }
+        return store;
+    }
     /// <summary>Where the GIF shelf (pictures kept to send again) lives.</summary>
     public string ShelfDirectory => Path.Combine(Directory, "gifshelf");
     public string VpnConfigPath => Path.Combine(Directory, "vpn.conf");
@@ -299,13 +321,48 @@ public sealed class AppData
         }
     }
 
+    private Action<string>? _historySnapshot;
+
+    /// <summary>
+    /// Pictures (and sound files) that have been on this computer for longer than this are left out of a backup: the messages stay, and the pictures are
+    /// asked for again from other members when someone scrolls back to them. How long a file has been here is when it was saved.
+    /// </summary>
+    public static readonly TimeSpan BackupAttachmentAge = TimeSpan.FromDays(183);
+
     private void WriteProfileZip(Stream destination)
     {
+        string? snapshot = null;
+        try
+        {
+            WriteProfileZip(destination, ref snapshot);
+        }
+        finally
+        {
+            if (snapshot != null) try { File.Delete(snapshot); } catch (IOException) { }
+        }
+    }
+
+    private void WriteProfileZip(Stream destination, ref string? snapshot)
+    {
         using var zip = new ZipArchive(destination, ZipArchiveMode.Create, leaveOpen: true);
+        var databaseName = Path.GetFileName(HistoryDatabasePath);
         foreach (var file in System.IO.Directory.EnumerateFiles(Directory, "*", SearchOption.AllDirectories))
         {
             var relative = Path.GetRelativePath(Directory, file).Replace('\\', '/');
             if (!IsProfilePath(relative)) continue;
+            // The database is written to while the app runs, so a copy of the file could catch a write half way (and a journal beside it is only half of
+            // one): what goes into the backup is a consistent copy made by the database itself, and the files beside it are left out.
+            var inHistory = relative.StartsWith("history/", StringComparison.OrdinalIgnoreCase);
+            var name = Path.GetFileName(relative);
+            if (inHistory && name.StartsWith(databaseName + "-", StringComparison.OrdinalIgnoreCase)) continue;
+            if (relative.StartsWith("attachments/", StringComparison.OrdinalIgnoreCase) && DateTime.UtcNow - File.GetLastWriteTimeUtc(file) > BackupAttachmentAge) continue;
+            var sourcePath = file;
+            if (inHistory && string.Equals(name, databaseName, StringComparison.OrdinalIgnoreCase) && _historySnapshot != null)
+            {
+                snapshot = Path.Combine(Directory, "history.snapshot.tmp");
+                _historySnapshot(snapshot);
+                sourcePath = snapshot;
+            }
             var entry = zip.CreateEntry(relative, CompressionLevel.Optimal);
             using var target = entry.Open();
             // A backup has to open on another computer, so the files sealed for this one go in as they are inside.
@@ -314,7 +371,7 @@ public sealed class AppData
                 target.Write(SecretStore.ReadAllBytes(file));
                 continue;
             }
-            using var source = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var source = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
             source.CopyTo(target);
         }
     }

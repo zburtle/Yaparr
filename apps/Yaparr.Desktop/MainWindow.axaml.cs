@@ -29,12 +29,14 @@ public partial class MainWindow : Window
     private FileLog _log = null!;
     private CallQualityLog? _callQuality;
     private ChatNode? _node;
+    private Yaparr.History.Sqlite.SqliteHistoryStore? _historyStore;
     private ConversationVm? _selected;
     private bool _started;
 
     public MainWindow()
     {
         InitializeComponent();
+        WireMessageScroll();
         ShipPanel.IsVisible = EmptyPanel.IsVisible && FitzgeraldShip.IsHerDay(DateTime.Now);
         Ship.ShipClicked += () => _ = OpenLinkAsync(FitzgeraldShip.SongUrl);
         InputShip.ShipClicked += () => _ = OpenLinkAsync(FitzgeraldShip.SongUrl);
@@ -447,6 +449,7 @@ public partial class MainWindow : Window
         var traversal = TraversalOptions.Load(Path.Combine(_data.Directory, "network.json"));
         // Message history is kept sealed; the key lives in a file of its own that is sealed to this Windows user.
         var historyCipher = HistoryCipher.LoadOrCreate(Path.Combine(_data.Directory, "history.key"));
+        _historyStore?.Dispose();
         _node = new ChatNode(new ChatNodeOptions
         {
             DisplayName = name,
@@ -456,7 +459,7 @@ public partial class MainWindow : Window
             AccountStatePath = _data.AccountStatePath,
             AvatarDirectory = _data.AvatarDirectory,
             AccountEntries = _linkedEntries,
-            HistoryStore = new FileHistoryStore(_data.HistoryDirectory, historyCipher),
+            HistoryStore = _historyStore = _data.OpenHistoryStore(historyCipher, _log.Write),
             DirectHistoryDirectory = Path.Combine(_data.Directory, "direct"),
             Traversal = traversal,
             AttachmentDirectory = Path.Combine(_data.Directory, "attachments"),
@@ -532,6 +535,8 @@ public partial class MainWindow : Window
         var node = _node;
         _node = null;
         node?.Dispose();
+        _historyStore?.Dispose();
+        _historyStore = null;
     }
 
     private static void UI(Action action) => Dispatcher.UIThread.Post(action);
@@ -735,7 +740,11 @@ public partial class MainWindow : Window
         room.RolesChanged += () => UI(() => { RefreshPeers(); RefreshMembers(); });
         room.ChannelsChanged += () => UI(() => RefreshChannels(conv, room));
         room.SecretChanged += (before, after) => UI(() => OnSecretChanged(conv, before, after));
-        room.ModerationChanged += () => UI(() => { conv.Reload(room.GetHistory().Select(ToVm).ToList()); RefreshReactions(conv); RefreshPeers(); RefreshMembers(); });
+        conv.EarlierSource = (channel, beforeKey, _) => ReadEarlierAsync(room, channel, beforeKey);
+        conv.AskOthersForEarlier = (channel, key, _) => room.RequestEarlierHistory(channel, key);
+        // What the others sent is kept: it is read the same way, the next time the list is at its top (or now, if it is).
+        room.EarlierHistoryReceived += () => UI(() => { conv.NoteEarlierArrived(); RefreshReactions(conv); if (_selected == conv) MaybeLoadEarlier(); });
+        room.ModerationChanged += () => UI(() => { conv.Reload(room.GetHistory().Select(ToVm).ToList(), room.WhichAreShown); RefreshReactions(conv); RefreshPeers(); RefreshMembers(); });
 
         if (_settings.RoomChannels.TryGetValue(room.RoomId, out var wantedChannel)) conv.PendingChannel = wantedChannel;
         RefreshChannels(conv, room);
@@ -902,6 +911,13 @@ public partial class MainWindow : Window
         chat.MessageReceived += m => UI(() => OnMessage(conv, ToVm(m), announce: !m.IsCatchUp));
         chat.ReactionsChanged += _ => UI(() => ScheduleReactions(conv));
         WireReactions(conv, chat.GetReactions, (key, emoji, on, _) => chat.SendReactionAsync(key, emoji, on));
+        conv.EarlierSource = async (_, _, beforeId) =>
+        {
+            var page = await Task.Run(() => chat.GetEarlierHistory(beforeId, 100));
+            return (page.Messages.Select(ToVm).ToList(), page.HasMore);
+        };
+        conv.AskOthersForEarlier = (_, _, id) => chat.RequestEarlierHistory(id);
+        chat.EarlierHistoryReceived += () => UI(() => { conv.NoteEarlierArrived(); RefreshReactions(conv); if (_selected == conv) MaybeLoadEarlier(); });
         UI(() =>
         {
             foreach (var m in kept) conv.Add(ToVm(m));

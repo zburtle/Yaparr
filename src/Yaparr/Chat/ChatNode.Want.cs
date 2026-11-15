@@ -14,18 +14,19 @@ public sealed partial class ChatNode
     /// <summary>Asks up to three connected members of <paramref name="room"/> for the messages with these keys.</summary>
     internal int RequestMessages(ChatRoom room, IEnumerable<string> keys)
     {
-        var wanted = keys.Where(MessageEnvelope.IsKey).Select(k => k.ToLowerInvariant()).Distinct()
-            .Where(k => !room.History.Keys().Contains(k)).Take(MaxWanted).ToArray();
+        var asked = keys.Where(MessageEnvelope.IsKey).Select(k => k.ToLowerInvariant()).Distinct().ToList();
+        var held = room.History.Held(asked);
+        var wanted = asked.Where(k => !held.Contains(k)).Take(MaxWanted).ToArray();
         if (wanted.Length == 0 || !_options.SyncHistory) return 0;
         // Those we reach directly first: asking through a relay would make a member pay for a request that may find nothing.
-        var asked = room.MemberStates.Values.Where(m => m.Connection.State == ConnectionState.Established)
+        var askedPeers = room.MemberStates.Values.Where(m => m.Connection.State == ConnectionState.Established)
             .OrderBy(m => m.Connection.IsRelayed).Take(3).ToList();
-        foreach (var peer in asked)
+        foreach (var peer in askedPeers)
         {
             peer.HistoryExpectedUntil = Math.Max(peer.HistoryExpectedUntil, Environment.TickCount64 + WantWindowMs);
             Send(peer.Connection, new Wire { Type = Wire.Want, Room = RefTo(room, peer), Have = wanted });
         }
-        return asked.Count;
+        return askedPeers.Count;
     }
 
     private void OnWantRequest(PeerState peer, ChatRoom room, string[] keys)

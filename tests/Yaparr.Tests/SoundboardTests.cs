@@ -215,9 +215,9 @@ public class SoundboardTests
         Assert.True(Removed(rb) <= SoundLimits.RemovedPerMember);
     }
 
-    // The files of sounds are stored with the pictures, which are deleted a week after they were saved.
+    // The files of sounds are stored with the pictures, which are kept for good: nothing is cleared out because it is old.
     [Fact]
-    public async Task A_sound_still_on_the_soundboard_is_kept_when_old_files_are_cleaned_up_and_a_stray_old_file_is_not()
+    public async Task A_sound_on_the_soundboard_is_still_there_a_month_later_and_so_is_an_old_file_that_nothing_refers_to()
     {
         var root = Path.Combine(Path.GetTempPath(), "yaparr-sbsweep-" + Guid.NewGuid().ToString("N"));
         string files = Path.Combine(root, "files"), lists = Path.Combine(root, "lists");
@@ -233,15 +233,16 @@ public class SoundboardTests
                 Assert.True(first.HasAttachment(hash));
             }
 
-            // A month later, with an old file nobody refers to as well.
+            // A month later, with an old file nobody refers to as well (a stray file is not worth guessing about: the start does not touch files by their age).
             var stray = new string('c', 64);
             File.WriteAllBytes(Path.Combine(files, stray), new byte[100]);
             foreach (var file in Directory.GetFiles(files)) File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddDays(-30));
 
             using var second = TestUtil.NewNode(new InMemoryDiscoveryHub(), "alice", attachmentDirectory: files, soundboardDirectory: lists);
             second.Start();
-            await TestUtil.WaitFor(() => !File.Exists(Path.Combine(files, stray)), 20_000);
+            await Task.Delay(1500);   // the start-up work in the background
             Assert.True(second.HasAttachment(hash), "the sound is still on the soundboard, so its file stays");
+            Assert.True(File.Exists(Path.Combine(files, stray)), "files are not cleared out for being old");
         }
         finally { try { Directory.Delete(root, true); } catch (IOException) { } }
     }

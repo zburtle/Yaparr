@@ -233,7 +233,7 @@ public sealed partial class ChatNode
     }
 
     private bool MessageIsMine(ChatRoom room, string key) =>
-        room.History.Snapshot().Any(m => SignedMessage.Key(m) == key && IsMyDevice(new PeerId(m.From)));
+        room.History.Find(new[] { key }).Any(m => IsMyDevice(new PeerId(m.From)));
 
     internal void DeleteSound(ChatRoom room, string id)
     {
@@ -340,8 +340,8 @@ public sealed partial class ChatNode
     // theirs or we have not seen it, which is the case for a message that has not reached us yet.
     private bool NotSomeoneElsesMessage(ChatRoom room, string key, PeerId signer)
     {
-        foreach (var stored in room.History.Snapshot())
-            if (SignedMessage.Key(stored) == key) return AccountOf(new PeerId(stored.From)) == signer;
+        foreach (var stored in room.History.Find(new[] { key }))
+            return AccountOf(new PeerId(stored.From)) == signer;
         return true;
     }
 
@@ -370,7 +370,13 @@ public sealed partial class ChatNode
             voiceChanged = gone.Count > 0;
         }
 
-        if (view.Messages.Count > 0) room.History.Remove(view.Messages);
+        if (view.Messages.Count > 0)
+        {
+            // The pictures of the messages that go are deleted too, unless another message (in any room or chat) shows the same file, or it is a sound or a GIF.
+            var pictures = room.History.Find(view.Messages).Select(m => Attachment.TryParse(m.Text, out var a, out _) ? a.Hash : null).OfType<string>().Distinct().ToList();
+            room.History.Remove(view.Messages);
+            ReleasePictureFiles(pictures);
+        }
 
         // Sounds an admin took down no longer need their files.
         if (view.Sounds.Count > 0)

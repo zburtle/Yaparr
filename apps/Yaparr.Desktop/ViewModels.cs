@@ -402,8 +402,92 @@ public sealed class ReactionChipVm : Observable
 
 public sealed class ConversationVm : Observable
 {
-    /// <summary>Counts the reactions of this conversation as they stand now (the room's or the direct chat's).</summary>
-    public Func<ReactionSet>? ReactionSource { get; set; }
+    /// <summary>Counts the reactions on the messages with these keys as they stand now (the room's or the direct chat's).</summary>
+    public Func<IReadOnlyCollection<string>, ReactionSet>? ReactionSource { get; set; }
+
+    /// <summary>
+    /// Reads messages from before the one with a key and an id, in a channel (null in a chat without channels): the messages, oldest first, and whether there are still
+    /// earlier ones. Null where there is nothing to read back to (a chat whose history is all shown).
+    /// </summary>
+    public Func<string?, string, string, Task<(IReadOnlyList<MessageVm> Messages, bool HasMore)>>? EarlierSource { get; set; }
+
+    /// <summary>
+    /// Asks the other people in the conversation for the messages before the one with this key and id (in a channel), when this device holds nothing earlier; returns how
+    /// many were asked. What they send is kept, and <see cref="NoteEarlierArrived"/> says so. Null where nobody can be asked (the history of a direct chat).
+    /// </summary>
+    public Func<string?, string, string, int>? AskOthersForEarlier { get; set; }
+
+    private bool _loadingEarlier;
+    private readonly HashSet<string> _nothingEarlier = new();
+    private readonly Dictionary<string, long> _askedAt = new();
+
+    /// <summary>How long after asking the others for earlier messages they are asked again (when the list is scrolled to the top again).</summary>
+    public const long AskAgainAfterMs = 60_000;
+
+    /// <summary>
+    /// Whether earlier messages of the channel on show can still be read: those this device holds, and, a minute after the others were last asked for
+    /// more, those they may have.
+    /// </summary>
+    public bool HasEarlier
+    {
+        get
+        {
+            if (EarlierSource == null) return false;
+            string channel = IsRoom ? CurrentChannel : "";
+            return !_nothingEarlier.Contains(channel)
+                   || AskOthersForEarlier != null && Environment.TickCount64 - _askedAt.GetValueOrDefault(channel, long.MinValue / 2) >= AskAgainAfterMs;
+        }
+    }
+
+    private long _lastAskTick = long.MinValue / 2;
+
+    /// <summary>Members answer a request for earlier messages every couple of seconds; asking again sooner would be ignored.</summary>
+    public const long MinGapBetweenAsksMs = 2500;
+
+    /// <summary>The others sent earlier messages that are kept now: reading them can go on, and when those run out they are asked again at once.</summary>
+    public void NoteEarlierArrived()
+    {
+        _nothingEarlier.Clear();
+        _askedAt.Clear();
+    }
+
+    /// <summary>
+    /// Reads the page of messages before the oldest one shown and puts it above. Returns how many were added; 0 when there is nothing earlier, a page is
+    /// already being read, or the page held nothing to show.
+    /// </summary>
+    public async Task<int> LoadEarlierAsync()
+    {
+        if (!HasEarlier || _loadingEarlier) return 0;
+        var oldest = Messages.FirstOrDefault(m => m.Key != null);
+        if (oldest == null) return 0;
+        string channel = IsRoom ? CurrentChannel : "";
+        _loadingEarlier = true;
+        try
+        {
+            var (messages, more) = await EarlierSource!(IsRoom ? CurrentChannel : null, oldest.Key!, oldest.Id ?? "");
+            // The room may have been switched to another channel while the page was being read: it still belongs to the channel it was read for.
+            foreach (var m in messages) Add(m);
+            if (!more)
+            {
+                // This device has nothing earlier: the others may have, and are asked (not again for a minute, whatever the list does).
+                _nothingEarlier.Add(channel);
+                var first = Messages.FirstOrDefault(m => m.Key != null);
+                if (first != null && AskOthersForEarlier is { } ask && Environment.TickCount64 - _askedAt.GetValueOrDefault(channel, long.MinValue / 2) >= AskAgainAfterMs)
+                {
+                    long now = Environment.TickCount64;
+                    _askedAt[channel] = now;
+                    string? askChannel = IsRoom ? channel : null;
+                    string key = first.Key!, id = first.Id ?? "";
+                    long wait = Math.Max(0, MinGapBetweenAsksMs - (now - _lastAskTick));
+                    _lastAskTick = now + wait;
+                    if (wait == 0) ask(askChannel, key, id);
+                    else _ = Task.Delay((int)wait).ContinueWith(_ => ask(askChannel, key, id), TaskScheduler.Default);
+                }
+            }
+            return messages.Count;
+        }
+        finally { _loadingEarlier = false; }
+    }
 
     /// <summary>Puts an emoji on a message or takes it off: the message's key, the emoji, whether to put it on, and the message's channel.</summary>
     public Func<string, string, bool, string?, Task>? React { get; set; }
@@ -664,12 +748,18 @@ public sealed class ConversationVm : Observable
             Messages[j].ShowDay = j == 0 || Messages[j - 1].Time.LocalDateTime.Date != Messages[j].Time.LocalDateTime.Date;
     }
 
-    /// <summary>Makes the messages match <paramref name="current"/>: those that are no longer there (deleted, or from someone banned) go, new ones come in. Lines without an id, such as notices, stay.</summary>
-    public void Reload(IReadOnlyList<MessageVm> current)
+    /// <summary>
+    /// Makes the messages match <paramref name="current"/>: those that are no longer there (deleted, or from someone banned) go, new ones come in. Lines without
+    /// an id, such as notices, stay. Messages read from earlier history are not in <paramref name="current"/>, so <paramref name="stillShown"/> says which of
+    /// them (by key) are still to be shown; without it only the messages of <paramref name="current"/> stay.
+    /// </summary>
+    public void Reload(IReadOnlyList<MessageVm> current, Func<IReadOnlyCollection<string>, ISet<string>>? stillShown = null)
     {
         var keep = current.Where(m => m.Id != null).Select(m => m.Id!).ToHashSet();
+        var others = Messages.Where(m => m.Id != null && m.Key != null && !keep.Contains(m.Id)).Select(m => m.Key!).ToList();
+        var shown = stillShown != null && others.Count > 0 ? stillShown(others) : new HashSet<string>();
         for (int i = Messages.Count - 1; i >= 0; i--)
-            if (Messages[i].Id is { } id && !keep.Contains(id)) { _ids.Remove(id); Messages.RemoveAt(i); }
+            if (Messages[i].Id is { } id && !keep.Contains(id) && !(Messages[i].Key is { } key && shown.Contains(key))) { _ids.Remove(id); Messages.RemoveAt(i); }
         foreach (var m in current) Add(m);
         for (int i = 0; i < Messages.Count; i++) MarkDays(i);
     }
