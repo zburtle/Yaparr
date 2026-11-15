@@ -109,8 +109,27 @@ public partial class MainWindow
         if (MessageList.SelectedItem is MessageVm { Key: not null } message) OpenReactionPicker(message, MessageList);
     }
 
+    private bool _pickingForComposer;
+
+    // The button next to the message box: the same picker, but what is picked goes into what is being written.
+    private void ComposerEmoji_Click(object? sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        _reactingTo = null;
+        _pickingForComposer = true;
+        if (!_emojiWired) WireEmojiPicker();
+        EmojiSearch.Text = "";
+        ShowEmojiGroup(0);
+        ReactionPopup.Placement = PlacementMode.TopEdgeAlignedLeft;
+        ReactionPopup.PlacementTarget = ComposerEmojiButton;
+        ReactionPopup.IsOpen = true;
+        EmojiSearch.Focus();
+    }
+
     private void OpenReactionPicker(MessageVm message, Control? near)
     {
+        _pickingForComposer = false;
+        ReactionPopup.Placement = PlacementMode.Pointer;
         _reactingTo = message;
         if (!_emojiWired) WireEmojiPicker();
         EmojiSearch.Text = "";
@@ -163,7 +182,7 @@ public partial class MainWindow
             EmojiTitle.Text = found.Count == 0 ? "Nothing found" : found.Count + (found.Count == 1 ? " emoji" : " emoji");
             FillEmojiGrid(found);
         };
-        ReactionPopup.Closed += (_, _) => _reactingTo = null;
+        ReactionPopup.Closed += (_, _) => { _reactingTo = null; _pickingForComposer = false; };
     }
 
     private static string GroupIcon(string group) => group switch
@@ -196,6 +215,12 @@ public partial class MainWindow
 
     private void EmojiPicked_Click(object? sender, RoutedEventArgs e)
     {
+        if ((sender as Control)?.Tag is string chosen && _pickingForComposer)
+        {
+            ReactionPopup.IsOpen = false;
+            InsertIntoInput(chosen);
+            return;
+        }
         if ((sender as Control)?.Tag is not string emoji || _reactingTo is not { } message) return;
         ReactionPopup.IsOpen = false;
         // Picking one you already have takes it off, as clicking it under the message does.

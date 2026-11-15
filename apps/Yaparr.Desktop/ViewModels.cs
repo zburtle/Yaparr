@@ -153,6 +153,9 @@ public sealed class MessageVm : Observable
     public string? Channel { get; init; }
     public bool HasAttachment => Attachment != null;
     public bool HasText => Text.Length > 0;
+
+    /// <summary>A message of nothing but one to three emoji, shown large.</summary>
+    public bool IsBigEmoji => !IsSystem && Attachment == null && EmojiTyping.IsOnlyEmoji(Text);
     public byte[]? Image => _image;
     public byte[]? Thumbnail => Attachment?.Thumbnail;
     public int PixelWidth => Attachment?.Width ?? 0;

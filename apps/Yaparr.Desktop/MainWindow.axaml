@@ -235,6 +235,10 @@
         <Style Selector="Border.bubble.mine SelectableTextBlock.body, Border.bubble.mine TextBlock.time">
             <Setter Property="Foreground" Value="White" />
         </Style>
+        <!-- a message of nothing but a few emoji -->
+        <Style Selector="SelectableTextBlock.bigemoji">
+            <Setter Property="FontSize" Value="40" />
+        </Style>
         <Style Selector="TextBlock.time">
             <Setter Property="FontSize" Value="11" />
             <Setter Property="Opacity" Value="0.65" />
@@ -634,7 +638,7 @@
                                                 <Button IsVisible="{Binding NeedsAction}" Content="{Binding ActionText}" Classes="primary"
                                                         HorizontalAlignment="Center" VerticalAlignment="Center" Click="Download_Click" />
                                             </Grid>
-                                            <local:MessageText Classes="body" IsVisible="{Binding HasText}" Body="{Binding Text}" Marks="{Binding MentionMarks}" TextWrapping="Wrap" LinkClicked="MessageLink_Clicked" />
+                                            <local:MessageText Classes="body" Classes.bigemoji="{Binding IsBigEmoji}" IsVisible="{Binding HasText}" Body="{Binding Text}" Marks="{Binding MentionMarks}" TextWrapping="Wrap" LinkClicked="MessageLink_Clicked" />
                                             <Border Classes="linkpreview" IsVisible="{Binding HasPreview}" PointerReleased="PreviewCard_PointerReleased" ToolTip.Tip="{Binding Card.Url}">
                                                 <Grid ColumnDefinitions="Auto,*">
                                                     <Image Source="{Binding PreviewImage}" IsVisible="{Binding HasPreviewImage}" Width="64" Height="64" Margin="0,0,8,0" Stretch="UniformToFill" VerticalAlignment="Top" />
@@ -759,6 +763,20 @@
                             </DockPanel>
                         </Border>
                     </Popup>
+                    <Popup x:Name="EmojiSuggestPopup" PlacementTarget="{Binding #InputBox}" Placement="TopEdgeAlignedLeft" IsLightDismissEnabled="False">
+                        <Border Padding="4" CornerRadius="10" MinWidth="260" Background="{DynamicResource AppBg}" BorderBrush="{DynamicResource Line}" BorderThickness="1">
+                            <ListBox x:Name="EmojiSuggestList" Classes="flat" MaxHeight="230" DoubleTapped="EmojiSuggest_DoubleTapped">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate x:DataType="local:EmojiSuggestion">
+                                        <StackPanel Orientation="Horizontal" Spacing="10">
+                                            <TextBlock Text="{Binding Emoji}" FontFamily="Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji, Twemoji Mozilla, Segoe UI Symbol" FontSize="18" VerticalAlignment="Center" />
+                                            <TextBlock Text="{Binding Code}" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Border>
+                    </Popup>
                     <Popup x:Name="MentionPopup" PlacementTarget="{Binding #InputBox}" Placement="TopEdgeAlignedLeft" IsLightDismissEnabled="False">
                         <Border Padding="4" CornerRadius="10" MinWidth="220" Background="{DynamicResource AppBg}" BorderBrush="{DynamicResource Line}" BorderThickness="1">
                             <ListBox x:Name="MentionList" Classes="flat" MaxHeight="190" DoubleTapped="MentionList_DoubleTapped">
@@ -779,6 +797,8 @@
                                     Background="Transparent" IsEnabled="False" ToolTip.Tip="Send a picture or GIF" Click="Attach_Click" />
                             <Button x:Name="ShelfButton" DockPanel.Dock="Left" VerticalAlignment="Bottom" Content="GIF" FontSize="11" FontWeight="SemiBold" Width="36" Height="36" Padding="0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Margin="0,4,2,4" CornerRadius="18"
                                     Background="Transparent" IsEnabled="False" ToolTip.Tip="Your GIF shelf" Click="Shelf_Click" />
+                            <Button x:Name="ComposerEmojiButton" DockPanel.Dock="Left" VerticalAlignment="Bottom" Content="😀" Width="36" Height="36" Padding="0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Margin="0,4,2,4" CornerRadius="18"
+                                    Background="Transparent" IsEnabled="False" ToolTip.Tip="Emoji (or type : and a name, like :thumbs_up:)" Click="ComposerEmoji_Click" />
                             <Grid>
                                 <TextBox x:Name="InputBox" Classes="composer" PlaceholderText="Write a message" IsEnabled="False" AcceptsReturn="True" TextWrapping="Wrap" MaxHeight="150"
                                          ToolTip.Tip="Enter sends the message; Shift+Enter starts a new line" />
