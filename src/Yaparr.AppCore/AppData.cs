@@ -201,6 +201,21 @@ public sealed class AppData
 
     public string Directory { get; }
     public string HistoryDirectory => Path.Combine(Directory, "history");
+
+    /// <summary>The database every room's messages are kept in (encrypted by SQLCipher with a key made from the history key).</summary>
+    public string HistoryDatabasePath => Path.Combine(HistoryDirectory, "history.db");
+
+    /// <summary>
+    /// Opens the history database, and brings over the history files of earlier versions (one file for each room) the first time. Keep it open for as long
+    /// as the app runs and dispose it at the end.
+    /// </summary>
+    public Yaparr.History.Sqlite.SqliteHistoryStore OpenHistoryStore(Yaparr.Identity.HistoryCipher cipher, Action<string>? log = null)
+    {
+        var store = Yaparr.History.Sqlite.SqliteHistoryStore.Open(HistoryDatabasePath, cipher.DatabaseKey(), log);
+        try { Yaparr.Chat.HistoryImport.FromFiles(store, HistoryDirectory, cipher, log); }
+        catch (Exception ex) when (ex is IOException or Microsoft.Data.Sqlite.SqliteException) { log?.Invoke($"could not bring over the old history: {ex.Message}"); }
+        return store;
+    }
     /// <summary>Where the GIF shelf (pictures kept to send again) lives.</summary>
     public string ShelfDirectory => Path.Combine(Directory, "gifshelf");
     public string VpnConfigPath => Path.Combine(Directory, "vpn.conf");

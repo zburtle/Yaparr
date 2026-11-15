@@ -44,7 +44,17 @@ public sealed class ChatRoom
 
     internal RoomHistory History { get; set; } = null!;
 
+    /// <summary>
+    /// The newest messages of each text channel (<see cref="ChatNode.InitialHistoryPerChannel"/> of them), oldest first. Everything said in the room is kept;
+    /// earlier messages are read with <see cref="GetEarlierHistory"/>.
+    /// </summary>
     public IReadOnlyList<ChatMessage> GetHistory() => _node.GetHistory(this);
+
+    /// <summary>
+    /// The messages of a text channel before the message with the key <paramref name="beforeKey"/> (<see cref="ChatMessage.Key"/>), oldest first, up to
+    /// <paramref name="count"/> of them, for scrolling back through the history.
+    /// </summary>
+    public HistoryPage GetEarlierHistory(string? channel, string beforeKey, int count = 100) => _node.GetEarlierHistory(this, channel, beforeKey, Math.Clamp(count, 1, 500));
 
     /// <summary>Where the room is found now: derived from the current secret, so it changes when the secret is replaced.</summary>
     internal byte[] Topic => _secret.Topic;
@@ -377,6 +387,12 @@ public sealed class ChatRoom
 
     /// <summary>The reactions on the messages of this room, counted from its history now (people you blocked or the room banned do not count).</summary>
     public ReactionSet GetReactions() => _node.GetReactions(this);
+
+    /// <summary>Which of the messages with these keys (<see cref="ChatMessage.Key"/>) are still to be shown: held, and not deleted or from someone blocked or banned.</summary>
+    public ISet<string> WhichAreShown(IReadOnlyCollection<string> messageKeys) => _node.WhichAreShown(this, messageKeys);
+
+    /// <summary>The reactions on the messages with these keys (<see cref="ChatMessage.Key"/>), counted from the history now.</summary>
+    public ReactionSet GetReactions(IReadOnlyCollection<string> messageKeys) => _node.GetReactions(this, messageKeys);
 
     /// <summary>
     /// Puts <paramref name="emoji"/> (one of <see cref="EmojiData"/>) on the message with the key <paramref name="messageKey"/>, or takes it off again

@@ -19,7 +19,7 @@ public partial class MainWindow
     private readonly Dictionary<ConversationVm, DispatcherTimer> _reactionTimers = new();
 
     /// <summary>Hooks a conversation up to the reactions of its room or direct chat.</summary>
-    private void WireReactions(ConversationVm conv, Func<ReactionSet> source, Func<string, string, bool, string?, Task> send)
+    private void WireReactions(ConversationVm conv, Func<IReadOnlyCollection<string>, ReactionSet> source, Func<string, string, bool, string?, Task> send)
     {
         conv.ReactionSource = source;
         conv.React = send;
@@ -44,7 +44,7 @@ public partial class MainWindow
     {
         if (_node == null || conv.ReactionSource == null) return;
         ReactionSet set;
-        try { set = conv.ReactionSource(); }
+        try { set = conv.ReactionSource(conv.AllMessages.Where(m => m.Key != null).Select(m => m.Key!).ToList()); }
         catch (Exception ex) when (ex is InvalidOperationException) { return; }
         var me = _node.AccountId;
         foreach (var vm in conv.AllMessages)

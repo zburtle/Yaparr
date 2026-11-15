@@ -22,6 +22,9 @@ public sealed class HistoryCipher
         _key = key;
     }
 
+    /// <summary>The key of the history database (SQLCipher's): made from the history key, so that the two are never the same bytes.</summary>
+    public byte[] DatabaseKey() => HMACSHA256.HashData(_key, "yaparr-history-database-v1"u8);
+
     /// <summary>Opens the key file, or makes a new key if there is none. A key that cannot be opened is kept aside (old history cannot be read without it).</summary>
     public static HistoryCipher LoadOrCreate(string keyPath)
     {

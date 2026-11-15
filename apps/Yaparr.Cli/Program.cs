@@ -16,7 +16,7 @@ using var node = new ChatNode(new ChatNodeOptions
     DisplayName = args[0],
     Log = s => Console.WriteLine($"  [{s}]"),
     DiscoveryFactory = local ? mux => new LocalFileDiscovery(mux.LocalPort) : null,
-    HistoryStore = keepHistory ? new FileHistoryStore(Path.Combine(Path.GetTempPath(), "yaparr-cli-history", args[0])) : null,
+    HistoryStore = keepHistory ? new Yaparr.History.Sqlite.SqliteHistoryStore(Path.Combine(Path.GetTempPath(), "yaparr-cli-history", args[0] + ".db")) : null,
     DiscoveryInterval = local ? TimeSpan.FromSeconds(2) : TimeSpan.FromSeconds(15),
 });
 node.PeerConnected += p => Console.WriteLine($"* {p.DisplayName} ({p.Id.Short}) connected from {p.EndPoint}");

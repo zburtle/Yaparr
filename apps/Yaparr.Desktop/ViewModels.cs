@@ -402,8 +402,42 @@ public sealed class ReactionChipVm : Observable
 
 public sealed class ConversationVm : Observable
 {
-    /// <summary>Counts the reactions of this conversation as they stand now (the room's or the direct chat's).</summary>
-    public Func<ReactionSet>? ReactionSource { get; set; }
+    /// <summary>Counts the reactions on the messages with these keys as they stand now (the room's or the direct chat's).</summary>
+    public Func<IReadOnlyCollection<string>, ReactionSet>? ReactionSource { get; set; }
+
+    /// <summary>
+    /// Reads messages from before the one with a key, in a channel (null in a chat without channels): the messages, oldest first, and whether there are still
+    /// earlier ones. Null where there is nothing to read back to (a chat whose history is all shown).
+    /// </summary>
+    public Func<string?, string, Task<(IReadOnlyList<MessageVm> Messages, bool HasMore)>>? EarlierSource { get; set; }
+
+    private bool _loadingEarlier;
+    private readonly HashSet<string> _nothingEarlier = new();
+
+    /// <summary>Whether earlier messages of the channel on show can still be read.</summary>
+    public bool HasEarlier => EarlierSource != null && !_nothingEarlier.Contains(IsRoom ? CurrentChannel : "");
+
+    /// <summary>
+    /// Reads the page of messages before the oldest one shown and puts it above. Returns how many were added; 0 when there is nothing earlier, a page is
+    /// already being read, or the page held nothing to show.
+    /// </summary>
+    public async Task<int> LoadEarlierAsync()
+    {
+        if (!HasEarlier || _loadingEarlier) return 0;
+        var oldest = Messages.FirstOrDefault(m => m.Key != null);
+        if (oldest == null) return 0;
+        string channel = IsRoom ? CurrentChannel : "";
+        _loadingEarlier = true;
+        try
+        {
+            var (messages, more) = await EarlierSource!(IsRoom ? CurrentChannel : null, oldest.Key!);
+            // The room may have been switched to another channel while the page was being read: it still belongs to the channel it was read for.
+            foreach (var m in messages) Add(m);
+            if (!more) _nothingEarlier.Add(channel);
+            return messages.Count;
+        }
+        finally { _loadingEarlier = false; }
+    }
 
     /// <summary>Puts an emoji on a message or takes it off: the message's key, the emoji, whether to put it on, and the message's channel.</summary>
     public Func<string, string, bool, string?, Task>? React { get; set; }
@@ -664,12 +698,18 @@ public sealed class ConversationVm : Observable
             Messages[j].ShowDay = j == 0 || Messages[j - 1].Time.LocalDateTime.Date != Messages[j].Time.LocalDateTime.Date;
     }
 
-    /// <summary>Makes the messages match <paramref name="current"/>: those that are no longer there (deleted, or from someone banned) go, new ones come in. Lines without an id, such as notices, stay.</summary>
-    public void Reload(IReadOnlyList<MessageVm> current)
+    /// <summary>
+    /// Makes the messages match <paramref name="current"/>: those that are no longer there (deleted, or from someone banned) go, new ones come in. Lines without
+    /// an id, such as notices, stay. Messages read from earlier history are not in <paramref name="current"/>, so <paramref name="stillShown"/> says which of
+    /// them (by key) are still to be shown; without it only the messages of <paramref name="current"/> stay.
+    /// </summary>
+    public void Reload(IReadOnlyList<MessageVm> current, Func<IReadOnlyCollection<string>, ISet<string>>? stillShown = null)
     {
         var keep = current.Where(m => m.Id != null).Select(m => m.Id!).ToHashSet();
+        var others = Messages.Where(m => m.Id != null && m.Key != null && !keep.Contains(m.Id)).Select(m => m.Key!).ToList();
+        var shown = stillShown != null && others.Count > 0 ? stillShown(others) : new HashSet<string>();
         for (int i = Messages.Count - 1; i >= 0; i--)
-            if (Messages[i].Id is { } id && !keep.Contains(id)) { _ids.Remove(id); Messages.RemoveAt(i); }
+            if (Messages[i].Id is { } id && !keep.Contains(id) && !(Messages[i].Key is { } key && shown.Contains(key))) { _ids.Remove(id); Messages.RemoveAt(i); }
         foreach (var m in current) Add(m);
         for (int i = 0; i < Messages.Count; i++) MarkDays(i);
     }

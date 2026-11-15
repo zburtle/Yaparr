@@ -28,6 +28,7 @@ public sealed partial class Session : IDisposable
     private string? _banner;
     private double? _bannerProgress;
     private ChatNode? _node;
+    private Yaparr.History.Sqlite.SqliteHistoryStore? _historyStore;
     private Chat? _open;
     private bool _channelChoiceDirty;
 
@@ -158,7 +159,7 @@ public sealed partial class Session : IDisposable
             AccountStatePath = _data.AccountStatePath,
             AvatarDirectory = _data.AvatarDirectory,
             AccountEntries = linked,
-            HistoryStore = new FileHistoryStore(_data.HistoryDirectory, historyCipher),
+            HistoryStore = _historyStore = _data.OpenHistoryStore(historyCipher, Log),
             DirectHistoryDirectory = Path.Combine(_data.Directory, "direct"),
             AttachmentDirectory = Path.Combine(_data.Directory, "attachments"),
             Traversal = traversal,
@@ -978,6 +979,8 @@ public sealed partial class Session : IDisposable
         _cts.Cancel();
         _node?.Dispose();
         _node = null;
+        _historyStore?.Dispose();
+        _historyStore = null;
         _rooms.Clear();
         _directs.Clear();
         Chats.Clear();

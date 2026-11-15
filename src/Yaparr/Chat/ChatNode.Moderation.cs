@@ -233,7 +233,7 @@ public sealed partial class ChatNode
     }
 
     private bool MessageIsMine(ChatRoom room, string key) =>
-        room.History.Snapshot().Any(m => SignedMessage.Key(m) == key && IsMyDevice(new PeerId(m.From)));
+        room.History.Find(new[] { key }).Any(m => IsMyDevice(new PeerId(m.From)));
 
     internal void DeleteSound(ChatRoom room, string id)
     {
@@ -340,8 +340,8 @@ public sealed partial class ChatNode
     // theirs or we have not seen it, which is the case for a message that has not reached us yet.
     private bool NotSomeoneElsesMessage(ChatRoom room, string key, PeerId signer)
     {
-        foreach (var stored in room.History.Snapshot())
-            if (SignedMessage.Key(stored) == key) return AccountOf(new PeerId(stored.From)) == signer;
+        foreach (var stored in room.History.Find(new[] { key }))
+            return AccountOf(new PeerId(stored.From)) == signer;
         return true;
     }
 

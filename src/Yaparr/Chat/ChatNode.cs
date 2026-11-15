@@ -1095,13 +1095,54 @@ public sealed partial class ChatNode : IDisposable
         }
     }
 
-    internal IReadOnlyList<ChatMessage> GetHistory(ChatRoom room) =>
-        room.History.Snapshot().Where(m => !MessageEnvelope.IsReactionText(m.Text) && !IsBlocked(new PeerId(m.From)) && !IsBannedIn(room, new PeerId(m.From)) && !IsMessageDeleted(room, m)).Select(m => ToChatMessage(room, m, catchUp: false)).ToList();
+    /// <summary>How many of the newest messages of each channel are read when a room is opened; earlier ones are read as they are scrolled to.</summary>
+    public const int InitialHistoryPerChannel = 100;
 
-    /// <summary>The reactions on the messages of a room, as its history comes to now (people you blocked or the room banned do not count).</summary>
-    internal ReactionSet GetReactions(ChatRoom room)
+    private bool IsShown(ChatRoom room, StoredMessage m) =>
+        !IsBlocked(new PeerId(m.From)) && !IsBannedIn(room, new PeerId(m.From)) && !IsMessageDeleted(room, m);
+
+    internal ISet<string> WhichAreShown(ChatRoom room, IReadOnlyCollection<string> keys) =>
+        room.History.Find(keys).Where(m => IsShown(room, m)).Select(SignedMessage.Key).ToHashSet();
+
+    internal IReadOnlyList<ChatMessage> GetHistory(ChatRoom room) =>
+        room.History.Newest(InitialHistoryPerChannel).Where(m => IsShown(room, m)).Select(m => ToChatMessage(room, m, catchUp: false)).ToList();
+
+    /// <summary>
+    /// Messages of a channel before the one with the key <paramref name="beforeKey"/>, oldest first, up to <paramref name="count"/> of them (fewer when some are
+    /// hidden: deleted, or by someone blocked or banned). <see cref="HistoryPage.HasMore"/> says whether there are still earlier ones to read.
+    /// </summary>
+    internal HistoryPage GetEarlierHistory(ChatRoom room, string? channel, string beforeKey, int count)
     {
-        var reactions = room.History.Snapshot().Where(m => MessageEnvelope.IsReactionText(m.Text)).ToList();
+        channel = RoomChannels.Normalize(channel);
+        string? chan = channel == RoomChannels.DefaultText ? null : channel;
+        if (room.History.Find(new[] { beforeKey }).FirstOrDefault() is not { } at) return new HistoryPage(Array.Empty<ChatMessage>(), false);
+        long ts = at.Ts;
+        string key = beforeKey;
+        var shown = new List<ChatMessage>();
+        // Hidden messages (a banned person's, say) can fill a whole page, so reading goes on until something can be shown or the history ends.
+        for (int round = 0; round < 20; round++)
+        {
+            var raw = room.History.Before(chan, ts, key, count);
+            foreach (var m in raw)
+                if (IsShown(room, m)) shown.Add(ToChatMessage(room, m, catchUp: false));
+            if (raw.Count < count) { shown.Reverse(); return new HistoryPage(shown, false); }
+            var last = raw[^1];
+            ts = last.Ts;
+            key = SignedMessage.Key(last);
+            if (shown.Count > 0) { shown.Reverse(); return new HistoryPage(shown, true); }
+        }
+        shown.Reverse();
+        return new HistoryPage(shown, true);
+    }
+
+    /// <summary>
+    /// The reactions on the messages with these keys, as the history comes to now (people you blocked or the room banned do not count). Without keys, those on the
+    /// messages <see cref="GetHistory"/> returns.
+    /// </summary>
+    internal ReactionSet GetReactions(ChatRoom room, IReadOnlyCollection<string>? keys = null)
+    {
+        keys ??= room.History.Newest(InitialHistoryPerChannel).Select(SignedMessage.Key).ToList();
+        var reactions = room.History.ReactionsTo(keys).ToList();
         foreach (var m in reactions)
             if (MessageEnvelope.TryReadReaction(m.Text, out var reaction) && reaction.Account != null) LearnAccount(m, reaction);
         return ReactionTally.Build(reactions.Select(m => (SignedMessage.Key(m), m.From, m.Ts, m.Text)),
