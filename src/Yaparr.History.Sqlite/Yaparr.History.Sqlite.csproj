@@ -14,7 +14,7 @@
   <ItemGroup>
     <!-- SQLite with SQLCipher (the community edition, BSD-style licence), which encrypts the whole database file. It ships native libraries
          for Windows, Linux (glibc and musl), macOS and Android. -->
-    <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="10.0.14" />
+    <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="11.0.0" />
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlcipher" Version="2.1.11" />
   </ItemGroup>
 
