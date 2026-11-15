@@ -171,6 +171,7 @@ public sealed partial class Session : IDisposable
             Log = Log,
         });
         node.AttachmentChanged += update => UI(() => OnAttachmentChanged(update));
+        EmojiPictures.Reader = hash => node.ReadAttachment(hash);
         node.BlockChanged += (id, blocked) => UI(() => OnBlockChanged(id, blocked));
         node.AvatarChanged += account => UI(() => OnAvatarChanged(account));
         AvatarBrushes.Source = account => _node?.AvatarOf(new PeerId(account));
@@ -689,7 +690,7 @@ public sealed partial class Session : IDisposable
         var parts = m.Parts;
         var line = new Line(m.Key, m.From.DisplayName, m.Attachment != null ? parts.Body : m.Body, m.Timestamp, mine, m.Channel, m)
         {
-            ReplyKey = parts.ReplyTo, Mentions = parts.Mentions, Card = parts.Preview,
+            ReplyKey = parts.ReplyTo, Mentions = parts.Mentions, Card = parts.Preview, Emoji = parts.Emoji,
             MentionsMe = _node != null && !mine && (m.Room != null && _rooms.Keys.FirstOrDefault(r => r.Name == m.Room) is { } named
                 ? named.Names(m, _node.AccountId)
                 : parts.Mentions.Any(x => x.Account == _node.AccountId)),
@@ -811,6 +812,10 @@ public sealed partial class Session : IDisposable
 
     private void OnAttachmentChanged(AttachmentUpdate update)
     {
+        // The picture of a custom emoji a message uses has arrived: the words are drawn again with it.
+        if (update.State == AttachmentState.Ready)
+            foreach (var line in _rooms.Values.Concat(_directs.Values).SelectMany(c => c.AllLines).Where(l => l.Emoji != null && l.Emoji.Any(e => e.Hash == update.Hash)).ToList())
+                line.RaiseEmoji();
         if (!_pictureLines.TryGetValue(update.Hash, out var list)) return;
         foreach (var line in list.ToList())
         {
@@ -842,6 +847,30 @@ public sealed partial class Session : IDisposable
     }
 
     /// <summary>The picture as it was sent, for showing big or saving; null if it is not on the phone.</summary>
+    private EmojiShelf? _emojiShelf;
+
+    /// <summary>Your own custom emoji: pictures kept on this phone, each under a name you write as :name:.</summary>
+    internal EmojiShelf OwnEmoji => _emojiShelf ??= new EmojiShelf(_data.EmojiDirectory);
+
+    /// <summary>Whether this is this phone's own id (the one that added a picture to a room's list can take it off again).</summary>
+    public bool IsThisDevice(PeerId id) => _node != null && id == _node.Id;
+
+    // The custom emoji a message's words use, ready to travel with it: yours first, then the room's. A name that is neither is only words.
+    private List<CustomEmoji> CustomEmojiFor(Chat chat, string text)
+    {
+        var used = new List<CustomEmoji>();
+        if (_node == null) return used;
+        foreach (var name in CustomEmojiRules.NamesIn(text).Take(CustomEmojiRules.MaxPerMessage))
+        {
+            var bytes = OwnEmoji.Read(name);
+            if (bytes == null && chat.Room is { } room && room.Emoji.FirstOrDefault(e => e.Name == name) is { Available: true } info) bytes = room.GetGif(info.Id);
+            if (bytes == null) continue;
+            try { used.Add(_node.PrepareEmoji(name, bytes)); }
+            catch (ArgumentException) { }
+        }
+        return used;
+    }
+
     private GifShelf? _shelf;
 
     /// <summary>The GIF shelf: pictures kept on this phone to send again.</summary>
@@ -885,13 +914,16 @@ public sealed partial class Session : IDisposable
         string id;
         string? channel = null;
         var preview = await PreviewForAsync(chat, text);
+        // The custom emoji the words use go with the message, so everyone sees them whether they are yours or the room's.
+        var emoji = CustomEmojiFor(chat, text);
         if (chat.Room is { } room)
         {
             channel = chat.CurrentChannel;
-            id = await room.SendAsync(text, channel == RoomChannels.DefaultText ? null : channel, replyKey, mentions, preview);
+            id = await room.SendAsync(text, channel == RoomChannels.DefaultText ? null : channel, replyKey, mentions, preview, emoji);
         }
-        else id = await chat.Direct!.SendAsync(text, replyKey, preview);
-        chat.Add(new Line(ChatMessage.KeyOf(_node.Id, id), _node.DisplayName, text, DateTimeOffset.Now, mine: true, channel, OwnMessage(chat, id, text, channel, null)) { ReplyKey = replyKey, Mentions = mentions?.ToList() ?? new List<Mention>(), Card = preview });
+        else id = await chat.Direct!.SendAsync(text, replyKey, preview, emoji);
+        chat.Add(new Line(ChatMessage.KeyOf(_node.Id, id), _node.DisplayName, text, DateTimeOffset.Now, mine: true, channel, OwnMessage(chat, id, text, channel, null))
+            { ReplyKey = replyKey, Mentions = mentions?.ToList() ?? new List<Mention>(), Card = preview, Emoji = emoji.Count == 0 ? null : emoji });
         Resort(chat);
     }
 
