@@ -434,6 +434,7 @@ public partial class MainWindow : Window
         VpnPanel.Attach(_vpn);
         TurnPanel.Attach(() => _node, Path.Combine(_data.Directory, "network.json"));
         SetUpReplies();
+        SetUpEmojiTyping();
         SetUpUpdateCheck();
 
         if (Arg("--name") == null && _settings.DisplayName == null && !_data.HasIdentity) await OfferLinkAsync();
@@ -1299,7 +1300,7 @@ public partial class MainWindow : Window
         UpdateInlineScreen();
         UpdateSharerPanel();
         bool has = _selected != null;
-        InputBox.IsEnabled = SendButton.IsEnabled = AttachButton.IsEnabled = ShelfButton.IsEnabled = has;
+        InputBox.IsEnabled = SendButton.IsEnabled = AttachButton.IsEnabled = ShelfButton.IsEnabled = ComposerEmojiButton.IsEnabled = has;
         MessageList.ItemsSource = _selected?.Messages;
         HeaderText.Text = _selected?.Name ?? "Welcome to Yaparr";
         HeaderSubtitle.Text = _selected?.Subtitle ?? "Serverless chat between friends";
