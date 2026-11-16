@@ -27,6 +27,23 @@ public sealed class ChatRoom
     private readonly long _startedAt = Environment.TickCount64;
     internal long SyncRequestedAt, HistoryReceivedAt;
 
+    // While earlier history has been asked for (see RequestEarlierHistory): until when, and the time before which messages that come are that history, not news.
+    internal long BackfillUntil, BackfillBefore;
+
+    /// <summary>
+    /// Messages from before what this device holds arrived from other members, because they were asked for with <see cref="RequestEarlierHistory"/>. They are
+    /// kept, not shown as new messages: read them with <see cref="GetEarlierHistory"/>.
+    /// </summary>
+    public event Action? EarlierHistoryReceived;
+    internal void RaiseEarlierHistory() => EarlierHistoryReceived?.Invoke();
+
+    /// <summary>
+    /// Asks the connected members of the room (up to three) for the messages before the one with the key <paramref name="beforeKey"/> (<see cref="ChatMessage.Key"/>),
+    /// in a text channel, when this device has nothing earlier. They answer with what they hold; it is kept and <see cref="EarlierHistoryReceived"/> is raised.
+    /// Returns how many members were asked: 0 when nobody is connected, history sync is off, or the message is not held.
+    /// </summary>
+    public int RequestEarlierHistory(string? channel, string beforeKey) => _node.RequestEarlierHistory(this, channel, beforeKey);
+
     /// <summary>
     /// Where the room is in getting going on this device, for showing that something is happening. A room that has been looked for for a
     /// minute with no one found is <see cref="RoomSyncState.NoOneOnline"/>, which is not a problem: it is just quiet.
@@ -44,7 +61,17 @@ public sealed class ChatRoom
 
     internal RoomHistory History { get; set; } = null!;
 
+    /// <summary>
+    /// The newest messages of each text channel (<see cref="ChatNode.InitialHistoryPerChannel"/> of them), oldest first. Everything said in the room is kept;
+    /// earlier messages are read with <see cref="GetEarlierHistory"/>.
+    /// </summary>
     public IReadOnlyList<ChatMessage> GetHistory() => _node.GetHistory(this);
+
+    /// <summary>
+    /// The messages of a text channel before the message with the key <paramref name="beforeKey"/> (<see cref="ChatMessage.Key"/>), oldest first, up to
+    /// <paramref name="count"/> of them, for scrolling back through the history.
+    /// </summary>
+    public HistoryPage GetEarlierHistory(string? channel, string beforeKey, int count = 100) => _node.GetEarlierHistory(this, channel, beforeKey, Math.Clamp(count, 1, 500));
 
     /// <summary>Where the room is found now: derived from the current secret, so it changes when the secret is replaced.</summary>
     internal byte[] Topic => _secret.Topic;
@@ -117,6 +144,9 @@ public sealed class ChatRoom
     internal readonly Dictionary<PeerId, VoiceEntry> Voice = new();
     internal readonly ConcurrentDictionary<string, MediaGroup> Media = new();
     internal long VoiceTreeWantedSince, VoiceTreeLowSince;
+    // The root of the voice tree we were attached to and when we saw the tree go: that member is left out when choosing who starts the next one.
+    internal Yaparr.Identity.PeerId? VoiceTreeLastRoot;
+    internal long VoiceTreeLostAt;
     internal Yaparr.Voice.VoiceSession? ActiveVoice;
     internal bool SelfMuted, SelfDeafened;
     internal long LastVoiceAt;
@@ -209,6 +239,35 @@ public sealed class ChatRoom
     /// <summary>Lifts a ban.</summary>
     public void Unban(PeerId account) => _node.Unban(this, account);
 
+    /// <summary>
+    /// The owner (only) takes an account out of the room without banning it: it leaves everyone's list of people, and its app leaves the room if it is on, and
+    /// is told so (<see cref="RemovedFromRoom"/>). Nothing keeps the person out: they come back by opening the invite again, which is the difference from
+    /// <see cref="Ban"/>. Throws <see cref="InvalidOperationException"/> for anyone who is not the owner, for yourself, and in a room with no owner.
+    /// </summary>
+    public void RemoveFromRoom(PeerId account, string name) => _node.RemoveFromRoom(this, account, name);
+
+    /// <summary>
+    /// The owner (only) kicks an account out of the voice channel without banning it: its app leaves the call and everyone else stops listing it there
+    /// (<see cref="VoiceKicked"/> tells it). It can join again whenever it likes. Throws <see cref="InvalidOperationException"/> for anyone who is not the
+    /// owner, for yourself, when the person is not in voice, and in a room with no owner.
+    /// </summary>
+    public void KickFromVoice(PeerId account) => _node.KickFromVoice(this, account);
+
+    /// <summary>
+    /// The owner removed you from the room (<see cref="RemoveFromRoom"/>) while you were on: leave it, and say so. Only an order that is news raises it; one
+    /// from before this room was opened here, or an old one, does not. Raised on another thread.
+    /// </summary>
+    public event Action? RemovedFromRoom;
+    internal void RaiseRemovedFromRoom() => RemovedFromRoom?.Invoke();
+
+    /// <summary>The owner kicked you from voice (<see cref="KickFromVoice"/>): your call here has ended. Raised on another thread.</summary>
+    public event Action? VoiceKicked;
+    internal void RaiseVoiceKicked() => VoiceKicked?.Invoke();
+
+    // When this room was opened here (unix time), and the newest orders about this account that have been acted on, so that none is acted on twice.
+    internal readonly long CreatedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+    internal long RemovalHandled, KickHandled;
+
     /// <summary>Deletes a message for everyone in the room (the owner and admins delete any message, everyone else their own).</summary>
     public void DeleteMessage(ChatMessage message) => _node.DeleteMessage(this, message);
 
@@ -278,6 +337,15 @@ public sealed class ChatRoom
     /// <summary>Adds a picture to the room's GIF shelf (PNG, JPEG, GIF or WebP up to <see cref="GifLimits.MaxBytes"/>).</summary>
     public GifInfo AddGif(byte[] data) => _node.AddGif(this, data);
 
+    /// <summary>
+    /// The room's custom emoji, by name: pictures any member added to be written as <c>:name:</c> (see <see cref="CustomEmoji"/>). They are kept with the shelf
+    /// (the same signed list, removals and take-downs: <see cref="RemoveGif"/> and <see cref="DeleteGif"/> work on their ids), but are not pictures to send.
+    /// </summary>
+    public IReadOnlyList<GifInfo> Emoji => _node.GetEmoji(this);
+
+    /// <summary>Adds a custom emoji to the room under a name. Throws <see cref="ArgumentException"/>, with a message for the person, for a name or picture that cannot be used or a name that is taken.</summary>
+    public GifInfo AddEmoji(string name, byte[] data) => _node.AddEmoji(this, name, data);
+
     /// <summary>Removes a picture you added.</summary>
     public void RemoveGif(string id) => _node.RemoveGif(this, id);
 
@@ -346,6 +414,12 @@ public sealed class ChatRoom
     /// <summary>The reactions on the messages of this room, counted from its history now (people you blocked or the room banned do not count).</summary>
     public ReactionSet GetReactions() => _node.GetReactions(this);
 
+    /// <summary>Which of the messages with these keys (<see cref="ChatMessage.Key"/>) are still to be shown: held, and not deleted or from someone blocked or banned.</summary>
+    public ISet<string> WhichAreShown(IReadOnlyCollection<string> messageKeys) => _node.WhichAreShown(this, messageKeys);
+
+    /// <summary>The reactions on the messages with these keys (<see cref="ChatMessage.Key"/>), counted from the history now.</summary>
+    public ReactionSet GetReactions(IReadOnlyCollection<string> messageKeys) => _node.GetReactions(this, messageKeys);
+
     /// <summary>
     /// Puts <paramref name="emoji"/> (one of <see cref="EmojiData"/>) on the message with the key <paramref name="messageKey"/>, or takes it off again
     /// (<paramref name="on"/> false). It is sent as a message of its own, in <paramref name="channelId"/> (the channel of the message it is on), and
@@ -369,8 +443,8 @@ public sealed class ChatRoom
     /// <paramref name="mentions"/> (accounts, up to <see cref="MessageEnvelope.MaxMentions"/>); the words themselves should say
     /// who is named: each <see cref="Mention"/> says whom, and the name as it is written after an @ in the words. Either can be left out. Returns the id of the message.
     /// </summary>
-    public Task<string> SendAsync(string text, string? channelId, string? replyTo, IReadOnlyCollection<Mention>? mentions = null, LinkPreview? preview = null) =>
-        Task.FromResult(_node.SendRoomMessage(this, MessageEnvelope.Wrap(text, replyTo, mentions, preview), channelId));
+    public Task<string> SendAsync(string text, string? channelId, string? replyTo, IReadOnlyCollection<Mention>? mentions = null, LinkPreview? preview = null, IReadOnlyCollection<CustomEmoji>? emoji = null) =>
+        Task.FromResult(_node.SendRoomMessage(this, MessageEnvelope.Wrap(text, replyTo, mentions, preview, emoji), channelId));
 
     /// <summary>
     /// Asks the members you are connected to for messages you do not have, by key (<see cref="ChatMessage.Key"/>), for example the
@@ -414,8 +488,24 @@ public sealed class DirectChat
     /// <summary>The name to show: the connected person's, or else the last one they used in this conversation.</summary>
     public string DisplayName => Peer?.DisplayName ?? _node.DirectNameOf(PeerId) ?? PeerId.Short;
 
-    /// <summary>The messages of this conversation that are kept (those sent and received on any of your devices), oldest first.</summary>
+    /// <summary>The newest messages of this conversation (<see cref="ChatNode.InitialHistoryPerChannel"/> of them; those sent and received on any of your devices), oldest first. Everything is kept; earlier ones are read with <see cref="GetEarlierHistory"/>.</summary>
     public IReadOnlyList<ChatMessage> History => _node.GetDirectHistory(PeerId);
+
+    /// <summary>
+    /// Earlier messages of this conversation arrived from your other devices or from the other person's, because they were asked for with
+    /// <see cref="RequestEarlierHistory"/>. They are kept, not shown as new messages: read them with <see cref="GetEarlierHistory"/>.
+    /// </summary>
+    public event Action? EarlierHistoryReceived;
+    internal void RaiseEarlierHistory() => EarlierHistoryReceived?.Invoke();
+
+    /// <summary>
+    /// Asks your other devices and the other person's (those connected, up to four) for the messages before the one with the id <paramref name="beforeId"/>, when this
+    /// device holds nothing earlier. Returns how many were asked: 0 when none is connected, history sync is off, or the message is not held.
+    /// </summary>
+    public int RequestEarlierHistory(string beforeId) => _node.RequestEarlierDirectHistory(PeerId, beforeId);
+
+    /// <summary>The messages before the one with the id <paramref name="beforeId"/> (<see cref="ChatMessage.Id"/>), oldest first, up to <paramref name="count"/> of them.</summary>
+    public HistoryPage GetEarlierHistory(string beforeId, int count = 100) => _node.GetEarlierDirectHistory(PeerId, beforeId, Math.Clamp(count, 1, 500));
 
     /// <summary>The time of the newest message from them that you have read, on any of your devices.</summary>
     public DateTimeOffset? ReadUpTo => _node.DirectReadUpTo(PeerId);
@@ -435,6 +525,9 @@ public sealed class DirectChat
     /// <summary>The reactions on the messages of this conversation, yours and theirs.</summary>
     public ReactionSet GetReactions() => _node.GetDirectReactions(PeerId);
 
+    /// <summary>The reactions on the messages with these keys (<see cref="ChatMessage.Key"/>), yours and theirs.</summary>
+    public ReactionSet GetReactions(IReadOnlyCollection<string> messageKeys) => _node.GetDirectReactions(PeerId, messageKeys);
+
     /// <summary>Puts <paramref name="emoji"/> on the message with the key <paramref name="messageKey"/>, or takes it off again (<paramref name="on"/> false). The emoji has to be one of <see cref="EmojiData"/>.</summary>
     public Task<string> SendReactionAsync(string messageKey, string emoji, bool on)
     {
@@ -446,7 +539,7 @@ public sealed class DirectChat
     public Task<string> SendAsync(string text) => Task.FromResult(_node.SendDirectMessage(PeerId, text));
 
     /// <summary>Sends a message that answers the message with the key <paramref name="replyTo"/> (<see cref="ChatMessage.Key"/>).</summary>
-    public Task<string> SendAsync(string text, string? replyTo, LinkPreview? preview = null) => Task.FromResult(_node.SendDirectMessage(PeerId, MessageEnvelope.Wrap(text, replyTo, null, preview)));
+    public Task<string> SendAsync(string text, string? replyTo, LinkPreview? preview = null, IReadOnlyCollection<CustomEmoji>? emoji = null) => Task.FromResult(_node.SendDirectMessage(PeerId, MessageEnvelope.Wrap(text, replyTo, null, preview, emoji)));
 
     /// <summary>Who a message you sent has reached, while it is still being tracked.</summary>
     public IReadOnlyList<DeliveryRecipient> GetDeliveryDetails(string messageId) => _node.GetDeliveryDetails(messageId);

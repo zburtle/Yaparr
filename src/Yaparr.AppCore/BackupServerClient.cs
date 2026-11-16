@@ -43,6 +43,35 @@ public sealed class BackupServerState
     /// <summary>The version this device last saved or restored (0 if none), to tell when another device has saved a newer one.</summary>
     public int Version { get; set; }
 
+    // ---- automatic backups (see AutoBackup) ----
+
+    /// <summary>Back up by itself: when what cannot be lost changes, and once a day for the history. Off until the person turns it on.</summary>
+    public bool AutoBackup { get; set; }
+    /// <summary>When the last backup (by hand or automatic) was saved.</summary>
+    public DateTimeOffset? LastBackup { get; set; }
+    /// <summary>The keys, rooms, name and account as they were at that backup (<see cref="AppData.KeysFingerprint"/>), to tell when they have changed since.</summary>
+    public string KeysFingerprint { get; set; } = "";
+    /// <summary>Another device saved a newer backup: automatic backups wait until the person has backed up by hand (which asks).</summary>
+    public bool AutoPaused { get; set; }
+    /// <summary>The last thing automatic backups had to say, for the Backup page: what they did, or why they stopped.</summary>
+    public string AutoNote { get; set; } = "";
+    /// <summary>Failed attempts in a row, and when the first of them was, and when to try again.</summary>
+    public int Failures { get; set; }
+    public DateTimeOffset? FirstFailure { get; set; }
+    public DateTimeOffset? RetryAfter { get; set; }
+
+    /// <summary>Records a backup that was saved, by hand or by itself.</summary>
+    public void RecordBackup(int version, string keysFingerprint, DateTimeOffset now)
+    {
+        Version = version;
+        LastBackup = now;
+        KeysFingerprint = keysFingerprint;
+        AutoPaused = false;
+        Failures = 0;
+        FirstFailure = null;
+        RetryAfter = null;
+    }
+
     public bool SignedIn => Token.Length > 0 && Url.Length > 0;
 }
 
@@ -236,7 +265,8 @@ public sealed class BackupServerClient : IDisposable
         _token = token;
         _ownsHttp = http == null;
         _http = http ?? new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
-        _http.BaseAddress = server;
+        // Not set again when it already is: a client that was given one that has been used (a test, or a caller that shares one) must not throw.
+        if (_http.BaseAddress != server) _http.BaseAddress = server;
     }
 
     public void Dispose()

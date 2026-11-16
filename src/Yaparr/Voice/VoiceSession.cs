@@ -50,6 +50,9 @@ public sealed class VoiceSession : IDisposable
 
     /// <summary>When this session started, on the tick clock; two of your devices that join at the same moment use it to settle which one stays.</summary>
     internal long JoinedAt { get; } = Environment.TickCount64;
+
+    /// <summary>When this session began, as unix time: an order of the owner to kick you from voice only counts if it is newer than this.</summary>
+    internal long JoinedAtUnixMs { get; } = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
     private readonly CancellationTokenSource _cts = new();
     private readonly Channel<CapturedFrame> _capture = Channel.CreateBounded<CapturedFrame>(new BoundedChannelOptions(10) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
     private readonly IOpusEncoder _encoder;
@@ -70,6 +73,7 @@ public sealed class VoiceSession : IDisposable
     private float _level;
     private readonly float[] _mix = new float[FrameSamples];
     private readonly float[] _tmp = new float[FrameSamples];
+    private readonly float[] _cueMix = new float[FrameSamples];
     private readonly float[] _ring = new float[FrameSamples * 4];
     private int _ringStart, _ringCount;
     private readonly object _playLock = new();
@@ -217,14 +221,30 @@ public sealed class VoiceSession : IDisposable
     private readonly List<SoundPlayback> _sounds = new();
     private volatile bool _allSoundboardsMuted;
 
-    /// <summary>Silences one person's soundboard sounds without muting their voice.</summary>
+    /// <summary>
+    /// Silences one person's soundboard sounds without muting their voice. It is the person who is muted, not the device: <paramref name="peer"/> may be any
+    /// of their devices (or their account), and the sounds of all their devices are silenced, including devices that are linked to the account later.
+    /// </summary>
     public void SetSoundboardMute(PeerId peer, bool muted)
     {
-        if (muted) _soundboardMuted[peer] = true; else _soundboardMuted.TryRemove(peer, out _);
-        if (muted) lock (_playLock) _sounds.RemoveAll(s => s.By == peer);
+        if (muted) _soundboardMuted[peer] = true;
+        else foreach (var key in _soundboardMuted.Keys.Where(k => SamePerson(k, peer)).ToList()) _soundboardMuted.TryRemove(key, out _);
+        if (muted) lock (_playLock) _sounds.RemoveAll(s => SamePerson(s.By, peer));
     }
 
-    public bool IsSoundboardMuted(PeerId peer) => _soundboardMuted.ContainsKey(peer);
+    public bool IsSoundboardMuted(PeerId peer) => IsMutedPerson(peer);
+
+    // The account of a device is what makes it one person with their other devices; a device that is on no account is its own person.
+    private bool SamePerson(PeerId a, PeerId b) => a == b || _node.AccountOf(a) == _node.AccountOf(b);
+
+    private bool IsMutedPerson(PeerId peer)
+    {
+        // What you play yourself is never muted by muting another device of yours.
+        if (_soundboardMuted.IsEmpty || peer == _node.Id) return false;
+        if (_soundboardMuted.ContainsKey(peer)) return true;
+        var person = _node.AccountOf(peer);
+        return _soundboardMuted.Keys.Any(k => _node.AccountOf(k) == person);
+    }
 
     /// <summary>Silences everybody's soundboard sounds (and yours) but not voices.</summary>
     public bool SoundboardsMuted
@@ -236,10 +256,43 @@ public sealed class VoiceSession : IDisposable
     /// <summary>How loud soundboard sounds are against voices, 0 to 2.</summary>
     public float SoundboardVolume { get; set; } = 0.8f;
 
-    internal void PlaySound(PeerId by, SoundClip clip)
+    // The app's own sounds (a new message, someone joining) played through the call's speakers, so that they are part of what the echo canceller is
+    // given to remove; played on a device of their own they would come back through the microphone as something it knows nothing about.
+    private sealed class Cue { public float[] Samples = Array.Empty<float>(); public int Position; }
+    private readonly List<Cue> _cues = new();
+    private long _lastPulledAt;
+    private const int MaxCues = 8, MaxCueSamples = SampleRate * 4;
+
+    /// <summary>
+    /// Plays one of the app's own sounds (mono, 48 kHz) through the call's speakers, at its own level: it is not held back by deafening, by muting
+    /// soundboards or by the volume of the call. Returns false, and plays nothing, when the call is not playing (it has ended, or the speakers are
+    /// not being fed); play it some other way then.
+    /// </summary>
+    public bool PlayCue(float[] samples)
     {
-        if (_disposed || _deafened || _allSoundboardsMuted || _soundboardMuted.ContainsKey(by)) return;
-        lock (_playLock) _sounds.Add(new SoundPlayback(by, clip));
+        if (_disposed || samples.Length == 0 || samples.Length > MaxCueSamples) return false;
+        if (Environment.TickCount64 - Interlocked.Read(ref _lastPulledAt) > 500) return false;
+        lock (_playLock)
+        {
+            if (_cues.Count >= MaxCues) return false;
+            _cues.Add(new Cue { Samples = samples });
+        }
+        return true;
+    }
+
+    /// <summary>How many soundboard sounds are playing right now.</summary>
+    internal int SoundsPlaying { get { lock (_playLock) return _sounds.Count; } }
+
+    /// <summary>Plays a sound. Different sounds play at the same time, but a person who plays a sound that is still going starts it over instead of stacking a second copy.</summary>
+    internal void PlaySound(PeerId by, string soundId, SoundClip clip)
+    {
+        if (_disposed || _deafened || _allSoundboardsMuted || IsMutedPerson(by)) return;
+        var playback = new SoundPlayback(by, soundId, clip);
+        lock (_playLock)
+        {
+            int running = _sounds.FindIndex(s => s.By == by && s.SoundId == soundId);
+            if (running >= 0) _sounds[running] = playback; else _sounds.Add(playback);
+        }
     }
 
     /// <summary>How many frames of a person were decoded; one that was not among the loudest, or was muted, costs nothing.</summary>
@@ -385,6 +438,7 @@ public sealed class VoiceSession : IDisposable
     public void PullPlayback(Span<float> output)
     {
         var whole = output;
+        Interlocked.Exchange(ref _lastPulledAt, Environment.TickCount64);
         lock (_playLock)
         {
             while (!output.IsEmpty)
@@ -432,11 +486,20 @@ public sealed class VoiceSession : IDisposable
             for (int i = 0; i < FrameSamples; i++) _mix[i] += _tmp[i] * soundGain;
             if (sound.Finished) _sounds.RemoveAt(k);
         }
+        Array.Clear(_cueMix);
+        for (int k = _cues.Count - 1; k >= 0; k--)
+        {
+            var cue = _cues[k];
+            int n = Math.Min(FrameSamples, cue.Samples.Length - cue.Position);
+            for (int i = 0; i < n; i++) _cueMix[i] += cue.Samples[cue.Position + i];
+            cue.Position += n;
+            if (cue.Position >= cue.Samples.Length) _cues.RemoveAt(k);
+        }
         float master = OutputGain;
         bool levelled = _levelSpeakers;
         for (int i = 0; i < FrameSamples; i++)
         {
-            float s = _mix[i] * master;
+            float s = _mix[i] * master + _cueMix[i];
             // A boosted voice that goes past full scale is bent smoothly into the last 0.25, which sounds less harsh than a hard cut;
             // so are several leveled voices that add up past it.
             if (master > 1f || levelled)

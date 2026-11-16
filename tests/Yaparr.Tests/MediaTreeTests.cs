@@ -351,6 +351,53 @@ public class VoiceTreeTests
         }
     }
 
+    // The one who starts the tree is chosen among the members who can relay, so that members who cannot (and sort first) are not waited for.
+    [Fact]
+    public async Task The_voice_tree_is_started_without_waiting_for_members_who_cannot_relay()
+    {
+        const int n = 8;
+        var hub = new InMemoryDiscoveryHub();
+        var nodes = new List<ChatNode>();
+        var rooms = new List<ChatRoom>();
+        var sessions = new List<VoiceSession>();
+        try
+        {
+            for (int i = 0; i < n; i++)
+                nodes.Add(TestUtil.NewNode(hub, "c" + i, media: new MediaOptions
+                {
+                    Maintenance = TimeSpan.FromMilliseconds(200), EdgeTimeout = TimeSpan.FromMilliseconds(1500), Announce = TimeSpan.FromSeconds(2),
+                    VoiceThreshold = 6, VoiceRootFanout = 8, Fanout = 2, VoiceRankDelay = TimeSpan.FromSeconds(4),
+                }));
+            // Only the member who sorts last can relay (before, the others in front of it would each have been given their four seconds).
+            var capable = nodes.OrderBy(x => x.Id.Value, StringComparer.Ordinal).Last();
+            foreach (var node in nodes) node.RelayCapableOverride = ReferenceEquals(node, capable);
+            foreach (var node in nodes) rooms.Add(await node.JoinRoomAsync("cap"));
+            await TestUtil.WaitFor(() => rooms.All(r => r.Members.Count >= 1), 20_000);
+            foreach (var room in rooms) sessions.Add(room.JoinVoice());
+            await TestUtil.WaitFor(() => rooms.All(r => r.VoiceParticipants.Count == n), 30_000);
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+
+            await TestUtil.WaitFor(() => rooms.All(r => r.Media.Values.Any(g => g.Kind == "voice" && g.Attached && g.Joined)), 40_000);
+            Assert.True(sw.Elapsed < TimeSpan.FromSeconds(12), $"the tree took {sw.Elapsed.TotalSeconds:0.0} seconds to appear");
+            var roomOfCapable = rooms[nodes.IndexOf(capable)];
+            Assert.Contains(roomOfCapable.Media.Values, g => g.Kind == "voice" && g.IsRoot);
+        }
+        finally
+        {
+            foreach (var s in sessions) s.Dispose();
+            foreach (var node in nodes) node.Dispose();
+        }
+    }
+
+    [Fact]
+    public void The_hint_about_relaying_does_not_change_what_is_signed_and_one_out_of_range_is_not_a_real_one()
+    {
+        using var identity = PeerIdentity.Generate();
+        var state = SignedVoice.Create(identity, "room-key", "x", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), true, false, false);
+        Assert.True(SignedVoice.Verify(state with { Up = 7 }, "room-key"));
+        Assert.True(SignedVoice.Verify(state with { Up = null }, "room-key"));
+    }
+
     [Fact]
     public async Task When_the_root_of_a_voice_tree_disappears_another_member_starts_a_new_tree_and_audio_flows_again()
     {
@@ -403,6 +450,50 @@ public class VoiceTreeTests
                     if (heard[i].GetRange(f, 480).Max(Math.Abs) > 0.05f) loud++;
                 Assert.True(loud >= 40, $"listener {i} heard only {loud} loud frames after the root left");
             }
+        }
+        finally
+        {
+            foreach (var s in sessions) { try { s.Dispose(); } catch (ObjectDisposedException) { } }
+            foreach (var node in nodes) { try { node.Dispose(); } catch (ObjectDisposedException) { } }
+        }
+    }
+
+    // The member next in line takes over as soon as the tree is seen to be gone: it does not wait behind the root, whose place in the call lingers.
+    [Fact]
+    public async Task The_next_in_line_starts_a_new_voice_tree_without_waiting_for_the_root_that_left()
+    {
+        const int n = 6;
+        var hub = new InMemoryDiscoveryHub();
+        var nodes = new List<ChatNode>();
+        var rooms = new List<ChatRoom>();
+        var sessions = new List<VoiceSession>();
+        try
+        {
+            for (int i = 0; i < n; i++)
+                nodes.Add(TestUtil.NewNode(hub, "s" + i, media: new MediaOptions
+                {
+                    Maintenance = TimeSpan.FromMilliseconds(200), EdgeTimeout = TimeSpan.FromMilliseconds(1200), Announce = TimeSpan.FromSeconds(2),
+                    VoiceThreshold = 5, VoiceRootFanout = 8, Fanout = 2, VoiceRankDelay = TimeSpan.FromSeconds(4),
+                }));
+            // The ones in front of the standby must not be able to start it first: only the root and the next in line can relay.
+            var byId = nodes.OrderBy(x => x.Id.Value, StringComparer.Ordinal).ToList();
+            foreach (var node in nodes) node.RelayCapableOverride = ReferenceEquals(node, byId[0]) || ReferenceEquals(node, byId[1]);
+            foreach (var node in nodes) rooms.Add(await node.JoinRoomAsync("standby"));
+            await TestUtil.WaitFor(() => rooms.All(r => r.Members.Count >= 1), 20_000);
+            foreach (var room in rooms) sessions.Add(room.JoinVoice());
+            await TestUtil.WaitFor(() => rooms.All(r => r.VoiceParticipants.Count == n), 30_000);
+            await TestUtil.WaitFor(() => rooms.All(r => r.Media.Values.Any(g => g.Kind == "voice" && g.Attached && g.Joined)), 40_000);
+
+            int rootIndex = rooms.FindIndex(r => r.Media.Values.Any(g => g.Kind == "voice" && g.IsRoot));
+            Assert.Same(byId[0], nodes[rootIndex]);
+            string firstGroup = rooms[rootIndex].Media.Values.Single(g => g.Kind == "voice").Id;
+            // It drops out without saying so (nothing it sends leaves), so its place in the call lingers.
+            nodes[rootIndex].Mux.OutboundFilter = (_, _) => false;
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+
+            var alive = Enumerable.Range(0, n).Where(i => i != rootIndex).ToList();
+            await TestUtil.WaitFor(() => alive.All(i => rooms[i].Media.Values.Any(g => g.Kind == "voice" && g.Id != firstGroup && g.Attached && g.Joined)), 60_000);
+            Assert.True(sw.Elapsed < TimeSpan.FromSeconds(5), $"the new tree took {sw.Elapsed.TotalSeconds:0.0} seconds");
         }
         finally
         {

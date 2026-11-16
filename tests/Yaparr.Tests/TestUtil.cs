@@ -31,6 +31,9 @@ internal static class TestUtil
         PeerCachePath = peerCachePath,
         HistoryCipher = historyCipher,
         DirectHistoryDirectory = directHistoryDirectory,
+        // Direct messages are kept in the history store; a test that wants them to survive a restart gives a folder, and gets a store in it (closed with the node).
+        HistoryStore = directHistoryDirectory == null ? null : new Yaparr.History.Sqlite.SqliteHistoryStore(Path.Combine(directHistoryDirectory, "history.db"), historyCipher?.DatabaseKey()),
+        OwnsHistoryStore = directHistoryDirectory != null,
         SoundboardDirectory = soundboardDirectory,
         RolesDirectory = rolesDirectory,
         AvatarDirectory = avatarDirectory,

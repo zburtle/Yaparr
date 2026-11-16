@@ -30,7 +30,10 @@ public sealed class AppSettings
     /// <summary>The computer app: closing the window leaves Yaparr running behind an icon in the notification area (the Exit menu item and the icon's Exit end it).</summary>
     public bool CloseToTray { get; set; } = true;
 
-    /// <summary>The phone app looks for a newer version when it opens and offers it. This contacts GitHub, which sees the phone's address.</summary>
+    /// <summary>
+    /// The app looks for a newer version when it starts and offers it (the phone app and the desktop app both). This contacts GitHub, which sees the address
+    /// the app connects from. The manual check (Help, Check for updates, on the desktop) is always there.
+    /// </summary>
     public bool CheckForUpdates { get; set; } = true;
 
     /// <summary>The version of the update the phone app offered last, so that the same one is not offered again at every start.</summary>
@@ -78,11 +81,20 @@ public sealed class AppSettings
     public int VoiceBitrateKbps { get; set; } = 64;
     /// <summary>The video format last picked when sharing a screen: true for AV1, false for Automatic. The computer app.</summary>
     public bool ScreenShareAv1 { get; set; }
+    /// <summary>True when H.265 was the video format last picked when sharing a screen (it is ignored where this version has H.265 switched off). The computer app.</summary>
+    public bool ScreenShareH265 { get; set; }
+    /// <summary>Lower the bitrate of a share when the viewers cannot keep up (on unless turned off in the share dialog). The computer app.</summary>
+    public bool ScreenShareAdaptQuality { get; set; } = true;
     /// <summary>Bring everyone you hear to a similar loudness (on top of each person's own volume).</summary>
     public bool VoiceLevelSpeakers { get; set; }
 
     /// <summary>People whose soundboard sounds you have silenced (their voice is not affected), by id.</summary>
     public List<string> SoundboardMuted { get; set; } = new();
+    /// <summary>
+    /// The sound on each of the ten number keys of a room's soundboard (1 to 9, then 0), by room key: ten sound ids, "" for an empty key. A room that is not
+    /// listed has the first ten sounds as they are listed (see <see cref="SoundSlots"/>). Yours alone: nobody else sees it.
+    /// </summary>
+    public Dictionary<string, List<string>> SoundboardSlots { get; set; } = new();
     /// <summary>Silence everybody's soundboard sounds.</summary>
     public bool SoundboardsMuted { get; set; }
     /// <summary>How loud soundboard sounds are against voices, in percent (100 is as loud as a voice).</summary>
@@ -191,8 +203,32 @@ public sealed class AppData
 
     public string Directory { get; }
     public string HistoryDirectory => Path.Combine(Directory, "history");
+
+    /// <summary>The database every room's messages are kept in (encrypted by SQLCipher with a key made from the history key).</summary>
+    public string HistoryDatabasePath => Path.Combine(HistoryDirectory, "history.db");
+
+    /// <summary>
+    /// Opens the history database, and brings over the history files of earlier versions (one file for each room) the first time. Keep it open for as long
+    /// as the app runs and dispose it at the end.
+    /// </summary>
+    public Yaparr.History.Sqlite.SqliteHistoryStore OpenHistoryStore(Yaparr.Identity.HistoryCipher cipher, Action<string>? log = null)
+    {
+        var key = cipher.DatabaseKey();
+        var store = Yaparr.History.Sqlite.SqliteHistoryStore.Open(HistoryDatabasePath, key, log);
+        // A backup is made from a consistent copy of the database, not from the file it is writing to.
+        _historySnapshot = path => store.SnapshotTo(path, key);
+        try
+        {
+            Yaparr.Chat.HistoryImport.FromFiles(store, HistoryDirectory, cipher, log);
+            Yaparr.Chat.DirectHistoryImport.FromFiles(store, Path.Combine(Directory, "direct"), cipher, log);
+        }
+        catch (Exception ex) when (ex is IOException or Microsoft.Data.Sqlite.SqliteException) { log?.Invoke($"could not bring over the old history: {ex.Message}"); }
+        return store;
+    }
     /// <summary>Where the GIF shelf (pictures kept to send again) lives.</summary>
     public string ShelfDirectory => Path.Combine(Directory, "gifshelf");
+    /// <summary>Where a person's own custom emoji live (see <c>EmojiShelf</c>).</summary>
+    public string EmojiDirectory => Path.Combine(Directory, "emojishelf");
     public string VpnConfigPath => Path.Combine(Directory, "vpn.conf");
     private string SettingsPath => Path.Combine(Directory, "settings.json");
     private string IdentityPath => Path.Combine(Directory, "identity.key");
@@ -206,6 +242,66 @@ public sealed class AppData
     public void SaveSettings(AppSettings settings) => SecretStore.WriteAllText(SettingsPath, JsonSerializer.Serialize(settings, Json));
 
     private string BackupServerPath => Path.Combine(Directory, "backup-server.json");
+    private string PushPath => Path.Combine(Directory, "push.json");
+
+    /// <summary>
+    /// A fingerprint of what cannot be lost: the identity key, the key that locks the history, the account (its rooms, blocks and devices), the VPN configuration, the
+    /// name, and the room keys. It changes when one of those does (a room joined or made, a key changed, a device linked, the name changed) and not when the
+    /// history grows or a setting like the theme is changed. Automatic backups compare it with the one saved at the last backup to know a backup is due.
+    /// </summary>
+    public string KeysFingerprint()
+    {
+        using var hash = System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName.SHA256);
+        void Add(string label, byte[]? bytes)
+        {
+            hash.AppendData(System.Text.Encoding.UTF8.GetBytes($"{label}:{bytes?.Length ?? -1};"));
+            if (bytes != null) hash.AppendData(bytes);
+        }
+        // The files are sealed for this computer, and sealing differs from one write to the next, so what is hashed is what is inside.
+        foreach (var name in new[] { "identity.key", "history.key", "account.json", "vpn.conf" })
+        {
+            byte[]? bytes = null;
+            var path = Path.Combine(Directory, name);
+            try { if (File.Exists(path)) bytes = SecretStore.ReadAllBytes(path); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.Cryptography.CryptographicException) { }
+            Add(name, bytes);
+        }
+        var settings = LoadSettings();
+        Add("name", System.Text.Encoding.UTF8.GetBytes(settings.DisplayName ?? ""));
+        foreach (var room in settings.PrivateRooms.OrderBy(r => r.Key, StringComparer.Ordinal))
+            Add("room", System.Text.Encoding.UTF8.GetBytes(room.Key + "|" + room.Label));
+        return Convert.ToHexStringLower(hash.GetHashAndReset());
+    }
+
+    /// <summary>True if any message, direct chat, picture or sound has been written since the given moment: whether a backup of the history would hold anything new.</summary>
+    public bool HistoryChangedSince(DateTimeOffset since)
+    {
+        foreach (var folder in BackedUpFolders)
+        {
+            var path = Path.Combine(Directory, folder);
+            if (!System.IO.Directory.Exists(path)) continue;
+            try
+            {
+                foreach (var file in System.IO.Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
+                    if (File.GetLastWriteTimeUtc(file) > since.UtcDateTime) return true;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        }
+        return false;
+    }
+
+    /// <summary>How this device is woken for push notifications, and the wake address it gave out. Sealed like the other files with secrets, and not part of a backup.</summary>
+    public PushState LoadPush()
+    {
+        try { return JsonSerializer.Deserialize<PushState>(SecretStore.ReadAllText(PushPath)) ?? new(); }
+        catch (Exception ex) when (ex is IOException or JsonException or System.Security.Cryptography.CryptographicException) { return new(); }
+    }
+
+    public void SavePush(PushState state)
+    {
+        SecretStore.WriteAllText(PushPath, JsonSerializer.Serialize(state, Json));
+        MakePrivate(PushPath);
+    }
 
     /// <summary>What this device remembers about its backup server. It is sealed like the other files with secrets, and is not part of a backup.</summary>
     public BackupServerState LoadBackupServer()
@@ -243,13 +339,48 @@ public sealed class AppData
         }
     }
 
+    private Action<string>? _historySnapshot;
+
+    /// <summary>
+    /// Pictures (and sound files) that have been on this computer for longer than this are left out of a backup: the messages stay, and the pictures are
+    /// asked for again from other members when someone scrolls back to them. How long a file has been here is when it was saved.
+    /// </summary>
+    public static readonly TimeSpan BackupAttachmentAge = TimeSpan.FromDays(183);
+
     private void WriteProfileZip(Stream destination)
     {
+        string? snapshot = null;
+        try
+        {
+            WriteProfileZip(destination, ref snapshot);
+        }
+        finally
+        {
+            if (snapshot != null) try { File.Delete(snapshot); } catch (IOException) { }
+        }
+    }
+
+    private void WriteProfileZip(Stream destination, ref string? snapshot)
+    {
         using var zip = new ZipArchive(destination, ZipArchiveMode.Create, leaveOpen: true);
+        var databaseName = Path.GetFileName(HistoryDatabasePath);
         foreach (var file in System.IO.Directory.EnumerateFiles(Directory, "*", SearchOption.AllDirectories))
         {
             var relative = Path.GetRelativePath(Directory, file).Replace('\\', '/');
             if (!IsProfilePath(relative)) continue;
+            // The database is written to while the app runs, so a copy of the file could catch a write half way (and a journal beside it is only half of
+            // one): what goes into the backup is a consistent copy made by the database itself, and the files beside it are left out.
+            var inHistory = relative.StartsWith("history/", StringComparison.OrdinalIgnoreCase);
+            var name = Path.GetFileName(relative);
+            if (inHistory && name.StartsWith(databaseName + "-", StringComparison.OrdinalIgnoreCase)) continue;
+            if (relative.StartsWith("attachments/", StringComparison.OrdinalIgnoreCase) && DateTime.UtcNow - File.GetLastWriteTimeUtc(file) > BackupAttachmentAge) continue;
+            var sourcePath = file;
+            if (inHistory && string.Equals(name, databaseName, StringComparison.OrdinalIgnoreCase) && _historySnapshot != null)
+            {
+                snapshot = Path.Combine(Directory, "history.snapshot.tmp");
+                _historySnapshot(snapshot);
+                sourcePath = snapshot;
+            }
             var entry = zip.CreateEntry(relative, CompressionLevel.Optimal);
             using var target = entry.Open();
             // A backup has to open on another computer, so the files sealed for this one go in as they are inside.
@@ -258,7 +389,7 @@ public sealed class AppData
                 target.Write(SecretStore.ReadAllBytes(file));
                 continue;
             }
-            using var source = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var source = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
             source.CopyTo(target);
         }
     }

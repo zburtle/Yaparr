@@ -121,6 +121,37 @@ public class ModerationTests
         await TestUtil.WaitFor(() => !t.Ro.IsBanned(other), 20_000);
     }
 
+    private static byte[] Picture(int w, int h)
+    {
+        var b = new byte[40];
+        new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 13, (byte)'I', (byte)'H', (byte)'D', (byte)'R' }.CopyTo(b, 0);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(b.AsSpan(16), (uint)w);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(b.AsSpan(20), (uint)h);
+        return b;
+    }
+
+    [Fact]
+    public async Task The_picture_of_a_deleted_message_is_deleted_too_unless_another_message_shows_the_same_file()
+    {
+        var t = await Trio();
+        using var _ = t.Owner; using var __ = t.B; using var ___ = t.C;
+        var shared = t.C.PrepareAttachment(Picture(20, 10), "shared.png");
+        var lonely = t.C.PrepareAttachment(Picture(30, 15), "lonely.png");
+        await t.Rc.SendAsync(shared.ToText("first"));
+        await t.Rc.SendAsync(shared.ToText("second"));
+        await t.Rc.SendAsync(lonely.ToText("only one"));
+        await TestUtil.WaitFor(() => t.Ro.GetHistory().Count(m => m.Attachment != null) == 3 && t.Owner.HasAttachment(shared.Hash) && t.Owner.HasAttachment(lonely.Hash), 30_000);
+
+        // The only message with a picture goes: so does the file. One of two messages with the same file goes: the file stays for the other.
+        t.Ro.DeleteMessage(t.Ro.GetHistory().Single(m => m.Attachment?.Hash == lonely.Hash));
+        t.Ro.DeleteMessage(t.Ro.GetHistory().Single(m => m.Text == "first"));
+        await TestUtil.WaitFor(() => !t.Owner.HasAttachment(lonely.Hash) && t.Ro.GetHistory().All(m => m.Text != "first"), 30_000);
+        Assert.True(t.Owner.HasAttachment(shared.Hash), "the other message still shows it");
+
+        t.Ro.DeleteMessage(t.Ro.GetHistory().Single(m => m.Text == "second"));
+        await TestUtil.WaitFor(() => !t.Owner.HasAttachment(shared.Hash), 30_000);
+    }
+
     [Fact]
     public async Task A_message_an_admin_deletes_goes_for_everyone_and_does_not_come_back_with_the_history()
     {

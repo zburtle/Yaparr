@@ -12,7 +12,7 @@ public class RetargetTests
         var options = new ScreenOptions
         {
             Display = first, Fps = 60, MaxWidth = 1920, MaxHeight = 1080, Kbps = 6000, KeyFrameSeconds = 2, Codec = ScreenCodec.H264,
-            Encoder = HardwareEncoder.Amf, ShareSound = true, GpuScale = true, ShowCursor = false,
+            Encoder = HardwareEncoder.Amf, ShareSound = true, ShowCursor = false,
         };
 
         var monitor = options.Retarget(second, null);
@@ -29,7 +29,7 @@ public class RetargetTests
             Assert.Equal((1920, 1080, 6000), (changed.MaxWidth, changed.MaxHeight, changed.Kbps));
             Assert.Equal(2, changed.KeyFrameSeconds);
             Assert.Equal((ScreenCodec.H264, HardwareEncoder.Amf), (changed.Codec, changed.Encoder!.Value));
-            Assert.True(changed.ShareSound && changed.GpuScale);
+            Assert.True(changed.ShareSound);
             Assert.False(changed.ShowCursor);
         }
     }

@@ -48,6 +48,24 @@ public sealed partial class ChatNode
         return new Attachment(hash, Attachment.CleanName(fileName), data.Length, info.Mime, info.Width, info.Height, thumbnail);
     }
 
+    /// <summary>
+    /// Stores a picture as a custom emoji called <paramref name="name"/> so a message can use it: put the result in <see cref="MessageEnvelope.Wrap"/> with
+    /// words that write <c>:name:</c>. Throws <see cref="ArgumentException"/>, with a message for the person, for a name or picture that cannot be used.
+    /// </summary>
+    public CustomEmoji PrepareEmoji(string name, byte[] data)
+    {
+        var clean = CustomEmojiRules.CleanName(name)
+                    ?? throw new ArgumentException($"A name is {CustomEmojiRules.MinNameLength} to {CustomEmojiRules.MaxNameLength} letters, digits or underscores.");
+        if (!CustomEmojiRules.TryRead(data, out var info, out var problem)) throw new ArgumentException(problem);
+        var hash = Attachment.HashOf(data);
+        _blobs.Save(hash, data);
+        return new CustomEmoji(clean, hash, data.Length, info.Mime, info.Width, info.Height);
+    }
+
+    /// <summary>Downloads the picture of a custom emoji a message uses (done by itself when the message arrives; this is for asking again).</summary>
+    public Task<AttachmentState> FetchEmojiAsync(ChatMessage message, CustomEmoji emoji, CancellationToken ct = default) =>
+        StartFetch(message with { Attachment = emoji.AsAttachment() }, force: true, trustedOnly: false, ct);
+
     public bool HasAttachment(string hash) => _blobs.Has(hash);
 
     /// <summary>The file for an attachment that is available on this computer, or null.</summary>
@@ -89,6 +107,22 @@ public sealed partial class ChatNode
     private void AutoFetch(ChatMessage message, bool trustedOnly = false)
     {
         if (message.Attachment != null && !_blobs.Has(message.Attachment.Hash)) _ = StartFetch(message, force: false, trustedOnly, CancellationToken.None);
+        // The custom emoji a message uses are small pictures, fetched the same way, so the words show them as soon as they can.
+        else if (message.Attachment == null && message.Parts.Emoji is { } emoji)
+            foreach (var e in emoji.Where(e => !_blobs.Has(e.Hash)))
+                _ = StartFetch(message with { Attachment = e.AsAttachment() }, force: false, trustedOnly, CancellationToken.None);
+    }
+
+    // Files that no message shows any more (their messages were deleted) are removed, unless another message, a sound or a GIF still uses the same file.
+    private void ReleasePictureFiles(IReadOnlyCollection<string> hashes)
+    {
+        if (hashes.Count == 0) return;
+        var live = LiveSoundHashes();
+        foreach (var hash in hashes)
+        {
+            if (live.Contains(hash) || _directHistory.Mentions(hash) || _histories.Values.Any(h => h.Mentions(hash))) continue;
+            _blobs.Delete(hash);
+        }
     }
 
     private void RaiseAttachment(string hash, AttachmentState state, long received, long total) =>

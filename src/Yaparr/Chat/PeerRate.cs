@@ -42,6 +42,13 @@ public sealed class PeerLimits
     /// <summary>A peer that has this many frames dropped within <see cref="DropWindow"/> is disconnected.</summary>
     public int DropsBeforeClose { get; init; } = 500;
     public TimeSpan DropWindow { get; init; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// A peer that was disconnected for flooding is refused when it connects again for this long, and for twice as long (up to <see cref="BanLongest"/>) each
+    /// time it floods again soon after (see <see cref="FloodBans"/>). Zero turns the ban off.
+    /// </summary>
+    public TimeSpan BanFirst { get; init; } = TimeSpan.FromMinutes(1);
+    public TimeSpan BanLongest { get; init; } = TimeSpan.FromHours(1);
 }
 
 internal sealed class TokenBucket

@@ -170,14 +170,14 @@ public class ChannelTests
     }
 
     [Fact]
-    public void The_history_limit_is_per_channel()
+    public void The_shared_window_is_limited_per_channel()
     {
         var author = PeerIdentity.Generate();
         var history = new RoomHistory("room", null, max: 3, TimeSpan.FromDays(1));
         long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         for (int i = 0; i < 6; i++) Assert.True(history.TryAdd(SignedMessage.Create(author, "room", "a", $"busy {i}", now - 10_000 + i, "1111111111111111")));
         for (int i = 0; i < 2; i++) Assert.True(history.TryAdd(SignedMessage.Create(author, "room", "a", $"quiet {i}", now - 20_000 + i, "2222222222222222")));
-        var kept = history.Snapshot().Select(m => m.Text).ToList();
+        var kept = history.Missing(new HashSet<string>(), 100).Select(m => m.Text).ToList();
         Assert.Equal(new[] { "busy 3", "busy 4", "busy 5" }, kept.Where(t => t.StartsWith("busy")));
         Assert.Equal(new[] { "quiet 0", "quiet 1" }, kept.Where(t => t.StartsWith("quiet")));
     }

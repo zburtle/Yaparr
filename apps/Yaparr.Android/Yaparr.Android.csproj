@@ -46,8 +46,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="12.1.5" />
-    <PackageReference Include="Avalonia.Android" Version="12.1.5" />
+    <PackageReference Include="Avalonia" Version="12.1.6" />
+    <PackageReference Include="Avalonia.Android" Version="12.1.6" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.4" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.4" />
     <!-- Scanning the QR code: the phone's camera through CameraX (AndroidX, not Google Play services) and ZXing to read it. -->
@@ -56,6 +56,13 @@
     <PackageReference Include="Xamarin.AndroidX.Camera.Lifecycle" Version="1.6.2" />
     <PackageReference Include="Xamarin.AndroidX.Camera.View" Version="1.6.2" />
     <PackageReference Include="ZXing.Net" Version="0.16.10" />
+    <!-- Push through Firebase, only for phones with no UnifiedPush app (the one thing here that is Google's: see docs/android-app.md). Nothing is sent through it but "wake up". -->
+    <PackageReference Include="Xamarin.Firebase.Messaging" Version="125.1.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The app's Firebase settings (project and app ids, and an API key every copy of the app carries; none of it is secret). -->
+    <GoogleServicesJson Include="google-services.json" />
   </ItemGroup>
 
 </Project>

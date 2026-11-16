@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Yaparr\Yaparr.csproj" />
+    <ProjectReference Include="..\..\src\Yaparr.History.Sqlite\Yaparr.History.Sqlite.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

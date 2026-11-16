@@ -11,6 +11,9 @@ internal sealed class ChildLink
     public long HeardAt;
     public int Cap;
     public long LastReplayAt;
+    /// <summary>What the viewers under this child last said about the stream, and when (see <see cref="MediaQuality"/>).</summary>
+    public MediaQuality Quality;
+    public long QualityAt;
 }
 
 internal sealed record MapNode(PeerId Parent, int Cap);
@@ -62,19 +65,43 @@ internal sealed class MediaGroup
 
     // Packets recently seen, to give again to a child that missed them; and what we are missing ourselves.
     public readonly Dictionary<uint, byte[]> Recent = new();
-    public readonly Queue<uint> RecentOrder = new();
+    public readonly Queue<(uint Seq, long At)> RecentOrder = new();
     public bool SeenAny, NackRunning;
     public uint HighestSeq;
     public readonly Dictionary<uint, long> Missing = new();
     public readonly Dictionary<uint, long> Asked = new();
+    public readonly Dictionary<uint, int> AskCount = new();
 
     // A replay from the parent: which numbers it promised (first to last), which have come, and when the last one did.
     public bool ReplayExpected, ReplayChecking;
     public uint ReplayFirst, ReplayLast, ReplayMax;
     public HashSet<uint> ReplayGot = new();
     public readonly Dictionary<uint, long> ReplayAsked = new();
+    public readonly Dictionary<uint, int> ReplayAskCount = new();
     public long LastReplayPacketAt;
     public long Retransmitted, Recovered;
+    /// <summary>Packets that were asked for again and not sent because repairs had used the share of the stream they may use (see <see cref="ChatNode.RepairShare"/>).</summary>
+    public long RepairsRefused;
+    /// <summary>What the stream carries now, in kbit/s, when that is not what it was announced with (a sharer that lowered the bitrate); 0 means the announced one.</summary>
+    public int EffectiveKbps;
+    public TokenBucket? RepairBucket;
+    // What the receiving end saw of the packets, to tell a link that loses them from one that only delivers them late, and a viewer that asks for
+    // too much from one that asks for too little: packets that came, gaps noticed when a later one came first, gaps too big to ask about, packets that
+    // then arrived by themselves (late) or after being asked for, packets never seen at all, and the requests made.
+    public long PacketsSeen, GapsNoticed, BigGaps, ArrivedLate, RepairedAfterAsking, GaveUp, NacksSent, PacketsAsked;
+
+    /// <summary>A viewer: how this device judges its own picture, asked for every two seconds and sent up the tree; null when it does not (a sharer, a relay without a picture).</summary>
+    public Func<ViewerQualitySample>? QualityProvider;
+    public long QualitySentAt;
+    /// <summary>At the root: what the viewers say, folded, and when it was last worked out.</summary>
+    public MediaQuality RoomQuality;
+    public long RoomQualityAt;
+    /// <summary>At the root: whether the sharer's own link is fine, as the sharer measures it (see <see cref="MediaSource.OwnLinkFine"/>), and when the room state was last sent down.</summary>
+    public bool OwnLinkFine = true;
+    public long RoomSentAt;
+    /// <summary>What the root last said about the room (see <see cref="RoomState"/>), as it came from the parent, and when.</summary>
+    public RoomState RoomStateIn;
+    public long RoomStateAt;
 
     public uint Seq;
     public readonly Dictionary<ulong, SeqWindow> Windows = new();
@@ -131,9 +158,10 @@ public sealed class MediaSource : IDisposable
         uint id = Interlocked.Increment(ref _frameId);
         // Fast enough for a key frame to go out in a fraction of a second, slow enough not to overflow the buffers on the way or to fill a
         // home connection's queue, where a burst makes voice packets wait behind it.
-        int copies;
-        lock (_group.Gate) copies = _group.Children.Count;
-        double rate = UploadPlan.FramePaceBytesPerSecond(_node.MeasuredUploadBytesPerSecond, _group.Info.Kbps, copies);
+        int copies, kbps;
+        // The pace follows what the stream carries now, so that a sharer that lowered its bitrate also slows the burst of each key frame.
+        lock (_group.Gate) { copies = _group.Children.Count; kbps = _group.EffectiveKbps > 0 ? _group.EffectiveKbps : _group.Info.Kbps; }
+        double rate = UploadPlan.FramePaceBytesPerSecond(_node.MeasuredUploadBytesPerSecond, kbps, copies);
         long started = System.Diagnostics.Stopwatch.GetTimestamp();
         long sent = 0;
         for (int i = 0; i < count; i++)
@@ -168,6 +196,32 @@ public sealed class MediaSource : IDisposable
     public event Action? KeyFrameRequested;
 
     public MediaStatus Status => _node.StatusOf(_group);
+
+    /// <summary>
+    /// What the stream carries now in kbit/s, when the sharer has lowered or raised it from what was announced: repairs may use a quarter of it (see
+    /// <see cref="ChatNode.RepairShare"/>). Set it whenever the encoder is given a new bitrate.
+    /// </summary>
+    public int EffectiveKbps
+    {
+        get { lock (_group.Gate) return _group.EffectiveKbps > 0 ? _group.EffectiveKbps : _group.Info.Kbps; }
+        set => _node.SetEffectiveKbps(_group, value);
+    }
+
+    /// <summary>
+    /// What the viewers say about how the stream is going, folded: how many reported, how many are in trouble (see <see cref="MediaQuality"/>). Only viewers that
+    /// reported are in it (an older version does not), and only what is under ten seconds old; none at all is <see cref="MediaQuality.None"/>, which means no information.
+    /// </summary>
+    public MediaQuality Room => _node.RoomQualityOf(_group);
+
+    /// <summary>
+    /// Whether the sharer's own link is fine (it had no trouble sending), as the sharer measures it. Said to the viewers with the state of the room, so that one that is the
+    /// only one in trouble can be told so only when the cause is not the sharer's own link. True until set.
+    /// </summary>
+    public bool OwnLinkFine
+    {
+        get { lock (_group.Gate) return _group.OwnLinkFine; }
+        set { lock (_group.Gate) _group.OwnLinkFine = value; }
+    }
 
     /// <summary>Everyone who is watching now, however far down the tree they sit, as far as the reports up the tree have said.</summary>
     public IReadOnlyList<PeerId> Viewers => _node.ViewersOf(_group);
@@ -210,6 +264,22 @@ public sealed class MediaView : IDisposable, IMediaFrameSource
 
     public MediaGroupInfo Info => _group.Info;
 
+    /// <summary>
+    /// How this viewer judges its own picture; asked for every two seconds, and sent up the tree with what the viewers below report, so that the sharer
+    /// can tell a room that struggles from one viewer that does (see <see cref="ViewerQualityMeter"/>). Leave it unset to say nothing.
+    /// </summary>
+    public Func<ViewerQualitySample>? QualityProvider
+    {
+        get { lock (_group.Gate) return _group.QualityProvider; }
+        set { lock (_group.Gate) _group.QualityProvider = value; }
+    }
+
+    /// <summary>
+    /// What the root last said about the room (how many viewers reported, how many are in trouble, whether the sharer's own link is fine), or null when nothing came
+    /// in the last fifteen seconds (an older sharer or relay does not send it). It is what lets a viewer be told that it is the only one in trouble (see <see cref="LoneStrugglerWatch"/>).
+    /// </summary>
+    public RoomState? RoomState => _node.RoomStateOf(_group);
+
     /// <summary>A packet arrived. It can come from any thread.</summary>
     public event Action<MediaPacket>? Received;
 
@@ -225,6 +295,8 @@ public sealed class MediaView : IDisposable, IMediaFrameSource
 
     public long FramesDelivered { get { lock (_gate) return _assembler?.Delivered ?? 0; } }
     public long FramesLost { get { lock (_gate) return _assembler?.Lost ?? 0; } }
+    /// <summary>Frames the sender made that were never shown (lost, or thrown away while waiting for a key frame).</summary>
+    public long FramesMissed { get { lock (_gate) return _assembler?.Missed ?? 0; } }
 
     public MediaStatus Status => _node.StatusOf(_group);
 
@@ -360,7 +432,8 @@ public sealed partial class ChatNode
     internal MediaStatus StatusOf(MediaGroup g)
     {
         lock (g.Gate)
-            return new MediaStatus(g.Id, g.IsRoot, g.Parent, g.Children.Keys.ToList(), g.Delivered, g.Forwarded, g.Dropped, g.Duplicates, g.Retransmitted, g.Recovered, g.ServerBlocked);
+            return new MediaStatus(g.Id, g.IsRoot, g.Parent, g.Children.Keys.ToList(), g.Delivered, g.Forwarded, g.Dropped, g.Duplicates, g.Retransmitted, g.Recovered, g.ServerBlocked,
+                g.PacketsSeen, g.GapsNoticed, g.BigGaps, g.ArrivedLate, g.RepairedAfterAsking, g.NacksSent, g.PacketsAsked, g.GaveUp, g.RepairsRefused);
     }
 
     // ---- starting, announcing, ending -------------------------------------------------------
@@ -611,7 +684,118 @@ public sealed partial class ChatNode
             case "key": OnMediaKey(peer, g); break;
             case "nack": OnMediaNack(peer, g, m); break;
             case "replay": OnMediaReplay(peer, g, m); break;
+            case "quality": OnMediaQuality(peer, g, m); break;
+            case "room": OnMediaRoom(peer, g, m); break;
         }
+    }
+
+    // ---- what the viewers say about the stream -------------------------------------------------------------------
+
+    // Sent every two seconds (the loop that sends them runs every two, so the guard is a little under, or one in two would be skipped and the gap would be four),
+    // and good for ten: over a link that loses a good part of what it carries a report can be late by a few seconds, and a figure that went stale in the middle of
+    // trouble made the room look silent.
+    private const long QualityEveryMs = 2_000, QualitySendGapMs = 1_500, QualityFreshMs = 10_000;
+    private const int MaxViewersInReport = 100_000;
+
+    // A child tells what its viewers think of the stream. Kept as sent, a figure per child, so that each report replaces the last; a child that
+    // is not ours, or a report that does not add up, is ignored.
+    private void OnMediaQuality(PeerState peer, MediaGroup g, WireMedia m)
+    {
+        if (m.Viewers is < 1 or > MaxViewersInReport || m.Troubled < 0 || m.Troubled > m.Viewers || m.Lossy < 0 || m.Lossy > m.Viewers || m.WorstTenths is < 0 or > 10_000) return;
+        lock (g.Gate)
+        {
+            if (!g.Children.TryGetValue(peer.Id, out var child)) return;
+            child.Quality = new MediaQuality(m.Viewers, m.Troubled, m.WorstTenths / 10.0, m.Lossy);
+            child.QualityAt = Environment.TickCount64;
+        }
+    }
+
+    // This device's own judgement (if it is a viewer) and what its children last said that is still fresh, folded into one.
+    private MediaQuality FoldQuality(MediaGroup g, long now, bool includeOwn)
+    {
+        var total = MediaQuality.None;
+        Func<ViewerQualitySample>? provider;
+        lock (g.Gate)
+        {
+            provider = includeOwn ? g.QualityProvider : null;
+            foreach (var child in g.Children.Values)
+                if (child.QualityAt != 0 && now - child.QualityAt <= QualityFreshMs) total = total.Plus(child.Quality);
+        }
+        if (provider != null)
+        {
+            try { total = total.Plus(provider().AsQuality); }
+            catch (Exception) { }
+        }
+        return total;
+    }
+
+    // Every two seconds: a viewer or a relay sends one report up, the root works out what the room says.
+    private void MaintainQuality(MediaGroup g, long now)
+    {
+        PeerId? parent;
+        bool root;
+        lock (g.Gate)
+        {
+            if (!g.IsRoot && !g.Joined) return;
+            if (now - g.QualitySentAt < QualitySendGapMs) return;
+            g.QualitySentAt = now;
+            parent = g.Parent;
+            root = g.IsRoot;
+        }
+        if (root)
+        {
+            var room = FoldQuality(g, now, includeOwn: false);
+            bool send;
+            bool fine;
+            lock (g.Gate)
+            {
+                g.RoomQuality = room; g.RoomQualityAt = now;
+                send = room.Viewers > 0 && now - g.RoomSentAt >= RoomEveryMs - QualityEveryMs / 2;
+                if (send) g.RoomSentAt = now;
+                fine = g.OwnLinkFine;
+            }
+            if (send) PassRoomDown(g, new WireMedia { Op = "room", Viewers = room.Viewers, Troubled = room.Troubled, Fine = fine });
+            return;
+        }
+        var folded = FoldQuality(g, now, includeOwn: true);
+        if (folded.Viewers < 1 || parent is not { } up) return;
+        SendMedia(up, g, new WireMedia { Op = "quality", Viewers = folded.Viewers, Troubled = folded.Troubled, WorstTenths = (int)Math.Round(folded.WorstFps * 10), Lossy = folded.Lossy });
+    }
+
+    // ---- what the root says about the room, down the tree -------------------------------------------------------
+
+    // The root says it every five seconds (the loop that sends it runs every two, so the guard is a little under); a state is good for fifteen.
+    private const long RoomEveryMs = 5_000, RoomFreshMs = 15_000;
+
+    // A parent tells how the room is doing. Kept as it came, and passed on to the children (only from the parent we have: a message from anyone else is ignored, which
+    // also means it cannot go round in a circle). An old version has no such operation and ignores it, and so does not pass it on.
+    private void OnMediaRoom(PeerState peer, MediaGroup g, WireMedia m)
+    {
+        if (m.Viewers is < 1 or > MaxViewersInReport || m.Troubled < 0 || m.Troubled > m.Viewers) return;
+        lock (g.Gate)
+        {
+            if (g.IsRoot || g.Parent != peer.Id) return;
+            g.RoomStateIn = new RoomState(m.Viewers, m.Troubled, m.Fine);
+            g.RoomStateAt = Environment.TickCount64;
+        }
+        PassRoomDown(g, new WireMedia { Op = "room", Viewers = m.Viewers, Troubled = m.Troubled, Fine = m.Fine });
+    }
+
+    private void PassRoomDown(MediaGroup g, WireMedia body)
+    {
+        List<PeerId> children;
+        lock (g.Gate) children = g.Children.Keys.ToList();
+        foreach (var child in children) SendMedia(child, g, new WireMedia { Op = body.Op, Viewers = body.Viewers, Troubled = body.Troubled, Fine = body.Fine });
+    }
+
+    internal RoomState? RoomStateOf(MediaGroup g)
+    {
+        lock (g.Gate) return g.RoomStateAt != 0 && Environment.TickCount64 - g.RoomStateAt <= RoomFreshMs ? g.RoomStateIn : null;
+    }
+
+    internal MediaQuality RoomQualityOf(MediaGroup g)
+    {
+        lock (g.Gate) return Environment.TickCount64 - g.RoomQualityAt <= QualityFreshMs + QualityEveryMs ? g.RoomQuality : MediaQuality.None;
     }
 
     // A viewer needs a place to start from. The cache of whoever is closest may have one; if not, the sharer has to make one.
@@ -666,12 +850,62 @@ public sealed partial class ChatNode
                 }
             }
         }
-        foreach (var packet in found)
+        if (found.Count == 0) return;
+        // A few at once, the rest spread out at the pace of the stream itself: thirty packets in a row into a path that has just lost some
+        // are likely to be lost in the same way.
+        _ = ResendPaced(peer, g, found, ResendFirstAtOnce, Math.Max(256_000, g.Info.Kbps * 125.0));
+    }
+
+    internal const int ResendFirstAtOnce = 4;
+
+    /// <summary>
+    /// What repairs may use, as a share of the stream: a quarter. Repairs used to be paced at the stream's own rate, so a sender facing loss could double what it put
+    /// on a link that was already full, which made more loss and more repairs (a viewer on a link that carried about 6 Mbit/s took a 6 Mbit/s share to half its packets
+    /// lost, with the repairs on top). What is not repaired in time is lost and costs a key frame; what is repaired at the cost of the stream is lost too.
+    /// </summary>
+    internal const double RepairShare = 0.25;
+
+    // The most repairs for a group in bytes per second, from the stream it carries (a floor so that a thin stream can still be repaired), and a bucket of a quarter
+    // of a second of it so that a burst of requests after a gap is answered.
+    internal static double RepairBytesPerSecond(int kbps) => Math.Max(32_000, Math.Max(8, kbps) * 125.0 * RepairShare);
+
+    private TokenBucket RepairBucketOf(MediaGroup g)
+    {
+        lock (g.Gate)
         {
-            if (!MediaBudget.TryTake(packet.Length, Environment.TickCount64)) { lock (g.Gate) g.Dropped++; continue; }
+            if (g.RepairBucket != null) return g.RepairBucket;
+            double rate = RepairBytesPerSecond(g.EffectiveKbps > 0 ? g.EffectiveKbps : g.Info.Kbps);
+            return g.RepairBucket = new TokenBucket(Math.Max(16_000, rate * 0.25), rate);
+        }
+    }
+
+    /// <summary>The stream now carries this much (the sharer lowered or raised its bitrate): the share repairs may use follows it.</summary>
+    internal void SetEffectiveKbps(MediaGroup g, int kbps)
+    {
+        lock (g.Gate) { g.EffectiveKbps = kbps; g.RepairBucket = null; }
+    }
+
+    private async Task ResendPaced(PeerState peer, MediaGroup g, List<byte[]> packets, int freeCount, double rate)
+    {
+        var bucket = RepairBucketOf(g);
+        long started = System.Diagnostics.Stopwatch.GetTimestamp();
+        long sent = 0;
+        for (int i = 0; i < packets.Count; i++)
+        {
+            var packet = packets[i];
+            if (i >= freeCount)
+            {
+                double ahead = sent * 1000.0 / rate - System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+                if (ahead > 2) { try { await Task.Delay((int)ahead, _cts.Token).ConfigureAwait(false); } catch (OperationCanceledException) { return; } }
+            }
+            if (!bucket.TryTake(packet.Length)) { lock (g.Gate) g.RepairsRefused++; continue; }
+            // What a device passes on for others is limited so that it does not use all its upload for them; the stream it shares itself is its own (its first
+            // sends are not charged either), so its repairs are only held to the share of the stream they may use.
+            if (!g.IsRoot && !MediaBudget.TryTake(packet.Length, Environment.TickCount64)) { lock (g.Gate) g.Dropped++; continue; }
             try { peer.Connection.SendUnreliable(ChannelIds.Media, packet); }
             catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return; }
             lock (g.Gate) g.Retransmitted++;
+            if (i >= freeCount) sent += packet.Length;
         }
     }
 
@@ -682,17 +916,34 @@ public sealed partial class ChatNode
         lock (g.Gate)
         {
             long now = Environment.TickCount64;
+            g.PacketsSeen++;
             if (!g.SeenAny) { g.SeenAny = true; g.HighestSeq = seq; return; }
             int ahead = (int)(seq - g.HighestSeq);
             if (ahead > 0)
             {
                 if (ahead <= 256)
-                    for (uint s = g.HighestSeq + 1; s != seq; s++) { g.Missing[s] = now; gap = true; }
+                    for (uint s = g.HighestSeq + 1; s != seq; s++) { g.Missing[s] = now; g.GapsNoticed++; gap = true; }
+                else g.BigGaps++;
                 g.HighestSeq = seq;
             }
-            else if (g.Missing.Remove(seq)) g.Recovered++;
+            else if (g.Missing.Remove(seq))
+            {
+                g.Recovered++;
+                if (g.Asked.ContainsKey(seq)) g.RepairedAfterAsking++; else g.ArrivedLate++;
+            }
         }
         if (gap) ScheduleNack(g);
+    }
+
+    internal const int MaxAsks = 4;
+
+    /// <summary>The missing packets to ask the parent for now (at most 32), noting that they were asked for. Call with the group's lock held.</summary>
+    internal static List<uint> SelectAsks(MediaGroup g, long now)
+    {
+        var want = g.Missing.Where(kv => now - kv.Value >= 30 && g.AskCount.GetValueOrDefault(kv.Key) < MaxAsks
+                                         && now - g.Asked.GetValueOrDefault(kv.Key) >= 80 << Math.Max(0, g.AskCount.GetValueOrDefault(kv.Key) - 1)).Select(kv => kv.Key).Take(32).ToList();
+        foreach (var seq in want) { g.Asked[seq] = now; g.AskCount[seq] = g.AskCount.GetValueOrDefault(seq) + 1; }
+        return want;
     }
 
     private void ScheduleNack(MediaGroup g)
@@ -714,12 +965,13 @@ public sealed partial class ChatNode
                     lock (g.Gate)
                     {
                         long now = Environment.TickCount64;
-                        foreach (var old in g.Missing.Where(kv => now - kv.Value > 1500).Select(kv => kv.Key).ToList()) { g.Missing.Remove(old); g.Asked.Remove(old); }
+                        foreach (var old in g.Missing.Where(kv => now - kv.Value > 1500).Select(kv => kv.Key).ToList()) { g.Missing.Remove(old); g.Asked.Remove(old); g.AskCount.Remove(old); g.GaveUp++; }
                         // Ending and clearing the flag happen together, so a gap noticed from now on starts a new round.
-                        if (g.Missing.Count == 0) { g.NackRunning = false; g.Asked.Clear(); return; }
-                        // Not again until the answer has had time to come.
-                        want = g.Missing.Where(kv => now - kv.Value >= 30 && now - g.Asked.GetValueOrDefault(kv.Key) >= 80).Select(kv => kv.Key).Take(32).ToList();
-                        foreach (var seq in want) g.Asked[seq] = now;
+                        if (g.Missing.Count == 0) { g.NackRunning = false; g.Asked.Clear(); g.AskCount.Clear(); return; }
+                        // Not again until the answer has had time to come, then a little longer each time, and only a few times: after 600 ms the
+                        // frame has been given up on, and asking on every 80 ms for a packet that is not coming only adds to the traffic.
+                        want = SelectAsks(g, now);
+                        if (want.Count > 0) { g.NacksSent++; g.PacketsAsked += want.Count; }
                         parent = g.Parent;
                     }
                     if (want.Count > 0 && parent is { } p) SendMedia(p, g, new WireMedia { Op = "nack", Seqs = want.ToArray() });
@@ -744,6 +996,7 @@ public sealed partial class ChatNode
             g.ReplayMax = m.Seqs[0] - 1;
             g.ReplayGot = new HashSet<uint>();
             g.ReplayAsked.Clear();
+            g.ReplayAskCount.Clear();
             g.LastReplayPacketAt = Environment.TickCount64;
             if (g.ReplayChecking) return;
             g.ReplayChecking = true;
@@ -766,10 +1019,12 @@ public sealed partial class ChatNode
                         // While it arrives, only what is behind the newest number; at the end, everything promised.
                         uint limit = quiet ? g.ReplayLast : g.ReplayMax - 2;
                         for (uint seq = g.ReplayFirst; (int)(limit - seq) >= 0 && missing.Count < 32; seq++)
-                            if (!g.ReplayGot.Contains(seq) && now - g.ReplayAsked.GetValueOrDefault(seq) >= 100) missing.Add(seq);
-                        foreach (var seq in missing) g.ReplayAsked[seq] = now;
+                            if (!g.ReplayGot.Contains(seq) && g.ReplayAskCount.GetValueOrDefault(seq) < MaxAsks
+                                && now - g.ReplayAsked.GetValueOrDefault(seq) >= 100 << Math.Max(0, g.ReplayAskCount.GetValueOrDefault(seq) - 1)) missing.Add(seq);
+                        foreach (var seq in missing) { g.ReplayAsked[seq] = now; g.ReplayAskCount[seq] = g.ReplayAskCount.GetValueOrDefault(seq) + 1; }
+                        if (missing.Count > 0) { g.NacksSent++; g.PacketsAsked += missing.Count; }
                         parent = g.Parent;
-                        finished = quiet && missing.Count == 0 && !g.ReplayAsked.Keys.Any(q => !g.ReplayGot.Contains(q));
+                        finished = quiet && missing.Count == 0 && !g.ReplayAsked.Keys.Any(q => !g.ReplayGot.Contains(q) && g.ReplayAskCount.GetValueOrDefault(q) < MaxAsks);
                     }
                     if (missing.Count > 0 && parent is { } p) SendMedia(p, g, new WireMedia { Op = "nack", Add = true, Seqs = missing.ToArray() });
                     if (finished) break;
@@ -1083,6 +1338,7 @@ public sealed partial class ChatNode
             foreach (var id in deadChildren) ReportLink(g, id, add: false, 0);
             if (deadParent is { } lost) SendMedia(lost, g, new WireMedia { Op = "leave" });
             foreach (var id in neighbours) SendMedia(id, g, new WireMedia { Op = "ping" });
+            MaintainQuality(g, now);
             AdvanceMedia(g);
         }
         if (removedAny) room.RaiseMediaChanged();
@@ -1180,15 +1436,28 @@ public sealed partial class ChatNode
         }
     }
 
-    // The last few hundred packets of a one-way stream, for children that missed one.
+    /// <summary>How long a packet is kept to give again. A viewer asks for a missing packet for about 600 ms, so this is well past that.</summary>
+    internal const int RecentKeepMs = 2000;
+
+    /// <summary>The most packets kept to give again, whatever their age (about 5 MB), so a very fast stream cannot fill the memory.</summary>
+    internal const int RecentMaxPackets = 4500;
+
+    // The packets of the last couple of seconds of a one-way stream, for children that missed one. Kept by age, not by count: a count of 600
+    // was under a second at 6 Mbit/s, and most of what a viewer asked for was already gone.
     private void StoreRecent(MediaGroup g, uint seq, byte[] packet)
     {
         if (g.Info.Upstream) return;
+        KeepRecent(g, seq, packet, Environment.TickCount64);
+    }
+
+    internal static void KeepRecent(MediaGroup g, uint seq, byte[] packet, long now)
+    {
         lock (g.Gate)
         {
             if (!g.Recent.TryAdd(seq, packet)) return;
-            g.RecentOrder.Enqueue(seq);
-            while (g.RecentOrder.Count > 600) g.Recent.Remove(g.RecentOrder.Dequeue());
+            g.RecentOrder.Enqueue((seq, now));
+            while (g.RecentOrder.Count > 0 && (g.RecentOrder.Count > RecentMaxPackets || now - g.RecentOrder.Peek().At > RecentKeepMs))
+                g.Recent.Remove(g.RecentOrder.Dequeue().Seq);
         }
     }
 

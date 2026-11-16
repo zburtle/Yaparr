@@ -215,9 +215,9 @@ public class SoundboardTests
         Assert.True(Removed(rb) <= SoundLimits.RemovedPerMember);
     }
 
-    // The files of sounds are stored with the pictures, which are deleted a week after they were saved.
+    // The files of sounds are stored with the pictures, which are kept for good: nothing is cleared out because it is old.
     [Fact]
-    public async Task A_sound_still_on_the_soundboard_is_kept_when_old_files_are_cleaned_up_and_a_stray_old_file_is_not()
+    public async Task A_sound_on_the_soundboard_is_still_there_a_month_later_and_so_is_an_old_file_that_nothing_refers_to()
     {
         var root = Path.Combine(Path.GetTempPath(), "yaparr-sbsweep-" + Guid.NewGuid().ToString("N"));
         string files = Path.Combine(root, "files"), lists = Path.Combine(root, "lists");
@@ -233,15 +233,16 @@ public class SoundboardTests
                 Assert.True(first.HasAttachment(hash));
             }
 
-            // A month later, with an old file nobody refers to as well.
+            // A month later, with an old file nobody refers to as well (a stray file is not worth guessing about: the start does not touch files by their age).
             var stray = new string('c', 64);
             File.WriteAllBytes(Path.Combine(files, stray), new byte[100]);
             foreach (var file in Directory.GetFiles(files)) File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddDays(-30));
 
             using var second = TestUtil.NewNode(new InMemoryDiscoveryHub(), "alice", attachmentDirectory: files, soundboardDirectory: lists);
             second.Start();
-            await TestUtil.WaitFor(() => !File.Exists(Path.Combine(files, stray)), 20_000);
+            await Task.Delay(1500);   // the start-up work in the background
             Assert.True(second.HasAttachment(hash), "the sound is still on the soundboard, so its file stays");
+            Assert.True(File.Exists(Path.Combine(files, stray)), "files are not cleared out for being old");
         }
         finally { try { Directory.Delete(root, true); } catch (IOException) { } }
     }
@@ -334,6 +335,80 @@ public class SoundboardTests
         Assert.True(ra.PlaySound(s.Id));
         await Task.Delay(800);
         Assert.True(Rms(Listen(vb, 60)) < 0.001);
+    }
+
+    // Issue #48: a mute was kept per device id, so a person on two devices had to be muted on each.
+    [Fact]
+    public async Task A_soundboard_mute_is_of_the_person_so_it_holds_on_all_their_devices()
+    {
+        var hub = new InMemoryDiscoveryHub();
+        using var aliceKey = PeerIdentity.Generate();
+        using var phoneKey = aliceKey.CreateDevice();
+        using var alice = TestUtil.NewNode(hub, "alice", identity: aliceKey, soundInterval: TimeSpan.Zero);
+        using var phone = TestUtil.NewNode(hub, "alice", identity: phoneKey, soundInterval: TimeSpan.Zero);
+        using var bob = TestUtil.NewNode(hub, "bob", soundInterval: TimeSpan.Zero);
+        var ra = await alice.JoinRoomAsync("lobby");
+        var rp = await phone.JoinRoomAsync("lobby");
+        var rb = await bob.JoinRoomAsync("lobby");
+        await TestUtil.WaitFor(() => rb.Members.Count == 2 && ra.Members.Count == 2 && rp.Members.Count == 2, 30_000);
+        // Bob learns that the phone is alice's from its certificate, a moment after seeing it in the room.
+        await TestUtil.WaitFor(() => bob.AccountOf(phone.Id) == bob.AccountOf(alice.Id), 30_000);
+
+        // Alice is in voice on her phone (one device at a time: joining on another makes the first leave), and it is the phone that adds the sound.
+        var tone = rp.AddSound("tone", SoundClip.FromPcm(Tone(440, 1)));
+        await TestUtil.WaitFor(() => rb.Sounds.Any(x => x.Available), 20_000);
+        using var vp = rp.JoinVoice();
+        using var vb = rb.JoinVoice();
+        await TestUtil.WaitFor(() => rb.VoiceParticipants.Count == 2 && rp.VoiceParticipants.Count == 2, 20_000);
+
+        // Bob mutes the soundboard of alice's laptop: the sounds from her phone are silenced too, because it is alice who is muted.
+        vb.SetSoundboardMute(alice.Id, true);
+        Assert.True(vb.IsSoundboardMuted(alice.Id));
+        Assert.True(vb.IsSoundboardMuted(phone.Id));
+        Assert.True(rp.PlaySound(tone.Id));
+        await Task.Delay(800);
+        Assert.True(Rms(Listen(vb, 60)) < 0.001, "the phone's sound is not heard");
+
+        // Unmuting by the other device unmutes the person, and a person who was not muted is not affected.
+        vb.SetSoundboardMute(phone.Id, false);
+        Assert.False(vb.IsSoundboardMuted(alice.Id));
+        Assert.False(vb.IsSoundboardMuted(bob.Id));
+        Assert.True(rp.PlaySound(tone.Id));
+        await Task.Delay(800);
+        Assert.True(Rms(Listen(vb, 60)) > 0.03, "the phone's sound is heard again");
+
+        // What you play yourself is not silenced by muting another device of yours.
+        vp.SetSoundboardMute(alice.Id, true);
+        Assert.True(rp.PlaySound(tone.Id));
+        Assert.True(Rms(Listen(vp, 60)) > 0.03, "your own sound is heard");
+    }
+
+    [Fact]
+    public async Task Playing_a_sound_again_before_it_ends_starts_it_over_but_different_sounds_play_together()
+    {
+        var hub = new InMemoryDiscoveryHub();
+        var (a, b, ra, rb) = await Pair(hub, interval: TimeSpan.Zero);
+        using var _ = a; using var __ = b;
+
+        var one = ra.AddSound("one", SoundClip.FromPcm(Tone(440, 3)));
+        var two = ra.AddSound("two", SoundClip.FromPcm(Tone(660, 3)));
+        using var va = ra.JoinVoice();
+        using var vb = rb.JoinVoice();
+        await TestUtil.WaitFor(() => ra.VoiceParticipants.Count == 2 && rb.VoiceParticipants.Count == 2);
+        await TestUtil.WaitFor(() => rb.Sounds.Count(x => x.Available) == 2, 20_000);
+
+        Assert.True(ra.PlaySound(one.Id));
+        Assert.Equal(1, va.SoundsPlaying);
+        Listen(va, 25);                       // half a second in
+        Assert.True(ra.PlaySound(one.Id));    // again, while it is still going
+        Assert.Equal(1, va.SoundsPlaying);
+        Assert.True(ra.PlaySound(two.Id));    // another sound is not held back by it
+        Assert.Equal(2, va.SoundsPlaying);
+
+        // The listener gets the same: the repeat does not add a second copy of the first sound.
+        await TestUtil.WaitFor(() => vb.SoundsPlaying == 2, 10_000);
+        await Task.Delay(500);
+        Assert.Equal(2, vb.SoundsPlaying);
     }
 
     [Fact]

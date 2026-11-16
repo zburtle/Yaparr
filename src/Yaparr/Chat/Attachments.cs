@@ -340,21 +340,6 @@ internal sealed class BlobStore
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
 
-    /// <summary>
-    /// Deletes files older than <paramref name="maxAge"/>; they belong to messages that have aged out of the history. Files named in
-    /// <paramref name="keep"/> (the sounds still on a soundboard, which does not age out) are left.
-    /// </summary>
-    public void Sweep(TimeSpan maxAge, ISet<string>? keep = null)
-    {
-        if (_directory == null) return;
-        try
-        {
-            foreach (var file in new DirectoryInfo(_directory).EnumerateFiles())
-                if (DateTime.UtcNow - file.LastWriteTimeUtc > maxAge && keep?.Contains(file.Name) != true) file.Delete();
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
-    }
-
     /// <summary>Removes a file now, for one that nothing refers to any more.</summary>
     public void Delete(string hash)
     {

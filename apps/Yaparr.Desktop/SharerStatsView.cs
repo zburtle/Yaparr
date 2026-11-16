@@ -20,11 +20,21 @@ public sealed class SharerStatsView : Border
     private readonly TextBlock _how = new() { FontSize = 11, Foreground = Brushes.Gray, TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly TextBlock _rate = new() { FontSize = 13 };
     private readonly TextBlock _who = new() { FontSize = 12, TextWrapping = TextWrapping.Wrap };
+    private readonly TextBlock _adapt = new() { FontSize = 11, TextWrapping = TextWrapping.Wrap, Opacity = 0.8, IsVisible = false };
+    private readonly TextBlock _lower = new() { FontSize = 11, TextWrapping = TextWrapping.Wrap, Opacity = 0.8, IsVisible = false };
     private readonly TextBlock _warning = new() { FontSize = 11, TextWrapping = TextWrapping.Wrap, Foreground = Brushes.Orange, IsVisible = false };
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private long _frames, _bytes, _at = Environment.TickCount64, _retransmitted;
 
     public event Action? StopRequested, ChangeRequested;
+
+    /// <summary>People (not devices) who began or stopped watching since the last second; for the sounds.</summary>
+    public event Action<int, int>? ViewersChanged;
+
+    private readonly PresenceTracker _watchers = new();
+
+    /// <summary>Which devices are the sharer's own, so that watching on your other computer makes no sound.</summary>
+    public Func<PeerId, bool>? IsMine { get; set; }
 
     public SharerStatsView(ScreenSharer sharer, int targetFps, ChatRoom room)
     {
@@ -43,7 +53,7 @@ public sealed class SharerStatsView : Border
         buttons.Children.Add(change);
         buttons.Children.Add(stop);
         var title = new TextBlock { Text = "You are sharing", FontWeight = FontWeight.SemiBold };
-        Child = new StackPanel { Spacing = 2, Margin = new Avalonia.Thickness(12, 10, 12, 12), Children = { title, _how, _rate, _who, _warning, buttons } };
+        Child = new StackPanel { Spacing = 2, Margin = new Avalonia.Thickness(12, 10, 12, 12), Children = { title, _how, _rate, _adapt, _lower, _who, _warning, buttons } };
         CornerRadius = new Avalonia.CornerRadius(12);
         BorderThickness = new Avalonia.Thickness(1);
         this.Bind(BackgroundProperty, this.GetResourceObservable("BubbleOther"));
@@ -71,12 +81,28 @@ public sealed class SharerStatsView : Border
         long gap = _sharer.TakeMaxFrameGapMs();
 
         // A gap far over the frame time means FFmpeg itself stalled (capture or encoding), whatever the network does.
-        bool behind = fps < _targetFps * 0.9 || gap > 3000.0 / Math.Max(1, _targetFps);
-        bool card = _sharer.Codec is ScreenCodec.H264 or ScreenCodec.Av1 && _sharer.Encoder != null;
-        string encoder = card ? $"{HardwareEncoders.Maker(_sharer.Encoder!.Value)} graphics card · {(_sharer.Codec == ScreenCodec.Av1 ? "AV1" : "H.264")}" : "Processor · VP8";
+        int target = _sharer.RunFps;   // lower while adaptive quality has lowered the frame rate
+        bool behind = fps < target * 0.9 || gap > 3000.0 / Math.Max(1, target);
+        bool card = _sharer.Codec is ScreenCodec.H264 or ScreenCodec.Av1 or ScreenCodec.H265 && _sharer.Encoder != null;
+        string encoder = card ? $"{HardwareEncoders.Maker(_sharer.Encoder!.Value)} graphics card · {ScreenCodecs.Name(_sharer.Codec)}" : "Processor · VP8";
         _how.Text = encoder;
-        _rate.Text = $"{fps:0} / {_targetFps} fps · {(kbps >= 1000 ? $"{kbps / 1000:0.0} Mbit/s" : $"{kbps:0} kbit/s")}";
-        _who.Text = "Watching: " + Names(_sharer.Source.Viewers);
+        _rate.Text = $"{fps:0} / {target} fps · {(kbps >= 1000 ? $"{kbps / 1000:0.0} Mbit/s" : $"{kbps:0} kbit/s")}";
+        _adapt.Text = _sharer.AdaptiveLine ?? "";
+        _adapt.IsVisible = _sharer.AdaptiveLine != null;
+        // The lower-quality stream (issue #254): started on its own for viewers whose connection could not keep up; only this panel says so.
+        var low = _sharer.Low;
+        int lowViewers = low?.Viewers ?? 0;
+        _lower.Text = low is { Started: true }
+            ? lowViewers > 0
+                ? $"A lower-quality stream is running for {lowViewers} viewer{(lowViewers == 1 ? "" : "s")} whose connection could not keep up with the full picture."
+                : "A lower-quality stream was started for a viewer whose connection could not keep up; nobody is on it now."
+            : "";
+        _lower.IsVisible = low is { Started: true };
+        // Those on the lower stream are still watching: they count with the others, so moving between the streams is no "joined" or "left".
+        var viewers = low?.Source is { } lowSource ? _sharer.Source.Viewers.Concat(lowSource.Viewers).Distinct().ToList() : _sharer.Source.Viewers;
+        _who.Text = "Watching: " + Names(viewers);
+        var (came, went) = _watchers.Update(PeopleOf(viewers));
+        if (came.Count > 0 || went.Count > 0) ViewersChanged?.Invoke(came.Count, went.Count);
 
         var problems = new List<string>();
         if (behind) problems.Add($"Capture or encoding is behind (longest wait {gap} ms).");
@@ -87,7 +113,17 @@ public sealed class SharerStatsView : Border
         _warning.IsVisible = problems.Count > 0;
 
         // The full figures, for anyone who wants them.
-        ToolTip.SetTip(this, $"Key frames: {_sharer.KeyFrames}\nLongest wait for a frame from FFmpeg: {gap} ms\nWatchers directly connected: {status.Children.Count}\nPackets sent again this second: {resent}, dropped in all: {status.Dropped}");
+        var figures = _sharer.Figures();
+        string encoding = figures.DescribeEncoding(_sharer.FrameBudgetMs);
+        ToolTip.SetTip(this, $"Key frames: {figures.DescribeKeys()}\n{(encoding.Length > 0 ? "Encoder: " + encoding + "\n" : "")}Longest wait for a frame from FFmpeg: {gap} ms\nWatchers directly connected: {status.Children.Count}\nPackets sent again this second: {resent}, dropped in all: {status.Dropped}");
+    }
+
+    // One entry per person, leaving out the sharer's own devices.
+    private IEnumerable<string> PeopleOf(IReadOnlyList<PeerId> devices)
+    {
+        var members = _room.Members;
+        return devices.Where(d => IsMine?.Invoke(d) != true)
+            .Select(d => members.FirstOrDefault(m => m.Id == d) is { } m ? m.Account.Value : d.Value).Distinct();
     }
 
     // People, not devices: someone watching on two computers is named once.

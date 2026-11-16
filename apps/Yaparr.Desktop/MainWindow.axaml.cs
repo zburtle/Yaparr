@@ -29,12 +29,14 @@ public partial class MainWindow : Window
     private FileLog _log = null!;
     private CallQualityLog? _callQuality;
     private ChatNode? _node;
+    private Yaparr.History.Sqlite.SqliteHistoryStore? _historyStore;
     private ConversationVm? _selected;
     private bool _started;
 
     public MainWindow()
     {
         InitializeComponent();
+        WireMessageScroll();
         ShipPanel.IsVisible = EmptyPanel.IsVisible && FitzgeraldShip.IsHerDay(DateTime.Now);
         Ship.ShipClicked += () => _ = OpenLinkAsync(FitzgeraldShip.SongUrl);
         InputShip.ShipClicked += () => _ = OpenLinkAsync(FitzgeraldShip.SongUrl);
@@ -87,7 +89,6 @@ public partial class MainWindow : Window
         {
             if (_started) return;
             _started = true;
-            _ = CheckForUpdateAsync();
             await StartAsync();
         };
         Closing += (_, e) =>
@@ -338,6 +339,26 @@ public partial class MainWindow : Window
     private async void About_Click(object? sender, RoutedEventArgs e) =>
         await Dialogs.MessageAsync(this, "About Yaparr", $"Yaparr {Updater.CurrentVersion}\nServerless peer-to-peer chat over the BitTorrent DHT.");
 
+    // Whether to look for a new version when the app starts: the person's setting, and only where there is somewhere to look (not in a Flatpak, which
+    // updates itself, nor in a build with no update repository). The manual check in the Help menu is not affected.
+    internal static bool ShouldCheckForUpdateAtStart(bool setting, bool hasRepository) => setting && hasRepository;
+
+    // Reads the setting (which is loaded by now), shows the checkbox where it means something, and checks at start unless it is off.
+    private void SetUpUpdateCheck()
+    {
+        bool available = Updater.Repository is not null;
+        UpdateCheckItem.IsVisible = available;
+        UpdateCheckItem.IsChecked = _settings.CheckForUpdates;
+        UpdateCheckItem.PropertyChanged += (_, e) =>
+        {
+            if (e.Property != Avalonia.Controls.Primitives.ToggleButton.IsCheckedProperty) return;
+            _settings.CheckForUpdates = UpdateCheckItem.IsChecked == true;
+            _data.SaveSettings(_settings);
+        };
+        if (ShouldCheckForUpdateAtStart(_settings.CheckForUpdates, available)) _ = CheckForUpdateAsync();
+        else _log.Write(available ? "not looking for a new version at start (turned off in the settings)" : "not looking for a new version at start (this build does not update itself)");
+    }
+
     private async Task CheckForUpdateAsync(bool manual = false)
     {
         try
@@ -401,7 +422,7 @@ public partial class MainWindow : Window
         _settings = _data.LoadSettings();
         _vpn = new VpnController(_data, _settings, () => _node);
         _log = new FileLog(Path.Combine(_data.Directory, "logs"), legacyFile: Path.Combine(_data.Directory, "yaparr.log"));
-        _callQuality = new CallQualityLog(() => _voice, () => _sharer, () => _node, () => _screenViews.Values.Select(w => w.Control), _log);
+        _callQuality = new CallQualityLog(() => _voice, () => _sharer, () => _node, () => _screenViews.Values.Select(w => w.Control), _log, () => _sharer != null ? (SharePreview.DecoderCpu, SharePreview.DecoderKind) : null);
         CrashLog.Attach(_log, _log.Folder);
         _log.Write($"Yaparr {Updater.CurrentVersion} starting");
         Updater.Log = _log.Write;
@@ -413,6 +434,8 @@ public partial class MainWindow : Window
         VpnPanel.Attach(_vpn);
         TurnPanel.Attach(() => _node, Path.Combine(_data.Directory, "network.json"));
         SetUpReplies();
+        SetUpEmojiTyping();
+        SetUpUpdateCheck();
 
         if (Arg("--name") == null && _settings.DisplayName == null && !_data.HasIdentity) await OfferLinkAsync();
         if (_restarting) return;
@@ -427,6 +450,7 @@ public partial class MainWindow : Window
         var traversal = TraversalOptions.Load(Path.Combine(_data.Directory, "network.json"));
         // Message history is kept sealed; the key lives in a file of its own that is sealed to this Windows user.
         var historyCipher = HistoryCipher.LoadOrCreate(Path.Combine(_data.Directory, "history.key"));
+        _historyStore?.Dispose();
         _node = new ChatNode(new ChatNodeOptions
         {
             DisplayName = name,
@@ -436,7 +460,7 @@ public partial class MainWindow : Window
             AccountStatePath = _data.AccountStatePath,
             AvatarDirectory = _data.AvatarDirectory,
             AccountEntries = _linkedEntries,
-            HistoryStore = new FileHistoryStore(_data.HistoryDirectory, historyCipher),
+            HistoryStore = _historyStore = _data.OpenHistoryStore(historyCipher, _log.Write),
             DirectHistoryDirectory = Path.Combine(_data.Directory, "direct"),
             Traversal = traversal,
             AttachmentDirectory = Path.Combine(_data.Directory, "attachments"),
@@ -451,6 +475,8 @@ public partial class MainWindow : Window
         });
         _node.NetworkStatusChanged += _ => UI(UpdateStatus);
         _node.AttachmentChanged += update => UI(() => OnAttachmentChanged(update));
+        var emojiNode = _node;
+        EmojiPictures.Reader = hash => emojiNode.ReadAttachment(hash);
         if (OperatingSystem.IsWindows()) Microsoft.Win32.SystemEvents.PowerModeChanged += OnPowerModeChanged;
         _linkTimer.Tick += (_, _) => { RefreshPeers(); WatchConnection(); SaveMarks(); };
         SetUpConnectionWatch();
@@ -512,6 +538,8 @@ public partial class MainWindow : Window
         var node = _node;
         _node = null;
         node?.Dispose();
+        _historyStore?.Dispose();
+        _historyStore = null;
     }
 
     private static void UI(Action action) => Dispatcher.UIThread.Post(action);
@@ -700,6 +728,14 @@ public partial class MainWindow : Window
             if (_voiceConv == conv) LeaveVoiceCore();
             StatusText.Text = "You joined voice on another of your devices, so you left it here.";
         });
+        // The owner took you out of voice, or out of the room, without banning you (see ChatRoom.KickFromVoice and RemoveFromRoom).
+        room.VoiceKicked += () => UI(() =>
+        {
+            if (_voiceConv == conv) LeaveVoiceCore();
+            StatusText.Text = $"The owner of \"{conv.Title}\" took you out of voice. You can join again whenever you like.";
+        });
+        room.RemovedFromRoom += () => UI(() => _ = OnRemovedFromRoomAsync(conv));
+        PrimeShareCues(conv, room);
         room.MediaGroupsChanged += () => UI(() => RefreshShares(conv, room));
         room.MemberRenamed += p => UI(() => { Remember(p); RefreshPeers(); });
         room.MemberJoined += p => UI(() => { Remember(p); RefreshPeers(); });
@@ -707,7 +743,11 @@ public partial class MainWindow : Window
         room.RolesChanged += () => UI(() => { RefreshPeers(); RefreshMembers(); });
         room.ChannelsChanged += () => UI(() => RefreshChannels(conv, room));
         room.SecretChanged += (before, after) => UI(() => OnSecretChanged(conv, before, after));
-        room.ModerationChanged += () => UI(() => { conv.Reload(room.GetHistory().Select(ToVm).ToList()); RefreshReactions(conv); RefreshPeers(); RefreshMembers(); });
+        conv.EarlierSource = (channel, beforeKey, _) => ReadEarlierAsync(room, channel, beforeKey);
+        conv.AskOthersForEarlier = (channel, key, _) => room.RequestEarlierHistory(channel, key);
+        // What the others sent is kept: it is read the same way, the next time the list is at its top (or now, if it is).
+        room.EarlierHistoryReceived += () => UI(() => { conv.NoteEarlierArrived(); RefreshReactions(conv); if (_selected == conv) MaybeLoadEarlier(); });
+        room.ModerationChanged += () => UI(() => { conv.Reload(room.GetHistory().Select(ToVm).ToList(), room.WhichAreShown); RefreshReactions(conv); RefreshPeers(); RefreshMembers(); });
 
         if (_settings.RoomChannels.TryGetValue(room.RoomId, out var wantedChannel)) conv.PendingChannel = wantedChannel;
         RefreshChannels(conv, room);
@@ -797,8 +837,9 @@ public partial class MainWindow : Window
         var seenHere = open.People;
         var online = here.Values.Where(p => !blocked.Contains(p.Account.Value))
             .Select(p => new PeerVm(p.Account.Value, p.DisplayName, true, now, p.IsRelayed, _node.GetLink(p.Account), Role: RoleOf(p.Account.Value), BannedHere: open.IsBanned(p.Account)));
+        // Someone who has not been on for two weeks is no longer listed (see PeopleListRules); the owner and the admins stay.
         var offline = seenHere
-            .Where(k => !here.ContainsKey(k.Account.Value) && !blocked.Contains(k.Account.Value))
+            .Where(k => !here.ContainsKey(k.Account.Value) && !blocked.Contains(k.Account.Value) && PeopleListRules.ShowsInList(false, k.LastSeen, now, RoleOf(k.Account.Value)))
             .Select(k => new PeerVm(k.Account.Value, string.IsNullOrWhiteSpace(k.Name) ? k.Account.Value[..8] : k.Name, false, k.LastSeen, false, _node.GetLink(k.Account), Role: RoleOf(k.Account.Value), BannedHere: open.IsBanned(k.Account)));
         // Someone you blocked stays in the list of the rooms you met them in, marked as blocked, so that they can be unblocked.
         var metHere = seenHere.Select(k => k.Account.Value).ToHashSet();
@@ -873,6 +914,13 @@ public partial class MainWindow : Window
         chat.MessageReceived += m => UI(() => OnMessage(conv, ToVm(m), announce: !m.IsCatchUp));
         chat.ReactionsChanged += _ => UI(() => ScheduleReactions(conv));
         WireReactions(conv, chat.GetReactions, (key, emoji, on, _) => chat.SendReactionAsync(key, emoji, on));
+        conv.EarlierSource = async (_, _, beforeId) =>
+        {
+            var page = await Task.Run(() => chat.GetEarlierHistory(beforeId, 100));
+            return (page.Messages.Select(ToVm).ToList(), page.HasMore);
+        };
+        conv.AskOthersForEarlier = (_, _, id) => chat.RequestEarlierHistory(id);
+        chat.EarlierHistoryReceived += () => UI(() => { conv.NoteEarlierArrived(); RefreshReactions(conv); if (_selected == conv) MaybeLoadEarlier(); });
         UI(() =>
         {
             foreach (var m in kept) conv.Add(ToVm(m));
@@ -904,7 +952,7 @@ public partial class MainWindow : Window
         var parts = m.Parts;
         var vm = new MessageVm(m.Timestamp, m.From.DisplayName, parts.Body, m.IsCatchUp, isMine: mine, id: m.Id, attachment: m.Attachment)
         {
-            Source = m, Account = m.From.Account.Value, Key = m.Key, ReplyKey = parts.ReplyTo, Mentions = parts.Mentions, Card = parts.Preview,
+            Source = m, Account = m.From.Account.Value, Key = m.Key, ReplyKey = parts.ReplyTo, Mentions = parts.Mentions, Card = parts.Preview, Emoji = parts.Emoji,
             MentionsMe = _node != null && NamesMe(m),
             Channel = m.Channel, DeviceNote = mine && _node!.Id != m.From.Id ? "from your other device " + m.From.Id.Short : "",
         };
@@ -948,6 +996,10 @@ public partial class MainWindow : Window
 
     private void OnAttachmentChanged(AttachmentUpdate update)
     {
+        // The picture of a custom emoji a message uses has arrived: the words are drawn again with it.
+        if (update.State == AttachmentState.Ready)
+            foreach (var vm in _conversations.SelectMany(c => c.AllMessages).Where(m => m.Emoji != null && m.Emoji.Any(e => e.Hash == update.Hash)).ToList())
+                vm.RaiseEmoji();
         if (!_attachmentVms.TryGetValue(update.Hash, out var list)) return;
         foreach (var vm in list.ToList())
         {
@@ -1211,14 +1263,16 @@ public partial class MainWindow : Window
             var reply = _replyTo;
             var mentions = conv.IsRoom ? ActiveMentions(text) : new List<Mention>();
             var preview = await PreviewForAsync(text);
-            var id = await conv.Send(MessageEnvelope.Wrap(text, reply?.Key, mentions, preview));
+            // The custom emoji the words use go with the message, so everyone sees them whether they are yours or the room's.
+            var emoji = CustomEmojiFor(text, conv.IsRoom ? SelectedRoom : null);
+            var id = await conv.Send(MessageEnvelope.Wrap(text, reply?.Key, mentions, preview, emoji));
             InputBox.Text = "";
             ClearReply();
             _chosenMentions.Clear();
             conv.Add(new MessageVm(DateTimeOffset.Now, _node.DisplayName, text, isMine: true, id: id)
             {
                 Channel = conv.IsRoom ? conv.CurrentChannel : null,
-                Key = ChatMessage.KeyOf(_node.Id, id), ReplyKey = reply?.Key, Mentions = mentions, Card = preview,
+                Key = ChatMessage.KeyOf(_node.Id, id), ReplyKey = reply?.Key, Mentions = mentions, Card = preview, Emoji = emoji.Count == 0 ? null : emoji,
             });
             ScrollToEnd();
         }
@@ -1254,7 +1308,7 @@ public partial class MainWindow : Window
         UpdateInlineScreen();
         UpdateSharerPanel();
         bool has = _selected != null;
-        InputBox.IsEnabled = SendButton.IsEnabled = AttachButton.IsEnabled = ShelfButton.IsEnabled = has;
+        InputBox.IsEnabled = SendButton.IsEnabled = AttachButton.IsEnabled = ShelfButton.IsEnabled = ComposerEmojiButton.IsEnabled = has;
         MessageList.ItemsSource = _selected?.Messages;
         HeaderText.Text = _selected?.Name ?? "Welcome to Yaparr";
         HeaderSubtitle.Text = _selected?.Subtitle ?? "Serverless chat between friends";

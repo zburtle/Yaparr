@@ -6,11 +6,13 @@
   <Folder Name="/src/">
     <Project Path="src/Yaparr/Yaparr.csproj" />
     <Project Path="src/Yaparr.Voice.WebRtc/Yaparr.Voice.WebRtc.csproj" />
+    <Project Path="src/Yaparr.History.Sqlite/Yaparr.History.Sqlite.csproj" />
     <Project Path="src/Yaparr.Screen/Yaparr.Screen.csproj" />
     <Project Path="src/Yaparr.AppCore/Yaparr.AppCore.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/Yaparr.NetAgent/Yaparr.NetAgent.csproj" />
+    <Project Path="tools/Yaparr.EncoderTuning/Yaparr.EncoderTuning.csproj" />
     <Project Path="tools/Yaparr.ScreenDemo/Yaparr.ScreenDemo.csproj" />
     <Project Path="tools/Yaparr.VoiceProbe/Yaparr.VoiceProbe.csproj" />
     <Project Path="tools/Yaparr.NetTest/Yaparr.NetTest.csproj" />

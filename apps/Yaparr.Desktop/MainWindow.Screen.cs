@@ -1,4 +1,5 @@
 ﻿using Avalonia.Controls;
+using System.Diagnostics;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Yaparr.Chat;
@@ -23,13 +24,34 @@ public partial class MainWindow
         public required ConversationVm Conv { get; init; }
         public required ScreenViewControl Control { get; init; }
         public ScreenViewWindow? Window { get; set; }
+        /// <summary>It was in the main window when it went full screen, so it goes back there when it comes out.</summary>
+        public bool DockAfterFullScreen { get; set; }
     }
 
     private readonly Dictionary<string, ScreenWatch> _screenViews = new();
     private ScreenWatch? _inlineWatch;
 
+    // Which shares each room had at the last look, so a new one can be told from those that were already there.
+    private readonly Dictionary<ConversationVm, PresenceTracker> _shareCues = new();
+
+    private void PrimeShareCues(ConversationVm conv, ChatRoom room) =>
+        _shareCues[conv] = new PresenceTracker(room.MediaGroups.Where(g => g.Kind == "screen").Select(g => g.Id));
+
     private void RefreshShares(ConversationVm conv, ChatRoom room)
     {
+        // A sound when someone else starts sharing in the call you are in. Every share in the room counts as seen, whichever channel it is in, so
+        // joining a call or moving to another channel does not announce the shares that were already going.
+        if (!_shareCues.TryGetValue(conv, out var cues)) PrimeShareCues(conv, room);
+        else
+        {
+            var all = room.MediaGroups.Where(g => g.Kind == "screen").ToList();
+            var (arrived, _) = cues.Update(all.Select(g => g.Id));
+            string? myChannel = _voiceConv == conv ? _voice?.ChannelId : null;
+            if (_voiceConv == conv && conv.InVoice
+                && all.Any(g => arrived.Contains(g.Id) && !(_node != null && _node.IsMyDevice(g.Root)) && (g.Channel ?? RoomChannels.DefaultVoice) == myChannel))
+                _sounds.ShareStarted();
+        }
+
         // In voice, the shares are those of the voice channel you are in; otherwise all of them, so you know to join.
         string? inChannel = _voiceConv == conv ? _voice?.ChannelId : null;
         var shares = room.MediaGroups.Where(g => g.Kind == "screen" && (inChannel == null || (g.Channel ?? RoomChannels.DefaultVoice) == inChannel)).ToList();
@@ -41,34 +63,42 @@ public partial class MainWindow
 
         // A share that ended stops being watched.
         foreach (var id in watching.Where(id => shares.All(g => g.Id != id)).ToList())
-            if (_screenViews.TryGetValue(id, out var watch)) EndWatch(watch);
+            if (_screenViews.TryGetValue(id, out var watch) && !watch.Control.IsEnded)
+            {
+                // The sharer really stopped (not this call moving to a channel where that share is not shown): the picture stays up as a black screen that
+                // says so, with a sound, until it is closed.
+                if (room.MediaGroups.All(g => g.Id != id)) { _sounds.ShareEnded(); watch.Control.ShowEnded(); }
+                else EndWatch(watch);
+            }
     }
 
-    // The FFmpeg program, found here or downloaded after asking. Null if there is none.
-    private async Task<string?> GetFfmpegAsync()
+    // FFmpeg's libraries, which capture, encode and decode a screen inside this program: found here, or downloaded after asking (Yaparr's FFmpeg package has
+    // them). False if they are not there.
+    private async Task<bool> GetFfmpegLibrariesAsync()
     {
-        if (FfmpegLocator.Find() is { } found) return found;
-
+        if (ScreenViewer.CanDecode(out var why)) return true;
         var package = FfmpegPackage.ForThisSystem;
         if (package == null)
         {
-            _log.Write("FFmpeg was not found and there is no download for this system");
-            await Dialogs.MessageAsync(this, "FFmpeg is needed",
-                "Sharing and watching a screen needs FFmpeg, a free video program. Install the ffmpeg package with your system's package manager (for example \"sudo apt install ffmpeg\"), then try again.");
-            return null;
+            _log.Write("cannot decode a screen: " + why);
+            await Dialogs.MessageAsync(this, "FFmpeg is needed", why);
+            return false;
         }
         bool yes = await Dialogs.ConfirmAsync(this, "FFmpeg is needed",
-            $"Sharing and watching a screen needs FFmpeg, a free video program. Yaparr can download it once ({package.SizeBytes / 1_048_576} MB) from {package.Url.Host} and keep it in its own folder.\n\nDownload it now?",
+            $"Sharing and watching a screen need FFmpeg's libraries, free video software. Yaparr can download them once ({package.SizeBytes / 1_048_576} MB) from {package.Url.Host} and keep them in its own folder.\n\nDownload them now?",
             "Download", "Not now");
-        if (!yes) return null;
-
+        if (!yes) return false;
         var (path, error) = await DownloadDialog.RunAsync(this, package);
-        if (path == null && error != null)
+        if (path == null)
         {
-            _log.Write("FFmpeg download failed: " + error);
-            await Dialogs.MessageAsync(this, "Could not get FFmpeg", error);
+            if (error != null) { _log.Write("FFmpeg download failed: " + error); await Dialogs.MessageAsync(this, "Could not get FFmpeg", error); }
+            return false;
         }
-        return path;
+        FfmpegLibraries.LookAgain();
+        if (ScreenViewer.CanDecode(out why)) return true;
+        _log.Write("cannot decode a screen after the download: " + why);
+        await Dialogs.MessageAsync(this, "Could not use FFmpeg", why);
+        return false;
     }
 
     private async void ShareScreen_Click(object? sender, RoutedEventArgs e)
@@ -79,17 +109,24 @@ public partial class MainWindow
         // From this device when it is in the call, or when another of your devices is; with none of them in voice there is nothing to share into.
         if (!room.CanShareScreen) { StatusText.Text = "Join the voice channel on one of your devices first."; return; }
 
-        var ffmpeg = await GetFfmpegAsync();
-        if (ffmpeg == null) return;
+        if (!await GetFfmpegLibrariesAsync()) return;
 
         var dialog = new ShareDialog(_node.MeasuredUploadBytesPerSecond);
         dialog.PreferAv1(_settings.ScreenShareAv1);
+        dialog.PreferH265(_settings.ScreenShareH265);
+        dialog.PreferAdaptQuality(_settings.ScreenShareAdaptQuality);
         if (!await dialog.ShowDialog<bool>(this) || dialog.Result == null) return;
         var options = dialog.Result;
-        if (_settings.ScreenShareAv1 != dialog.Av1Picked) { _settings.ScreenShareAv1 = dialog.Av1Picked; _data.SaveSettings(_settings); }
+        if (_settings.ScreenShareAv1 != dialog.Av1Picked || _settings.ScreenShareH265 != dialog.H265Picked || _settings.ScreenShareAdaptQuality != dialog.AdaptPicked)
+        {
+            _settings.ScreenShareAv1 = dialog.Av1Picked;
+            _settings.ScreenShareH265 = dialog.H265Picked;
+            _settings.ScreenShareAdaptQuality = dialog.AdaptPicked;
+            _data.SaveSettings(_settings);
+        }
 
-        // Under Wayland the desktop's own picker decides what is shared.
-        if (ScreenCapture.UsesPortal)
+        // Under Wayland the desktop's own picker decides what is shared (and under X11 when a window chosen in it was asked for).
+        if (ScreenCapture.UsesPortal || dialog.PortalWindow)
         {
             var portal = await AskDesktopWhatToShareAsync(dialog.PortalWindow);
             if (portal == null) return;
@@ -99,16 +136,38 @@ public partial class MainWindow
         try
         {
             var what = options.Portal?.IsWindow ?? options.WindowHandle != null ? "window" : "screen";
-            var sharer = ScreenSharer.Start(_node, room, $"{_settings.DisplayName}'s {what}", options, ffmpeg);
-            _log.Write($"sharing your {what}: {options.Fps} fps, {options.Kbps} kbit/s, up to {options.MaxWidth}x{options.MaxHeight}, FFmpeg {ffmpeg}");
+            var sharer = ScreenSharer.Start(_node, room, $"{_settings.DisplayName}'s {what}", options);
+            _log.Write($"sharing your {what}: {options.Fps} fps, {options.Kbps} kbit/s, up to {options.MaxWidth}x{options.MaxHeight}, a key frame every {options.KeyFrameSeconds:0.##} s, "
+                       + $"asked for: {options.Codec}{(options.Encoder is { } asked ? " on " + asked : "")}{(options.CaptureOnCard ? ", pictures kept on the card where the encoder can read them there" : ", pictures copied to memory")}, "
+                       + $"{(options.ShareSound ? "with sound" : "no sound")}, {(options.ShowCursor ? "with" : "without")} the pointer, FFmpeg's libraries {FfmpegLibraries.Describe()}");
+            _log.Write($"key frames are sent at {Yaparr.Chat.ChatNode.FramePaceMultiple:0.##} times the bitrate{(Yaparr.Screen.ProcessPower.KeepResponsive() is { } power ? "; " + power : "")}");
+            if (options.Portal == null)
+                _log.Write(options.WindowHandle != null ? "what is shared: a window" : options.Display is { Width: > 0 } shown ? $"what is shared: a monitor of {shown.Width}x{shown.Height} at {shown.X},{shown.Y}{(shown.Primary ? ", the primary one" : "")}" : "what is shared: a monitor");
+            if (options.Encoder is null or Yaparr.Screen.HardwareEncoder.Nvenc)
+                _ = Task.Run(async () => { if (await NvidiaSmi.InfoAsync() is { } card) _log.Write("graphics card: " + card); });
+            if (options.CaptureOnCard && !options.InProcessAsked && !InProcessGuard.Allowed)
+                _log.Write($"the pictures are not kept on the graphics card: the program ended in the middle of a share {InProcessGuard.UncleanEndings} times in a row (see {InProcessGuard.MarkFile}); they are copied to memory until a share ends well, or YAPARR_INPROCESS=capture asks for the card.");
+            // Which encoder is really in use (not only which was asked for), or the next one after a failure.
+            sharer.EncoderStarted += () =>
+            {
+                _log.Write($"screen sharing encoder: {ScreenCodecs.Describe(sharer.Codec, sharer.Encoder)}{(sharer.FallbackReason is { } reason ? $" (not used: {reason})" : "")}");
+                _log.Write("screen sharing encoder set up as: " + sharer.EncoderDetails);
+            };
+            sharer.QualityDecided += text => _log.Write(text);
+            sharer.Note += text => _log.Write("screen sharing: " + text);
+            if (sharer.Low is { } lowStream)
+                lowStream.StartedChanged += started => _log.Write(started
+                    ? "screen sharing: a viewer's connection could not keep up, so a lower-quality stream was started for it"
+                    : "screen sharing: the lower-quality stream was stopped (nobody needed it for a minute)");
+            sharer.KeyFrameAnswered += (ms, bytes) => _log.Write($"screen sharing: made a key frame {ms} ms after a viewer asked for one ({bytes / 1024} KB)");
             sharer.Ended += ex => UI(() =>
             {
                 if (_sharer != sharer) return;
-                _log.Write($"screen sharing ended: {ScreenCodecs.Describe(sharer.Codec, sharer.Encoder)}{(sharer.FallbackReason is { } why ? $" (not used: {why})" : "")}, {sharer.Frames} frames sent");
-                StopSharingCore();
+                _log.Write("screen sharing ended: " + SharingSummary(sharer));
+                StopSharingCore(writeSummary: false);
                 if (ex != null)
                 {
-                    _log.Write("screen sharing stopped: " + ex.Message + (sharer.LastErrors.Length > 0 ? " | FFmpeg: " + sharer.LastErrors : ""));
+                    _log.Write($"screen sharing stopped: {ex.Message} ({ex.GetType().Name})" + (sharer.LastErrors.Length > 0 ? " | the capture said: " + sharer.LastErrors : ""));
                     StatusText.Text = "Screen sharing stopped: " + ex.Message;
                 }
             });
@@ -119,13 +178,20 @@ public partial class MainWindow
                 conv.Add(MessageVm.System("The sound stopped: " + ex.Message + " The picture is still shared."));
             });
             _sharer = sharer;
+            // While a share runs, the garbage collector avoids full collections that stop every thread (it does its full collections in the background
+            // unless memory runs short): 1.77.0's log had minutes with a second of pauses, which shows as frames sent late.
+            if (_latencyBeforeShare == null) { _latencyBeforeShare = System.Runtime.GCSettings.LatencyMode; System.Runtime.GCSettings.LatencyMode = System.Runtime.GCLatencyMode.SustainedLowLatency; }
+            _shareStartedTicks = Stopwatch.GetTimestamp();
+            using (var me = Process.GetCurrentProcess()) _shareAppCpu = me.TotalProcessorTime;
             _sharerConv = conv;
             GuardSharingWithoutVoice(sharer, conv, room);
             _sharerStats = new SharerStatsView(sharer, options.Fps, room);
-            _sharerStats.StopRequested += StopSharingCore;
+            _sharerStats.IsMine = d => _node != null && _node.IsMyDevice(d);
+            _sharerStats.ViewersChanged += (came, went) => { if (came > 0) _sounds.ViewerJoined(); else if (went > 0) _sounds.ViewerLeft(); };
+            _sharerStats.StopRequested += () => StopSharingCore();
             _sharerStats.ChangeRequested += () => _ = ChangeSharedAsync(sharer, conv);
             SharerPanel.Child = _sharerStats;
-            SharePreview.Attach(sharer, ffmpeg, wholeMonitor: what == "screen");
+            SharePreview.Attach(sharer, wholeMonitor: what == "screen");
             UpdateSharerPanel();
             conv.IsSharing = true;
             conv.Add(MessageVm.System(conv.InVoice
@@ -199,12 +265,36 @@ public partial class MainWindow
     // How the last few watches went, kept after the picture is closed (the sharing diagnostics are often copied afterwards).
     private readonly List<string> _lastWatchReports = new();
 
-    private void StopSharingCore()
+    /// <summary>What a share did, in one line for the log: the encoder, the frames and key frames, the encoder's timings and the capture's processor time.</summary>
+    // When the share began and what this program had used by then, so that the totals can say what the share cost this program (a share too short for
+    // the per-minute line, or one the line missed, still says it).
+    private long _shareStartedTicks;
+    private TimeSpan _shareAppCpu;
+
+    private System.Runtime.GCLatencyMode? _latencyBeforeShare;
+
+    private string SharingSummary(ScreenSharer sharer)
+    {
+        double seconds = _shareStartedTicks == 0 ? 0 : Stopwatch.GetElapsedTime(_shareStartedTicks).TotalSeconds;
+        TimeSpan used;
+        using (var me = Process.GetCurrentProcess()) used = me.TotalProcessorTime - _shareAppCpu;
+        string program = seconds >= 1 ? $", this program used {used.TotalSeconds:0.0} s of processor time over {seconds:0} s ({used.TotalSeconds / seconds * 100:0}% of a core)" : "";
+        var figures = sharer.Figures();
+        return $"{ScreenCodecs.Describe(sharer.Codec, sharer.Encoder)}{(sharer.FallbackReason is { } why ? $" (not used: {why})" : "")}, "
+               + $"{sharer.Frames} frames sent; {figures.DescribeKeys()}{(figures.Encodes > 0 ? "; " + figures.DescribeEncoding(sharer.FrameBudgetMs) : "")}; "
+               + (sharer.Options.Portal != null ? $"capture by GStreamer, restarted {figures.Restarts} times" : sharer.CaptureOnCard ? "pictures kept on the card" : "pictures copied to memory") + program + ", "
+               + $"the preview's decoder {SharePreview.DecoderCpu.TotalSeconds:0.0} s{(SharePreview.DecoderKind is { } kind ? " (" + kind + ")" : "")}";
+    }
+
+    // The totals go to the log when a share stops (the ended handler writes its own, with the reason, and asks not to).
+    private void StopSharingCore(bool writeSummary = true)
     {
         var sharer = _sharer;
         if (sharer != null) _lastSharingReport = sharer.Describe();
+        if (sharer != null && writeSummary) _log.Write("screen sharing stopped: " + SharingSummary(sharer));
         var conv = _sharerConv;
         _sharer = null;
+        if (_latencyBeforeShare is { } latency) { System.Runtime.GCSettings.LatencyMode = latency; _latencyBeforeShare = null; }
         _sharerConv = null;
         _sharerStats = null;
         SharerPanel.Child = null;
@@ -226,14 +316,21 @@ public partial class MainWindow
 
         if (_screenViews.TryGetValue(share.Id, out var open)) { EndWatch(open); return; }
 
-        var ffmpeg = await GetFfmpegAsync();
-        if (ffmpeg == null) return;
+        if (!await GetFfmpegLibrariesAsync()) return;
 
         try
         {
             _log.Write($"watching the screen {share.Name}");
             var view = _node.WatchMedia(room, share.Id);
-            var control = new ScreenViewControl(share.Name, view, ffmpeg);
+            // The share's lower stream, while it has one (issue #254): the sharer starts it when a viewer is in trouble; a stream named after the share.
+            MediaGroupInfo? LowGroup() => room.MediaGroups.FirstOrDefault(g => g.Kind == LowStream.Kind && g.Name == LowStream.NameFor(share.Id));
+            var control = new ScreenViewControl(share.Name, view,
+                openLow: () => LowGroup() is { } low && _node != null ? _node.WatchMedia(room, low.Id) : null,
+                openMain: () => _node!.WatchMedia(room, share.Id),
+                lowAvailable: () => LowGroup() != null);
+            control.StreamChanged += (stream, why) => _log.Write(stream == WatchedStream.Low
+                ? $"the screen {share.Name} moved to its lower stream: {why}"
+                : $"the screen {share.Name} moved back to its full stream: {why}");
             control.DecoderFailed += message => _log.Write($"the picture of the screen {share.Name} stopped: {message}");
             // The sound, if the sharer shares it, is a stream of its own that names this share.
             if (room.MediaGroups.FirstOrDefault(g => g.Kind == ScreenSharer.SoundKind && g.Name == ScreenSharer.SoundNameFor(share.Id)) is { } sound)
@@ -243,11 +340,17 @@ public partial class MainWindow
             }
             control.ConnectionLost += () => { _log.Write($"lost the connection to the screen {share.Name}"); _sounds.ConnectionLost(); };
             control.ConnectionRestored += () => { _log.Write($"connection to the screen {share.Name} restored"); _sounds.ConnectionBack(); };
+            control.StreamInterrupted += seconds => _log.Write($"the picture of the screen {share.Name} has stopped for {seconds:0.0} s, the viewer says it is reconnecting");
+            control.OnlyOneStrugglingChanged += lone => _log.Write(lone
+                ? $"the picture of the screen {share.Name} has been struggling for this viewer alone for 15 s while the room is fine and the sharer's own link has no trouble: told so"
+                : $"the picture of the screen {share.Name} is no longer struggling for this viewer alone");
+            control.StreamResumed += seconds => _log.Write($"the picture of the screen {share.Name} is back after {seconds:0.0} s");
             var watch = new ScreenWatch { Id = share.Id, Share = share, Conv = conv, Control = control };
             _screenViews[share.Id] = watch;
             share.Watching = true;
             control.Stopped += () => UI(() => WatchEnded(watch));
             control.StopRequested += () => EndWatch(watch);
+            control.FullScreenToggleRequested += () => ToggleFullScreen(watch);
             control.DockToggleRequested += () =>
             {
                 if (watch.Window == null) PopOut(watch); else DockIn(watch);
@@ -306,15 +409,46 @@ public partial class MainWindow
         }
         var window = new ScreenViewWindow(watch.Control);
         watch.Window = window;
+        // Out of full screen, however that happened: a picture that was in the main window before goes back there.
+        window.FullScreenChanged += full =>
+        {
+            if (full || !watch.DockAfterFullScreen) return;
+            watch.DockAfterFullScreen = false;
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => { if (watch.Window == window) DockIn(watch); });
+        };
         watch.Control.Docked = false;
         window.Show(this);
         UpdateInlineScreen();
     }
 
+    // Full screen is a window of its own made to fill the screen: a picture in the main window moves to one first, and comes back when it leaves full screen.
+    private void ToggleFullScreen(ScreenWatch watch)
+    {
+        if (watch.Window is { WindowState: WindowState.FullScreen } full)
+        {
+            full.WindowState = WindowState.Normal;   // FullScreenChanged takes it back into the main window if it came from there
+            return;
+        }
+        if (watch.Window == null)
+        {
+            watch.DockAfterFullScreen = true;
+            PopOut(watch);
+        }
+        if (watch.Window is { } window)
+        {
+            window.WindowState = WindowState.FullScreen;
+            window.Activate();
+        }
+    }
+
     private void DockIn(ScreenWatch watch)
     {
         // The place over the chat holds one picture; a screen that was there moves out to a window of its own.
-        if (_inlineWatch is { } other && other != watch) PopOut(other);
+        if (_inlineWatch is { } other && other != watch)
+        {
+            if (other.Control.IsEnded) EndWatch(other);   // nothing left to show: it closes instead of opening a window for a notice
+            else PopOut(other);
+        }
         if (watch.Window is { } window)
         {
             watch.Window = null;
@@ -337,7 +471,7 @@ public partial class MainWindow
         var dialog = new ShareDialog(sharer.Options);
         if (!await dialog.ShowDialog<bool>(this) || dialog.Result == null || _sharer != sharer) return;
         var next = dialog.Result;
-        if (ScreenCapture.UsesPortal)
+        if (ScreenCapture.UsesPortal || dialog.PortalWindow)
         {
             var portal = await AskDesktopWhatToShareAsync(dialog.PortalWindow);
             if (portal == null || _sharer != sharer) { portal?.Dispose(); return; }

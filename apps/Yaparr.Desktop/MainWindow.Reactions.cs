@@ -19,7 +19,7 @@ public partial class MainWindow
     private readonly Dictionary<ConversationVm, DispatcherTimer> _reactionTimers = new();
 
     /// <summary>Hooks a conversation up to the reactions of its room or direct chat.</summary>
-    private void WireReactions(ConversationVm conv, Func<ReactionSet> source, Func<string, string, bool, string?, Task> send)
+    private void WireReactions(ConversationVm conv, Func<IReadOnlyCollection<string>, ReactionSet> source, Func<string, string, bool, string?, Task> send)
     {
         conv.ReactionSource = source;
         conv.React = send;
@@ -44,7 +44,7 @@ public partial class MainWindow
     {
         if (_node == null || conv.ReactionSource == null) return;
         ReactionSet set;
-        try { set = conv.ReactionSource(); }
+        try { set = conv.ReactionSource(conv.AllMessages.Where(m => m.Key != null).Select(m => m.Key!).ToList()); }
         catch (Exception ex) when (ex is InvalidOperationException) { return; }
         var me = _node.AccountId;
         foreach (var vm in conv.AllMessages)
@@ -109,8 +109,19 @@ public partial class MainWindow
         if (MessageList.SelectedItem is MessageVm { Key: not null } message) OpenReactionPicker(message, MessageList);
     }
 
+    private bool _pickingForComposer;
+
+    // The button next to the message box: the same picker, but what is picked goes into what is being written.
+    private void ComposerEmoji_Click(object? sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        OpenComposerPicker(CustomTab.None);
+    }
+
     private void OpenReactionPicker(MessageVm message, Control? near)
     {
+        _pickingForComposer = false;
+        ReactionPopup.Placement = PlacementMode.Pointer;
         _reactingTo = message;
         if (!_emojiWired) WireEmojiPicker();
         EmojiSearch.Text = "";
@@ -157,13 +168,20 @@ public partial class MainWindow
 
         EmojiSearch.TextChanged += (_, _) =>
         {
+            if (_clearingEmojiSearch) return;
             var query = EmojiSearch.Text ?? "";
-            if (query.Trim().Length == 0) { ShowEmojiGroup(_emojiGroup); return; }
+            if (query.Trim().Length == 0)
+            {
+                if (_customTab == CustomTab.None) ShowEmojiGroup(_emojiGroup);
+                return;
+            }
+            _customTab = CustomTab.None;
+            UpdateCustomTabs();
             var found = EmojiData.Search(query, 120);
             EmojiTitle.Text = found.Count == 0 ? "Nothing found" : found.Count + (found.Count == 1 ? " emoji" : " emoji");
             FillEmojiGrid(found);
         };
-        ReactionPopup.Closed += (_, _) => _reactingTo = null;
+        ReactionPopup.Closed += (_, _) => { _reactingTo = null; _pickingForComposer = false; DetachCustomRoom(); };
     }
 
     private static string GroupIcon(string group) => group switch
@@ -182,6 +200,9 @@ public partial class MainWindow
 
     private void ShowEmojiGroup(int index)
     {
+        _customTab = CustomTab.None;
+        DetachCustomRoom();
+        UpdateCustomTabs();
         _emojiGroup = Math.Clamp(index, 0, EmojiData.Groups.Count - 1);
         var group = EmojiData.Groups[_emojiGroup];
         EmojiTitle.Text = group.Name;
@@ -196,6 +217,12 @@ public partial class MainWindow
 
     private void EmojiPicked_Click(object? sender, RoutedEventArgs e)
     {
+        if ((sender as Control)?.Tag is string chosen && _pickingForComposer)
+        {
+            ReactionPopup.IsOpen = false;
+            InsertIntoInput(chosen);
+            return;
+        }
         if ((sender as Control)?.Tag is not string emoji || _reactingTo is not { } message) return;
         ReactionPopup.IsOpen = false;
         // Picking one you already have takes it off, as clicking it under the message does.

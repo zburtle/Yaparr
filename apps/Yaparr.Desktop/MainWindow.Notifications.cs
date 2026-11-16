@@ -9,7 +9,7 @@ public partial class MainWindow
 
     private void SetUpNotifications()
     {
-        _sounds = new UiSounds(() => _settings.VoiceOutput, text => _log.Write(text)) { Enabled = _settings.SoundsEnabled };
+        _sounds = new UiSounds(() => _settings.VoiceOutput, text => _log.Write(text), () => _voice) { Enabled = _settings.SoundsEnabled };
         SoundsItem.IsChecked = _settings.SoundsEnabled;
         FlashItem.IsChecked = _settings.FlashTaskbar;
         SoundsItem.PropertyChanged += (_, e) =>

@@ -70,7 +70,7 @@ public sealed partial class ChatNode
     {
         room.SelfMuted = muted;
         room.SelfDeafened = deafened;
-        var state = SignedVoice.Create(_identity, room.Key, DisplayName, NextTimestamp(), active, muted, deafened, channel ?? room.ActiveVoice?.ChannelId);
+        var state = SignedVoice.Create(_identity, room.Key, DisplayName, NextTimestamp(), active, muted, deafened, channel ?? room.ActiveVoice?.ChannelId) with { Up = RelayHint() };
         room.LastVoiceAt = Environment.TickCount64;
         foreach (var member in room.MemberStates.Values)
             Send(member.Connection, new Wire { Type = Wire.Voice, Room = RefTo(room, member), Vox = new[] { state } });
@@ -81,7 +81,7 @@ public sealed partial class ChatNode
     {
         var states = new List<StoredVoice>();
         if (room.ActiveVoice != null)
-            states.Add(SignedVoice.Create(_identity, room.Key, DisplayName, NextTimestamp(), true, room.SelfMuted, room.SelfDeafened, room.ActiveVoice.ChannelId));
+            states.Add(SignedVoice.Create(_identity, room.Key, DisplayName, NextTimestamp(), true, room.SelfMuted, room.SelfDeafened, room.ActiveVoice.ChannelId) with { Up = RelayHint() });
         long cutoff = Environment.TickCount64 - (long)VoiceLifetime.TotalMilliseconds;
         lock (room.IndirectGate)
             states.AddRange(room.Voice.Values.Where(e => e.State.Active && e.SeenAt >= cutoff && e.State.From != peer.Id.Value).Take(15).Select(e => e.State));
@@ -95,7 +95,10 @@ public sealed partial class ChatNode
         foreach (var s in states.Take(16))
         {
             if (!IsValidPeerId(s.From) || s.From == Id.Value || IsBannedIn(room, new PeerId(s.From)) || !SignedVoice.Verify(s, room.Key)) continue;
+            if (s.Up is < 0 or > 255) continue;
             var id = new PeerId(s.From);
+            // A state from before the owner kicked this person from voice (still travelling through the room) does not put them back; a newer one does.
+            if (IsVoiceStateKicked(room, id, s.Ts)) continue;
             lock (room.IndirectGate)
             {
                 if (room.Voice.TryGetValue(id, out var old) && old.State.Ts >= s.Ts) continue;

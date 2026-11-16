@@ -161,6 +161,10 @@ public static class Updater
             // package open itself.
             using var locked = await UpdateVerifier.OpenVerifiedAsync(path, sha256, ct);
             Log?.Invoke("update: starting the installer " + path);
+            // A quiet install (a progress bar, no pages) run by a small PowerShell script that starts the app again when it is done. If that cannot be
+            // started or never opens the package (a policy that blocks scripts), the installer is run the old way, with its pages.
+            if (TryStartQuietUpdate(path) && await WaitUntilOpenedByAnotherAsync(path, ct)) return true;
+            Log?.Invoke("update: the quiet update did not start, so the installer is run with its pages");
             using var msiexec = Process.Start(new ProcessStartInfo("msiexec.exe", $"/i \"{path}\"") { UseShellExecute = false });
             await WaitUntilOpenedByAnotherAsync(path, ct);
             return true;
@@ -182,29 +186,57 @@ public static class Updater
         return true;
     }
 
+    // Starts the script that installs quietly and starts the app again; false if it could not be started.
+    [SupportedOSPlatform("windows")]
+    private static bool TryStartQuietUpdate(string package)
+    {
+        try
+        {
+            var exe = Environment.ProcessPath;
+            if (exe == null) return false;
+            var dir = Path.GetDirectoryName(package)!;
+            var script = Path.Combine(dir, "update-runner.ps1");
+            File.WriteAllText(script, UpdateVerifier.WindowsUpdateRunnerScript, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+            var psi = new ProcessStartInfo("powershell.exe") { UseShellExecute = false, CreateNoWindow = true };
+            foreach (var arg in new[] { "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script, "-App", exe, "-Installer", "msiexec.exe",
+                                        "-InstallerArguments", UpdateVerifier.WindowsInstallerArguments(package) })
+                psi.ArgumentList.Add(arg);
+            using var process = Process.Start(psi);
+            Log?.Invoke("update: starting the quiet update " + package);
+            return process != null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            Log?.Invoke("update: could not start the quiet update: " + ex.Message);
+            return false;
+        }
+    }
+
     /// <summary>
     /// Waits until a program other than this one has the file open, which is msiexec reading the package, so that the lock held
     /// here is not let go before it has its own. Gives up after a time: Windows may not say, and the lock is only a precaution.
+    /// Returns whether it was seen.
     /// </summary>
     [SupportedOSPlatform("windows")]
-    private static async Task WaitUntilOpenedByAnotherAsync(string path, CancellationToken ct)
+    private static async Task<bool> WaitUntilOpenedByAnotherAsync(string path, CancellationToken ct)
     {
-        var until = Environment.TickCount64 + 15_000;
+        var until = Environment.TickCount64 + 20_000;
         try
         {
             while (Environment.TickCount64 < until)
             {
-                if (FileHolders.Others(path).Count > 0) { Log?.Invoke("update: the installer has the package open"); return; }
+                if (FileHolders.Others(path).Count > 0) { Log?.Invoke("update: the installer has the package open"); return true; }
                 await Task.Delay(100, ct);
             }
         }
         catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException or MarshalDirectiveException)
         {
-            // No Restart Manager: hold on for a short while instead.
+            // No Restart Manager: hold on for a short while instead, and take it that the installer started.
             await Task.Delay(3000, ct);
-            return;
+            return true;
         }
-        Log?.Invoke("update: the installer was not seen opening the package within 15 seconds");
+        Log?.Invoke("update: the installer was not seen opening the package within 20 seconds");
+        return false;
     }
 
     private static bool TryParse(string? text, out Version version)

@@ -29,6 +29,15 @@ public class UploadSpeedTests
     }
 
     [Fact]
+    public void The_multiple_of_the_stream_a_frame_goes_out_at_can_be_chosen_and_follows_the_bitrate()
+    {
+        Assert.Equal(2700 * 125.0 * 1.5, UploadPlan.FramePaceBytesPerSecond(null, 2700, 1, 1.5));
+        Assert.Equal(2700 * 125.0 * 3, UploadPlan.FramePaceBytesPerSecond(null, 2700, 1, 3));
+        // Never under a fifth more than the stream, whatever the multiple (1.2 is the lowest that can be asked for).
+        Assert.Equal(6000 * 125.0 * 1.2, UploadPlan.FramePaceBytesPerSecond(null, 6000, 1, 1.2), 3);
+    }
+
+    [Fact]
     public void A_frame_is_spread_out_no_faster_than_the_line_can_take_it()
     {
         const double MbitInBytes = 125_000;

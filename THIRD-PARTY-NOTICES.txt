@@ -271,12 +271,23 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 SCREEN SHARING
 ==============================================================================
 
-FFmpeg (the FFmpeg developers), downloaded on first use
+FFmpeg (the FFmpeg developers), shipped with the app and downloaded where it is missing
 ------------------------------------------------------------------------------
-Yaparr does not link to FFmpeg. It runs FFmpeg as a separate program, which it can replace (set YAPARR_FFMPEG to another
-ffmpeg.exe, or put one in an "ffmpeg" folder next to the app). The Windows installer carries a build of FFmpeg that Yaparr
-makes itself, with only the parts Yaparr uses; where it is missing, the app offers to download the same build into your own
-application data folder.
+On Windows Yaparr links to FFmpeg: it loads FFmpeg's shared libraries (the DLLs avcodec, avfilter, avformat, avdevice, avutil,
+swscale and swresample) from the "ffmpeg" folder next to the app, and uses them inside its own process to capture, scale and
+encode a shared screen. It also runs ffmpeg.exe, from the same folder, as a separate program for the rest (showing a screen, and
+graphics cards other than NVIDIA's). The libraries are separate files, not linked into Yaparr's own programs, and anyone can
+replace them: put DLLs of the same versions, built from the source below or from another FFmpeg, in that folder (or in the
+folder the environment variable YAPARR_FFMPEG_LIBS names; YAPARR_FFMPEG names another ffmpeg.exe). Only libraries under the
+LGPL are accepted. Setting YAPARR_INPROCESS to 0 turns the use inside Yaparr off, and then only the separate program is used.
+On Linux Yaparr does the same: it loads FFmpeg's shared libraries (the .so files libavcodec.so.63 and the others, in a folder next to the
+ffmpeg program: in the Flatpak /app/lib/yaparr-ffmpeg, otherwise the folder the app downloaded the build to) and encodes H.264 inside its own
+process, on NVIDIA's encoder or on an Intel or AMD card through VA-API, and runs the ffmpeg program beside them as a separate program for the
+rest (VP8 in software, AV1, showing a screen). It copies an X11 screen itself, with the libraries' x11grab, and on Wayland GStreamer's pictures go straight to the encoder. They are separate files, not linked
+into Yaparr's own programs, and can be replaced in the same way (YAPARR_FFMPEG_LIBS names the folder, YAPARR_FFMPEG another ffmpeg program).
+The Windows installer carries the build of FFmpeg that Yaparr makes itself, with only the parts Yaparr uses; where it is missing, the app offers
+to download the same build into your own application data folder. The Flatpak builds the same FFmpeg commit from source (the "ffmpeg" module
+of its manifest) and carries the libraries in its own folder; the .deb has none and the app downloads them the first time a share needs them.
 
 FFmpeg is licensed under the GNU Lesser General Public License, version 2.1 or later. The build has no GPL or "nonfree"
 part (no x264, no x265). Next to the program are the licence text (LICENSE.txt), SOURCE.txt, BUILD-INFO.txt (how it was
@@ -293,6 +304,9 @@ Built into it:
     (licenses/amf-headers, licenses/ffnvcodec-headers)
   The compiler's runtime (libgcc, libstdc++), GPL-3.0-or-later with the GCC Runtime Library Exception, and the MinGW-w64
     runtime and winpthreads (licenses/gcc-libs, licenses/crt, licenses/winpthreads)
+
+FFmpeg.AutoGen (Ruslan Balanukhin), the .NET bindings through which Yaparr loads and calls FFmpeg's libraries, MIT licence
+(the MIT text above applies; the package carries its own copy in LICENSE.txt).
 
 FFmpeg is a trademark of Fabrice Bellard, originator of the FFmpeg project. Yaparr is not endorsed by the FFmpeg project.
 
@@ -356,3 +370,34 @@ Except as contained in this notice, the name of a copyright holder shall
 not be used in advertising or otherwise to promote the sale, use or other
 dealings in these Data Files or Software without prior written
 authorization of the copyright holder.
+
+
+MESSAGE STORAGE
+==============================================================================
+
+SQLCipher Community Edition (Zetetic LLC), SQLite (public domain), SQLitePCLRaw (Eric Sink, Apache-2.0) and Microsoft.Data.Sqlite (Microsoft, MIT), which keep
+the message history in one encrypted database file.
+------------------------------------------------------------------------------
+Copyright (c) Zetetic LLC. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+    * Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
+    * Redistributions in binary form must reproduce the above copyright
+      notice, this list of conditions and the following disclaimer in the
+      documentation and/or other materials provided with the distribution.
+    * Neither the name of the ZETETIC LLC nor the
+      names of its contributors may be used to endorse or promote products
+      derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY ZETETIC LLC "AS IS" AND ANY
+EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL ZETETIC LLC BE LIABLE FOR ANY
+DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.

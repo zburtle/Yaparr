@@ -34,6 +34,22 @@ public class FrameAssemblerTests
     }
 
     [Fact]
+    public void Frames_thrown_away_while_waiting_for_a_key_frame_are_counted_as_missed()
+    {
+        var assembler = new FrameAssembler(250, 0);
+        var ready = new List<MediaFrame>();
+        foreach (var p in Cut(1, Frame(1, 100), key: true)) assembler.Add(Who, p, 10, ready);
+        // Frame 2 never arrives; 3 and 4 are delta frames, 5 is the next key frame.
+        foreach (var id in new uint[] { 3, 4 }) foreach (var p in Cut(id, Frame((int)id, 100), key: false)) assembler.Add(Who, p, 20, ready);
+        foreach (var p in Cut(5, Frame(5, 100), key: true)) assembler.Add(Who, p, 30, ready);
+        assembler.Tick(1000, ready);
+        foreach (var p in Cut(6, Frame(6, 100), key: false)) assembler.Add(Who, p, 1010, ready);
+
+        Assert.True(assembler.Missed >= 1, "the frames between 1 and the key frame were never shown");
+        Assert.Equal(assembler.Delivered, ready.Count);
+    }
+
+    [Fact]
     public void Frames_before_the_first_key_frame_are_not_handed_over()
     {
         var assembler = new FrameAssembler(250, 0);
@@ -299,11 +315,15 @@ public class StreamFrameTests
                             $"first parent={a.Parent?.Short} dropped={a.Dropped} forwarded={a.Forwarded} retransmitted={a.Retransmitted} dup={a.Duplicates}");
             }
 
+            // The viewer loses what the relay sends it for three seconds. That is longer than a relay keeps a packet to give again (two seconds) and more
+            // than a viewer goes on asking for one, so what was lost cannot be got back from anyone nearby and the sharer has to be asked for a key frame.
+            // (A shorter loss is repaired by the relay when the link comes back, which a receiver that refuses late repairs, as one did until the window
+            // of packet numbers it remembers was widened, did not do, and then no key frame is needed.)
             bool blocked = true;
             c.Nodes[first].Mux.OutboundFilter = (_, to) => to.Port != c.Nodes[second].LocalPort || !Volatile.Read(ref blocked);
-            for (int n = 91; n <= 100; n++) { await source.SendFrameAsync(Frame(n, 8000), false); await Task.Delay(30); }
+            for (int n = 91; n <= 190; n++) { await source.SendFrameAsync(Frame(n, 8000), false); await Task.Delay(30); }
             Volatile.Write(ref blocked, false);
-            for (int n = 101; n <= 140; n++) { await source.SendFrameAsync(Frame(n, 8000), false); await Task.Delay(30); }
+            for (int n = 191; n <= 240; n++) { await source.SendFrameAsync(Frame(n, 8000), false); await Task.Delay(30); }
 
             await TestUtil.WaitFor(() => asked >= 1 && got.Any(f => f.IsKey && f.Id > 91), 20_000);
             var all = got.ToArray();

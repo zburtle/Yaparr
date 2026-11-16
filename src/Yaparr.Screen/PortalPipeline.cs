@@ -26,9 +26,9 @@ public static class PortalPipeline
     /// The command line for <c>gst-launch-1.0</c>: the stream <paramref name="fd"/> names (the portal's PipeWire connection, which the
     /// child program inherits), converted to planar YUV at the frame size and rate, on standard output. A screen that does not change
     /// sends no pictures, so the last one is repeated to keep the rate steady (a still screen must still give a picture to a viewer
-    /// that joins).
+    /// that joins). <paramref name="nv12"/>: NV12 pictures, which the encoder in this program takes as they are; otherwise I420, which FFmpeg was given.
     /// </summary>
-    public static List<string> GstArguments(PortalStream stream, int fd, ScreenOptions o)
+    public static List<string> GstArguments(PortalStream stream, int fd, ScreenOptions o, bool nv12 = false)
     {
         var (width, height) = FrameSize(stream, o);
         int keepAlive = Math.Max(20, 1000 / Math.Max(1, o.Fps));
@@ -41,7 +41,7 @@ public static class PortalPipeline
             // clock) it makes up every picture in between at once: a flood of copies of the first picture, a minute or two of video in a few seconds, at
             // many times the stream's bitrate. skip-to-first starts at the first picture, and max-duplication-time stops it filling a long gap.
             "!", "videoconvert", "!", "videoscale", "!", "videorate", "skip-to-first=true", "max-duplication-time=500000000", "!",
-            $"video/x-raw,format=I420,width={number(width)},height={number(height)},framerate={number(o.Fps)}/1",
+            $"video/x-raw,format={(nv12 ? "NV12" : "I420")},width={number(width)},height={number(height)},framerate={number(o.Fps)}/1",
             "!", "fdsink", "fd=1", "sync=false",
         };
     }

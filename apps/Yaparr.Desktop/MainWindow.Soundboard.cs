@@ -15,6 +15,7 @@ public partial class MainWindow
     private SoundboardWindow? _soundboardWindow;
     private IInputElement? _soundboardOpener;
     private string _soundboardRoom = "";
+    private ConversationVm? _soundboardConv;
 
     private void Soundboard_Click(object? sender, RoutedEventArgs e)
     {
@@ -25,9 +26,10 @@ public partial class MainWindow
         if (room == null || _node == null) return;
 
         _soundboardRoom = room.Name;
+        _soundboardConv = _voiceConv;
         var view = new SoundboardView();
         view.Attach(room, _node.Id, _settings, () => _data.SaveSettings(_settings), () => _voice, () => _settings.VoiceOutput,
-            ToggleSoundboardPlace, CloseSoundboard);
+            ToggleSoundboardPlace, CloseSoundboard, OpenSoundboardSettings);
         _soundboard = view;
         if (_settings.SoundboardInWindow) PopOutSoundboard(); else DockSoundboard();
     }
@@ -77,6 +79,19 @@ public partial class MainWindow
         if (toWindow) PopOutSoundboard(); else DockSoundboard();
     }
 
+    // The button in the soundboard: to the soundboard section of the room's settings. The board is the one of the room the voice call is in, which need not be
+    // the room on show, so that room is opened first. A board over the window is put away (the settings would be behind it); one in a window of its own stays
+    // beside the call, and the app's window is brought forward.
+    private void OpenSoundboardSettings()
+    {
+        if (_soundboardConv is not { } conv || !_conversations.Contains(conv)) return;
+        if (_soundboardWindow == null) CloseSoundboard();
+        if (_selected != conv) SelectConversation(conv);
+        if (WindowState == Avalonia.Controls.WindowState.Minimized) WindowState = Avalonia.Controls.WindowState.Normal;
+        Activate();
+        ShowRoomSettings("sounds");
+    }
+
     // Puts the soundboard away, wherever it is.
     private void CloseSoundboard()
     {
@@ -122,16 +137,35 @@ public partial class MainWindow
         foreach (var id in _settings.SoundboardMuted) session.SetSoundboardMute(new PeerId(id), true);
     }
 
-    private bool IsPersonSoundboardMuted(string id) => _settings.SoundboardMuted.Contains(id);
-
-    private void SetPersonSoundboardMute(string id, bool muted)
+    // A mute is of the person, not of a device: it is kept under their account, so it holds on all their devices (before, under the id of the one
+    // device that was muted, so someone on two devices had to be muted on each). A mute made that way is moved to the account the first time the
+    // account is known.
+    private bool IsPersonSoundboardMuted(string device, string account)
     {
-        if (muted) { if (!_settings.SoundboardMuted.Contains(id)) _settings.SoundboardMuted.Add(id); }
-        else _settings.SoundboardMuted.Remove(id);
+        var muted = _settings.SoundboardMuted;
+        if (account.Length > 0 && muted.Contains(account)) return true;
+        if (!muted.Contains(device)) return false;
+        if (account.Length > 0 && account != device)
+        {
+            muted.Remove(device);
+            muted.Add(account);
+            _data.SaveSettings(_settings);
+        }
+        return true;
+    }
+
+    private void SetPersonSoundboardMute(VoiceMemberVm person, bool muted)
+    {
+        string account = person.Account.Length > 0 ? person.Account : person.Id;
+        var list = _settings.SoundboardMuted;
+        list.Remove(person.Id);   // the older way of keeping it
+        if (muted) { if (!list.Contains(account)) list.Add(account); }
+        else list.Remove(account);
         _data.SaveSettings(_settings);
-        _voice?.SetSoundboardMute(new PeerId(id), muted);
+        _voice?.SetSoundboardMute(new PeerId(account), muted);
+        // Their other devices, here or in another room, are the same person.
         foreach (var conv in _conversations)
-            foreach (var member in conv.VoiceMembers.Where(m => m.Id == id)) member.SoundboardMuted = muted;
+            foreach (var member in conv.VoiceMembers.Where(m => m.Id == person.Id || (m.Account.Length > 0 && m.Account == account))) member.SoundboardMuted = muted;
     }
 
     // The bell next to a person and the item in their right-click menu do the same: whatever sound they play from the soundboard is not heard by
@@ -139,7 +173,7 @@ public partial class MainWindow
     private void SoundboardMute_Click(object? sender, RoutedEventArgs e)
     {
         if (sender is Avalonia.Controls.Control { DataContext: VoiceMemberVm member } && !member.IsSelf)
-            SetPersonSoundboardMute(member.Id, !member.SoundboardMuted);
+            SetPersonSoundboardMute(member, !member.SoundboardMuted);
     }
 
     private void VoiceMemberMenu_Opening(object? sender, System.ComponentModel.CancelEventArgs e)

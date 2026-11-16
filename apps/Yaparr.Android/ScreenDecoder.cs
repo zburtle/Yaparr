@@ -13,9 +13,15 @@ namespace Yaparr.AndroidApp;
 /// </summary>
 internal sealed class ScreenDecoder : IDisposable
 {
-    private const string H264Mime = "video/avc", Vp8Mime = "video/x-vnd.on2.vp8", Av1Mime = "video/av01";
+    private const string H264Mime = "video/avc", Vp8Mime = "video/x-vnd.on2.vp8", Av1Mime = "video/av01", H265Mime = "video/hevc";
 
-    private readonly IMediaFrameSource _frames;
+    // The stream the frames come from, and the one being moved to (the share's lower stream or back, issue #254): frames of the next one are let through from
+    // its first key frame on, and from then on the old one's are not, so the picture goes on without a gap (the decoder starts again only if the size changes).
+    private readonly object _sourceGate = new();
+    private IMediaFrameSource _frames;
+    private Action<MediaFrame> _onFrames;
+    private IMediaFrameSource? _next;
+    private Action<MediaFrame>? _onNext;
     private readonly Surface _surface;
     private readonly Channel<(byte[] Data, bool IsKey)> _queue = Channel.CreateBounded<(byte[], bool)>(new BoundedChannelOptions(60) { SingleReader = true, SingleWriter = false });
     private readonly Thread _thread;
@@ -40,15 +46,61 @@ internal sealed class ScreenDecoder : IDisposable
         _surface = surface;
         _thread = new Thread(Run) { IsBackground = true, Name = "screen decoder" };
         _thread.Start();
-        _frames.FrameReceived += OnFrame;
+        _onFrames = frame => OnFrame(frames, frame);
+        _frames.FrameReceived += _onFrames;
     }
 
     public long Fed => Interlocked.Read(ref _fed);
     public long Shown => Interlocked.Read(ref _shown);
     public long Dropped => Interlocked.Read(ref _dropped);
 
-    private void OnFrame(MediaFrame frame)
+    /// <summary>The frames now come from the given source (raised at its first key frame, on the network's thread); the old source is no longer listened to.</summary>
+    public event Action<IMediaFrameSource>? Switched;
+
+    /// <summary>Moves to <paramref name="next"/> at its first key frame; until then the frames of the stream shown go on. A move not yet made is replaced.</summary>
+    public void SwitchTo(IMediaFrameSource next)
     {
+        CancelSwitch();
+        Action<MediaFrame> handler = frame => OnFrame(next, frame);
+        lock (_sourceGate) { _next = next; _onNext = handler; }
+        next.FrameReceived += handler;
+    }
+
+    /// <summary>The stream the frames are taken from now.</summary>
+    public IMediaFrameSource Current { get { lock (_sourceGate) return _frames; } }
+
+    /// <summary>Gives up a move whose first key frame has not come.</summary>
+    public void CancelSwitch()
+    {
+        IMediaFrameSource? next;
+        Action<MediaFrame>? handler;
+        lock (_sourceGate) { (next, handler) = (_next, _onNext); _next = null; _onNext = null; }
+        if (next != null && handler != null) next.FrameReceived -= handler;
+    }
+
+    private void OnFrame(IMediaFrameSource source, MediaFrame frame)
+    {
+        IMediaFrameSource? old = null;
+        Action<MediaFrame>? oldHandler = null;
+        lock (_sourceGate)
+        {
+            if (source == _next)
+            {
+                if (!frame.IsKey) return;   // not yet: the stream shown goes on until the new one can be started from a key frame
+                (old, oldHandler) = (_frames, _onFrames);
+                _frames = _next;
+                _onFrames = _onNext!;
+                _next = null;
+                _onNext = null;
+            }
+            else if (source != _frames) return;   // the old stream, after the move
+        }
+        if (old != null)
+        {
+            old.FrameReceived -= oldHandler;
+            Switched?.Invoke(source);
+        }
+        if (Volatile.Read(ref _disposed) != 0) return;
         if (!_queue.Writer.TryWrite((frame.Data.ToArray(), frame.IsKey)))
         {
             // The decoder has fallen behind: what is queued is dropped, and nothing is shown until the next key frame.
@@ -56,6 +108,8 @@ internal sealed class ScreenDecoder : IDisposable
             _waitForKey = true;
         }
     }
+
+    private bool _saidH265Off;
 
     private void Run()
     {
@@ -77,6 +131,12 @@ internal sealed class ScreenDecoder : IDisposable
                 {
                     Restart(kind, width, height);
                 }
+                if (_codec == null && isKey && !_saidH265Off && !ScreenFeatures.H265 && H265.LooksLikeKeyFrame(data))
+                {
+                    // H.265 arrives and this version has it switched off: said once, instead of a share that stays black without a word.
+                    _saidH265Off = true;
+                    Failed?.Invoke(ScreenFeatures.H265Off + " Ask the person sharing to pick H.264 or AV1.");
+                }
                 if (_codec == null) continue;                // nothing to start from yet
                 if (_waitForKey && !isKey) continue;
                 if (isKey) _waitForKey = false;
@@ -95,12 +155,12 @@ internal sealed class ScreenDecoder : IDisposable
     private void Restart(ScreenCodec kind, int width, int height)
     {
         CloseCodec();
-        string mime = kind switch { ScreenCodec.H264 => H264Mime, ScreenCodec.Av1 => Av1Mime, _ => Vp8Mime };
+        string mime = kind switch { ScreenCodec.H264 => H264Mime, ScreenCodec.Av1 => Av1Mime, ScreenCodec.H265 => H265Mime, _ => Vp8Mime };
         MediaCodec codec;
         try { codec = MediaCodec.CreateDecoderByType(mime)!; }
-        catch (Exception ex) when (kind == ScreenCodec.Av1 && ex is Java.Lang.IllegalArgumentException or Java.IO.IOException or NullReferenceException)
+        catch (Exception ex) when (kind is ScreenCodec.Av1 or ScreenCodec.H265 && ex is Java.Lang.IllegalArgumentException or Java.IO.IOException or NullReferenceException)
         {
-            throw new InvalidOperationException("This phone cannot play AV1. Ask the person sharing to pick another format.", ex);
+            throw new InvalidOperationException($"This phone cannot play {ScreenCodecs.Name(kind)}. Ask the person sharing to pick another format.", ex);
         }
         try
         {
@@ -159,7 +219,11 @@ internal sealed class ScreenDecoder : IDisposable
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
-        _frames.FrameReceived -= OnFrame;
+        CancelSwitch();
+        IMediaFrameSource frames;
+        Action<MediaFrame> handler;
+        lock (_sourceGate) (frames, handler) = (_frames, _onFrames);
+        frames.FrameReceived -= handler;
         _cts.Cancel();
         _queue.Writer.TryComplete();
         try { if (_thread.IsAlive) _thread.Join(1000); } catch (ThreadStateException) { }

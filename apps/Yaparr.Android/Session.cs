@@ -28,6 +28,7 @@ public sealed partial class Session : IDisposable
     private string? _banner;
     private double? _bannerProgress;
     private ChatNode? _node;
+    private Yaparr.History.Sqlite.SqliteHistoryStore? _historyStore;
     private Chat? _open;
     private bool _channelChoiceDirty;
 
@@ -158,18 +159,23 @@ public sealed partial class Session : IDisposable
             AccountStatePath = _data.AccountStatePath,
             AvatarDirectory = _data.AvatarDirectory,
             AccountEntries = linked,
-            HistoryStore = new FileHistoryStore(_data.HistoryDirectory, historyCipher),
+            HistoryStore = _historyStore = _data.OpenHistoryStore(historyCipher, Log),
             DirectHistoryDirectory = Path.Combine(_data.Directory, "direct"),
             AttachmentDirectory = Path.Combine(_data.Directory, "attachments"),
             Traversal = traversal,
             RolesDirectory = Path.Combine(_data.Directory, "roles"),
             EnableLocalDiscovery = traversal.LocalDiscovery,
             PeerCachePath = Path.Combine(_data.Directory, "peers.json"),
+            WakePeersPath = Path.Combine(_data.Directory, "wake-peers.json"),
+            WakePeer = address => PushClient.WakeAsync(address),
             ClockOffsetsPath = Path.Combine(_data.Directory, "clocks.json"),
             Dht = new Yaparr.Discovery.Dht.DhtOptions { NodeCachePath = Path.Combine(_data.Directory, "dht-nodes.txt") },
             Log = Log,
         });
+        // Where the people in the rooms can ask for this phone to be woken, when push is on (see PushManager).
+        if (_data.LoadPush() is { Registered: true } push) node.WakeAddressOfMine = push.WakeAddress;
         node.AttachmentChanged += update => UI(() => OnAttachmentChanged(update));
+        EmojiPictures.Reader = hash => node.ReadAttachment(hash);
         node.BlockChanged += (id, blocked) => UI(() => OnBlockChanged(id, blocked));
         node.AvatarChanged += account => UI(() => OnAvatarChanged(account));
         AvatarBrushes.Source = account => _node?.AvatarOf(new PeerId(account));
@@ -273,6 +279,19 @@ public sealed partial class Session : IDisposable
         room.GifsChanged += () => UI(() => GifsChanged?.Invoke(chat));
         room.ChannelsChanged += () => UI(() => RefreshVoice(chat));
         room.VoiceChannelRemoved += id => UI(() => { if (_callChat == chat && chat.VoiceChannelId == id) LeaveVoice(); });
+        // The owner took you out of voice, or out of the room, without banning you (see ChatRoom.KickFromVoice and RemoveFromRoom).
+        room.VoiceKicked += () => UI(() =>
+        {
+            if (_callChat == chat) LeaveVoice();
+            Notice?.Invoke($"The owner of \"{chat.Title}\" took you out of voice. You can join again whenever you like.");
+        });
+        room.RemovedFromRoom += () => UI(async () =>
+        {
+            string title = chat.Title;
+            if (_callChat == chat) LeaveVoice();
+            await LeaveAsync(chat);
+            Notice?.Invoke($"The owner removed you from \"{title}\". You are not banned: to come back, open the room's invite again.");
+        });
 
         foreach (var m in room.GetHistory()) AddHistoryLine(chat, m, room.RoomId);
         RefreshReactions(chat);
@@ -532,6 +551,12 @@ public sealed partial class Session : IDisposable
 
     public void Ban(Chat chat, Person person) => chat.Room?.Ban(new PeerId(person.Id), person.Name);
 
+    /// <summary>Only the owner can take someone out of the room without banning them (not themselves, not the owner).</summary>
+    public bool CanRemove(Chat chat, Person person) =>
+        chat.Room is { MyRole: RoomRole.Owner } && _node != null && person.Id != _node.AccountId.Value && person.Role != "Owner";
+
+    public void RemoveFromRoom(Chat chat, Person person) => chat.Room?.RemoveFromRoom(new PeerId(person.Id), person.Name);
+
     public void Unban(Chat chat, string accountId) => chat.Room?.Unban(new PeerId(accountId));
 
     /// <summary>The people banned from the room (anyone can see them, an admin can lift the ban).</summary>
@@ -669,7 +694,7 @@ public sealed partial class Session : IDisposable
         var parts = m.Parts;
         var line = new Line(m.Key, m.From.DisplayName, m.Attachment != null ? parts.Body : m.Body, m.Timestamp, mine, m.Channel, m)
         {
-            ReplyKey = parts.ReplyTo, Mentions = parts.Mentions, Card = parts.Preview,
+            ReplyKey = parts.ReplyTo, Mentions = parts.Mentions, Card = parts.Preview, Emoji = parts.Emoji,
             MentionsMe = _node != null && !mine && (m.Room != null && _rooms.Keys.FirstOrDefault(r => r.Name == m.Room) is { } named
                 ? named.Names(m, _node.AccountId)
                 : parts.Mentions.Any(x => x.Account == _node.AccountId)),
@@ -791,6 +816,10 @@ public sealed partial class Session : IDisposable
 
     private void OnAttachmentChanged(AttachmentUpdate update)
     {
+        // The picture of a custom emoji a message uses has arrived: the words are drawn again with it.
+        if (update.State == AttachmentState.Ready)
+            foreach (var line in _rooms.Values.Concat(_directs.Values).SelectMany(c => c.AllLines).Where(l => l.Emoji != null && l.Emoji.Any(e => e.Hash == update.Hash)).ToList())
+                line.RaiseEmoji();
         if (!_pictureLines.TryGetValue(update.Hash, out var list)) return;
         foreach (var line in list.ToList())
         {
@@ -822,6 +851,30 @@ public sealed partial class Session : IDisposable
     }
 
     /// <summary>The picture as it was sent, for showing big or saving; null if it is not on the phone.</summary>
+    private EmojiShelf? _emojiShelf;
+
+    /// <summary>Your own custom emoji: pictures kept on this phone, each under a name you write as :name:.</summary>
+    internal EmojiShelf OwnEmoji => _emojiShelf ??= new EmojiShelf(_data.EmojiDirectory);
+
+    /// <summary>Whether this is this phone's own id (the one that added a picture to a room's list can take it off again).</summary>
+    public bool IsThisDevice(PeerId id) => _node != null && id == _node.Id;
+
+    // The custom emoji a message's words use, ready to travel with it: yours first, then the room's. A name that is neither is only words.
+    private List<CustomEmoji> CustomEmojiFor(Chat chat, string text)
+    {
+        var used = new List<CustomEmoji>();
+        if (_node == null) return used;
+        foreach (var name in CustomEmojiRules.NamesIn(text).Take(CustomEmojiRules.MaxPerMessage))
+        {
+            var bytes = OwnEmoji.Read(name);
+            if (bytes == null && chat.Room is { } room && room.Emoji.FirstOrDefault(e => e.Name == name) is { Available: true } info) bytes = room.GetGif(info.Id);
+            if (bytes == null) continue;
+            try { used.Add(_node.PrepareEmoji(name, bytes)); }
+            catch (ArgumentException) { }
+        }
+        return used;
+    }
+
     private GifShelf? _shelf;
 
     /// <summary>The GIF shelf: pictures kept on this phone to send again.</summary>
@@ -865,13 +918,16 @@ public sealed partial class Session : IDisposable
         string id;
         string? channel = null;
         var preview = await PreviewForAsync(chat, text);
+        // The custom emoji the words use go with the message, so everyone sees them whether they are yours or the room's.
+        var emoji = CustomEmojiFor(chat, text);
         if (chat.Room is { } room)
         {
             channel = chat.CurrentChannel;
-            id = await room.SendAsync(text, channel == RoomChannels.DefaultText ? null : channel, replyKey, mentions, preview);
+            id = await room.SendAsync(text, channel == RoomChannels.DefaultText ? null : channel, replyKey, mentions, preview, emoji);
         }
-        else id = await chat.Direct!.SendAsync(text, replyKey, preview);
-        chat.Add(new Line(ChatMessage.KeyOf(_node.Id, id), _node.DisplayName, text, DateTimeOffset.Now, mine: true, channel, OwnMessage(chat, id, text, channel, null)) { ReplyKey = replyKey, Mentions = mentions?.ToList() ?? new List<Mention>(), Card = preview });
+        else id = await chat.Direct!.SendAsync(text, replyKey, preview, emoji);
+        chat.Add(new Line(ChatMessage.KeyOf(_node.Id, id), _node.DisplayName, text, DateTimeOffset.Now, mine: true, channel, OwnMessage(chat, id, text, channel, null))
+            { ReplyKey = replyKey, Mentions = mentions?.ToList() ?? new List<Mention>(), Card = preview, Emoji = emoji.Count == 0 ? null : emoji });
         Resort(chat);
     }
 
@@ -941,6 +997,13 @@ public sealed partial class Session : IDisposable
     }
 
     /// <summary>Writes what has been read and the channel on show to the settings.</summary>
+    /// <summary>Tells the people in the rooms where to ask for this phone to be woken (null: nowhere, push is off).</summary>
+    public void SetWakeAddress(string? address)
+    {
+        try { _node!.WakeAddressOfMine = address; }
+        catch (ArgumentException) { /* an address that is not a wake address is not given out */ }
+    }
+
     public void Save()
     {
         if (!_marks.Dirty && !_channelChoiceDirty) return;
@@ -959,6 +1022,8 @@ public sealed partial class Session : IDisposable
         _cts.Cancel();
         _node?.Dispose();
         _node = null;
+        _historyStore?.Dispose();
+        _historyStore = null;
         _rooms.Clear();
         _directs.Clear();
         Chats.Clear();

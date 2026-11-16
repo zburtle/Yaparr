@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Threading;
+using Yaparr.AppCore;
 using Yaparr.Chat;
 using Yaparr.Screen;
 using Yaparr.Voice;
@@ -13,8 +14,8 @@ namespace Yaparr.Desktop;
 /// <summary>One shared screen, with its sound and a line of figures. It sits inside the main window or in a <see cref="ScreenViewWindow"/>, and moves between them without the stream restarting. Stopping it ends the watching.</summary>
 public partial class ScreenViewControl : UserControl
 {
-    private readonly MediaView? _view;
-    private readonly ScreenViewer? _viewer;
+    private MediaView? _view;
+    private ScreenViewer? _viewer;
     private readonly string _name = "";
     private WriteableBitmap? _bitmap;
     private long _shown;
@@ -22,25 +23,46 @@ public partial class ScreenViewControl : UserControl
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly long _startedAt = Environment.TickCount64;
 
-    public ScreenViewControl() => InitializeComponent();
+    public ScreenViewControl()
+    {
+        InitializeComponent();
+        _playout = new PlayoutQueue<Picture>(picture => _viewer?.Return(picture));
+        FullScreenButton.Click += (_, _) => FullScreenToggleRequested?.Invoke();
+        Picture.DoubleTapped += (_, _) => FullScreenToggleRequested?.Invoke();
+        Waiting.DoubleTapped += (_, _) => FullScreenToggleRequested?.Invoke();
+        _hideControls.Tick += (_, _) => HideControlsWhileIdle();
+        PointerMoved += (_, _) => ShowControlsForAWhile();
+    }
 
     /// <summary>What this watch has done so far, counted from when it began (null if there is no stream).</summary>
     public WatchFigures? Figures()
     {
-        if (_view == null) return null;
+        if (_view == null || _released) return null;
         var st = _view.Status;
-        return new WatchFigures(_name, _startedAt, _shown, _viewer?.FramesIn ?? 0, _viewer?.BytesIn ?? 0, _view.FramesLost, st.Recovered, Interlocked.Read(ref _late),
-            _viewer?.Dropped ?? 0, _viewer?.DecodeQueue ?? 0, st.Attached, st.Parent);
+        return new WatchFigures(_name, _startedAt, _shown, _viewer?.FramesIn ?? 0, _viewer?.BytesIn ?? 0, _view.FramesLost, st.Recovered, _playout.Late,
+            _viewer?.Dropped ?? 0, _viewer?.DecodeQueue ?? 0, st.Attached, st.Parent, _view.FramesMissed, _viewer?.PictureKind,
+            st.PacketsSeen, st.GapsNoticed, st.BigGaps, st.ArrivedLate, st.RepairedAfterAsking, st.NacksSent, st.PacketsAsked, st.GaveUp, _quality.Sample, st.Duplicates);
     }
 
     /// <summary>How the watch went, written when it ends (for the sharing diagnostics, which are often copied after the screen is closed).</summary>
     public string? LastReport { get; private set; }
 
-    public ScreenViewControl(string name, MediaView view, string ffmpeg) : this()
+    /// <summary>
+    /// Watches <paramref name="view"/>, the share's main stream. With <paramref name="openLow"/> and <paramref name="openMain"/> (and <paramref name="lowAvailable"/> saying
+    /// whether the share has a lower stream at the moment) the view moves between the two on its own (see <see cref="StreamChoice"/>); nothing is asked of the viewer,
+    /// and a notice over the picture says when, and why, it shows the lower-quality stream.
+    /// </summary>
+    public ScreenViewControl(string name, MediaView view, Func<MediaView?>? openLow = null, Func<MediaView>? openMain = null, Func<bool>? lowAvailable = null) : this()
     {
         _name = name;
         _view = view;
-        _viewer = new ScreenViewer(view, ffmpeg);
+        _openLow = openLow;
+        _openMain = openMain;
+        _lowAvailable = lowAvailable;
+        _viewer = new ScreenViewer(view);
+        // How this picture is doing, judged over ten seconds and sent up the tree with the others' (see ViewerQualityMeter), so that the sharer can tell
+        // a room that struggles from one viewer that does.
+        view.QualityProvider = () => _quality.Sample;
         _viewer.PictureReceived += OnPicture;
         _viewer.Failed += ex =>
         {
@@ -53,6 +75,47 @@ public partial class ScreenViewControl : UserControl
         DockButton.Click += (_, _) => DockToggleRequested?.Invoke();
         StopButton.Click += (_, _) => StopRequested?.Invoke();
         Docked = true;
+    }
+
+    /// <summary>The full screen button, a double-click on the picture or F11 asks for full screen, or for leaving it.</summary>
+    public event Action? FullScreenToggleRequested;
+
+    /// <summary>Asks for full screen, or for leaving it, as the button does (the window it is in calls this for F11).</summary>
+    public void RequestFullScreenToggle() => FullScreenToggleRequested?.Invoke();
+
+    // In full screen the controls under the picture go after a few seconds without the mouse moving, and the pointer with them, so that only the picture is
+    // seen; moving the mouse brings them back.
+    private readonly DispatcherTimer _hideControls = new() { Interval = TimeSpan.FromSeconds(3) };
+    private bool _fullScreen;
+
+    /// <summary>Whether the picture fills the screen; set by the window it is in, whoever changed it (the button, a key, or the desktop).</summary>
+    public bool IsFullScreen
+    {
+        get => _fullScreen;
+        set
+        {
+            _fullScreen = value;
+            FullScreenButton.Content = value ? "Exit full screen" : "Full screen";
+            DockButton.IsVisible = !value;
+            ShowControlsForAWhile();
+            if (!value) _hideControls.Stop();
+        }
+    }
+
+    private void ShowControlsForAWhile()
+    {
+        Controls.IsVisible = true;
+        Cursor = null;
+        _hideControls.Stop();
+        if (_fullScreen) _hideControls.Start();
+    }
+
+    private void HideControlsWhileIdle()
+    {
+        _hideControls.Stop();
+        if (!_fullScreen || Controls.IsPointerOver) return;
+        Controls.IsVisible = false;
+        Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.None);
     }
 
     /// <summary>The name of the share, for a window title.</summary>
@@ -77,6 +140,23 @@ public partial class ScreenViewControl : UserControl
     public event Action? ConnectionLost, ConnectionRestored;
 
     private bool _wasAttached, _connectionLost;
+
+    /// <summary>
+    /// The picture stopped for a couple of seconds although the watch is still going (the sharer restarted, a relay hiccuped, packets were lost): a notice is shown over the
+    /// last picture until pictures come again. The seconds are how long it has been stopped (when it was noticed), and how long it was (when it is over).
+    /// </summary>
+    public event Action<double>? StreamInterrupted, StreamResumed;
+
+    private readonly StreamInterruptionWatch _interruptions = new();
+
+    /// <summary>
+    /// This viewer is the only one in trouble, and the room is fine (see <see cref="LoneStrugglerWatch"/>): true when the notice is shown, false when it goes. It is only said
+    /// when it is certain, so a small room, a sharer with trouble of its own, or a room whose state has not come say nothing.
+    /// </summary>
+    public event Action<bool>? OnlyOneStrugglingChanged;
+
+    private readonly LoneStrugglerWatch _lone = new();
+    private bool _saidLone;
 
     /// <summary>Raised when watching ends, so the owner can mark the share as not watched any more.</summary>
     public event Action? Stopped;
@@ -106,52 +186,23 @@ public partial class ScreenViewControl : UserControl
         }
     }
 
-    // Over the internet pictures arrive unevenly: a few close together, then a gap. Drawn as they come, that looks like
-    // stutter. They wait in a short queue and are drawn on a steady clock set by how fast they arrive on average. The
-    // queue holds only a few pictures (about a tenth of a second), and if it grows past that the oldest are dropped
-    // so the delay does not build up.
-    private const int TargetQueue = 2, MaxQueue = 5;
-    private const double MinIntervalMs = 15, MaxIntervalMs = 200;
-    private readonly System.Collections.Concurrent.ConcurrentQueue<Picture> _queue = new();
+    // Over the internet pictures arrive unevenly: a few close together, then a gap. Drawn as they come, that looks like stutter. They wait in a
+    // short queue and are drawn on a steady clock set by how fast they arrive on average (see PlayoutQueue).
+    private readonly PlayoutQueue<Picture> _playout;
     private readonly DispatcherTimer _draw = new() { Interval = TimeSpan.FromMilliseconds(4) };
-    private double _intervalMs = 33;
-    private long _lastArrival, _nextDue, _firstQueued;
-    private bool _playing;
     private long _statsAt = Environment.TickCount64, _statsShown, _statsFrames, _statsBytes;
-    private long _late;   // pictures that arrived too bunched up to be shown in time and were skipped
+    private ViewerQualityMeter _quality = new();
 
     private void OnPicture(Picture picture)
     {
-        long now = Environment.TickCount64;
-        long previous = Interlocked.Exchange(ref _lastArrival, now);
-        if (previous != 0)
-        {
-            // Smoothed over many pictures, so one late arrival does not slow the clock.
-            double gap = Math.Clamp(now - previous, MinIntervalMs, MaxIntervalMs);
-            _intervalMs += (gap - _intervalMs) * 0.05;
-        }
-        if (_queue.IsEmpty) Volatile.Write(ref _firstQueued, now);
-        _queue.Enqueue(picture);
-        while (_queue.Count > MaxQueue && _queue.TryDequeue(out var old)) { Interlocked.Increment(ref _late); _viewer?.Return(old); }
+        _playout.Arrive(picture, Environment.TickCount64);
         if (Interlocked.Exchange(ref _pending, 1) == 0) Dispatcher.UIThread.Post(() => { Interlocked.Exchange(ref _pending, 0); if (!_draw.IsEnabled) _draw.Start(); });
     }
 
     private void DrawTick()
     {
-        long now = Environment.TickCount64;
-        if (_queue.IsEmpty) { _playing = false; _draw.Stop(); return; }
-        if (!_playing)
-        {
-            // Start once a couple of pictures are waiting, or after a short wait if they come slowly.
-            if (_queue.Count < TargetQueue && now - Volatile.Read(ref _firstQueued) < 120) return;
-            _playing = true;
-            _nextDue = now;
-        }
-        if (now < _nextDue) return;
-        if (!_queue.TryDequeue(out var picture)) return;
-        _nextDue = Math.Max(_nextDue + (long)_intervalMs, now - (long)_intervalMs);   // a late draw does not make a burst afterwards
-        // More waiting than the target means the clock is behind; show the newest of them instead of falling further back.
-        while (_queue.Count > TargetQueue + 1 && _queue.TryDequeue(out var skipped)) { Interlocked.Increment(ref _late); _viewer?.Return(picture); picture = skipped; }
+        if (IsEnded || _playout.IsEmpty) { _playout.Reset(); _draw.Stop(); return; }
+        if (!_playout.TryDraw(Environment.TickCount64, out var picture)) return;
         Show(picture);
         _viewer?.Return(picture);
     }
@@ -174,6 +225,95 @@ public partial class ScreenViewControl : UserControl
         Picture.InvalidateVisual();
         Waiting.IsVisible = false;
         _shown++;
+        var (change, seconds) = _interruptions.PictureShown(Environment.TickCount64);
+        if (change == InterruptionChange.Resumed) { Interrupted.IsVisible = false; StreamResumed?.Invoke(seconds); }
+    }
+
+    // ---- the lower stream (issue #254) -------------------------------------------------------------------------------------------------
+    //
+    // A move is made without a gap: the other stream is watched and decoded beside the one shown, and when its first picture comes the old one is let go and the
+    // new one shown from then on. A stream whose first picture does not come within ten seconds is given up, and the one shown stays.
+
+    private readonly Func<MediaView?>? _openLow;
+    private readonly Func<MediaView>? _openMain;
+    private readonly Func<bool>? _lowAvailable;
+    private readonly StreamChoice _choice = new();
+    private WatchedStream _watched = WatchedStream.Main;
+    private (WatchedStream To, MediaView View, ScreenViewer Viewer, long StartedAt)? _switching;
+    private readonly object _switchGate = new();
+
+    /// <summary>Which stream is shown now.</summary>
+    public WatchedStream Watched => _watched;
+
+    /// <summary>The picture moved to the other stream: which one now, and why (for the log). On the UI thread.</summary>
+    public event Action<WatchedStream, string>? StreamChanged;
+
+    private bool LowAvailable => _lowAvailable?.Invoke() ?? false;
+
+    private void ConsiderSwitch(long now)
+    {
+        if (_view == null || _released || IsEnded || _openLow == null || _openMain == null) return;
+        bool available = LowAvailable;
+        lock (_switchGate)
+        {
+            if (_switching is { } going)
+            {
+                if (now - going.StartedAt < 10_000) return;
+                _switching = null;   // its first picture never came: given up, the one shown stays
+                going.Viewer.Dispose();
+                going.View.Dispose();
+            }
+        }
+        var wanted = _choice.Update(now, available, _watched, _quality.Sample, _saidLone);
+        if (wanted != _watched) BeginSwitch(wanted);
+    }
+
+    private void BeginSwitch(WatchedStream to)
+    {
+        MediaView? view;
+        try { view = to == WatchedStream.Low ? _openLow!() : _openMain!(); }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { return; }
+        if (view == null) return;
+        var viewer = new ScreenViewer(view);
+        lock (_switchGate) _switching = (to, view, viewer, Environment.TickCount64);
+        viewer.PictureReceived += picture =>
+        {
+            bool first;
+            lock (_switchGate) first = _switching is { } s && s.Viewer == viewer;
+            if (first)
+            {
+                viewer.Return(picture);
+                Dispatcher.UIThread.Post(() => CompleteSwitch(viewer));
+                return;
+            }
+            if (_viewer == viewer) OnPicture(picture); else viewer.Return(picture);
+        };
+    }
+
+    private void CompleteSwitch(ScreenViewer viewer)
+    {
+        (WatchedStream To, MediaView View, ScreenViewer Viewer, long StartedAt) going;
+        lock (_switchGate)
+        {
+            if (_switching is not { } s || s.Viewer != viewer) return;
+            going = s;
+            _switching = null;
+        }
+        if (_released || IsEnded) { going.Viewer.Dispose(); going.View.Dispose(); return; }
+        var (oldViewer, oldView) = (_viewer, _view);
+        if (oldViewer != null) oldViewer.PictureReceived -= OnPicture;
+        _viewer = going.Viewer;
+        _view = going.View;
+        _quality = new ViewerQualityMeter();   // the new stream is judged afresh
+        _view.QualityProvider = () => _quality.Sample;
+        _watched = going.To;
+        oldViewer?.Dispose();
+        oldView?.Dispose();
+        string reason = _choice.Reason ?? "";
+        LowNoticeText.Text = $"Watching a lower-quality stream: {reason}";
+        LowNotice.IsVisible = _watched == WatchedStream.Low;
+        if (_watched == WatchedStream.Low) Struggling.IsVisible = false;   // the notice about the link says what was done about it
+        StreamChanged?.Invoke(_watched, reason);
     }
 
     private void UpdateInfo()
@@ -186,8 +326,9 @@ public partial class ScreenViewControl : UserControl
         double seconds = Math.Max(0.1, (now - _statsAt) / 1000.0);
         double shownFps = (shown - _statsShown) / seconds, arriveFps = (frames - _statsFrames) / seconds, kbps = (bytes - _statsBytes) * 8 / 1000.0 / seconds;
         (_statsAt, _statsShown, _statsFrames, _statsBytes) = (now, shown, frames, bytes);
+        _quality.Update(now, new ViewerCounters(shown, _view.FramesLost, _view.FramesMissed, _playout.Late, _viewer?.Dropped ?? 0, st.GaveUp, st.PacketsSeen));
         // Delay added by the playout queue: what waits to be drawn, at the pace they arrive.
-        int delayMs = (int)(_queue.Count * _intervalMs);
+        int delayMs = (int)(_playout.Count * _playout.IntervalMs);
         // The stream's own check: a parent that has not been heard from for a few seconds is let go, and it is looked for again.
         if (st.Attached)
         {
@@ -201,30 +342,77 @@ public partial class ScreenViewControl : UserControl
             Waiting.IsVisible = true;
             ConnectionLost?.Invoke();
         }
+        // The picture stopped while the connection is still there (a lost connection has its own notice, and an ended stream needs none).
+        var (interruption, stoppedFor) = _interruptions.Tick(now, suppressed: _connectionLost || IsEnded);
+        if (interruption == InterruptionChange.Interrupted) { Interrupted.IsVisible = true; StreamInterrupted?.Invoke(stoppedFor); }
+        else if (interruption == InterruptionChange.Cleared) Interrupted.IsVisible = false;
+        // The only one in trouble: the room's state came down the tree from the sharer, and this viewer's own judgement is the other half.
+        bool lone = _watched == WatchedStream.Main && !_connectionLost && !IsEnded && _lone.Update(now, _quality.Sample, _view.RoomState);
+        if (lone != _saidLone) { _saidLone = lone; Struggling.IsVisible = lone; OnlyOneStrugglingChanged?.Invoke(lone); }
         // A small figure over the picture: how many pictures a second are really drawn.
         FpsBadge.IsVisible = _shown > 0 && !_connectionLost;
         FpsText.Text = $"{shownFps:0} fps";
-        Info.Text = $"{_name}  -  {_shown} pictures, {_view.FramesLost} lost, {st.Recovered} packets recovered, {Interlocked.Read(ref _late)} late"
+        ConsiderSwitch(now);
+        Info.Text = $"{_name}{(_watched == WatchedStream.Low ? " (lower stream)" : "")}  -  {_shown} pictures, {_view.FramesLost} lost, {st.Recovered} packets recovered, {_playout.Late} late"
             + $"\nArriving {arriveFps:0.0}/s at {kbps:0} kbit/s, drawn {shownFps:0.0}/s, decoder queue {_viewer?.DecodeQueue ?? 0}, playout delay {delayMs} ms"
             + (st.Attached ? "" : "  -  connecting to the sharer...");
     }
 
-    private bool _stopped;
+    private bool _stopped, _released;
+
+    /// <summary>Whether the sharer stopped and this shows only the notice that it has ended.</summary>
+    public bool IsEnded { get; private set; }
+
+    /// <summary>
+    /// The sharer stopped. The stream, the decoder and the sound are released, and the picture area goes black with a notice, to be closed by the person
+    /// (rather than the window vanishing under them). <see cref="Stopped"/> is raised when that happens.
+    /// </summary>
+    public void ShowEnded()
+    {
+        if (_stopped || IsEnded) return;
+        IsEnded = true;
+        Release();
+        Picture.Source = null;
+        _bitmap = null;
+        FpsBadge.IsVisible = false;
+        Interrupted.IsVisible = false;
+        Struggling.IsVisible = false;
+        Waiting.Text = "This stream has ended";
+        Waiting.FontSize = 22;
+        Waiting.Foreground = Avalonia.Media.Brushes.White;
+        Waiting.IsVisible = true;
+        SoundPanel.IsVisible = false;
+        Info.Text = _name + "  -  ended";
+        StopButton.Content = "Close";
+    }
+
+    // The stream, the decoder, the sound and the timers; once. What the watch did is written down first, while the figures can still be read.
+    private void Release()
+    {
+        if (_released) return;
+        try { LastReport = Figures()?.Describe(Environment.TickCount64); }
+        catch (ObjectDisposedException) { }
+        _released = true;
+        _timer.Stop();
+        _draw.Stop();
+        _viewer?.Dispose();
+        _view?.Dispose();
+        lock (_switchGate)
+        {
+            if (_switching is { } going) { going.Viewer.Dispose(); going.View.Dispose(); }
+            _switching = null;
+        }
+        _speaker?.Dispose();
+        _sound?.Dispose();
+        _soundView?.Dispose();
+    }
 
     /// <summary>Ends the watching: the stream, the decoder and the sound are released. Safe to call more than once.</summary>
     public void StopWatching()
     {
         if (_stopped) return;
         _stopped = true;
-        try { LastReport = Figures()?.Describe(Environment.TickCount64); }
-        catch (ObjectDisposedException) { }
-        _timer.Stop();
-        _draw.Stop();
-        _viewer?.Dispose();
-        _view?.Dispose();
-        _speaker?.Dispose();
-        _sound?.Dispose();
-        _soundView?.Dispose();
+        Release();
         Stopped?.Invoke();
     }
 }

@@ -158,6 +158,7 @@ public partial class MainWindow
     // The keys of the list while it is open, and Esc to give up a reply. True when the key was used.
     private bool HandleComposerKey(KeyEventArgs e)
     {
+        if (HandleEmojiKey(e)) return true;
         if (MentionPopup.IsOpen)
         {
             int count = (MentionList.ItemsSource as IReadOnlyList<MentionChoice>)?.Count ?? 0;

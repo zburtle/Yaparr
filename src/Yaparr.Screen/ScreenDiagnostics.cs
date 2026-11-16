@@ -9,7 +9,7 @@ namespace Yaparr.Screen;
 /// </summary>
 public static class ScreenDiagnostics
 {
-    public static async Task<string> BuildAsync(string? ffmpegPath = null, CancellationToken ct = default)
+    public static async Task<string> BuildAsync(CancellationToken ct = default)
     {
         var text = new StringBuilder();
         void Line(string line = "") => text.AppendLine(line);
@@ -24,21 +24,19 @@ public static class ScreenDiagnostics
             Line($"  Packaged as: {(File.Exists("/.flatpak-info") ? "Flatpak (sandbox)" : Environment.GetEnvironmentVariable("SNAP") != null ? "Snap" : "a normal install")}");
             if (ScreenCapture.UsesPortal)
                 Line($"  GStreamer: {PortalPipeline.Missing() ?? "gst-launch-1.0 and its PipeWire source are there"}");
+            else
+                Line($"  A window chosen in the desktop's portal (X11): {(ScreenCapture.OffersPortalWindowOnX11 ? "offered in the share dialog" : "not offered (no portal on the session bus, or GStreamer's PipeWire source is missing)")}");
             Line($"  Programs: xrandr {Where("xrandr")}, xprop {Where("xprop")}, pactl {Where("pactl")}, parec {Where("parec")}, gst-launch-1.0 {Where("gst-launch-1.0")}");
             Line($"  Graphics devices: {Dri()}");
         }
 
-        ffmpegPath ??= FfmpegLocator.Find();
-        if (ffmpegPath == null) { Line("  FFmpeg: not found"); return text.ToString(); }
-        Line($"  FFmpeg: {ffmpegPath}");
-        var version = await RunAsync(ffmpegPath, "-hide_banner -version", ct).ConfigureAwait(false);
-        Line($"  FFmpeg version: {version.Split('\n').FirstOrDefault()?.Trim() ?? "unknown"}");
-        var encoders = await RunAsync(ffmpegPath, "-hide_banner -encoders", ct).ConfigureAwait(false);
-        var wanted = encoders.Split('\n').Select(l => l.Trim()).Where(l => l.Contains("vp8") || l.Contains("264") || l.Contains("av1") || l.Contains("vaapi") || l.Contains("nvenc")).ToList();
-        Line($"  Encoders it has: {(wanted.Count == 0 ? "none of the ones Yaparr uses" : string.Join("; ", wanted.Select(l => l.Replace("  ", " "))))}");
+        if (!FfmpegLibraries.TryLoad(out var why)) { Line($"  FFmpeg's libraries: {why}"); return text.ToString(); }
+        Line($"  FFmpeg's libraries: {FfmpegLibraries.Describe()}");
+        Line($"  Encoders they have: {string.Join(", ", FfmpegLibraries.Encoders())}");
+        Line($"  Graphics adapters: {GraphicsAdapters.Describe()}");
+        Line($"  Decoders they have: {string.Join(", ", FfmpegLibraries.Decoders())}");
         Line($"  AV1: {(Av1Support.Latest?.Describe() ?? "not checked yet")}");
-        var inputs = await RunAsync(ffmpegPath, "-hide_banner -devices", ct).ConfigureAwait(false);
-        Line($"  Capture inputs it has: {string.Join(", ", inputs.Split('\n').Select(l => l.Trim()).Where(l => l.StartsWith("D") && (l.Contains("x11grab") || l.Contains("gdigrab") || l.Contains("lavfi"))).Select(l => l.Split(' ', StringSplitOptions.RemoveEmptyEntries).Skip(1).FirstOrDefault() ?? l))}");
+        Line($"  H.265: {(ScreenFeatures.H265 ? H265Support.Latest?.Describe() ?? "not checked yet" : "switched off in this version")}");
         if (OperatingSystem.IsLinux() && Where("xrandr") != "missing")
         {
             var monitors = await RunAsync("xrandr", "--listmonitors", ct).ConfigureAwait(false);

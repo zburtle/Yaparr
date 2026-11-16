@@ -35,7 +35,8 @@ public sealed record MediaFrame(PeerId Origin, uint Id, ReadOnlyMemory<byte> Dat
 /// so it was not attached.
 /// </param>
 public sealed record MediaStatus(string Group, bool IsRoot, PeerId? Parent, IReadOnlyList<PeerId> Children, long Delivered, long Forwarded, long Dropped, long Duplicates,
-    long Retransmitted = 0, long Recovered = 0, bool OverServer = false)
+    long Retransmitted = 0, long Recovered = 0, bool OverServer = false,
+    long PacketsSeen = 0, long GapsNoticed = 0, long BigGaps = 0, long ArrivedLate = 0, long RepairedAfterAsking = 0, long NacksSent = 0, long PacketsAsked = 0, long GaveUp = 0, long RepairsRefused = 0)
 {
     public bool Attached => IsRoot || Parent != null;
 }
@@ -85,7 +86,7 @@ internal static class SignedMedia
 /// <summary>The control messages between neighbours in a group's tree. They travel on the chat connection. Ops: join, place, attach, ok, refuse, leave, ping, link, key, nack.</summary>
 internal sealed class WireMedia
 {
-    /// <summary>join, place, attach, ok, refuse, leave, ping, link, audit or here.</summary>
+    /// <summary>join, place, attach, ok, refuse, leave, ping, link, audit, here, nack, replay, key, quality or room.</summary>
     public string Op { get; set; } = "";
     public string Group { get; set; } = "";
     /// <summary>For place: the member to attach to (empty if there is no room). For link: the member that took the child on. For here: who the sender sits under (empty if nobody).</summary>
@@ -100,6 +101,13 @@ internal sealed class WireMedia
     public bool Add { get; set; }
     /// <summary>For nack: the packets the sender is missing.</summary>
     public uint[]? Seqs { get; set; }
+    /// <summary>For quality: how many viewers the report covers, how many are in trouble, the worst picture rate among them (tenths of a picture a second), how many lose packets for good.</summary>
+    public int Viewers { get; set; }
+    public int Troubled { get; set; }
+    public int WorstTenths { get; set; }
+    public int Lossy { get; set; }
+    /// <summary>For room (sent down the tree from the root): <see cref="Viewers"/> and <see cref="Troubled"/> are what the room reported, and this says whether the sharer's own link is fine.</summary>
+    public bool Fine { get; set; }
 }
 
 internal static class MediaWire
@@ -154,28 +162,42 @@ internal static class MediaWire
 }
 
 /// <summary>Remembers which packets of one sender have arrived, so a packet that comes twice is used once.</summary>
+/// <summary>
+/// Remembers which packet numbers of one source have been taken, so that a second copy of one is refused, and takes a packet that comes late: a repair, which
+/// arrives after the viewer noticed the gap, waited a moment, asked, and the answer came back, by which time hundreds of packets have gone by at a few Mbit/s.
+/// It holds the last <see cref="Size"/> numbers (about six seconds at 6 Mbit/s, well beyond the second and a half a viewer goes on asking for a packet). The
+/// first version held 64, about a tenth of a second at that rate, and refused most repairs as duplicates.
+/// </summary>
 internal sealed class SeqWindow
 {
+    /// <summary>How many numbers behind the newest one still count (a power of two).</summary>
+    public const int Size = 4096;
+
     private bool _any;
     private uint _max;
-    private ulong _bits;
+    private readonly ulong[] _bits = new ulong[Size / 64];   // a ring: the number n is bit n % Size
+
+    private bool Get(uint seq) => (_bits[(int)(seq % Size) >> 6] & (1UL << (int)(seq & 63))) != 0;
+    private void Set(uint seq) => _bits[(int)(seq % Size) >> 6] |= 1UL << (int)(seq & 63);
+    private void Clear(uint seq) => _bits[(int)(seq % Size) >> 6] &= ~(1UL << (int)(seq & 63));
 
     public bool Accept(uint seq)
     {
-        if (!_any) { _any = true; _max = seq; _bits = 1; return true; }
+        if (!_any) { _any = true; _max = seq; Array.Clear(_bits); Set(seq); return true; }
         int diff = (int)(seq - _max);
         if (diff > 0)
         {
-            _bits = diff >= 64 ? 0 : _bits << diff;
-            _bits |= 1;
+            // The numbers that come into the window are unseen; the ring still holds what the numbers a window's length before them said.
+            if (diff >= Size) Array.Clear(_bits);
+            else for (uint s = _max + 1; s != seq; s++) Clear(s);
             _max = seq;
+            Set(seq);
             return true;
         }
         int back = -diff;
-        if (back >= 64) return false;
-        ulong mask = 1UL << back;
-        if ((_bits & mask) != 0) return false;
-        _bits |= mask;
+        if (back >= Size) return false;
+        if (Get(seq)) return false;
+        Set(seq);
         return true;
     }
 }
@@ -234,13 +256,20 @@ internal sealed class FrameAssembler
     private readonly SortedDictionary<uint, Partial> _frames = new(Comparer<uint>.Create((a, b) => (int)(a - b)));
     private readonly long _waitMs, _createdAt;
     private bool _waitingForKey = true, _lost;
-    private uint _expected;
+    private uint _expected, _lastDelivered;
+    private bool _haveDelivered;
     private long _lastRequestAt = -1, _expectedSince;
 
     public FrameAssembler(long reorderWaitMs, long now) { _waitMs = reorderWaitMs; _createdAt = now; }
 
     public long Delivered { get; private set; }
     public long Lost { get; private set; }
+
+    /// <summary>
+    /// Frames the sender made that were never shown: the gaps between one delivered frame and the next. This includes the frames thrown away while waiting for a
+    /// key frame after a loss, which <see cref="Lost"/> does not count (it counts only the frames given up on).
+    /// </summary>
+    public long Missed { get; private set; }
     public bool WaitingForKey => _waitingForKey;
 
     /// <summary>Takes one packet. Finished frames are added to <paramref name="ready"/>; true is returned when the sender should be asked for a key frame.</summary>
@@ -300,6 +329,9 @@ internal sealed class FrameAssembler
             {
                 _frames.Remove(_expected);
                 ready.Add(new MediaFrame(next.Origin, _expected, Join(next), next.Key));
+                if (_haveDelivered) Missed += Math.Max(0, (int)(_expected - _lastDelivered) - 1);
+                _lastDelivered = _expected;
+                _haveDelivered = true;
                 Delivered++;
                 _expected++;
                 _expectedSince = now;

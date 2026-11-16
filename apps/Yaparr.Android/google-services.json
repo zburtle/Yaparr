@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "514866560596",
+    "project_id": "yaparr-94667",
+    "storage_bucket": "yaparr-94667.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:514866560596:android:5732a33eee73630052b7c1",
+        "android_client_info": {
+          "package_name": "org.yaparr.android"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAQVoRO9JeJGVd_wdcxxxtZ6kQXKQh2T34"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

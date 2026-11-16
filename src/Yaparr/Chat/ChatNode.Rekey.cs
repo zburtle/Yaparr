@@ -96,7 +96,7 @@ public sealed partial class ChatNode
         }
         lock (room.RosterGate)
             foreach (var (key, entry) in room.Roster)
-                if (IsValidPeerId(key) && !people.ContainsKey(key) && !IsMyDevice(new PeerId(key)))
+                if (IsValidPeerId(key) && !people.ContainsKey(key) && !IsMyDevice(new PeerId(key)) && !IsHiddenByRemoval(room, key, entry.LastSeen))
                     people[key] = new RoomPerson(new PeerId(key), entry.Name, false, DateTimeOffset.FromUnixTimeMilliseconds(entry.LastSeen));
         return people.Values.ToList();
     }
@@ -107,7 +107,8 @@ public sealed partial class ChatNode
         var online = room.Members.Select(m => m.Account).ToHashSet();
         lock (room.RosterGate)
             return room.Roster
-                .Where(kv => IsValidPeerId(kv.Key) && !IsMyDevice(new PeerId(kv.Key)) && !IsBannedIn(room, new PeerId(kv.Key)) && !IsBlocked(new PeerId(kv.Key)))
+                .Where(kv => IsValidPeerId(kv.Key) && !IsMyDevice(new PeerId(kv.Key)) && !IsBannedIn(room, new PeerId(kv.Key)) && !IsBlocked(new PeerId(kv.Key))
+                             && !IsHiddenByRemoval(room, kv.Key, kv.Value.LastSeen))   // someone the owner removed is not handed the new secret either
                 .OrderByDescending(kv => online.Contains(new PeerId(kv.Key))).ThenByDescending(kv => kv.Value.LastSeen)
                 .Take(SignedRekey.MaxRecipients)
                 .Select(kv => new RotationCandidate(new PeerId(kv.Key), kv.Value.Name, online.Contains(new PeerId(kv.Key)), DateTimeOffset.FromUnixTimeMilliseconds(kv.Value.LastSeen)))
@@ -320,5 +321,5 @@ public sealed partial class ChatNode
     }
 
     private void SendHelloTo(PeerState state) =>
-        Send(state.Connection, new Wire { Type = Wire.Hello, Name = DisplayName, Deg = _peers.Count, Rly = IsRelayCapable, Rooms = _rooms.Values.Select(r => RefTo(r, state)).ToArray() });
+        Send(state.Connection, new Wire { Type = Wire.Hello, Name = DisplayName, Deg = _peers.Count, Rly = IsRelayCapable, Wake = _wakeAddress, Rooms = _rooms.Values.Select(r => RefTo(r, state)).ToArray() });
 }

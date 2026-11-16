@@ -11,6 +11,13 @@ public sealed partial class ChatNode
 {
     private const int MaxModEntries = 1024, ModBatch = 64, ModReservedForAdmins = 256, MaxOwnDeletesPerMember = 64;
 
+    // An order to remove someone from the room or to kick them from voice is acted on by the person it is about only while it is news: this fresh (a client
+    // that was away is not sent off by an old order when it comes back), and newer than the moment the room was opened here (or the voice session began), so
+    // someone who comes back after being removed is not removed again by the order they find waiting. Other people's lists do not need that: they follow the
+    // order's time. A removed person is hidden from the list unless they were seen more than this long after the order (a client that is leaving takes a moment).
+    private const long LiveOrderMs = 10 * 60_000, RemovalGraceMs = 30_000;
+    private static readonly TimeSpan OldRemovalAge = TimeSpan.FromDays(30);
+
     private static string ModFile(string directory, ChatRoom room) => Path.Combine(directory, room.Key + ".mod.json");
 
     private void LoadMods(ChatRoom room)
@@ -54,8 +61,10 @@ public sealed partial class ChatNode
     private void PruneMods(ChatRoom room)
     {
         long cutoff = DateTimeOffset.UtcNow.Subtract(_options.MaxHistoryAge).ToUnixTimeMilliseconds();
+        long removalCutoff = DateTimeOffset.UtcNow.Subtract(OldRemovalAge).ToUnixTimeMilliseconds();
         lock (room.ModGate)
-            foreach (var k in room.ModEntries.Where(kv => kv.Value.Kind == SignedMod.DeleteMessage && kv.Value.Ts < cutoff).Select(kv => kv.Key).ToList())
+            foreach (var k in room.ModEntries.Where(kv => (kv.Value.Kind == SignedMod.DeleteMessage && kv.Value.Ts < cutoff)
+                                                          || (kv.Value.Kind is SignedMod.RemoveFromRoom or SignedMod.KickFromVoice && kv.Value.Ts < removalCutoff)).Select(kv => kv.Key).ToList())
                 room.ModEntries.Remove(k);
     }
 
@@ -97,6 +106,12 @@ public sealed partial class ChatNode
                        ?? valid.OrderByDescending(x => x.Mod.Ts).Select(x => x.Mod).FirstOrDefault();
             if (word is { Kind: SignedMod.Ban } && targetRole == RoomRole.Member) view.Banned[group.Key] = word.Label;
         }
+        // Removing someone from the room and kicking them from voice are the owner's alone; the latest order about a person counts.
+        foreach (var m in all.Where(m => m.Kind is SignedMod.RemoveFromRoom or SignedMod.KickFromVoice && SignerRole(m) == RoomRole.Owner))
+        {
+            var orders = m.Kind == SignedMod.RemoveFromRoom ? view.Removed : view.VoiceKicks;
+            if (!orders.TryGetValue(m.Target, out var latest) || latest < m.Ts) orders[m.Target] = m.Ts;
+        }
         foreach (var m in all)
         {
             if (m.Kind == SignedMod.DeleteMessage && SignerRole(m) < RoomRole.Admin)
@@ -126,6 +141,14 @@ public sealed partial class ChatNode
 
     internal IReadOnlyList<BannedPerson> GetBanned(ChatRoom room) =>
         Moderation(room).Banned.Select(kv => new BannedPerson(new PeerId(kv.Key), kv.Value)).OrderBy(b => b.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+
+    /// <summary>Whether the owner has removed this account from the room since it was last seen (<paramref name="lastSeenMs"/>, unix time): it is then left out of the list of people until it is seen again.</summary>
+    internal bool IsHiddenByRemoval(ChatRoom room, string account, long lastSeenMs) =>
+        Moderation(room).Removed.TryGetValue(AccountOf(new PeerId(account)).Value, out var ts) && lastSeenMs <= ts + RemovalGraceMs;
+
+    /// <summary>Whether a voice state sent at <paramref name="stateTs"/> by this device is older than the owner's order to kick its account from voice.</summary>
+    internal bool IsVoiceStateKicked(ChatRoom room, PeerId device, long stateTs) =>
+        Moderation(room).VoiceKicks.TryGetValue(AccountOf(device).Value, out var ts) && stateTs <= ts;
 
     internal bool IsMessageDeleted(ChatRoom room, StoredMessage m)
     {
@@ -163,6 +186,33 @@ public sealed partial class ChatNode
         PublishMod(room, SignedMod.Ban, account.Value, string.IsNullOrWhiteSpace(name) ? account.Short : name.Trim());
     }
 
+    // The owner takes someone out of the room without banning them: they disappear from everyone's list of people, and their own app leaves the room if
+    // they are on at the moment. Nothing keeps them out: they come back by opening the invite again (a ban is what keeps people out, as far as it can).
+    internal void RemoveFromRoom(ChatRoom room, PeerId account, string name)
+    {
+        RequireOwnerAction(room, account, "remove");
+        PublishMod(room, SignedMod.RemoveFromRoom, account.Value, string.IsNullOrWhiteSpace(name) ? account.Short : name.Trim());
+    }
+
+    // The owner takes someone out of the voice channel without banning them: their app leaves the call and everyone else stops listing them there. They
+    // can join again whenever they like.
+    internal void KickFromVoice(ChatRoom room, PeerId account)
+    {
+        RequireOwnerAction(room, account, "kick");
+        bool inVoice;
+        lock (room.IndirectGate) inVoice = room.Voice.Any(kv => kv.Value.State.Active && AccountOf(kv.Key) == AccountOf(account));
+        if (!inVoice) throw new InvalidOperationException("They are not in a voice channel of this room.");
+        PublishMod(room, SignedMod.KickFromVoice, account.Value, "");
+    }
+
+    private void RequireOwnerAction(ChatRoom room, PeerId account, string what)
+    {
+        if (room.Owner == null) throw new InvalidOperationException("This room has no owner, so nobody can be " + (what == "kick" ? "kicked from voice" : "removed from it") + ". Rooms made with this version have one.");
+        if (RoleIn(room, AccountId) != RoomRole.Owner) throw new InvalidOperationException("Only the owner of the room can do that.");
+        if (!IsValidPeerId(account.Value)) throw new ArgumentException("Not an account id.", nameof(account));
+        if (IsMyDevice(account)) throw new InvalidOperationException("You cannot " + what + " yourself.");
+    }
+
     internal void Unban(ChatRoom room, PeerId account)
     {
         RequireAdmin(room);
@@ -183,7 +233,7 @@ public sealed partial class ChatNode
     }
 
     private bool MessageIsMine(ChatRoom room, string key) =>
-        room.History.Snapshot().Any(m => SignedMessage.Key(m) == key && IsMyDevice(new PeerId(m.From)));
+        room.History.Find(new[] { key }).Any(m => IsMyDevice(new PeerId(m.From)));
 
     internal void DeleteSound(ChatRoom room, string id)
     {
@@ -290,8 +340,8 @@ public sealed partial class ChatNode
     // theirs or we have not seen it, which is the case for a message that has not reached us yet.
     private bool NotSomeoneElsesMessage(ChatRoom room, string key, PeerId signer)
     {
-        foreach (var stored in room.History.Snapshot())
-            if (SignedMessage.Key(stored) == key) return AccountOf(new PeerId(stored.From)) == signer;
+        foreach (var stored in room.History.Find(new[] { key }))
+            return AccountOf(new PeerId(stored.From)) == signer;
         return true;
     }
 
@@ -315,12 +365,18 @@ public sealed partial class ChatNode
         bool voiceChanged;
         lock (room.IndirectGate)
         {
-            var gone = room.Voice.Keys.Where(id => IsBannedIn(room, id)).ToList();
+            var gone = room.Voice.Where(kv => IsBannedIn(room, kv.Key) || (view.VoiceKicks.Count > 0 && IsVoiceStateKicked(room, kv.Key, kv.Value.State.Ts))).Select(kv => kv.Key).ToList();
             foreach (var id in gone) room.Voice.Remove(id);
             voiceChanged = gone.Count > 0;
         }
 
-        if (view.Messages.Count > 0) room.History.Remove(view.Messages);
+        if (view.Messages.Count > 0)
+        {
+            // The pictures of the messages that go are deleted too, unless another message (in any room or chat) shows the same file, or it is a sound or a GIF.
+            var pictures = room.History.Find(view.Messages).Select(m => Attachment.TryParse(m.Text, out var a, out _) ? a.Hash : null).OfType<string>().Distinct().ToList();
+            room.History.Remove(view.Messages);
+            ReleasePictureFiles(pictures);
+        }
 
         // Sounds an admin took down no longer need their files.
         if (view.Sounds.Count > 0)
@@ -339,5 +395,29 @@ public sealed partial class ChatNode
         room.RaiseSoundsChanged();
         room.RaiseGifsChanged();
         room.RaiseModerationChanged();
+        ActOnOrdersAboutMe(room, view);
+    }
+
+    // The owner's orders that are about this account, acted on once and only while they are news (see LiveOrderMs): removed from the room, the app is told to
+    // leave it; kicked from voice, the call ends here at once and the app is told.
+    private void ActOnOrdersAboutMe(ChatRoom room, ModView view)
+    {
+        if (view.Removed.Count == 0 && view.VoiceKicks.Count == 0) return;
+        long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        string me = AccountId.Value;
+        if (view.VoiceKicks.TryGetValue(me, out var kicked) && kicked > room.KickHandled && now - kicked <= LiveOrderMs
+            && room.ActiveVoice is { } session && kicked > session.JoinedAtUnixMs)
+        {
+            room.KickHandled = kicked;
+            _options.Log?.Invoke($"the owner of '{room.Name}' kicked you from voice; leaving it");
+            session.Leave();
+            room.RaiseVoiceKicked();
+        }
+        if (view.Removed.TryGetValue(me, out var removed) && removed > room.RemovalHandled && now - removed <= LiveOrderMs && removed >= room.CreatedAtUnixMs)
+        {
+            room.RemovalHandled = removed;
+            _options.Log?.Invoke($"the owner of '{room.Name}' removed you from the room");
+            room.RaiseRemovedFromRoom();
+        }
     }
 }

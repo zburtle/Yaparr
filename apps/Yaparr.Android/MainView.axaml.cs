@@ -438,6 +438,7 @@ public partial class MainView : UserControl
         BackgroundCheck.IsVisible = BackgroundNote.IsVisible = BatteryButton.IsVisible = canService;
         NotificationNote.Text = "";
         FillServerForm();
+        ShowPush();
         VersionText.Text = "Yaparr " + AppVersion();
         UpdateCheck.IsChecked = _settings.CheckForUpdates;
         ShowUpdateState();
@@ -963,6 +964,42 @@ public partial class MainView : UserControl
     private Chat? _watchedChat;
     private int _pictureWidth, _pictureHeight;
     private bool _watchWired;
+    private ScreenWatch? _watch;
+
+    // The picture stopped for a couple of seconds although the watch is still going (the sharer started again, a relay hiccuped, packets were lost): a notice over the
+    // last picture until pictures come again, the same as in the computer app (StreamInterruptionWatch). Looked at once a second, by the pictures the decoder has drawn.
+    private StreamInterruptionWatch _interruptions = new();
+    private readonly DispatcherTimer _interruptionTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+    private long _lastDrawn;
+    private bool _wasAttached, _connectionLost;
+
+    private void CheckInterruption()
+    {
+        if (_watch == null) return;
+        long now = Environment.TickCount64, drawn = _watch.Stats.Shown;
+        _watch.Tick(now);   // judges the picture, and moves to the share's lower stream or back on its own
+        if (drawn != _lastDrawn)
+        {
+            _lastDrawn = drawn;
+            if (_interruptions.PictureShown(now).Change == InterruptionChange.Resumed) WatchInterrupted.IsVisible = false;
+        }
+        // The stream's own check: a parent that has not been heard from for a few seconds is let go and looked for again; that has a notice of its own.
+        if (_watch.Attached)
+        {
+            _wasAttached = true;
+            if (_connectionLost) { _connectionLost = false; WatchInterrupted.IsVisible = false; }
+        }
+        else if (_wasAttached && !_connectionLost)
+        {
+            _connectionLost = true;
+            WatchInterruptedText.Text = "Lost the connection to the screen. Reconnecting\u2026";
+            WatchInterrupted.IsVisible = true;
+        }
+        // Not while a notice of the watch's own is up (it could not start, or it failed), nor while the connection is lost.
+        var (change, _) = _interruptions.Tick(now, suppressed: WatchStatus.IsVisible || _connectionLost);
+        if (change == InterruptionChange.Interrupted) { WatchInterruptedText.Text = "The stream was interrupted. Reconnecting\u2026"; WatchInterrupted.IsVisible = true; }
+        else if (change == InterruptionChange.Cleared && !_connectionLost) WatchInterrupted.IsVisible = false;
+    }
 
     private void WatchClicked(object? sender, RoutedEventArgs e)
     {
@@ -973,11 +1010,13 @@ public partial class MainView : UserControl
         WatchTitle.Text = share.Name;
         WatchStatus.Text = "Waiting for the picture\u2026";
         WatchStatus.IsVisible = true;
+        WatchInterrupted.IsVisible = false;
         if (!_watchWired)
         {
             _watchWired = true;
+            _interruptionTimer.Tick += (_, _) => CheckInterruption();
             WatchHost.SurfaceReady += surface => Dispatcher.UIThread.Post(() => BeginWatching(surface));
-            WatchHost.SurfaceLost += () => _session?.StopWatching();
+            WatchHost.SurfaceLost += () => { _watch = null; WatchInterrupted.IsVisible = false; _session?.StopWatching(); };
             WatchArea.SizeChanged += (_, _) => FitWatchHost();
         }
         WatchPanel.IsVisible = true;
@@ -991,6 +1030,11 @@ public partial class MainView : UserControl
         try
         {
             var watch = _session.StartWatching(chat, share, surface);
+            _watch = watch;
+            _interruptions = new StreamInterruptionWatch();
+            _lastDrawn = 0;
+            _wasAttached = _connectionLost = false;
+            _interruptionTimer.Start();
             watch.PictureSize += (w, h) => Dispatcher.UIThread.Post(() =>
             {
                 _pictureWidth = w; _pictureHeight = h;
@@ -998,6 +1042,13 @@ public partial class MainView : UserControl
                 FitWatchHost();
             });
             watch.Failed += message => Dispatcher.UIThread.Post(() => { WatchStatus.Text = message; WatchStatus.IsVisible = true; });
+            WatchLowNotice.IsVisible = false;
+            watch.StreamChanged += (stream, reason) => Dispatcher.UIThread.Post(() =>
+            {
+                if (_watch != watch) return;
+                WatchLowNoticeText.Text = "Watching a lower-quality stream: " + reason;
+                WatchLowNotice.IsVisible = stream == AppCore.WatchedStream.Low;
+            });
         }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
         {
@@ -1018,6 +1069,10 @@ public partial class MainView : UserControl
 
     private void CloseWatch()
     {
+        _interruptionTimer.Stop();
+        _watch = null;
+        WatchInterrupted.IsVisible = false;
+        WatchLowNotice.IsVisible = false;
         _session?.StopWatching();
         WatchPanel.IsVisible = false;
         _watchedShare = null;
@@ -1146,6 +1201,7 @@ public partial class MainView : UserControl
     // While an @ and some letters end the text, the people they could mean are offered.
     private void InputChanged(object? sender, TextChangedEventArgs e)
     {
+        UpdateEmojiBar();
         if (_current is not { IsRoom: true } chat || _session == null) { MentionBar.IsVisible = false; return; }
         var text = InputBox.Text ?? "";
         int caret = Math.Min(InputBox.CaretIndex, text.Length);
@@ -1559,6 +1615,13 @@ public partial class MainView : UserControl
             AddAction("Ban from this room", () => Ask($"Ban {person.Name} from this room? Everyone's Yaparr stops showing their messages and voice. They still hold the invite, so they can come back under a new identity. You can unban them from Blocked and banned.", "Ban", () =>
             {
                 try { _session.Ban(chat, person); ShowChatNote(chat, person.Name + " is banned"); }
+                catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { ShowChatNote(chat, ex.Message); }
+                return Task.CompletedTask;
+            }), danger: true);
+        if (_session.CanRemove(chat, person))
+            AddAction("Remove from this room", () => Ask($"Remove {person.Name} from this room? They disappear from everyone's list of people, and their Yaparr leaves the room if they are on now. This is not a ban: nothing keeps them out, and they are back as soon as they open the invite again. To keep someone out, ban them.", "Remove", () =>
+            {
+                try { _session.RemoveFromRoom(chat, person); ShowChatNote(chat, person.Name + " was removed from the room"); }
                 catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { ShowChatNote(chat, ex.Message); }
                 return Task.CompletedTask;
             }), danger: true);

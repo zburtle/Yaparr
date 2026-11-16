@@ -17,6 +17,75 @@ public partial class MainWindow
     private BackupServerState _server = new();
     private CancellationTokenSource? _serverSignIn;
 
+    // ---- automatic backups (AutoBackup): checked every few minutes while the app runs, even from the notification area ----
+
+    private AutoBackup? _auto;
+    private readonly Avalonia.Threading.DispatcherTimer _autoTimer = new() { Interval = TimeSpan.FromMinutes(5) };
+    private bool _showingAuto;
+
+    // One for the window: it and the backup the person asks for share its gate, so they never run at once.
+    private AutoBackup Auto
+    {
+        get
+        {
+            if (_auto != null) return _auto;
+            _auto = new AutoBackup(_data, log: _log.Write);
+            // The state on disk changed (a backup made, paused, failed): what the Backup page shows is read again, on the window's thread.
+            _auto.Changed += () => UI(() => { _server = _data.LoadBackupServer(); ShowServerState(); });
+            return _auto;
+        }
+    }
+
+    // Called once the account is known.
+    private void StartAutoBackup()
+    {
+        _autoTimer.Tick += (_, _) => _ = RunAutoBackupAsync();
+        _autoTimer.Start();
+        // And once soon after the app opens, so a change made while it was closed does not wait the first five minutes.
+        Avalonia.Threading.DispatcherTimer.RunOnce(() => _ = RunAutoBackupAsync(), TimeSpan.FromSeconds(45));
+    }
+
+    private async Task RunAutoBackupAsync()
+    {
+        if (_node == null) return;
+        try { await Task.Run(() => Auto.CheckAsync()); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { _log.Write("automatic backup: " + ex.Message); }
+    }
+
+    private async void AutoBackup_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_showingAuto) return;
+        var on = AutoBackupCheck.IsChecked == true;
+        _server = _data.LoadBackupServer();
+        if (on && (_server.RecoveryCode.Length == 0 || _server.Version <= 0))
+        {
+            // The first backup is by hand: it is when the recovery code is made, and shown.
+            ShowServerState();
+            ServerStatusIs("Back up by hand once first (Back up now): that makes your recovery code, which automatic backups lock the backup with.", problem: true);
+            return;
+        }
+        _server.AutoBackup = on;
+        if (on) _server.AutoNote = "";
+        _data.SaveBackupServer(_server);
+        ShowServerState();
+        ServerStatusIs("");
+        if (on)
+        {
+            _log.Write("automatic backups turned on");
+            await Task.Delay(1000);
+            await RunAutoBackupAsync();
+        }
+    }
+
+    private static string Ago(DateTimeOffset when)
+    {
+        var span = DateTimeOffset.UtcNow - when;
+        if (span < TimeSpan.FromMinutes(1)) return "just now";
+        if (span < TimeSpan.FromHours(1)) return $"{(int)span.TotalMinutes} minute{((int)span.TotalMinutes == 1 ? "" : "s")} ago";
+        if (span < TimeSpan.FromDays(1)) return $"{(int)span.TotalHours} hour{((int)span.TotalHours == 1 ? "" : "s")} ago";
+        return $"{(int)span.TotalDays} day{((int)span.TotalDays == 1 ? "" : "s")} ago";
+    }
+
     // Called when the Backup page is shown.
     private void FillServerForm()
     {
@@ -35,6 +104,16 @@ public partial class MainWindow
         ServerSignedInText.Text = $"Signed in to {host} as {_server.Username}." +
             (_server.Version > 0 ? $" The last backup from this computer is version {_server.Version}." : " No backup has been saved from this computer yet.");
         ShowRecoveryCodeButton.IsVisible = _server.RecoveryCode.Length > 0;
+
+        _showingAuto = true;
+        AutoBackupCheck.IsChecked = _server.AutoBackup;
+        AutoBackupCheck.IsEnabled = _server.AutoBackup || (_server.RecoveryCode.Length > 0 && _server.Version > 0);
+        _showingAuto = false;
+        var trouble = _server.AutoPaused || _server.Failures > 0 || _server.AutoNote.StartsWith("Automatic backups stopped", StringComparison.Ordinal);
+        AutoBackupStatus.Text = trouble ? _server.AutoNote
+            : _server.AutoBackup ? (_server.LastBackup is { } last ? $"On. {(_server.AutoNote.Length > 0 ? _server.AutoNote + " " : "")}Last backup: version {_server.Version}, {Ago(last)}." : "On.")
+            : "";
+        AutoBackupStatus.IsVisible = AutoBackupStatus.Text.Length > 0;
     }
 
     private void ServerStatusIs(string text, bool problem = false)
@@ -49,6 +128,7 @@ public partial class MainWindow
     {
         if (ex.SignedOut)
         {
+            _server = _data.LoadBackupServer();
             _server.Token = "";
             _data.SaveBackupServer(_server);
             ServerUrlBox.Text = ReleaseConfig.Current.BackupServerToOffer(_server.Url);
@@ -147,6 +227,7 @@ public partial class MainWindow
             await client.SignOutAsync();
         }
         catch (BackupServerException) { }   // not reachable: this computer forgets the token all the same
+        _server = _data.LoadBackupServer();
         _server.Token = "";
         _data.SaveBackupServer(_server);
         ServerUrlBox.Text = ReleaseConfig.Current.BackupServerToOffer(_server.Url);
@@ -267,8 +348,13 @@ public partial class MainWindow
         if (_node == null || !_server.SignedIn) return;
         BackupToServerButton.IsEnabled = ServerSignOutButton.IsEnabled = false;
         var temp = Path.Combine(Path.GetTempPath(), "Yaparr-server-backup-" + Guid.NewGuid().ToString("N") + ".yapbak");
+        // An automatic backup may be under way: wait for it, then read what it left (so what is saved below does not undo it).
+        ServerStatusIs("Waiting for a backup that is running…");
+        await Auto.Gate.WaitAsync();
         try
         {
+            _server = _data.LoadBackupServer();
+            if (!_server.SignedIn) { ShowServerState(); ServerStatusIs("Signed out.", problem: true); return; }
             ServerStatusIs("Checking the server…");
             using var client = new BackupServerClient(new Uri(_server.Url), _server.Token);
             var versions = await client.VersionsAsync();
@@ -289,9 +375,13 @@ public partial class MainWindow
 
             ServerStatusIs("Making the backup…");
             var recoveryCode = _server.RecoveryCode;
+            // Taken before the backup is made: what changes while it is being made is then seen as changed, and saved next time.
+            var keys = _data.KeysFingerprint();
             await Task.Run(() => _data.ExportProfile(temp, recoveryCode));
             ServerStatusIs("Sending the backup…");
-            _server.Version = await client.UploadAsync(temp, newest);
+            var version = await client.UploadAsync(temp, newest);
+            _server.RecordBackup(version, keys, DateTimeOffset.UtcNow);     // also lifts a pause: the person has seen what the server has and chosen
+            _server.AutoNote = "";
             _data.SaveBackupServer(_server);
             _log.Write($"backed up to a server (version {_server.Version})");
             ShowServerState();
@@ -302,36 +392,63 @@ public partial class MainWindow
         finally
         {
             try { File.Delete(temp); } catch (IOException) { }
+            Auto.Gate.Release();
             BackupToServerButton.IsEnabled = ServerSignOutButton.IsEnabled = true;
         }
     }
 
-    // On the first-start screen of a computer with no account (there is no settings page yet): sign in, fetch the newest backup and bring it back.
+    // On the first-start screen of a computer with no account (there is no settings page yet): sign in, choose which saved copy to bring back (the newest
+    // is selected; with only one there is nothing to choose) and bring it back.
     private async Task RestoreFromServerAsync()
     {
         const string title = "Restore from a server";
         if (await ServerLoginDialog.AskAsync(this) is not { } login) return;
-        var temp = Path.Combine(Path.GetTempPath(), "Yaparr-server-restore-" + Guid.NewGuid().ToString("N") + ".yapbak");
-        string staging;
-        int version;
-        try
+        string? staging = null;
+        int newest;
+        using (var client = new BackupServerClient(login.Server, login.Token))
         {
-            using var client = new BackupServerClient(login.Server, login.Token);
-            version = await client.DownloadAsync(temp);
-            staging = await Task.Run(() => _data.StageProfile(temp, login.RecoveryCode));
+            IReadOnlyList<ServerBackupVersion> versions;
+            try { versions = await client.VersionsAsync(); }
+            catch (BackupServerException ex) { await Dialogs.MessageAsync(this, title, ex.Message); return; }
+            if (versions.Count == 0) { await Dialogs.MessageAsync(this, title, "There is no backup on this server yet."); return; }
+            newest = versions[0].Version;
+
+            int? failed = null;
+            string? problem = null;
+            while (staging == null)
+            {
+                var pick = newest;
+                if (versions.Count > 1)
+                {
+                    if (await VersionPickerDialog.AskAsync(this, versions, ServerRestoreChoices.Preselect(versions, failed), problem) is not { } chosen) return;
+                    pick = chosen;
+                }
+                var temp = Path.Combine(Path.GetTempPath(), "Yaparr-server-restore-" + Guid.NewGuid().ToString("N") + ".yapbak");
+                try
+                {
+                    await client.DownloadAsync(temp, pick);
+                    staging = await Task.Run(() => _data.StageProfile(temp, login.RecoveryCode));
+                }
+                catch (BackupServerException ex) { await Dialogs.MessageAsync(this, title, ex.Message); return; }
+                // With other copies to try, the person is asked again (the next older one is selected) instead of being left with an error.
+                catch (Exception ex) when (versions.Count > 1 && ex is CryptographicException or InvalidDataException)
+                {
+                    failed = pick;
+                    problem = $"Version {pick} could not be opened: the recovery code does not open it, or that copy is damaged. Choose another version, or cancel to check the code.";
+                }
+                catch (CryptographicException)
+                {
+                    await Dialogs.MessageAsync(this, title, "That recovery code does not open the backup on the server. Check the code; if a newer backup was made with another code, use that one.");
+                    return;
+                }
+                catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+                {
+                    await Dialogs.MessageAsync(this, title, ex.Message);
+                    return;
+                }
+                finally { try { File.Delete(temp); } catch (IOException) { } }
+            }
         }
-        catch (BackupServerException ex) { await Dialogs.MessageAsync(this, title, ex.Message); return; }
-        catch (CryptographicException)
-        {
-            await Dialogs.MessageAsync(this, title, "That recovery code does not open the newest backup on the server. Check the code; if a newer backup was made with another code, use that one.");
-            return;
-        }
-        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
-        {
-            await Dialogs.MessageAsync(this, title, ex.Message);
-            return;
-        }
-        finally { try { File.Delete(temp); } catch (IOException) { } }
 
         try { _data.ApplyStagedProfile(staging); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -342,7 +459,9 @@ public partial class MainWindow
         // This computer stays signed in and keeps the code, so its next backup needs nothing typed.
         _data.SaveBackupServer(new BackupServerState
         {
-            Url = login.Server.ToString().TrimEnd('/'), Username = login.Username, Token = login.Token, RecoveryCode = login.RecoveryCode, Version = version,
+            // The newest on the server, even when an older copy was chosen: the person has seen what the server holds and chosen, so the next backup
+            // (which becomes a newer version than all of them) is not held back as one that might overwrite something unseen.
+            Url = login.Server.ToString().TrimEnd('/'), Username = login.Username, Token = login.Token, RecoveryCode = login.RecoveryCode, Version = newest,
         });
         _log.Write("restored a backup from a server");
         await Dialogs.MessageAsync(this, title, "Your account is back on this computer, as another device of it. Yaparr will restart now.");

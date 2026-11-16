@@ -10,6 +10,7 @@
                                                 <StackPanel.ContextMenu>
                                                     <ContextMenu Opening="VoiceMemberMenu_Opening">
                                                         <MenuItem Header="{Binding SoundboardMenuText}" Click="SoundboardMute_Click" />
+                                                        <MenuItem Header="Kick from voice…" IsVisible="{Binding CanKick}" Click="KickFromVoice_Click" />
                                                     </ContextMenu>
                                                 </StackPanel.ContextMenu>
                                                 <Border Width="28" Height="28" CornerRadius="14" Background="{Binding Avatar}"
@@ -234,6 +235,10 @@
         <Style Selector="Border.bubble.mine SelectableTextBlock.body, Border.bubble.mine TextBlock.time">
             <Setter Property="Foreground" Value="White" />
         </Style>
+        <!-- a message of nothing but a few emoji -->
+        <Style Selector="SelectableTextBlock.bigemoji">
+            <Setter Property="FontSize" Value="40" />
+        </Style>
         <Style Selector="TextBlock.time">
             <Setter Property="FontSize" Value="11" />
             <Setter Property="Opacity" Value="0.65" />
@@ -438,7 +443,8 @@
                                 </Border>
                                 <StackPanel Grid.Column="1" Margin="10,0,6,0" VerticalAlignment="Center">
                                     <Grid ColumnDefinitions="Auto,Auto,*">
-                                        <TextBlock x:Name="NameText" MaxWidth="190" FontWeight="SemiBold" FontSize="15" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                        <TextBlock x:Name="NameText" MaxWidth="190" FontWeight="SemiBold" FontSize="15" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                                                   ToolTip.Tip="{Binding $self.Text}" />
                                         <Button x:Name="RenameButton" Grid.Column="1" Classes="ghost" Width="22" Height="22" Padding="0" BorderThickness="0" Background="Transparent" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" VerticalAlignment="Center" Margin="2,0,0,0" IsVisible="False"
                                                 ToolTip.Tip="Change my name" Click="Rename_Click">
                                             <Path Data="M1,11 V8 L8,1 L11,4 L4,11 Z M6,3 L9,6" Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.2" StrokeLineCap="Round" StrokeJoin="Round" Width="12" Height="12" HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -632,7 +638,7 @@
                                                 <Button IsVisible="{Binding NeedsAction}" Content="{Binding ActionText}" Classes="primary"
                                                         HorizontalAlignment="Center" VerticalAlignment="Center" Click="Download_Click" />
                                             </Grid>
-                                            <local:MessageText Classes="body" IsVisible="{Binding HasText}" Body="{Binding Text}" Marks="{Binding MentionMarks}" TextWrapping="Wrap" LinkClicked="MessageLink_Clicked" />
+                                            <local:MessageText Classes="body" Classes.bigemoji="{Binding IsBigEmoji}" EmojiImages="{Binding EmojiImages}" IsVisible="{Binding HasText}" Body="{Binding Text}" Marks="{Binding MentionMarks}" TextWrapping="Wrap" LinkClicked="MessageLink_Clicked" />
                                             <Border Classes="linkpreview" IsVisible="{Binding HasPreview}" PointerReleased="PreviewCard_PointerReleased" ToolTip.Tip="{Binding Card.Url}">
                                                 <Grid ColumnDefinitions="Auto,*">
                                                     <Image Source="{Binding PreviewImage}" IsVisible="{Binding HasPreviewImage}" Width="64" Height="64" Margin="0,0,8,0" Stretch="UniformToFill" VerticalAlignment="Top" />
@@ -731,6 +737,12 @@
                                 <WrapPanel x:Name="QuickRow" HorizontalAlignment="Center" />
                                 <TextBox x:Name="EmojiSearch" Watermark="Search emoji" MaxLength="40" />
                                 <StackPanel x:Name="EmojiTabs" Orientation="Horizontal" HorizontalAlignment="Center" />
+                                <!-- from the message box only: your own emoji, and the room's -->
+                                <StackPanel x:Name="CustomTabs" Orientation="Horizontal" Spacing="4" IsVisible="False">
+                                    <Button x:Name="MyEmojiTab" Content="My emoji" Padding="10,3" CornerRadius="14" Click="MyEmoji_Click" />
+                                    <Button x:Name="RoomEmojiTab" Content="This room" Padding="10,3" CornerRadius="14" Click="RoomEmoji_Click" />
+                                    <Button x:Name="AddEmojiButton" Content="Add…" Padding="10,3" CornerRadius="14" IsVisible="False" Click="AddEmoji_Click" ToolTip.Tip="Make an emoji from a small picture" />
+                                </StackPanel>
                                 <TextBlock x:Name="EmojiTitle" Classes="muted small" Margin="4,0,0,0" />
                                 <ScrollViewer MaxHeight="230" HorizontalScrollBarVisibility="Disabled">
                                     <WrapPanel x:Name="EmojiGrid" />
@@ -757,6 +769,21 @@
                             </DockPanel>
                         </Border>
                     </Popup>
+                    <Popup x:Name="EmojiSuggestPopup" PlacementTarget="{Binding #InputBox}" Placement="TopEdgeAlignedLeft" IsLightDismissEnabled="False">
+                        <Border Padding="4" CornerRadius="10" MinWidth="260" Background="{DynamicResource AppBg}" BorderBrush="{DynamicResource Line}" BorderThickness="1">
+                            <ListBox x:Name="EmojiSuggestList" Classes="flat" MaxHeight="230" DoubleTapped="EmojiSuggest_DoubleTapped">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate x:DataType="local:EmojiSuggestion">
+                                        <StackPanel Orientation="Horizontal" Spacing="10">
+                                            <Image Source="{Binding Image}" IsVisible="{Binding HasImage}" Width="22" Height="22" Stretch="Uniform" VerticalAlignment="Center" />
+                                            <TextBlock Text="{Binding Emoji}" IsVisible="{Binding !HasImage}" FontFamily="Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji, Twemoji Mozilla, Segoe UI Symbol" FontSize="18" VerticalAlignment="Center" />
+                                            <TextBlock Text="{Binding Code}" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Border>
+                    </Popup>
                     <Popup x:Name="MentionPopup" PlacementTarget="{Binding #InputBox}" Placement="TopEdgeAlignedLeft" IsLightDismissEnabled="False">
                         <Border Padding="4" CornerRadius="10" MinWidth="220" Background="{DynamicResource AppBg}" BorderBrush="{DynamicResource Line}" BorderThickness="1">
                             <ListBox x:Name="MentionList" Classes="flat" MaxHeight="190" DoubleTapped="MentionList_DoubleTapped">
@@ -777,6 +804,8 @@
                                     Background="Transparent" IsEnabled="False" ToolTip.Tip="Send a picture or GIF" Click="Attach_Click" />
                             <Button x:Name="ShelfButton" DockPanel.Dock="Left" VerticalAlignment="Bottom" Content="GIF" FontSize="11" FontWeight="SemiBold" Width="36" Height="36" Padding="0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Margin="0,4,2,4" CornerRadius="18"
                                     Background="Transparent" IsEnabled="False" ToolTip.Tip="Your GIF shelf" Click="Shelf_Click" />
+                            <Button x:Name="ComposerEmojiButton" DockPanel.Dock="Left" VerticalAlignment="Bottom" Content="😀" Width="36" Height="36" Padding="0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Margin="0,4,2,4" CornerRadius="18"
+                                    Background="Transparent" IsEnabled="False" ToolTip.Tip="Emoji (or type : and a name, like :thumbs_up:)" Click="ComposerEmoji_Click" />
                             <Grid>
                                 <TextBox x:Name="InputBox" Classes="composer" PlaceholderText="Write a message" IsEnabled="False" AcceptsReturn="True" TextWrapping="Wrap" MaxHeight="150"
                                          ToolTip.Tip="Enter sends the message; Shift+Enter starts a new line" />
@@ -823,6 +852,7 @@
                                 <MenuItem x:Name="RemoveAdminItem" Header="Remove _admin from this room" Click="RemoveAdmin_Click" />
                                 <MenuItem x:Name="BanPersonItem" Header="Ban from this _room…" Click="BanPerson_Click" />
                                 <MenuItem x:Name="UnbanPersonItem" Header="Unban from this _room" Click="UnbanPerson_Click" />
+                                <MenuItem x:Name="RemoveFromRoomItem" Header="Re_move from this room…" Click="RemoveFromRoom_Click" />
                                 <MenuItem x:Name="BlockPersonItem" Header="_Block" Click="BlockPerson_Click" />
                                 <MenuItem x:Name="UnblockPersonItem" Header="_Unblock" Click="UnblockPerson_Click" />
                             </ContextMenu>
@@ -1092,12 +1122,18 @@
                                     <Button Content="Change password" Click="ServerChangePassword_Click" ToolTip.Tip="Opens the server's page in your browser" />
                                     <Button x:Name="ServerSignOutButton" Content="Sign out" Click="ServerSignOut_Click" />
                                 </WrapPanel>
+                                <CheckBox x:Name="AutoBackupCheck" Content="Back up automatically" Margin="0,6,0,0" Click="AutoBackup_Click" />
+                                <TextBlock Classes="muted" TextWrapping="Wrap" FontSize="12"
+                                           Text="Yaparr backs up soon after your rooms, keys or name change, and once a day for your message history. It never asks anything: if another device has saved a newer backup, or you are signed out, it stops and says so here. Turn it on after your first Back up now, which makes your recovery code." />
+                                <TextBlock x:Name="AutoBackupStatus" Classes="muted" TextWrapping="Wrap" FontSize="12" />
                             </StackPanel>
                             <TextBlock x:Name="ServerStatus" Classes="muted" TextWrapping="Wrap" IsVisible="False" />
                         </StackPanel>
                         <StackPanel x:Name="SectionAbout" Spacing="10" IsVisible="False">
                             <TextBlock Text="About" FontSize="15" FontWeight="SemiBold" />
                             <TextBlock x:Name="AboutText" TextWrapping="Wrap" />
+                            <CheckBox x:Name="UpdateCheckItem" Content="Look for a new version when Yaparr starts"
+                                      ToolTip.Tip="This contacts GitHub, which sees the address Yaparr connects from. Help, then Check for updates, still works." />
                             <Button Content="Copy diagnostics" Click="CopyDiagnostics_Click" />
                             <Button Content="Copy sharing diagnostics" Click="CopySharingDiagnostics_Click" ToolTip.Tip="For a problem with sharing a screen or watching one: how this computer shares, what the last share did and the log lines about it" />
                             <Button Content="Open log file" Click="OpenLog_Click" />

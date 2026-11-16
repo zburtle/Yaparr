@@ -18,7 +18,7 @@ public sealed partial class ChatNode
     private long MaxQueuedAgeMs => (long)_options.MaxHistoryAge.TotalMilliseconds;
 
     // Is there a conversation with this person to add to? A first message has to wait for a connection, as before.
-    private bool HasDirectConversation(PeerId account) => _directHistory.For(account.Value).Count > 0;
+    private bool HasDirectConversation(PeerId account) => _directHistory.Any(account.Value);
 
     private void QueueDirect(Outgoing outgoing, PeerId recipient)
     {
@@ -60,8 +60,8 @@ public sealed partial class ChatNode
             long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             foreach (var p in stored)
             {
-                var record = _directHistory.For(p.Peer).FirstOrDefault(r => r.Id == p.Id && r.Mine && r.Sig.Length > 0);
-                if (record == null || now - record.Ts > MaxQueuedAgeMs || !IsValidPeerId(p.Peer)) continue;
+                var record = _directHistory.Own(p.Peer, p.Id);
+                if (record == null || record.Sig.Length == 0 || now - record.Ts > MaxQueuedAgeMs || !IsValidPeerId(p.Peer)) continue;
                 var wire = new Wire { Type = Wire.Message, Id = record.Id, Text = record.Text, Ts = record.St > 0 ? record.St : record.Ts, Pub = record.Pub, Acct = record.Acct.Length > 0 ? record.Acct : null, Cert = record.Cert.Length > 0 ? record.Cert : null, Sig = record.Sig };
                 var outgoing = new Outgoing(record.Id)
                 {

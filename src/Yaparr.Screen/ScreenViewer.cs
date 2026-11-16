@@ -1,55 +1,123 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Threading.Channels;
 using Yaparr.Chat;
 
 namespace Yaparr.Screen;
 
+/// <summary>
+/// A preview instead of a watch: the pictures are scaled down by FFmpeg to fit this box, so reading, converting and drawing them costs little,
+/// and no more than <paramref name="Fps"/> of them a second are kept. With one or two a second only key frames are decoded (a small part of
+/// what decoding every frame costs); with more, every frame is decoded (on the graphics card where there is one), because a frame cannot be
+/// decoded without the ones before it, and that is where the processor time goes.
+/// </summary>
+public sealed record PreviewSize(int MaxWidth, int MaxHeight, int Fps = 1)
+{
+    /// <summary>One or two pictures a second is what the key frames give (a key frame about every second): nothing in between is decoded.</summary>
+    public bool KeyFramesOnly => Fps <= 2;
+
+    /// <summary>The size a <paramref name="width"/> x <paramref name="height"/> picture is shown at: as large as fits, never larger than it is, both sides even.</summary>
+    public (int Width, int Height) Fit(int width, int height)
+    {
+        double scale = Math.Min(1.0, Math.Min((double)MaxWidth / Math.Max(1, width), (double)MaxHeight / Math.Max(1, height)));
+        return (Math.Max(2, (int)(width * scale) & ~1), Math.Max(2, (int)(height * scale) & ~1));
+    }
+}
+
 /// <summary>One decoded picture: <paramref name="Bgra"/> holds width x height x 4 bytes, blue first. Give it back with <see cref="ScreenViewer.Return"/> when done.</summary>
 public sealed record Picture(int Width, int Height, byte[] Bgra);
 
 /// <summary>
-/// Shows a shared screen: the frames that arrive through the stream tree go to FFmpeg, which decodes them, and each picture
-/// is raised as an event. A new key frame with another size restarts the decoder.
+/// Shows a shared screen: the frames that arrive through the stream tree are decoded inside this program with FFmpeg's libraries (<see cref="InProcessDecoder"/>),
+/// and each picture is raised as an event. A new key frame with another size starts a new decoder. Nothing runs as a separate program.
 /// </summary>
 public sealed class ScreenViewer : IDisposable
 {
     private readonly IMediaFrameSource _view;
-    private readonly string _ffmpeg;
     private readonly object _gate = new();
     private readonly Queue<string> _errors = new();
     private readonly CancellationTokenSource _cts = new();
     private Decoder? _decoder;
     private bool _disposed;
     private long _pictures, _dropped;
+    private readonly PreviewSize? _preview;
+    private TimeSpan _doneCpu;
 
     private const int MaxQueuedFrames = 90;
 
-    // When asked for, H.264 is decoded on the graphics card while that works; the first time it does not, this turns off and the processor does it.
-    private bool _gpu;
+    // Where H.264 is decoded: the card while that works (when asked for), and the next choice down the first time it does not (Direct3D 12, then 11; NVDEC, then
+    // VA-API; then the processor).
+    private DecodeDevice _device;
+    private string? _fallbackNote;
     private byte[]? _lastKey;
 
     /// <summary>
-    /// FFmpeg hands over NV12 and the picture is converted to BGRA here, with vector instructions, which costs less than FFmpeg doing it.
-    /// <paramref name="gpuDecode"/>: also decode H.264 on the graphics card (Windows, Direct3D 11), falling back to the processor if
-    /// FFmpeg cannot. Off by default: on the machines measured (issue #100) it did not use less processor time than decoding in software.
+    /// The decoder hands over NV12 and the picture is converted to BGRA here, with vector instructions, which costs less than the library doing it.
+    /// <paramref name="gpuDecode"/>: decode H.264 on the graphics card (Windows: Direct3D 11; Linux: NVDEC, then VA-API) while that works. Off by default for a watch:
+    /// on the machines measured (issue #100) it did not use less processor time than decoding in software. A preview of every frame (<see cref="PreviewSize.KeyFramesOnly"/>
+    /// false) decodes on the card where it can (Direct3D 12 on Windows, scaled there; NVDEC or VA-API on Linux). Nothing is started until the first key frame arrives; a decoder that cannot start raises <see cref="Failed"/>.
     /// </summary>
-    public ScreenViewer(IMediaFrameSource view, string? ffmpegPath = null, bool gpuDecode = false)
+    public ScreenViewer(IMediaFrameSource view, bool gpuDecode = false, PreviewSize? preview = null)
     {
-        _gpu = gpuDecode && OperatingSystem.IsWindows();
+        _preview = preview;
         _view = view;
-        _ffmpeg = ffmpegPath ?? FfmpegLocator.Find() ?? throw new FileNotFoundException("FFmpeg was not found. Put ffmpeg.exe in an 'ffmpeg' folder next to the app, or set YAPARR_FFMPEG.");
+        bool card = preview == null ? gpuDecode : !preview.KeyFramesOnly;
+        _device = card ? InProcessDecoder.FirstCard(preferD3d12: preview != null) : DecodeDevice.Processor;
+        // A program that ended in the middle of decoding, twice in a row, decodes on the processor (a driver is the likeliest cause) until a decoder ends well,
+        // unless the card was asked for in so many words (see InProcessDecodeGuard).
+        if (_device != DecodeDevice.Processor && !InProcessSettings.CardDecodeAsked && !InProcessDecodeGuard.Allowed)
+        {
+            _fallbackNote = $"the card is not used: the program ended in the middle of decoding {InProcessDecodeGuard.UncleanEndings} times in a row (see {InProcessDecodeGuard.MarkFile}); YAPARR_CARD_DECODE=1 asks for it";
+            _device = DecodeDevice.Processor;
+        }
         _view.FrameReceived += OnFrame;
+    }
+
+    /// <summary>Whether this program can decode a shared screen: FFmpeg's libraries are there and load. When not, <paramref name="why"/> says why in plain words.</summary>
+    public static bool CanDecode(out string why)
+    {
+        if (FfmpegLibraries.TryLoad(out why)) return true;
+        why = "FFmpeg's libraries are needed to show a shared screen. " + why;
+        return false;
     }
 
     public event Action<Picture>? PictureReceived;
 
-    /// <summary>The decoder stopped for a reason other than being disposed.</summary>
+    /// <summary>The decoder stopped for a reason other than being disposed (or could not start).</summary>
     public event Action<Exception>? Failed;
 
     public long Pictures => Interlocked.Read(ref _pictures);
 
-    /// <summary>Whether the current decoder runs on the graphics card.</summary>
-    public bool GpuDecoding { get { lock (_gate) return _gpu && _decoder?.Codec == ScreenCodec.H264; } }
+    /// <summary>The time the decoders' threads spent decoding and converting, over all the ones started so far (part of this program's own processor time).</summary>
+    public TimeSpan DecoderCpu
+    {
+        get
+        {
+            Decoder? d; TimeSpan done;
+            lock (_gate) { d = _decoder; done = _doneCpu; }
+            return done + (d?.Cpu ?? default);
+        }
+    }
+
+    /// <summary>Whether the current decoder's pictures come out of the graphics card.</summary>
+    public bool GpuDecoding { get { lock (_gate) return _decoder?.OnCard ?? false; } }
+
+    /// <summary>How pictures are being decoded, for a log: on the card through Direct3D 12 or 11, or by the processor, and why not the first choice when it did not work.</summary>
+    public string DecoderKind
+    {
+        get
+        {
+            lock (_gate)
+            {
+                string kind = _device == DecodeDevice.Processor ? "on the processor" : "on the card through " + InProcessDecoder.Name(_device);
+                string? note = _fallbackNote;
+                // The library decodes on the processor by itself a stream the card does not take (a profile it lacks): said, so that the log is true.
+                if (_device != DecodeDevice.Processor && _decoder is { Pictures: > 0, OnCard: false })
+                    note = (note == null ? "" : note + "; ") + "the card did not take this stream, the processor decodes it";
+                return note == null ? kind : $"{kind} ({note})";
+            }
+        }
+    }
 
     /// <summary>Frames not handed to the decoder because it fell behind; the viewer then waits for the next key frame.</summary>
     public long Dropped => Interlocked.Read(ref _dropped);
@@ -61,6 +129,9 @@ public sealed class ScreenViewer : IDisposable
     /// <summary>Encoded frames and bytes that reached this viewer (before decoding).</summary>
     public long FramesIn => Interlocked.Read(ref _framesIn);
     public long BytesIn => Interlocked.Read(ref _bytesIn);
+
+    /// <summary>What is being decoded now, like "H264 1920x1080" (null before the first key frame).</summary>
+    public string? PictureKind { get { lock (_gate) return _decoder is { } d ? $"{d.Codec} {d.Width}x{d.Height}" : null; } }
 
     /// <summary>Frames waiting for the decoder. Staying above a few means the decoder is behind.</summary>
     public int DecodeQueue { get { lock (_gate) return _decoder?.Queued ?? 0; } }
@@ -83,12 +154,18 @@ public sealed class ScreenViewer : IDisposable
         if (_spare.Count < MaxSpare) _spare.Add(picture.Bgra);
     }
 
+    private bool _saidH265Off;
+
     private void OnFrame(MediaFrame frame)
     {
-        var data = frame.Data.ToArray();
+        if (_preview is { KeyFramesOnly: true } && !frame.IsKey) return;   // not even copied: this preview shows key frames only
+        // A frame is an array of its own (put together for it by the stream, or the encoder's own for a preview) that nobody changes afterwards, so it is
+        // used as it is: a copy of each frame, many of them over 85 KB in a busy game, only fed the garbage collector's full collections.
+        var data = MemoryMarshal.TryGetArray(frame.Data, out var whole) && whole.Offset == 0 && whole.Count == whole.Array!.Length ? whole.Array : frame.Data.ToArray();
         Interlocked.Increment(ref _framesIn);
         Interlocked.Add(ref _bytesIn, data.Length);
         Decoder? decoder;
+        Exception? failed = null;
         lock (_gate)
         {
             if (_disposed) return;
@@ -98,55 +175,92 @@ public sealed class ScreenViewer : IDisposable
                 && (decoder == null || decoder.Codec != codec || decoder.Width != w || decoder.Height != h))
             {
                 decoder?.Stop();
-                decoder = _decoder = StartDecoder(codec, w, h);
+                try { decoder = _decoder = StartDecoder(codec, w, h); }
+                catch (Exception ex) when (ex is PlatformNotSupportedException or InvalidOperationException or DllNotFoundException or EntryPointNotFoundException)
+                {
+                    decoder = _decoder = null;
+                    failed = ex;
+                }
+            }
+            else if (frame.IsKey && decoder == null && !_saidH265Off && !ScreenFeatures.H265 && H265.LooksLikeKeyFrame(data))
+            {
+                // H.265 from a sharer whose Yaparr has it, and this build has it switched off: said once, instead of a share that stays black without a word.
+                _saidH265Off = true;
+                failed = new PlatformNotSupportedException(ScreenFeatures.H265Off + " Ask the person sharing to pick H.264 or AV1.");
             }
         }
+        if (failed != null) { Failed?.Invoke(failed); return; }
         decoder?.Enqueue(data, frame.IsKey);
     }
 
+    // The first choice that opens: the device wanted, then the ones below it. Only the processor's failure goes to the caller (no libraries, no decoder for the codec).
     private Decoder StartDecoder(ScreenCodec codec, int width, int height)
     {
-        var psi = new ProcessStartInfo(_ffmpeg) { RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
-        foreach (var a in FfmpegArgs.DecodeForViewer(codec, _gpu)) psi.ArgumentList.Add(a);
-        var process = Process.Start(psi) ?? throw new InvalidOperationException("FFmpeg did not start.");
-        process.ErrorDataReceived += (_, e) =>
+        if (!CanDecode(out var why)) throw new PlatformNotSupportedException(why);
+        while (true)
         {
-            if (e.Data is not { Length: > 0 }) return;
-            lock (_gate) { _errors.Enqueue(e.Data); while (_errors.Count > 5) _errors.Dequeue(); }
-        };
-        process.BeginErrorReadLine();
-        var decoder = new Decoder(this, process, codec, width, height, _gpu && codec == ScreenCodec.H264);
-        decoder.Start(_cts.Token);
-        return decoder;
+            try
+            {
+                var decoder = new Decoder(this, codec, width, height, _preview, codec is ScreenCodec.H264 or ScreenCodec.H265 ? _device : DecodeDevice.Processor);
+                decoder.Start(_cts.Token);
+                return decoder;
+            }
+            catch (PlatformNotSupportedException ex) when (codec is ScreenCodec.H264 or ScreenCodec.H265 && _device != DecodeDevice.Processor)
+            {
+                StepDown(ex.Message);
+            }
+        }
     }
 
+    // Under the gate: the next choice down, and a note of why for the log.
+    private void StepDown(string why)
+    {
+        string said = why.Length > 120 ? why[..120] : why;
+        _fallbackNote = (_fallbackNote == null ? "" : _fallbackNote + "; ") + InProcessDecoder.Name(_device) + " did not work" + (said.Length > 0 ? ": " + said : "");
+        _device = InProcessDecoder.NextDown(_device);
+        _errors.Clear();   // what the next one says is about the next one
+    }
+
+    /// <summary>
+    /// Decodes one stream (one codec and size) on a thread of its own. Frames wait in a queue; a decoder that falls behind drops frames until the next key frame
+    /// (anything between would decode wrongly).
+    /// </summary>
     private sealed class Decoder
     {
         private readonly ScreenViewer _owner;
-        private readonly Process _process;
         private readonly Channel<byte[]> _input = Channel.CreateUnbounded<byte[]>();
         private readonly CancellationTokenSource _stop = new();
+        private readonly InProcessDecoder _decoder;
+        private readonly PreviewSize? _preview;
         private int _queued;
         private bool _waitForKey;
+        private long _busyTicks, _pictures;
+        private int _failures;
+        private volatile bool _onCard;
 
-        public int Queued => Volatile.Read(ref _queued);
+        public Decoder(ScreenViewer owner, ScreenCodec codec, int width, int height, PreviewSize? preview, DecodeDevice device)
+        {
+            _owner = owner; Codec = codec; Width = width; Height = height; _preview = preview;
+            InProcessDecodeGuard.Begin();   // until the decoder is freed (at the end of Run), or the program ends in the middle of it
+            try { _decoder = new InProcessDecoder(codec, device); }
+            catch { InProcessDecodeGuard.End(); throw; }
+        }
 
         public ScreenCodec Codec { get; }
         public int Width { get; }
         public int Height { get; }
+        public int Queued => Volatile.Read(ref _queued);
+        public long Pictures => Interlocked.Read(ref _pictures);
 
-        public bool OnCard { get; }
+        /// <summary>Whether the last picture came out of the graphics card.</summary>
+        public bool OnCard => _onCard;
 
-        public Decoder(ScreenViewer owner, Process process, ScreenCodec codec, int width, int height, bool onCard)
-        {
-            _owner = owner; _process = process; Codec = codec; Width = width; Height = height; OnCard = onCard;
-        }
+        public TimeSpan Cpu => TimeSpan.FromTicks(Interlocked.Read(ref _busyTicks));
 
         public void Start(CancellationToken ct)
         {
             var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _stop.Token).Token;
-            _ = Task.Run(() => WriteAsync(linked));
-            _ = Task.Run(() => ReadAsync(linked));
+            _ = Task.Run(() => Run(linked));
         }
 
         public void Enqueue(byte[] frame, bool isKey)
@@ -162,80 +276,90 @@ public sealed class ScreenViewer : IDisposable
             _input.Writer.TryWrite(frame);
         }
 
-        private async Task WriteAsync(CancellationToken ct)
+        private async Task Run(CancellationToken ct)
         {
             try
             {
-                var stdin = _process.StandardInput.BaseStream;
-                bool h264 = Codec == ScreenCodec.H264;
-                if (!h264) await stdin.WriteAsync(new IvfHeader(Codec == ScreenCodec.Av1 ? "AV01" : "VP80", Width, Height).ToBytes(), ct).ConfigureAwait(false);
-                long pts = 0;
+                int maxWidth = _preview?.MaxWidth ?? 0, maxHeight = _preview?.MaxHeight ?? 0;
+                // A preview of every frame keeps no more than its rate: the rest are decoded (they have to be) but not converted or drawn.
+                long keepEvery = _preview is { KeyFramesOnly: false } p ? Stopwatch.Frequency / Math.Max(1, p.Fps) : 0, last = 0;
                 await foreach (var frame in _input.Reader.ReadAllAsync(ct).ConfigureAwait(false))
                 {
                     Interlocked.Decrement(ref _queued);
-                    if (h264)
+                    // The processor time of this thread (decoding, scaling, converting), not the time it took: waiting for the card, or for the processor while a
+                    // game has it, made the figure several times too big. Where the thread's time cannot be read, the time it took.
+                    long started = ThreadCpuTime.Now(), startedAt = Stopwatch.GetTimestamp();
+                    bool ok = _decoder.Decode(frame, maxWidth, maxHeight, (nv12, w, h) =>
                     {
-                        await stdin.WriteAsync(frame, ct).ConfigureAwait(false);
-                        await stdin.WriteAsync(H264.EndMarker.ToArray(), ct).ConfigureAwait(false); // the picture is complete: no waiting for the next
-                    }
-                    else
-                    {
-                        await stdin.WriteAsync(Ivf.FrameHeader(frame.Length, pts++), ct).ConfigureAwait(false);
-                        await stdin.WriteAsync(frame, ct).ConfigureAwait(false);
-                    }
-                    await stdin.FlushAsync(ct).ConfigureAwait(false);
+                        _onCard = _decoder.LastOnCard;
+                        Interlocked.Increment(ref _pictures);
+                        if (keepEvery > 0)
+                        {
+                            long now = Stopwatch.GetTimestamp();
+                            if (last != 0 && now - last < keepEvery * 9 / 10) return;
+                            last = now;
+                        }
+                        Show(nv12, w, h);
+                    });
+                    long ended = started >= 0 ? ThreadCpuTime.Now() : -1;
+                    Interlocked.Add(ref _busyTicks, ended >= 0 ? ended - started : (long)((Stopwatch.GetTimestamp() - startedAt) * (double)TimeSpan.TicksPerSecond / Stopwatch.Frequency));
+                    if (ok) { _failures = 0; continue; }
+                    lock (_owner._gate) { _owner._errors.Enqueue(_decoder.LastError); while (_owner._errors.Count > 5) _owner._errors.Dequeue(); }
+                    // Frames that do not decode one after the other on the card: the next choice down gets to try, from the last key frame. On the processor a damaged
+                    // stream is waited out (the next key frame mends it).
+                    if (++_failures >= 30 && _decoder.Device != DecodeDevice.Processor && !_stop.IsCancellationRequested && _owner.FallBack(this, null)) return;
                 }
             }
             catch (OperationCanceledException) { }
-            catch (IOException) { }
+            catch (Exception ex) when (!_stop.IsCancellationRequested && !_owner._disposed)
+            {
+                if (_decoder.Device != DecodeDevice.Processor && _owner.FallBack(this, ex.Message)) return;
+                _owner.Failed?.Invoke(ex);
+            }
+            finally
+            {
+                _owner.AddCpu(Cpu);
+                // The native decoder is freed here, by the thread that used it, and only then does the guard's mark go: a program that quits while a viewer is
+                // decoding has the mark left only if the thread was still inside the library.
+                try { _decoder.Dispose(); } catch (Exception) { } finally { InProcessDecodeGuard.End(); }
+            }
         }
 
-        private async Task ReadAsync(CancellationToken ct)
+        // Converts a decoded NV12 picture to BGRA and raises the event.
+        private void Show(ReadOnlySpan<byte> nv12, int width, int height)
         {
-            try
-            {
-                var stdout = _process.StandardOutput.BaseStream;
-                int size = Width * Height * 4;
-                var raw = new byte[Nv12.Size(Width, Height)];
-                while (!ct.IsCancellationRequested)
-                {
-                    await stdout.ReadExactlyAsync(raw, ct).ConfigureAwait(false);
-                    var picture = _owner.Rent(size);
-                    Nv12.ToBgra(raw, Width, Height, picture);
-                    Interlocked.Increment(ref _owner._pictures);
-                    _owner.PictureReceived?.Invoke(new Picture(Width, Height, picture));
-                }
-            }
-            catch (OperationCanceledException) { }
-            catch (EndOfStreamException)
-            {
-                if (_stop.IsCancellationRequested || _owner._disposed) return;
-                if (OnCard && _owner.FallBackToProcessor(this)) return;
-                _owner.Failed?.Invoke(new InvalidOperationException("FFmpeg stopped decoding. " + _owner.LastErrors));
-            }
+            var picture = _owner.Rent(width * height * 4);
+            Nv12.ToBgra(nv12, width, height, picture);
+            Interlocked.Increment(ref _owner._pictures);
+            _owner.PictureReceived?.Invoke(new Picture(width, height, picture));
         }
 
+        /// <summary>Stops: the thread leaves its loop (after the frame it is in, if any) and frees the decoder.</summary>
         public void Stop()
         {
             _stop.Cancel();
             _input.Writer.TryComplete();
-            try { if (!_process.HasExited) _process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
-            _process.Dispose();
         }
     }
 
-    /// <summary>The graphics card could not decode: the processor takes over, starting with the key frame that is already here.</summary>
-    private bool FallBackToProcessor(Decoder failed)
+    private void AddCpu(TimeSpan used) { lock (_gate) _doneCpu += used; }
+
+    /// <summary>The card could not decode: the next choice down takes over, starting with the key frame that is already here.</summary>
+    private bool FallBack(Decoder failed, string? why)
     {
         Decoder? replacement = null;
         byte[]? key;
         lock (_gate)
         {
             if (_disposed || _decoder != failed) return _decoder != failed && !_disposed;
-            _gpu = false;
+            StepDown(why ?? LastErrors);
             key = _lastKey;
             _decoder = null;
-            if (key != null && ScreenCodecs.TryGetKeyFrame(key, out var codec, out int w, out int h)) replacement = _decoder = StartDecoder(codec, w, h);
+            if (key != null && ScreenCodecs.TryGetKeyFrame(key, out var codec, out int w, out int h))
+            {
+                try { replacement = _decoder = StartDecoder(codec, w, h); }
+                catch (Exception ex) when (ex is PlatformNotSupportedException or InvalidOperationException) { return false; }
+            }
         }
         failed.Stop();
         replacement?.Enqueue(key!, true);

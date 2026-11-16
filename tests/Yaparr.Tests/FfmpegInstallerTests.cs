@@ -5,6 +5,7 @@ using Yaparr.Screen;
 
 namespace Yaparr.Tests;
 
+/// <summary>The download of FFmpeg's libraries: checked by its hash, the libraries kept and nothing else of their folder (no program), the notices kept with them.</summary>
 public class FfmpegInstallerTests
 {
     private sealed class Serve : HttpMessageHandler
@@ -32,23 +33,27 @@ public class FfmpegInstallerTests
         return ms.ToArray();
     }
 
+    private static readonly string Codec = OperatingSystem.IsWindows() ? "avcodec-63.dll" : "libavcodec.so.63";
+    private static readonly string Util = OperatingSystem.IsWindows() ? "avutil-61.dll" : "libavutil.so.61";
+
     private static FfmpegPackage Package(byte[] zip, string? sha = null) => new(
         "test-1", new Uri("https://example.invalid/ffmpeg.zip"), sha ?? Convert.ToHexString(SHA256.HashData(zip)), zip.Length,
-        "ff/bin/ffmpeg.exe", "ff/LICENSE.txt");
+        "ff/bin/" + Codec, "ff/LICENSE.txt");
+
+    private static string Temp() => Path.Combine(Path.GetTempPath(), "yaparr-ffinst-" + Guid.NewGuid().ToString("N"));
 
     [Fact]
-    public async Task A_build_that_brings_its_own_notices_keeps_them_all_next_to_the_program()
+    public async Task A_build_that_brings_its_own_notices_keeps_them_all_next_to_the_libraries()
     {
         var dir = Temp();
         try
         {
-            var zip = Zip(("ff/bin/ffmpeg.exe", "program"), ("ff/LICENSE.txt", "lgpl"), ("ff/SOURCE.txt", "source is in the release"), ("ff/BUILD-INFO.txt", "configure..."),
+            var zip = Zip(("ff/bin/" + Codec, "library"), ("ff/LICENSE.txt", "lgpl"), ("ff/SOURCE.txt", "source is in the release"), ("ff/BUILD-INFO.txt", "configure..."),
                 ("ff/licenses/libvpx/LICENSE", "bsd"), ("ff/licenses/libvpx/PATENTS", "grant"), ("other/LICENSE.txt", "not this one"));
             var package = Package(zip) with { NoticesRoot = "ff" };
-            var path = await FfmpegInstaller.InstallAsync(package, null, dir, new Serve(zip));
-            var folder = Path.GetDirectoryName(path)!;
+            var folder = await FfmpegInstaller.InstallAsync(package, null, dir, new Serve(zip));
 
-            Assert.Equal("program", File.ReadAllText(path));
+            Assert.Equal("library", File.ReadAllText(Path.Combine(folder, Codec)));
             Assert.Equal("lgpl", File.ReadAllText(Path.Combine(folder, "LICENSE.txt")));
             Assert.Equal("source is in the release", File.ReadAllText(Path.Combine(folder, "SOURCE.txt")));   // theirs, not ours
             Assert.Equal("configure...", File.ReadAllText(Path.Combine(folder, "BUILD-INFO.txt")));
@@ -66,7 +71,7 @@ public class FfmpegInstallerTests
         var dir = Temp();
         try
         {
-            var zip = Zip(("ff/bin/ffmpeg.exe", "program"), ("ff/../../escaped.txt", "x"));
+            var zip = Zip(("ff/bin/" + Codec, "library"), ("ff/../../escaped.txt", "x"));
             var package = Package(zip) with { NoticesRoot = "ff" };
             await Assert.ThrowsAsync<InvalidDataException>(() => FfmpegInstaller.InstallAsync(package, null, dir, new Serve(zip)));
             Assert.Null(FfmpegInstaller.FindAny(dir));
@@ -74,29 +79,34 @@ public class FfmpegInstallerTests
         finally { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); }
     }
 
-    private static string Temp() => Path.Combine(Path.GetTempPath(), "yaparr-ffinst-" + Guid.NewGuid().ToString("N"));
-
     [Fact]
-    public async Task A_download_with_the_expected_hash_is_unpacked_and_found_again()
+    public async Task A_download_with_the_expected_hash_is_unpacked_to_its_libraries_and_found_again()
     {
         var dir = Temp();
         try
         {
-            var zip = Zip(("ff/bin/ffmpeg.exe", "program"), ("ff/bin/ffplay.exe", "not wanted"), ("ff/LICENSE.txt", "lgpl"));
+            // An older package also has the ffmpeg program in its bin folder: it is left out, since nothing runs it.
+            var zip = Zip(("ff/bin/" + Codec, "library"), ("ff/bin/" + Util, "library"), ("ff/bin/ffmpeg.exe", "program"), ("ff/bin/ffmpeg", "program"),
+                ("ff/bin/notes.txt", "not a library"), ("ff/bin/sub/other.dll", "not in that folder"), ("ff/LICENSE.txt", "lgpl"));
             var package = Package(zip);
             var serve = new Serve(zip);
             var steps = new List<double>();
 
             Assert.Null(FfmpegInstaller.Installed(package, dir));
-            var path = await FfmpegInstaller.InstallAsync(package, new Progress<double>(steps.Add), dir, serve);
+            var folder = await FfmpegInstaller.InstallAsync(package, new Progress<double>(steps.Add), dir, serve);
 
-            Assert.Equal("program", File.ReadAllText(path));
-            Assert.Equal(path, FfmpegInstaller.Installed(package, dir));
-            Assert.Equal(path, FfmpegInstaller.FindAny(dir));
-            Assert.Equal(path, FfmpegLocator.Find(Path.Combine(dir, "app"), "", Path.Combine(dir, "missing"), dir));
-            Assert.Equal("lgpl", File.ReadAllText(Path.Combine(Path.GetDirectoryName(path)!, "LICENSE.txt")));
-            Assert.Contains("BtbN", File.ReadAllText(Path.Combine(Path.GetDirectoryName(path)!, "SOURCE.txt")));
-            Assert.False(File.Exists(Path.Combine(Path.GetDirectoryName(path)!, "ffplay.exe")));
+            Assert.True(File.Exists(Path.Combine(folder, Codec)));
+            Assert.True(File.Exists(Path.Combine(folder, Util)));
+            Assert.False(File.Exists(Path.Combine(folder, "ffmpeg.exe")), "the program is not kept");
+            Assert.False(File.Exists(Path.Combine(folder, "ffmpeg")), "the program is not kept");
+            Assert.False(File.Exists(Path.Combine(folder, "notes.txt")), "only libraries");
+            Assert.False(File.Exists(Path.Combine(folder, "other.dll")), "only from libavcodec's own folder in the zip");
+            Assert.Equal(folder, FfmpegInstaller.Installed(package, dir));
+            Assert.Equal(folder, FfmpegInstaller.FindAny(dir));
+            // The app finds them there when they are not next to it.
+            Assert.Equal(Path.GetFullPath(folder), FfmpegLibraries.Find(Path.Combine(dir, "app"), explicitFolder: Path.Combine(dir, "nothing"), installDirectory: dir));
+            Assert.Equal("lgpl", File.ReadAllText(Path.Combine(folder, "LICENSE.txt")));
+            Assert.Contains("Yaparr.FFmpeg", File.ReadAllText(Path.Combine(folder, "SOURCE.txt")));
             Assert.DoesNotContain(Directory.GetDirectories(dir), d => Path.GetFileName(d).StartsWith("download-"));
             Assert.Equal(1.0, steps.Last());
 
@@ -108,12 +118,26 @@ public class FfmpegInstallerTests
     }
 
     [Fact]
+    public void A_folder_of_an_older_build_with_only_the_program_in_it_does_not_count()
+    {
+        var dir = Temp();
+        try
+        {
+            var old = Directory.CreateDirectory(Path.Combine(dir, "g17a4a474f4-yaparr-3-win64")).FullName;
+            File.WriteAllText(Path.Combine(old, OperatingSystem.IsWindows() ? "ffmpeg.exe" : "ffmpeg"), "program");
+            Assert.Null(FfmpegInstaller.FindAny(dir));
+            Assert.Null(FfmpegLibraries.Find(Path.Combine(dir, "app"), explicitFolder: Path.Combine(dir, "nothing"), installDirectory: dir));
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
     public async Task A_download_with_another_hash_is_refused_and_leaves_nothing_behind()
     {
         var dir = Temp();
         try
         {
-            var zip = Zip(("ff/bin/ffmpeg.exe", "program"));
+            var zip = Zip(("ff/bin/" + Codec, "library"));
             var package = Package(zip, sha: new string('0', 64));
             await Assert.ThrowsAsync<InvalidDataException>(() => FfmpegInstaller.InstallAsync(package, null, dir, new Serve(zip)));
             Assert.Null(FfmpegInstaller.Installed(package, dir));
@@ -124,30 +148,14 @@ public class FfmpegInstallerTests
     }
 
     [Fact]
-    public async Task A_download_without_the_program_in_it_is_refused()
+    public async Task A_download_without_the_libraries_in_it_is_refused()
     {
         var dir = Temp();
         try
         {
-            var zip = Zip(("ff/readme.txt", "nothing"));
+            var zip = Zip(("ff/bin/ffmpeg.exe", "only the program"));
             await Assert.ThrowsAsync<InvalidDataException>(() => FfmpegInstaller.InstallAsync(Package(zip), null, dir, new Serve(zip)));
             Assert.Null(FfmpegInstaller.FindAny(dir));
-        }
-        finally { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); }
-    }
-
-    [Fact]
-    public async Task On_linux_the_installed_program_can_be_run()
-    {
-        if (OperatingSystem.IsWindows()) return;
-        var dir = Temp();
-        try
-        {
-            var zip = Zip(("ff/bin/ffmpeg", "program"), ("ff/LICENSE.txt", "lgpl"));
-            var package = Package(zip) with { ExePathInZip = "ff/bin/ffmpeg" };
-            var path = await FfmpegInstaller.InstallAsync(package, null, dir, new Serve(zip));
-            Assert.Equal("ffmpeg", Path.GetFileName(path));
-            Assert.True(File.GetUnixFileMode(path).HasFlag(UnixFileMode.UserExecute));
         }
         finally { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); }
     }
@@ -159,11 +167,11 @@ public class FfmpegInstallerTests
         if (OperatingSystem.IsWindows()) Assert.Same(FfmpegPackage.Default, p);
         else if (OperatingSystem.IsLinux() && System.Runtime.InteropServices.RuntimeInformation.OSArchitecture is System.Runtime.InteropServices.Architecture.X64 or System.Runtime.InteropServices.Architecture.Arm64)
         {
-            // Never the Windows build: a Linux program, from the Yaparr.FFmpeg release, with a hash.
+            // Never the Windows build: Linux libraries, from the Yaparr.FFmpeg release, with a hash.
             Assert.NotNull(p);
             Assert.DoesNotContain("win64", p!.Url.AbsoluteUri);
             Assert.Contains("linux", p.Url.AbsoluteUri);
-            Assert.EndsWith("/bin/ffmpeg", p.ExePathInZip);
+            Assert.EndsWith("/bin/libavcodec.so.63", p.LibraryPathInZip);
         }
     }
 
@@ -175,7 +183,7 @@ public class FfmpegInstallerTests
             Assert.Equal("https", p.Url.Scheme);
             Assert.Contains("zburtle/Yaparr.FFmpeg/releases", p.Url.AbsoluteUri);
             Assert.Equal(64, p.Sha256.Length);
-            Assert.StartsWith(p.NoticesRoot + "/bin/", p.ExePathInZip);
+            Assert.Equal(p.NoticesRoot + "/bin/libavcodec.so.63", p.LibraryPathInZip);
             Assert.Equal(p.NoticesRoot + "/LICENSE.txt", p.LicensePathInZip);
         }
         Assert.NotEqual(FfmpegPackage.LinuxX64.Sha256, FfmpegPackage.LinuxArm64.Sha256);
@@ -188,6 +196,6 @@ public class FfmpegInstallerTests
         Assert.Equal("https", p.Url.Scheme);
         Assert.Contains("zburtle/Yaparr.FFmpeg/releases", p.Url.AbsoluteUri);
         Assert.Equal(64, p.Sha256.Length);
-        Assert.EndsWith("ffmpeg.exe", p.ExePathInZip);
+        Assert.Equal(p.NoticesRoot + "/bin/avcodec-63.dll", p.LibraryPathInZip);
     }
 }

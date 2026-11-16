@@ -153,6 +153,31 @@ public sealed class MessageVm : Observable
     public string? Channel { get; init; }
     public bool HasAttachment => Attachment != null;
     public bool HasText => Text.Length > 0;
+
+    /// <summary>A message of nothing but one to three emoji (standard or custom), shown large.</summary>
+    public bool IsBigEmoji => !IsSystem && Attachment == null
+        && (EmojiTyping.IsOnlyEmoji(Text) || Emoji is { Count: > 0 } && CustomEmojiRules.IsOnlyEmoji(Text, Emoji.Select(e => e.Name).ToList()));
+
+    // ---- custom emoji ----
+
+    /// <summary>The custom emoji the words use, as the message described them (their pictures are fetched as the message arrives).</summary>
+    public IReadOnlyList<CustomEmoji>? Emoji { get; init; }
+
+    /// <summary>The pictures of the custom emoji that are on this computer now, by name; the rest show as their :name: until they arrive.</summary>
+    public IReadOnlyDictionary<string, Avalonia.Media.IImage>? EmojiImages
+    {
+        get
+        {
+            if (Emoji == null) return null;
+            var images = new Dictionary<string, Avalonia.Media.IImage>();
+            foreach (var e in Emoji)
+                if (EmojiPictures.For(e) is { } image) images[e.Name] = image;
+            return images;
+        }
+    }
+
+    /// <summary>A picture of an emoji arrived: the words are drawn again with it.</summary>
+    public void RaiseEmoji() => Raise(nameof(EmojiImages));
     public byte[]? Image => _image;
     public byte[]? Thumbnail => Attachment?.Thumbnail;
     public int PixelWidth => Attachment?.Width ?? 0;
@@ -402,8 +427,92 @@ public sealed class ReactionChipVm : Observable
 
 public sealed class ConversationVm : Observable
 {
-    /// <summary>Counts the reactions of this conversation as they stand now (the room's or the direct chat's).</summary>
-    public Func<ReactionSet>? ReactionSource { get; set; }
+    /// <summary>Counts the reactions on the messages with these keys as they stand now (the room's or the direct chat's).</summary>
+    public Func<IReadOnlyCollection<string>, ReactionSet>? ReactionSource { get; set; }
+
+    /// <summary>
+    /// Reads messages from before the one with a key and an id, in a channel (null in a chat without channels): the messages, oldest first, and whether there are still
+    /// earlier ones. Null where there is nothing to read back to (a chat whose history is all shown).
+    /// </summary>
+    public Func<string?, string, string, Task<(IReadOnlyList<MessageVm> Messages, bool HasMore)>>? EarlierSource { get; set; }
+
+    /// <summary>
+    /// Asks the other people in the conversation for the messages before the one with this key and id (in a channel), when this device holds nothing earlier; returns how
+    /// many were asked. What they send is kept, and <see cref="NoteEarlierArrived"/> says so. Null where nobody can be asked (the history of a direct chat).
+    /// </summary>
+    public Func<string?, string, string, int>? AskOthersForEarlier { get; set; }
+
+    private bool _loadingEarlier;
+    private readonly HashSet<string> _nothingEarlier = new();
+    private readonly Dictionary<string, long> _askedAt = new();
+
+    /// <summary>How long after asking the others for earlier messages they are asked again (when the list is scrolled to the top again).</summary>
+    public const long AskAgainAfterMs = 60_000;
+
+    /// <summary>
+    /// Whether earlier messages of the channel on show can still be read: those this device holds, and, a minute after the others were last asked for
+    /// more, those they may have.
+    /// </summary>
+    public bool HasEarlier
+    {
+        get
+        {
+            if (EarlierSource == null) return false;
+            string channel = IsRoom ? CurrentChannel : "";
+            return !_nothingEarlier.Contains(channel)
+                   || AskOthersForEarlier != null && Environment.TickCount64 - _askedAt.GetValueOrDefault(channel, long.MinValue / 2) >= AskAgainAfterMs;
+        }
+    }
+
+    private long _lastAskTick = long.MinValue / 2;
+
+    /// <summary>Members answer a request for earlier messages every couple of seconds; asking again sooner would be ignored.</summary>
+    public const long MinGapBetweenAsksMs = 2500;
+
+    /// <summary>The others sent earlier messages that are kept now: reading them can go on, and when those run out they are asked again at once.</summary>
+    public void NoteEarlierArrived()
+    {
+        _nothingEarlier.Clear();
+        _askedAt.Clear();
+    }
+
+    /// <summary>
+    /// Reads the page of messages before the oldest one shown and puts it above. Returns how many were added; 0 when there is nothing earlier, a page is
+    /// already being read, or the page held nothing to show.
+    /// </summary>
+    public async Task<int> LoadEarlierAsync()
+    {
+        if (!HasEarlier || _loadingEarlier) return 0;
+        var oldest = Messages.FirstOrDefault(m => m.Key != null);
+        if (oldest == null) return 0;
+        string channel = IsRoom ? CurrentChannel : "";
+        _loadingEarlier = true;
+        try
+        {
+            var (messages, more) = await EarlierSource!(IsRoom ? CurrentChannel : null, oldest.Key!, oldest.Id ?? "");
+            // The room may have been switched to another channel while the page was being read: it still belongs to the channel it was read for.
+            foreach (var m in messages) Add(m);
+            if (!more)
+            {
+                // This device has nothing earlier: the others may have, and are asked (not again for a minute, whatever the list does).
+                _nothingEarlier.Add(channel);
+                var first = Messages.FirstOrDefault(m => m.Key != null);
+                if (first != null && AskOthersForEarlier is { } ask && Environment.TickCount64 - _askedAt.GetValueOrDefault(channel, long.MinValue / 2) >= AskAgainAfterMs)
+                {
+                    long now = Environment.TickCount64;
+                    _askedAt[channel] = now;
+                    string? askChannel = IsRoom ? channel : null;
+                    string key = first.Key!, id = first.Id ?? "";
+                    long wait = Math.Max(0, MinGapBetweenAsksMs - (now - _lastAskTick));
+                    _lastAskTick = now + wait;
+                    if (wait == 0) ask(askChannel, key, id);
+                    else _ = Task.Delay((int)wait).ContinueWith(_ => ask(askChannel, key, id), TaskScheduler.Default);
+                }
+            }
+            return messages.Count;
+        }
+        finally { _loadingEarlier = false; }
+    }
 
     /// <summary>Puts an emoji on a message or takes it off: the message's key, the emoji, whether to put it on, and the message's channel.</summary>
     public Func<string, string, bool, string?, Task>? React { get; set; }
@@ -664,12 +773,18 @@ public sealed class ConversationVm : Observable
             Messages[j].ShowDay = j == 0 || Messages[j - 1].Time.LocalDateTime.Date != Messages[j].Time.LocalDateTime.Date;
     }
 
-    /// <summary>Makes the messages match <paramref name="current"/>: those that are no longer there (deleted, or from someone banned) go, new ones come in. Lines without an id, such as notices, stay.</summary>
-    public void Reload(IReadOnlyList<MessageVm> current)
+    /// <summary>
+    /// Makes the messages match <paramref name="current"/>: those that are no longer there (deleted, or from someone banned) go, new ones come in. Lines without
+    /// an id, such as notices, stay. Messages read from earlier history are not in <paramref name="current"/>, so <paramref name="stillShown"/> says which of
+    /// them (by key) are still to be shown; without it only the messages of <paramref name="current"/> stay.
+    /// </summary>
+    public void Reload(IReadOnlyList<MessageVm> current, Func<IReadOnlyCollection<string>, ISet<string>>? stillShown = null)
     {
         var keep = current.Where(m => m.Id != null).Select(m => m.Id!).ToHashSet();
+        var others = Messages.Where(m => m.Id != null && m.Key != null && !keep.Contains(m.Id)).Select(m => m.Key!).ToList();
+        var shown = stillShown != null && others.Count > 0 ? stillShown(others) : new HashSet<string>();
         for (int i = Messages.Count - 1; i >= 0; i--)
-            if (Messages[i].Id is { } id && !keep.Contains(id)) { _ids.Remove(id); Messages.RemoveAt(i); }
+            if (Messages[i].Id is { } id && !keep.Contains(id) && !(Messages[i].Key is { } key && shown.Contains(key))) { _ids.Remove(id); Messages.RemoveAt(i); }
         foreach (var m in current) Add(m);
         for (int i = 0; i < Messages.Count; i++) MarkDays(i);
     }
@@ -781,6 +896,13 @@ public sealed class ConversationVm : Observable
         foreach (var c in wanted) group.Add(c);
     }
 
+    /// <summary>
+    /// What a reply says when the message it answers is not in this conversation. There are two reasons and nothing here tells them apart: the message may be
+    /// older than the history that is kept (a quote can only be followed while a connected member still holds the message), or it may not have arrived yet
+    /// (catching up can bring a reply before the message); it is shown when it comes.
+    /// </summary>
+    public const string MissingQuoteText = "an earlier message (older than the history kept, or not received yet)";
+
     // Replies find what they answer by its key, whichever came first.
     private readonly Dictionary<string, MessageVm> _byKey = new();
     private readonly Dictionary<string, List<MessageVm>> _awaitingOriginal = new();
@@ -801,7 +923,7 @@ public sealed class ConversationVm : Observable
             if (_byKey.TryGetValue(answers, out var original)) message.SetQuote(original.Sender, original.Preview, original.IsMine);
             else
             {
-                message.SetQuote("", "an earlier message that is not here", false);
+                message.SetQuote("", MissingQuoteText, false);
                 if (!_awaitingOriginal.TryGetValue(answers, out var list)) _awaitingOriginal[answers] = list = new List<MessageVm>();
                 list.Add(message);
             }
@@ -858,8 +980,15 @@ public sealed class ShareVm : Observable
 
 public sealed class VoiceMemberVm : Observable
 {
-    private bool _speaking, _muted, _deafened, _soundboardMuted;
+    private bool _speaking, _muted, _deafened, _soundboardMuted, _canKick;
     private string _name;
+
+    /// <summary>The owner of the room can kick this person from voice (without banning them): shown in their right-click menu.</summary>
+    public bool CanKick
+    {
+        get => _canKick;
+        set { if (_canKick == value) return; _canKick = value; Raise(); }
+    }
 
     public VoiceMemberVm(string id, string name, bool isSelf)
     {

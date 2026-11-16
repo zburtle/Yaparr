@@ -52,6 +52,30 @@ public static class UpdateVerifier
 
     public static string LinuxUpdateRunnerScript { get; } = UpdateRunnerScript.Replace("\r", "");
 
+    /// <summary>
+    /// What runs, detached, after the app has asked to be closed for an update on Windows: it runs the installer with the arguments it was given and waits for it,
+    /// and then starts the app again, with the failure marked for it if the installer did not succeed (the same variables as on Linux). Without it an update
+    /// would leave the person to find the app again, because a quiet install has no last page with a "Launch Yaparr" box. 0 and 3010 (done, a restart would
+    /// finish it, which the installer is told not to do) are success. Parameters: the app's program, the installer's program, and the installer's arguments as
+    /// one string.
+    /// </summary>
+    private const string WindowsRunnerScript = """
+        param([string]$App, [string]$Installer, [string]$InstallerArguments)
+        $failed = $true
+        try {
+          $p = Start-Process -FilePath $Installer -ArgumentList $InstallerArguments -Wait -PassThru
+          $failed = ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010)
+        } catch { $failed = $true }
+        if ($failed) { $env:YAPARR_UPDATE_FAILED = '1' }
+        $env:YAPARR_RESTARTED = '1'
+        Start-Process -FilePath $App
+        """;
+
+    public static string WindowsUpdateRunnerScript { get; } = WindowsRunnerScript.Replace("\r\n", "\n").Replace("\n", "\r\n");
+
+    /// <summary>The arguments for msiexec for a quiet update: a progress bar and no pages to click through, and no restart of the computer.</summary>
+    public static string WindowsInstallerArguments(string package) => $"/passive /norestart /i \"{package}\"";
+
     /// <summary>The script as <c>sh</c> needs it: a source file checked out with Windows line endings must not put carriage returns into it.</summary>
     public static string LinuxInstallScript { get; } = InstallScript.Replace("\r", "");
 

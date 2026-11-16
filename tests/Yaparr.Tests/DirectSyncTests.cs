@@ -185,6 +185,38 @@ public class DirectSyncTests : IDisposable
     }
 
     [Fact]
+    public async Task A_long_conversation_opens_with_its_newest_hundred_and_earlier_messages_are_read_a_page_at_a_time()
+    {
+        var hub = new InMemoryDiscoveryHub();
+        using (var alice = TestUtil.NewNode(hub, "alice", identity: _firstId, directHistoryDirectory: _dir))
+        using (var bob = TestUtil.NewNode(hub, "bob"))
+        {
+            var rooms = await Task.WhenAll(alice.JoinRoomAsync("lobby"), bob.JoinRoomAsync("lobby"));
+            await TestUtil.WaitFor(() => rooms.All(r => r.Members.Count == 1));
+            var chat = await alice.OpenDirectChatAsync(bob.AccountId);
+            for (int i = 0; i < 230; i++) await chat.SendAsync($"line {i:000}");
+            await TestUtil.WaitFor(() => alice.GetDirectChat(bob.AccountId).GetEarlierHistory("none").Messages.Count == 0 && alice.GetDirectChat(bob.AccountId).History.Count == 100, 30_000);
+        }
+
+        using var again = TestUtil.NewNode(new InMemoryDiscoveryHub(), "alice", identity: _firstId, directHistoryDirectory: _dir);
+        var stored = Assert.Single(again.StoredDirectChats);
+        var opened = stored.History;
+        Assert.Equal(100, opened.Count);
+        Assert.Equal("line 130", opened[0].Text);
+        Assert.Equal("line 229", opened[^1].Text);
+
+        var page = stored.GetEarlierHistory(opened[0].Id, 100);
+        Assert.True(page.HasMore);
+        Assert.Equal("line 030", page.Messages[0].Text);
+        Assert.Equal("line 129", page.Messages[^1].Text);
+        var last = stored.GetEarlierHistory(page.Messages[0].Id, 100);
+        Assert.False(last.HasMore);
+        Assert.Equal(30, last.Messages.Count);
+        Assert.Equal("line 000", last.Messages[0].Text);
+        Assert.All(page.Messages.Concat(last.Messages), m => Assert.True(again.IsMyDevice(m.From.Id)));
+    }
+
+    [Fact]
     public async Task Reading_a_conversation_on_one_device_is_known_on_the_other()
     {
         var (first, second, bob) = await StartAsync();

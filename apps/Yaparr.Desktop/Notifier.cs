@@ -35,16 +35,25 @@ internal sealed class UiSounds
     // The connection was lost (low and falling, a little longer than the others) and is back (rising in three steps).
     private static readonly float[] ConnectionLostClip = Notes((392, 110), (294, 110), (220, 220));
     private static readonly float[] ConnectionBackClip = Notes((587, 70), (784, 70), (1047, 150));
+    // Sharing. Someone starts a share in your call: a double tap, then a rising note. Someone you were watching stops: falling. Someone starts or
+    // stops watching yours: a short pair going up or down. A (0, ms) note is a rest.
+    private static readonly float[] ShareStartedClip = Notes((880, 60), (0, 40), (880, 60), (1319, 150));
+    private static readonly float[] ShareEndedClip = Notes((988, 70), (740, 70), (587, 160));
+    private static readonly float[] ViewerJoinedClip = Notes((1175, 50), (1568, 90));
+    private static readonly float[] ViewerLeftClip = Notes((1568, 50), (1175, 90));
     private static readonly float[] YouLeftClip = Notes((784, 80), (659, 80), (523, 130));
 
     private readonly Func<string?> _output;
+    private readonly Func<Yaparr.Voice.VoiceSession?>? _call;
     private readonly Action<string>? _log;
     private long _lastAt;
 
-    public UiSounds(Func<string?> output, Action<string>? log)
+    /// <param name="call">The voice session of the call you are in, if any: the sounds are played through it, so that the echo canceller knows of them.</param>
+    public UiSounds(Func<string?> output, Action<string>? log, Func<Yaparr.Voice.VoiceSession?>? call = null)
     {
         _output = output;
         _log = log;
+        _call = call;
     }
 
     public bool Enabled { get; set; } = true;
@@ -66,6 +75,14 @@ internal sealed class UiSounds
     public void SomeoneLeft() => Play(LeftClip, throttled: false);
     public void YouJoined() => Play(YouJoinedClip, throttled: false);
     public void YouLeft() => Play(YouLeftClip, throttled: false);
+    /// <summary>Someone else started sharing a screen in the call you are in.</summary>
+    public void ShareStarted() => Play(ShareStartedClip, throttled: false);
+    /// <summary>A screen you were watching ended.</summary>
+    public void ShareEnded() => Play(ShareEndedClip, throttled: false);
+    /// <summary>Someone started watching the screen you share.</summary>
+    public void ViewerJoined() => Play(ViewerJoinedClip, throttled: false);
+    /// <summary>Someone stopped watching the screen you share.</summary>
+    public void ViewerLeft() => Play(ViewerLeftClip, throttled: false);
     public void ConnectionLost() => Play(ConnectionLostClip, throttled: false);
     public void ConnectionBack() => Play(ConnectionBackClip, throttled: false);
 
@@ -77,6 +94,8 @@ internal sealed class UiSounds
             long now = Environment.TickCount64;
             if (now - Interlocked.Exchange(ref _lastAt, now) < MinGapMs) return;
         }
+        // In a call the sound goes out through the call's own speakers; otherwise (or if the call is not playing) on a device of its own.
+        if (_call?.Invoke() is { } session && session.PlayCue(clip)) return;
         var output = _output();
         // Opening a sound device takes a moment, so it is done off the UI thread.
         _ = Task.Run(() =>

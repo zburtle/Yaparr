@@ -21,18 +21,21 @@ public sealed class PortalScreenCast : IDisposable
 
     private static int _counter;
 
-    private readonly DBusConnection _connection;
+    private readonly DBusConnection? _connection;
     private readonly string _session;
     private IDisposable? _closedWatch;
     private volatile bool _disposed;
 
-    private PortalScreenCast(DBusConnection connection, string session, SafeFileHandle fd, uint node, int width, int height, bool window)
+    private PortalScreenCast(DBusConnection? connection, string session, SafeFileHandle fd, uint node, int width, int height, bool window)
     {
         _connection = connection;
         _session = session;
         PipeWireFd = fd;
         Stream = new PortalStream(node, width, height, window);
     }
+
+    /// <summary>A stream with no desktop behind it, for tests that stand in for GStreamer: the descriptor is only handed on, nothing is asked of any portal.</summary>
+    internal static PortalScreenCast ForTest(SafeFileHandle fd, uint node, int width, int height) => new(null, "", fd, node, width, height, window: false);
 
     /// <summary>A connection to PipeWire that sees only the chosen stream. Owned by this object; do not close it.</summary>
     public SafeFileHandle PipeWireFd { get; }
@@ -216,8 +219,8 @@ public sealed class PortalScreenCast : IDisposable
         if (_disposed) return;
         _disposed = true;
         _closedWatch?.Dispose();
-        CloseSession(_connection, _session);
+        if (_connection != null) CloseSession(_connection, _session);
         PipeWireFd.Dispose();
-        _connection.Dispose();
+        _connection?.Dispose();
     }
 }

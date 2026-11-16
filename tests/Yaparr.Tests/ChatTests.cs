@@ -388,19 +388,21 @@ public class HistoryTests
         {
             var hub = new InMemoryDiscoveryHub();
             using var identity = PeerIdentity.Generate();
-            using (var first = NodeWith(hub, "me", identity: identity, store: new FileHistoryStore(dir)))
+            using (var firstStore = new Yaparr.History.Sqlite.SqliteHistoryStore(Path.Combine(dir, "history.db")))
             {
+                using var first = NodeWith(hub, "me", identity: identity, store: firstStore);
                 var room = await first.JoinRoomAsync("notes");
                 await room.SendAsync("remember this");
             }
 
-            using var second = NodeWith(new InMemoryDiscoveryHub(), "me", identity: identity, store: new FileHistoryStore(dir));
+            using var secondStore = new Yaparr.History.Sqlite.SqliteHistoryStore(Path.Combine(dir, "history.db"));
+            using var second = NodeWith(new InMemoryDiscoveryHub(), "me", identity: identity, store: secondStore);
             var again = await second.JoinRoomAsync("notes");
             var m = Assert.Single(again.GetHistory());
             Assert.Equal("remember this", m.Text);
             Assert.Equal(identity.Id, m.From.Id);
         }
-        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
+        finally { Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); if (Directory.Exists(dir)) Directory.Delete(dir, true); }
     }
 
     [Fact]
@@ -437,7 +439,7 @@ public class HistoryTests
     }
 
     [Fact]
-    public void History_is_bounded_by_count_and_age_and_deduplicates()
+    public void Everything_is_kept_and_only_the_shared_window_is_bounded_by_count_and_age()
     {
         using var id = PeerIdentity.Generate();
         var history = new RoomHistory("r", null, max: 3, maxAge: TimeSpan.FromDays(1));
@@ -446,10 +448,15 @@ public class HistoryTests
         foreach (var m in msgs) Assert.True(history.TryAdd(m));
         Assert.False(history.TryAdd(msgs[4]));
 
-        Assert.Equal(new[] { "m2", "m3", "m4" }, history.Snapshot().Select(m => m.Text));
+        // All five are kept; the window shared with others holds the newest three.
+        Assert.Equal(new[] { "m0", "m1", "m2", "m3", "m4" }, history.Newest(100).Select(m => m.Text));
+        Assert.Equal(msgs.Skip(2).Select(SignedMessage.Key).OrderBy(k => k), history.Keys().OrderBy(k => k));
 
+        // An old message is kept too (it is simply not part of what is handed to others).
         var ancient = SignedMessage.Create(id, "r", "x", "old") with { Ts = now - (long)TimeSpan.FromDays(2).TotalMilliseconds };
-        Assert.False(history.TryAdd(ancient));
+        Assert.True(history.TryAdd(ancient));
+        Assert.Contains("old", history.Newest(100).Select(m => m.Text));
+        Assert.DoesNotContain(SignedMessage.Key(ancient), history.Keys());
 
         var have = new HashSet<string> { SignedMessage.Key(msgs[3]) };
         Assert.Equal(new[] { "m2", "m4" }, history.Missing(have, 10).Select(m => m.Text));

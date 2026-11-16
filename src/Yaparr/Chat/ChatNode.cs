@@ -146,6 +146,9 @@ public sealed class ChatNodeOptions
 
     public IChatHistoryStore? HistoryStore { get; init; }
 
+    /// <summary>The node disposes <see cref="HistoryStore"/> when it is disposed itself (for a store made for this node alone; an app that keeps one open across nodes leaves this off).</summary>
+    public bool OwnsHistoryStore { get; init; }
+
     public int MaxHistoryMessages { get; init; } = 500;
 
     /// <summary>Where pictures and GIFs from messages are kept. Without a folder they are only kept in memory.</summary>
@@ -170,6 +173,18 @@ public sealed class ChatNodeOptions
 
     /// <summary>File where recently seen room members are remembered, so a restart can dial them directly. Null disables it.</summary>
     public string? PeerCachePath { get; init; }
+
+    /// <summary>File where the wake addresses of people in our rooms are kept (see <see cref="WakeAddress"/>). Null keeps them only until the program ends.</summary>
+    public string? WakePeersPath { get; init; }
+
+    /// <summary>
+    /// Asks for someone's phone to be woken at a wake address, and says what came of it. Null (the default) never asks. The program decides how: Yaparr's apps
+    /// send the request to the push service named in the address.
+    /// </summary>
+    public Func<string, Task<WakeResult>>? WakePeer { get; init; }
+
+    /// <summary>The least time between two wake-ups asked of the same address (3 minutes).</summary>
+    public TimeSpan WakeCooldown { get; init; } = TimeSpan.FromMinutes(3);
 
     /// <summary>Where the learned clock differences between people are kept, so history stays in order after a restart.</summary>
     public string? ClockOffsetsPath { get; init; }
@@ -267,6 +282,8 @@ public sealed partial class ChatNode : IDisposable
             }
         }
         public string? Name { get; set; }
+        /// <summary>Where this person can be woken, when they said (a wake address).</summary>
+        public volatile string? WakeUrl;
         public volatile int Degree;
         /// <summary>Whether this peer relays for others: null until it says (older versions never do).</summary>
         private volatile int _canRelay;
@@ -364,9 +381,11 @@ public sealed partial class ChatNode : IDisposable
     {
         _options = options ?? new ChatNodeOptions();
         _peerCache = new PeerCache(_options.PeerCachePath);
+        _wakeBook = new WakeBook(_options.WakePeersPath);
         _clocks = new ClockOffsets(_options.ClockOffsetsPath);
         _blobs = new BlobStore(_options.AttachmentDirectory, _options.HistoryCipher);
-        _directHistory = new DirectHistory(_options.DirectHistoryDirectory, _options.MaxHistoryMessages, _options.MaxHistoryAge, _options.HistoryCipher);
+        _floodBans = new FloodBans(_options.Limits);
+        _directHistory = new DirectHistory(_options.HistoryStore as IDirectHistoryStore, _options.MaxHistoryMessages, _options.MaxHistoryAge);
         LoadPendingDirect();
         _turnOptions = _options.Traversal.Turn;
         _displayName = _options.DisplayName;
@@ -450,7 +469,7 @@ public sealed partial class ChatNode : IDisposable
         if (_started) return;
         _started = true;
         _mux.Start();
-        _ = Task.Run(() => { _blobs.Sweep(_options.MaxHistoryAge, LiveSoundHashes()); _blobs.SealExisting(); });
+        _ = Task.Run(() => _blobs.SealExisting());
         StartSpeedProbes();
         // Anyone looking for this person by their account id has to find every one of their devices.
         var peerTopics = AccountId == Id ? new[] { Topics.ForPeer(Id) } : new[] { Topics.ForPeer(Id), Topics.ForPeer(AccountId) };
@@ -607,8 +626,10 @@ public sealed partial class ChatNode : IDisposable
     public void Dispose()
     {
         _cts.Cancel();
+        if (_options.OwnsHistoryStore && _options.HistoryStore is IDisposable store) store.Dispose();
         System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged -= OnAddressChanged;
         _peerCache.Save();
+        _wakeBook.Save();
         // Who has been in each room is written when it changes and every so often; this catches the last few.
         foreach (var room in _rooms.Values.ToList()) MaintainRoster(room);
         foreach (var room in _rooms.Values.ToList()) LeaveRoomCore(room);
@@ -787,6 +808,7 @@ public sealed partial class ChatNode : IDisposable
         foreach (var member in members)
             Send(member.Connection, new Wire { Type = Wire.Message, Room = RefTo(room, member), Msgs = new[] { message } });
         PublishDelivery(outgoing);
+        WakeAbsentInRoom(room);
         return message.Id;
     }
 
@@ -1025,8 +1047,10 @@ public sealed partial class ChatNode : IDisposable
                     }
                 }
                 _peerCache.Save();
+                _wakeBook.Save();
                 long cutoff = now - 600_000;
                 foreach (var kv in _seenDirect.Where(kv => kv.Value < cutoff).ToList()) _seenDirect.TryRemove(kv.Key, out _);
+                _floodBans.Forget(now);
             }
         }
         catch (OperationCanceledException) { }
@@ -1093,13 +1117,61 @@ public sealed partial class ChatNode : IDisposable
         }
     }
 
-    internal IReadOnlyList<ChatMessage> GetHistory(ChatRoom room) =>
-        room.History.Snapshot().Where(m => !MessageEnvelope.IsReactionText(m.Text) && !IsBlocked(new PeerId(m.From)) && !IsBannedIn(room, new PeerId(m.From)) && !IsMessageDeleted(room, m)).Select(m => ToChatMessage(room, m, catchUp: false)).ToList();
+    /// <summary>How many of the newest messages of each channel are read when a room is opened; earlier ones are read as they are scrolled to.</summary>
+    public const int InitialHistoryPerChannel = 100;
 
-    /// <summary>The reactions on the messages of a room, as its history comes to now (people you blocked or the room banned do not count).</summary>
-    internal ReactionSet GetReactions(ChatRoom room)
+    private bool IsShown(ChatRoom room, StoredMessage m) =>
+        !IsBlocked(new PeerId(m.From)) && !IsBannedIn(room, new PeerId(m.From)) && !IsMessageDeleted(room, m);
+
+    internal ISet<string> WhichAreShown(ChatRoom room, IReadOnlyCollection<string> keys) =>
+        room.History.Find(keys).Where(m => IsShown(room, m)).Select(SignedMessage.Key).ToHashSet();
+
+    // A picture this device does not have (a message read from before it joined, or from a backup that left old pictures out) is fetched from whoever has it.
+    private ChatMessage Fetching(ChatMessage shown)
     {
-        var reactions = room.History.Snapshot().Where(m => MessageEnvelope.IsReactionText(m.Text)).ToList();
+        AutoFetch(shown);
+        return shown;
+    }
+
+    internal IReadOnlyList<ChatMessage> GetHistory(ChatRoom room) =>
+        room.History.Newest(InitialHistoryPerChannel).Where(m => IsShown(room, m)).Select(m => Fetching(ToChatMessage(room, m, catchUp: false))).ToList();
+
+    /// <summary>
+    /// Messages of a channel before the one with the key <paramref name="beforeKey"/>, oldest first, up to <paramref name="count"/> of them (fewer when some are
+    /// hidden: deleted, or by someone blocked or banned). <see cref="HistoryPage.HasMore"/> says whether there are still earlier ones to read.
+    /// </summary>
+    internal HistoryPage GetEarlierHistory(ChatRoom room, string? channel, string beforeKey, int count)
+    {
+        channel = RoomChannels.Normalize(channel);
+        string? chan = channel == RoomChannels.DefaultText ? null : channel;
+        if (room.History.Find(new[] { beforeKey }).FirstOrDefault() is not { } at) return new HistoryPage(Array.Empty<ChatMessage>(), false);
+        long ts = at.Ts;
+        string key = beforeKey;
+        var shown = new List<ChatMessage>();
+        // Hidden messages (a banned person's, say) can fill a whole page, so reading goes on until something can be shown or the history ends.
+        for (int round = 0; round < 20; round++)
+        {
+            var raw = room.History.Before(chan, ts, key, count);
+            foreach (var m in raw)
+                if (IsShown(room, m)) shown.Add(Fetching(ToChatMessage(room, m, catchUp: false)));
+            if (raw.Count < count) { shown.Reverse(); return new HistoryPage(shown, false); }
+            var last = raw[^1];
+            ts = last.Ts;
+            key = SignedMessage.Key(last);
+            if (shown.Count > 0) { shown.Reverse(); return new HistoryPage(shown, true); }
+        }
+        shown.Reverse();
+        return new HistoryPage(shown, true);
+    }
+
+    /// <summary>
+    /// The reactions on the messages with these keys, as the history comes to now (people you blocked or the room banned do not count). Without keys, those on the
+    /// messages <see cref="GetHistory"/> returns.
+    /// </summary>
+    internal ReactionSet GetReactions(ChatRoom room, IReadOnlyCollection<string>? keys = null)
+    {
+        keys ??= room.History.Newest(InitialHistoryPerChannel).Select(SignedMessage.Key).ToList();
+        var reactions = room.History.ReactionsTo(keys).ToList();
         foreach (var m in reactions)
             if (MessageEnvelope.TryReadReaction(m.Text, out var reaction) && reaction.Account != null) LearnAccount(m, reaction);
         return ReactionTally.Build(reactions.Select(m => (SignedMessage.Key(m), m.From, m.Ts, m.Text)),
@@ -1130,16 +1202,20 @@ public sealed partial class ChatNode : IDisposable
     private void OnGroupMessage(PeerState peer, ChatRoom room, StoredMessage[] messages, bool live)
     {
         var received = new List<string>();
-        try { ProcessGroupMessages(peer, room, messages, live, received); }
+        int earlier = 0;
+        try { earlier = ProcessGroupMessages(peer, room, messages, live, received); }
         finally
         {
             if (received.Count > 0)
                 Send(peer.Connection, new Wire { Type = Wire.Ack, Room = RefTo(room, peer), Have = received.ToArray() });
         }
+        if (earlier > 0) room.RaiseEarlierHistory();
     }
 
-    private void ProcessGroupMessages(PeerState peer, ChatRoom room, StoredMessage[] messages, bool live, List<string> received)
+    // Returns how many of the messages were earlier history that was asked for (kept, not shown as news).
+    private int ProcessGroupMessages(PeerState peer, ChatRoom room, StoredMessage[] messages, bool live, List<string> received)
     {
+        int earlier = 0;
         foreach (var m in messages.Take(live ? 1 : 100))
         {
             if (!IsValidPeerId(m.From)) continue;
@@ -1156,6 +1232,13 @@ public sealed partial class ChatNode : IDisposable
             bool fresh = live && m.Ts >= DateTimeOffset.UtcNow.Subtract(LiveWindow).ToUnixTimeMilliseconds();
             NoteMember(room, new PeerId(m.From), m.Name);
             if (!room.History.TryAdd(m)) continue;
+            // Earlier history that was asked for is kept and read when it is scrolled to: it is not news, so it is not announced or shown as it arrives.
+            if (!live && Environment.TickCount64 < room.BackfillUntil && m.Ts <= room.BackfillBefore)
+            {
+                earlier++;
+                if (!IsBlocked(new PeerId(m.From)) && !MessageEnvelope.IsReactionText(m.Text)) AutoFetch(ToChatMessage(room, m, catchUp: true));
+                continue;
+            }
             // A blocked author's message is kept (so it is not asked for again) but never shown or downloaded.
             if (!IsBlocked(new PeerId(m.From)))
             {
@@ -1166,6 +1249,7 @@ public sealed partial class ChatNode : IDisposable
             }
             if (fresh) ForwardToMembers(peer, room, m);
         }
+        return earlier;
     }
 
     private void ForwardToMembers(PeerState from, ChatRoom room, StoredMessage m) =>
@@ -1301,6 +1385,7 @@ public sealed partial class ChatNode : IDisposable
         NoteMember(room, peer.Id, peer.Name);
         LogPeerEvent(peer.Id, $"{peer.Id.Short} entered room '{room.Name}'");
         if (!peer.Connection.IsRelayed) _peerCache.Remember(room.Key, peer.Id, peer.Connection.RemoteEndPoint);
+        NoteWakeAddress(peer, room);
 
         var others = room.MemberStates.Values.Where(m => m.Id != peer.Id && !m.Connection.IsRelayed).ToList();
         if (_options.TargetConnections > 0)
@@ -1419,6 +1504,7 @@ public sealed partial class ChatNode : IDisposable
         if (devices.Count == 0) QueueDirect(outgoing, recipient);
         foreach (var device in devices) Send(device.Connection, wire);
         PublishDelivery(outgoing);
+        if (devices.Count == 0) WakeAbsentDirect(recipient);
         RecordDirect(new DirectRecord(wire.Id!, recipient.Value, GetPeerInfo(peer)?.DisplayName ?? DirectNameOf(peer) ?? peer.Short, true, wire.Ts, text,
             proof.Pub, proof.Acct, proof.Cert, proof.Sig, wire.Ts), mirror: true);
         return wire.Id!;
@@ -1428,12 +1514,18 @@ public sealed partial class ChatNode : IDisposable
     {
         LearnAccount(conn);
         if (IsBlocked(conn.RemoteId!.Value)) { conn.Close(notifyPeer: true); return; }
+        if (_floodBans.IsBanned(conn.RemoteId!.Value, Environment.TickCount64, out var banLeft))
+        {
+            _options.Log?.Invoke($"refusing {conn.RemoteId.Value.Short}: it was disconnected for flooding, {banLeft.TotalSeconds:0} s of the ban are left");
+            conn.Close(notifyPeer: true);
+            return;
+        }
         var state = new PeerState(conn);
         bool isNew = !_peers.TryGetValue(state.Id, out var previous);
         CountConnectionMade(conn, previous?.Connection);
         if (_candidates.TryGetValue(conn.RemoteEndPoint.ToString(), out var dialed)) { dialed.Failures = 0; dialed.NextDial = 0; }
         // The hello must be the first thing on the connection, so send it before anyone can find the state and write to it.
-        Send(conn, new Wire { Type = Wire.Hello, Name = DisplayName, Deg = _peers.Count + (isNew ? 1 : 0), Rly = IsRelayCapable, Rooms = _rooms.Values.Select(r => RefTo(r, state)).ToArray() });
+        Send(conn, new Wire { Type = Wire.Hello, Name = DisplayName, Deg = _peers.Count + (isNew ? 1 : 0), Rly = IsRelayCapable, Wake = _wakeAddress, Rooms = _rooms.Values.Select(r => RefTo(r, state)).ToArray() });
         _peers[state.Id] = state;
         CloseIfSilent(state);
         foreach (var room in _rooms.Values)
@@ -1517,6 +1609,7 @@ public sealed partial class ChatNode : IDisposable
                 peer.SetRooms((wire.Rooms ?? Array.Empty<string>()).Where(r => r.Length <= 128).Take(256));
                 peer.Degree = wire.Deg;
                 peer.CanRelay = wire.Rly;
+                peer.WakeUrl = CleanWake(wire.Wake);
                 LogPeerEvent(peer.Id, $"hello from {peer.Id.Short} ({peer.Name}): declares {wire.Rooms?.Length ?? 0} room(s); we are in {_rooms.Count}");
                 if (first && !EnforceCap(peer)) break;
                 if (first) PeerConnected?.Invoke(peer.Info);
@@ -1547,6 +1640,10 @@ public sealed partial class ChatNode : IDisposable
                 OnDirectRecords(peer, wire.Dm, wire.Cu == true);
                 break;
 
+            case Wire.DirectBack:
+                OnDirectBack(peer, wire);
+                break;
+
             case Wire.DirectSync when wire.Have != null:
                 OnDirectSync(peer, wire.Have);
                 break;
@@ -1561,6 +1658,10 @@ public sealed partial class ChatNode : IDisposable
                 // A member that can now relay may be the way to someone we could not reach.
                 foreach (var target in _introducedVia.Where(kv => kv.Value.ContainsKey(peer.Id)).Select(kv => kv.Key).ToList())
                     if (wire.Rly == true && WantsPeerRelay(target)) ScheduleRelayFallback(target);
+                break;
+
+            case Wire.Caps when wire.Wake != null:
+                OnWakeAddress(peer, wire.Wake);
                 break;
 
             case Wire.Rename when wire.Name != null:
@@ -1703,6 +1804,11 @@ public sealed partial class ChatNode : IDisposable
                 OnSyncRequest(peer, syncRoom, wire.Have.Take(2000).ToArray());
                 break;
 
+            case Wire.Back when wire.Room != null && wire.Id != null
+                                && ResolveRoom(peer, wire.Room) is { } backRoom && backRoom.MemberStates.ContainsKey(peer.Id):
+                OnBackRequest(peer, backRoom, wire.Text ?? "", wire.Ts, wire.Id, wire.N);
+                break;
+
             case Wire.Want when wire.Room != null && wire.Have != null
                                 && ResolveRoom(peer, wire.Room) is { } wantRoom && wantRoom.MemberStates.ContainsKey(peer.Id):
                 OnWantRequest(peer, wantRoom, wire.Have);
@@ -1746,9 +1852,20 @@ public sealed partial class ChatNode : IDisposable
         bool close = rate.RecordDrop(out int total);
         if (total == 1 || close) _options.Log?.Invoke($"{peer.Id.Short} {what}; dropping what is over the limit");
         if (!close) return;
-        _options.Log?.Invoke($"{peer.Id.Short} kept sending past the limit; closing");
+        // It could reconnect at once and start over, so it is refused for a while (longer each time it floods again soon after). Your own devices are trusted.
+        if (_options.Limits.BanFirst > TimeSpan.Zero && !IsMyDevice(peer.Id))
+        {
+            var banned = _floodBans.Ban(peer.Id, Environment.TickCount64);
+            _options.Log?.Invoke($"{peer.Id.Short} kept sending past the limit; closing, and refusing it for {banned.TotalSeconds:0} s");
+        }
+        else _options.Log?.Invoke($"{peer.Id.Short} kept sending past the limit; closing");
         peer.Connection.Close(notifyPeer: true);
     }
+
+    private readonly FloodBans _floodBans;
+
+    /// <summary>Whether a peer that was disconnected for flooding is still being refused (for tests and the diagnostics).</summary>
+    internal bool IsBannedForFlooding(PeerId peer) => _floodBans.IsBanned(peer, Environment.TickCount64, out _);
 
     // A member of one of our rooms, or someone we sought out ourselves. Anyone else who reaches us is a stranger.
     private bool IsAcquaintance(PeerState peer) =>

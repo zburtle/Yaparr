@@ -10,6 +10,30 @@ internal static class ImageTools
 
     public sealed record Prepared(byte[] Bytes, string FileName, byte[]? Thumbnail);
 
+    /// <summary>
+    /// A picture made to fit as a custom emoji where that can be done: one that is within the limits (<see cref="CustomEmojiRules"/>) is left as it is, and a
+    /// still picture that is too big is shrunk to fit in 128 pixels and saved as a PNG (which keeps transparency). Anything else (an animated GIF that is too
+    /// big, a file that is not a picture) comes back unchanged, and is refused where it is used, with the reason.
+    /// </summary>
+    public static byte[] ForEmoji(byte[] input)
+    {
+        if (CustomEmojiRules.TryRead(input, out _, out _)) return input;
+        if (!ImageSniffer.TryRead(input, out var info) || info.Frames > 1) return input;
+        using var source = SKBitmap.Decode(input);
+        if (source == null) return input;
+        double scale = Math.Min(1.0, 128.0 / Math.Max(source.Width, source.Height));
+        int w = Math.Max(1, (int)(source.Width * scale)), h = Math.Max(1, (int)(source.Height * scale));
+        using var fitted = new SKBitmap(w, h, SKColorType.Rgba8888, SKAlphaType.Premul);
+        using (var canvas = new SKCanvas(fitted))
+        {
+            canvas.Clear(SKColors.Transparent);
+            using var image = SKImage.FromBitmap(source);
+            canvas.DrawImage(image, new SKRect(0, 0, w, h), new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear));
+        }
+        using var encoded = SKImage.FromBitmap(fitted).Encode(SKEncodedImageFormat.Png, 100);
+        return encoded?.ToArray() ?? input;
+    }
+
     public static Prepared Prepare(byte[] input, string fileName)
     {
         if (input.Length > 40 * 1024 * 1024) throw new ArgumentException("That file is too big to send as a picture.");

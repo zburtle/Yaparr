@@ -100,4 +100,46 @@ public class UpdateRunnerTests : IDisposable
         Assert.True(LinkChannel.TrySend(name, LinkChannel.ShowLine));
         Assert.Equal(LinkChannel.ShowLine, await got.Task.WaitAsync(TimeSpan.FromSeconds(5)));
     }
+
+    // ---- Windows: the quiet install and the start again
+
+    [Fact]
+    public void A_quiet_update_shows_a_progress_bar_asks_for_no_restart_and_keeps_the_package_path_in_quotes()
+    {
+        Assert.Equal("/passive /norestart /i \"C:\\Users\\a b\\update\\Yaparr.msi\"", UpdateVerifier.WindowsInstallerArguments(@"C:\Users\a b\update\Yaparr.msi"));
+        // One script, with the line endings PowerShell is happy with whichever way the source was checked out.
+        Assert.DoesNotContain("\n", UpdateVerifier.WindowsUpdateRunnerScript.Replace("\r\n", ""));
+    }
+
+    // Runs the script with a stand-in installer (cmd with an exit code) and a stand-in app that records how it was started.
+    private (bool Started, string? Record) RunWindowsRunner(int installerExit)
+    {
+        var script = Path.Combine(_dir, "update-runner.ps1");
+        File.WriteAllText(script, UpdateVerifier.WindowsUpdateRunnerScript);
+        var marker = Path.Combine(_dir, "started.txt");
+        var app = Path.Combine(_dir, "app with space.cmd");
+        File.WriteAllText(app, "@echo off\r\n(echo restarted=%YAPARR_RESTARTED% failed=%YAPARR_UPDATE_FAILED%)> \"" + marker + "\"\r\n");
+        var info = new ProcessStartInfo("powershell.exe") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+        foreach (var arg in new[] { "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script, "-App", app, "-Installer", "cmd.exe", "-InstallerArguments", $"/c exit {installerExit}" })
+            info.ArgumentList.Add(arg);
+        using var process = Process.Start(info)!;
+        process.WaitForExit(30_000);
+        for (int i = 0; i < 150 && !File.Exists(marker); i++) Thread.Sleep(100);
+        if (!File.Exists(marker)) return (false, null);
+        Thread.Sleep(200);
+        return (true, File.ReadAllText(marker).Trim());
+    }
+
+    [Theory]
+    [InlineData(0, "restarted=1 failed=")]
+    [InlineData(3010, "restarted=1 failed=")]   // done, a restart of the computer would finish it
+    [InlineData(1603, "restarted=1 failed=1")]  // the install failed: the app is told so, and still starts
+    [InlineData(1618, "restarted=1 failed=1")]  // another install was running
+    public void On_Windows_the_app_starts_again_after_the_installer_and_hears_whether_it_worked(int installerExit, string expected)
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var (started, record) = RunWindowsRunner(installerExit);
+        Assert.True(started, "the app was not started again");
+        Assert.Equal(expected, record);
+    }
 }

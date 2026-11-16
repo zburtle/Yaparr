@@ -57,7 +57,7 @@ jobs:
           dotnet-version: 10.0.x
 
       - name: Install FFmpeg and a virtual X server
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg xvfb x11-utils x11-xserver-utils
+        run: sudo apt-get update && sudo apt-get install -y xvfb x11-utils x11-xserver-utils
 
       - name: Test
         run: dotnet test tests/Yaparr.Tests -c Release --filter "FullyQualifiedName~LinuxScreenTests|FullyQualifiedName~ScreenTests|FullyQualifiedName~H264Tests|FullyQualifiedName~GpuScaleTests|FullyQualifiedName~RetargetTests"
