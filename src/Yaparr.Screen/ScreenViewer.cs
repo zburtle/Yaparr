@@ -154,6 +154,8 @@ public sealed class ScreenViewer : IDisposable
         if (_spare.Count < MaxSpare) _spare.Add(picture.Bgra);
     }
 
+    private bool _saidH265Off;
+
     private void OnFrame(MediaFrame frame)
     {
         if (_preview is { KeyFramesOnly: true } && !frame.IsKey) return;   // not even copied: this preview shows key frames only
@@ -180,6 +182,12 @@ public sealed class ScreenViewer : IDisposable
                     failed = ex;
                 }
             }
+            else if (frame.IsKey && decoder == null && !_saidH265Off && !ScreenFeatures.H265 && H265.LooksLikeKeyFrame(data))
+            {
+                // H.265 from a sharer whose Yaparr has it, and this build has it switched off: said once, instead of a share that stays black without a word.
+                _saidH265Off = true;
+                failed = new PlatformNotSupportedException(ScreenFeatures.H265Off + " Ask the person sharing to pick H.264 or AV1.");
+            }
         }
         if (failed != null) { Failed?.Invoke(failed); return; }
         decoder?.Enqueue(data, frame.IsKey);
@@ -193,11 +201,11 @@ public sealed class ScreenViewer : IDisposable
         {
             try
             {
-                var decoder = new Decoder(this, codec, width, height, _preview, codec == ScreenCodec.H264 ? _device : DecodeDevice.Processor);
+                var decoder = new Decoder(this, codec, width, height, _preview, codec is ScreenCodec.H264 or ScreenCodec.H265 ? _device : DecodeDevice.Processor);
                 decoder.Start(_cts.Token);
                 return decoder;
             }
-            catch (PlatformNotSupportedException ex) when (codec == ScreenCodec.H264 && _device != DecodeDevice.Processor)
+            catch (PlatformNotSupportedException ex) when (codec is ScreenCodec.H264 or ScreenCodec.H265 && _device != DecodeDevice.Processor)
             {
                 StepDown(ex.Message);
             }

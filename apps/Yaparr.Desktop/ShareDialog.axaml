@@ -14,8 +14,9 @@
         <TextBlock x:Name="QualityHint" Classes="muted small" TextWrapping="Wrap" IsVisible="False" />
         <TextBlock x:Name="FormatLabel" Text="Video format" FontWeight="SemiBold" Margin="0,8,0,0" />
         <ComboBox x:Name="FormatBox" HorizontalAlignment="Stretch" SelectedIndex="0" SelectionChanged="FormatBox_SelectionChanged">
-            <ComboBoxItem Content="Automatic (H.264)" />
+            <ComboBoxItem Content="Automatic (H.265 if the graphics card can, else H.264)" />
             <ComboBoxItem Content="AV1 (sharper at the same speed, newer graphics cards)" />
+            <ComboBoxItem Content="H.265 (sharper at the same speed, graphics cards)" />
         </ComboBox>
         <TextBlock x:Name="FormatHint" Classes="muted small" TextWrapping="Wrap" IsVisible="False"
                    Text="AV1 looks better than H.264 at the same connection speed, but only some graphics cards can make it (NVIDIA RTX 40 and newer, AMD RX 7000 and newer, Intel Arc and newer). If yours cannot, Yaparr shares in H.264 instead. Watchers need an up to date Yaparr, and a phone that can play AV1." />

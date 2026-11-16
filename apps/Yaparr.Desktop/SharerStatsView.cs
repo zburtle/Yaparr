@@ -83,8 +83,8 @@ public sealed class SharerStatsView : Border
         // A gap far over the frame time means FFmpeg itself stalled (capture or encoding), whatever the network does.
         int target = _sharer.RunFps;   // lower while adaptive quality has lowered the frame rate
         bool behind = fps < target * 0.9 || gap > 3000.0 / Math.Max(1, target);
-        bool card = _sharer.Codec is ScreenCodec.H264 or ScreenCodec.Av1 && _sharer.Encoder != null;
-        string encoder = card ? $"{HardwareEncoders.Maker(_sharer.Encoder!.Value)} graphics card · {(_sharer.Codec == ScreenCodec.Av1 ? "AV1" : "H.264")}" : "Processor · VP8";
+        bool card = _sharer.Codec is ScreenCodec.H264 or ScreenCodec.Av1 or ScreenCodec.H265 && _sharer.Encoder != null;
+        string encoder = card ? $"{HardwareEncoders.Maker(_sharer.Encoder!.Value)} graphics card · {ScreenCodecs.Name(_sharer.Codec)}" : "Processor · VP8";
         _how.Text = encoder;
         _rate.Text = $"{fps:0} / {target} fps · {(kbps >= 1000 ? $"{kbps / 1000:0.0} Mbit/s" : $"{kbps:0} kbit/s")}";
         _adapt.Text = _sharer.AdaptiveLine ?? "";

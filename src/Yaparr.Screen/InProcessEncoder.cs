@@ -185,6 +185,8 @@ public sealed unsafe class InProcessEncoder : IDisposable
         if (!FfmpegLibraries.TryLoad(out var why)) throw new PlatformNotSupportedException(why);
         if (width < 16 || height < 16 || width % 2 != 0 || height % 2 != 0) throw new ArgumentException($"A picture of {width}x{height} cannot be encoded.");
         if (codec == ScreenCodec.Auto) throw new ArgumentException("Say which codec to encode.", nameof(codec));
+        // H.265 can be switched off for a release (see ScreenFeatures.H265): then no H.265 encoder starts, and the share goes on in H.264.
+        if (!ScreenFeatures.Allows(codec)) throw new PlatformNotSupportedException(ScreenFeatures.H265Off);
         Width = width;
         Height = height;
         Codec = codec;
@@ -256,6 +258,11 @@ public sealed unsafe class InProcessEncoder : IDisposable
         (ScreenCodec.H264, HardwareEncoder.Amf) => new[] { ("usage", "ultralowlatency"), ("quality", "speed"), ("rc", "vbr_latency"), ("profile", "high"), ("forced_idr", "1"), ("aud", "1"), ("async_depth", "1") },
         (ScreenCodec.H264, HardwareEncoder.Qsv) => new[] { ("preset", "veryfast"), ("scenario", "displayremoting"), ("async_depth", "1"), ("profile", "high"), ("forced_idr", "1"), ("aud", "1") },
         (ScreenCodec.H264, HardwareEncoder.Vaapi) => new[] { ("profile", "high"), ("aud", "1"), ("async_depth", "1") },
+        // H.265: the same low latency settings as for H.264, by the names the HEVC encoders use. Only graphics cards encode it here.
+        (ScreenCodec.H265, HardwareEncoder.Nvenc) => new[] { ("preset", "p4"), ("tune", "ll"), ("rc", "vbr"), ("rc-lookahead", "0"), ("profile", "main"), ("forced-idr", "1"), ("aud", "1"), ("zerolatency", "1"), ("delay", "0") },
+        (ScreenCodec.H265, HardwareEncoder.Amf) => new[] { ("usage", "ultralowlatency"), ("quality", "speed"), ("rc", "vbr_latency"), ("profile", "main"), ("forced_idr", "1"), ("aud", "1"), ("header_insertion_mode", "idr"), ("async_depth", "1") },
+        (ScreenCodec.H265, HardwareEncoder.Qsv) => new[] { ("preset", "veryfast"), ("scenario", "displayremoting"), ("async_depth", "1"), ("profile", "main"), ("forced_idr", "1"), ("aud", "1") },
+        (ScreenCodec.H265, HardwareEncoder.Vaapi) => new[] { ("profile", "main"), ("aud", "1"), ("async_depth", "1") },
         (ScreenCodec.Av1, HardwareEncoder.Nvenc) => new[] { ("preset", "p4"), ("tune", "ll"), ("rc", "vbr"), ("rc-lookahead", "0"), ("forced-idr", "1"), ("zerolatency", "1"), ("delay", "0") },
         (ScreenCodec.Av1, HardwareEncoder.Amf) => new[] { ("usage", "ultralowlatency"), ("quality", "speed"), ("rc", "vbr_latency"), ("async_depth", "1"), ("forced_idr", "1"), ("header_insertion_mode", "frame") },
         (ScreenCodec.Av1, HardwareEncoder.Qsv) => new[] { ("preset", "veryfast"), ("async_depth", "1"), ("forced_idr", "1") },
@@ -455,6 +462,7 @@ public sealed unsafe class InProcessEncoder : IDisposable
     public static bool Probe(ScreenCodec codec, HardwareEncoder card, out string why)
     {
         why = "";
+        if (!ScreenFeatures.Allows(codec)) { why = ScreenFeatures.H265Off; return false; }
         try
         {
             // Big enough for every maker's minimum picture size (some AV1 encoders refuse the sizes a test usually uses).

@@ -6,8 +6,10 @@ namespace Yaparr.Screen;
 /// How the picture is compressed. Auto uses the graphics card when there is one that can (H264 on NVIDIA's NVENC, AMD's AMF or
 /// Intel's Quick Sync) and VP8 in software otherwise. Av1 is asked for on purpose: only graphics cards encode it live (software AV1 is too slow for a
 /// screen at 30 or 60 frames a second), and a viewer needs a decoder for it, so Auto never picks it; where no card can, the share falls back to H.264.
+/// H265 (HEVC) is the same: asked for on purpose, encoded only by graphics cards (every viewer can decode it, in software if need be), and switched off altogether
+/// by <see cref="ScreenFeatures.H265"/>.
 /// </summary>
-public enum ScreenCodec { Auto, Vp8, H264, Av1 }
+public enum ScreenCodec { Auto, Vp8, H264, Av1, H265 }
 
 /// <summary>The graphics card encoders FFmpeg can drive for H.264.</summary>
 public enum HardwareEncoder { Nvenc, Amf, Qsv, Vaapi }
@@ -25,10 +27,10 @@ public static class HardwareEncoders
     /// <summary>FFmpeg's name for the H.264 encoder.</summary>
     public static string Name(HardwareEncoder encoder) => Name(ScreenCodec.H264, encoder);
 
-    /// <summary>FFmpeg's name for the encoder of this codec (H.264 or AV1).</summary>
+    /// <summary>FFmpeg's name for the encoder of this codec (H.264, H.265 or AV1).</summary>
     public static string Name(ScreenCodec codec, HardwareEncoder encoder)
     {
-        string kind = codec == ScreenCodec.Av1 ? "av1" : "h264";
+        string kind = codec == ScreenCodec.Av1 ? "av1" : codec == ScreenCodec.H265 ? "hevc" : "h264";
         return encoder switch
         {
             HardwareEncoder.Nvenc => kind + "_nvenc",
@@ -64,7 +66,7 @@ public static class HardwareEncoders
 
     /// <summary>The pixel format (and for VA-API the upload to the card) that ends the filter chain for this encoder.</summary>
     internal static string PixelFormat(ScreenCodec codec, HardwareEncoder encoder) =>
-        codec is not (ScreenCodec.H264 or ScreenCodec.Av1) ? "yuv420p" : encoder switch { HardwareEncoder.Qsv => "nv12", HardwareEncoder.Vaapi => "nv12,hwupload", _ => "yuv420p" };
+        codec is not (ScreenCodec.H264 or ScreenCodec.Av1 or ScreenCodec.H265) ? "yuv420p" : encoder switch { HardwareEncoder.Qsv => "nv12", HardwareEncoder.Vaapi => "nv12,hwupload", _ => "yuv420p" };
 
     public static bool TryParse(string? text, out HardwareEncoder encoder)
     {

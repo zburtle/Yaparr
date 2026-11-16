@@ -64,6 +64,7 @@ public partial class ShareDialog : Window
             ShareButton.Content = "Switch";
         }
         ApplyAv1Check();
+        ApplyH265Check();
         FillChoices(selectFirst: true);
         // On X11, the window chosen in the desktop's picker does not say which program it is, so the sound can be picked by program, as on Wayland.
         if (_current == null) WhatBox.SelectionChanged += (_, _) => UpdateSoundForChoice();
@@ -86,6 +87,18 @@ public partial class ShareDialog : Window
         FormatHint.IsVisible = true;
     }
 
+    // H.265 is on offer only where this version has it on; where the start-up check found that no graphics card here makes it, it is shown but cannot be picked.
+    private void ApplyH265Check()
+    {
+        if (FormatBox.Items.Count < 3 || FormatBox.Items[2] is not ComboBoxItem item) return;
+        if (!ScreenFeatures.H265) { FormatBox.Items.RemoveAt(2); return; }
+        if (H265Support.Latest is not { CanEncode: false } report) return;
+        item.IsEnabled = false;
+        item.Content = "H.265 (no graphics card here can make it)";
+        FormatHint.Text = "This computer's graphics card cannot make H.265 live" + (report.Refused.Count > 0 ? $" ({string.Join("; ", report.Refused.Select(r => r.Value))})" : "") + ". Sharing uses H.264 instead.";
+        FormatHint.IsVisible = true;
+    }
+
     /// <summary>Starts with the video format picked last time (AV1 only if it is on offer here).</summary>
     public void PreferAv1(bool prefer)
     {
@@ -101,10 +114,26 @@ public partial class ShareDialog : Window
     /// <summary>Whether AV1 was picked in the dialog that was just answered.</summary>
     public bool Av1Picked => Result?.Codec == ScreenCodec.Av1;
 
+    /// <summary>Starts with H.265 picked if it was last time and is on offer here.</summary>
+    public void PreferH265(bool prefer)
+    {
+        if (prefer && FormatBox.Items.Count >= 3 && FormatBox.Items[2] is ComboBoxItem { IsEnabled: true }) FormatBox.SelectedIndex = 2;
+    }
+
+    /// <summary>Whether H.265 was picked in the dialog that was just answered.</summary>
+    public bool H265Picked => Result?.Codec == ScreenCodec.H265;
+
     private void FormatBox_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
         // Raised while the window is still being built (the box starts with its first choice selected), before the hint exists.
-        if (FormatHint != null && Av1Support.Latest is not { CanEncode: false }) FormatHint.IsVisible = FormatBox.SelectedIndex == 1;
+        if (FormatHint == null) return;
+        // What the hint says depends on what is picked: AV1 is unhooked from the check, H.265 has its own words.
+        if (FormatBox.SelectedIndex == 2 && ScreenFeatures.H265)
+        {
+            FormatHint.Text = "H.265 looks better than H.264 at the same connection speed, but only a graphics card makes it here (NVIDIA, AMD or Intel; the card's maker has to support H.265 live). If yours cannot, Yaparr shares in H.264 instead. Watchers need an up to date Yaparr (on a computer it plays in software if the graphics card cannot decode it, though a busy processor may struggle at high resolutions) or a phone that can play H.265.";
+            FormatHint.IsVisible = true;
+        }
+        else if (Av1Support.Latest is not { CanEncode: false }) FormatHint.IsVisible = FormatBox.SelectedIndex == 1;
     }
 
     private void QualityBox_SelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -208,7 +237,7 @@ public partial class ShareDialog : Window
             Display = what >= 0 && what < _displays.Count ? _displays[what] : null,
             WindowHandle = window?.Handle,
             MaxWidth = q.Width, MaxHeight = q.Height, Fps = q.Fps, Kbps = q.Kbps,
-            Codec = FormatBox.SelectedIndex == 1 ? ScreenCodec.Av1 : ScreenCodec.Auto,
+            Codec = FormatBox.SelectedIndex == 1 ? ScreenCodec.Av1 : FormatBox.SelectedIndex == 2 && ScreenFeatures.H265 ? ScreenCodec.H265 : ScreenCodec.Auto,
             ShareSound = ScreenSound.IsSupported,
             SoundProgram = PickedProgram(),
             AdaptQuality = AdaptBox.IsChecked == true && new ScreenOptions().AdaptQuality,

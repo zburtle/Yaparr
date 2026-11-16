@@ -13,7 +13,7 @@ namespace Yaparr.AndroidApp;
 /// </summary>
 internal sealed class ScreenDecoder : IDisposable
 {
-    private const string H264Mime = "video/avc", Vp8Mime = "video/x-vnd.on2.vp8", Av1Mime = "video/av01";
+    private const string H264Mime = "video/avc", Vp8Mime = "video/x-vnd.on2.vp8", Av1Mime = "video/av01", H265Mime = "video/hevc";
 
     // The stream the frames come from, and the one being moved to (the share's lower stream or back, issue #254): frames of the next one are let through from
     // its first key frame on, and from then on the old one's are not, so the picture goes on without a gap (the decoder starts again only if the size changes).
@@ -109,6 +109,8 @@ internal sealed class ScreenDecoder : IDisposable
         }
     }
 
+    private bool _saidH265Off;
+
     private void Run()
     {
         var info = new MediaCodec.BufferInfo();
@@ -129,6 +131,12 @@ internal sealed class ScreenDecoder : IDisposable
                 {
                     Restart(kind, width, height);
                 }
+                if (_codec == null && isKey && !_saidH265Off && !ScreenFeatures.H265 && H265.LooksLikeKeyFrame(data))
+                {
+                    // H.265 arrives and this version has it switched off: said once, instead of a share that stays black without a word.
+                    _saidH265Off = true;
+                    Failed?.Invoke(ScreenFeatures.H265Off + " Ask the person sharing to pick H.264 or AV1.");
+                }
                 if (_codec == null) continue;                // nothing to start from yet
                 if (_waitForKey && !isKey) continue;
                 if (isKey) _waitForKey = false;
@@ -147,12 +155,12 @@ internal sealed class ScreenDecoder : IDisposable
     private void Restart(ScreenCodec kind, int width, int height)
     {
         CloseCodec();
-        string mime = kind switch { ScreenCodec.H264 => H264Mime, ScreenCodec.Av1 => Av1Mime, _ => Vp8Mime };
+        string mime = kind switch { ScreenCodec.H264 => H264Mime, ScreenCodec.Av1 => Av1Mime, ScreenCodec.H265 => H265Mime, _ => Vp8Mime };
         MediaCodec codec;
         try { codec = MediaCodec.CreateDecoderByType(mime)!; }
-        catch (Exception ex) when (kind == ScreenCodec.Av1 && ex is Java.Lang.IllegalArgumentException or Java.IO.IOException or NullReferenceException)
+        catch (Exception ex) when (kind is ScreenCodec.Av1 or ScreenCodec.H265 && ex is Java.Lang.IllegalArgumentException or Java.IO.IOException or NullReferenceException)
         {
-            throw new InvalidOperationException("This phone cannot play AV1. Ask the person sharing to pick another format.", ex);
+            throw new InvalidOperationException($"This phone cannot play {ScreenCodecs.Name(kind)}. Ask the person sharing to pick another format.", ex);
         }
         try
         {

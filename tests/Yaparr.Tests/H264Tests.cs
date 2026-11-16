@@ -114,7 +114,7 @@ public class H264Tests
     {
         var display = new Display(0, "x", 0, 0, 1920, 1080, true, Handle: 0x1A2B);
         // A computer with all three makers' graphics (the cards left out for a computer without them are in GraphicsAdapterTests).
-        var auto = ScreenSharer.Plan(new ScreenOptions { X11Display = null, Display = display }, new[] { GpuVendor.Nvidia, GpuVendor.Amd, GpuVendor.Intel }, adaptersGiven: true);
+        var auto = ScreenSharer.Plan(new ScreenOptions { X11Display = null, Display = display }, new[] { GpuVendor.Nvidia, GpuVendor.Amd, GpuVendor.Intel }, adaptersGiven: true, h265: false);
         // The cards tried depend on the system: NVIDIA, AMD and Intel on Windows; NVIDIA and VA-API on Linux.
         Assert.Equal(HardwareEncoders.InOrder.Select(card => (ScreenCodec.H264, (HardwareEncoder?)card)).Append((ScreenCodec.Vp8, (HardwareEncoder?)null)), auto);
         Assert.Equal(OperatingSystem.IsLinux() ? 3 : 4, auto.Count);
@@ -123,7 +123,7 @@ public class H264Tests
         Assert.DoesNotContain(ScreenSharer.Plan(new ScreenOptions { X11Display = null, Display = display, Codec = ScreenCodec.H264 }), p => p.Codec == ScreenCodec.Vp8);
         Assert.Equal(new (ScreenCodec, HardwareEncoder?)[] { (ScreenCodec.Vp8, null) }, ScreenSharer.Plan(new ScreenOptions { X11Display = null, Display = display, Codec = ScreenCodec.Vp8 }));
         Assert.Equal(new (ScreenCodec, HardwareEncoder?)[] { (ScreenCodec.H264, HardwareEncoder.Amf), (ScreenCodec.Vp8, null) },
-            ScreenSharer.Plan(new ScreenOptions { X11Display = null, Display = display, Encoder = HardwareEncoder.Amf }));
+            ScreenSharer.Plan(new ScreenOptions { X11Display = null, Display = display, Encoder = HardwareEncoder.Amf }, h265: false));
 
         Assert.True(HardwareEncoders.TryParse("QSV", out var card) && card == HardwareEncoder.Qsv);
         Assert.True(HardwareEncoders.TryParse("amd", out card) && card == HardwareEncoder.Amf);

@@ -303,7 +303,7 @@ public sealed partial class ScreenSharer : IDisposable
                     catch (Exception) when (_switch) { break; }   // stopped on purpose to share something else
                     catch (Exception ex) when (!ct.IsCancellationRequested && i < attempts.Count - 1 && Interlocked.Read(ref _frames) == before && !WindowGone)
                     {
-                        string who = card is { } known ? (attempt == ScreenCodec.Av1 ? "AV1 " : "") + HardwareEncoders.Maker(known) + (onCard ? " (pictures kept on the card)" : "") : "VP8";
+                        string who = card is { } known ? (attempt is ScreenCodec.Av1 or ScreenCodec.H265 ? ScreenCodecs.Name(attempt) + " " : "") + HardwareEncoders.Maker(known) + (onCard ? " (pictures kept on the card)" : "") : "VP8";
                         reasons.Add($"{who}: {ex.Message}");
                         _fallback = string.Join("; ", reasons);
                     }
@@ -319,14 +319,24 @@ public sealed partial class ScreenSharer : IDisposable
     /// <summary>
     /// What is tried, in order, for these options. Auto leaves out the graphics card encoders whose maker has no adapter in this computer (each one that cannot
     /// start costs about half a second); <paramref name="adapters"/> is what the computer has (by default, as it is asked for), null when not known; an encoder
-    /// chosen on purpose is always tried.
+    /// chosen on purpose is always tried. <paramref name="h265"/> says whether H.265 is on (<see cref="ScreenFeatures.H265"/> by default); for tests of the switch.
     /// </summary>
-    public static List<(ScreenCodec Codec, HardwareEncoder? Encoder)> Plan(ScreenOptions options, IReadOnlyList<GpuVendor>? adapters = null, bool adaptersGiven = false)
+    public static List<(ScreenCodec Codec, HardwareEncoder? Encoder)> Plan(ScreenOptions options, IReadOnlyList<GpuVendor>? adapters = null, bool adaptersGiven = false, bool? h265 = null)
     {
         var plan = new List<(ScreenCodec, HardwareEncoder?)>();
         var cards = options.Encoder is { } only ? new[] { only } : GraphicsAdapters.Installed(adaptersGiven ? adapters : GraphicsAdapters.Vendors).ToArray();
         // AV1 is only tried when it was asked for, on every card in turn, and then what Auto would have done, so a computer without a card that
         // does AV1 still shares (H.264, or VP8 in software at last).
+        // H.265 is the first choice of Automatic, and tried the same way when asked for (only where this build has it on).
+        // Automatic goes first for H.265 too, on the cards the start-up check found able to do it (all of them while the check has not finished), since a card
+        // that cannot costs half a second; asked for on purpose, every card is tried.
+        bool auto = options.Codec == ScreenCodec.Auto;
+        if ((options.Codec == ScreenCodec.H265 || auto) && (h265 ?? ScreenFeatures.H265))
+        {
+            var known = H265Support.Latest;
+            foreach (var card in cards)
+                if (!auto || known is null || options.Encoder is not null || known.Encoders.Contains(card)) plan.Add((ScreenCodec.H265, card));
+        }
         if (options.Codec == ScreenCodec.Av1)
             foreach (var card in cards) plan.Add((ScreenCodec.Av1, card));
         if (options.Codec is not ScreenCodec.Vp8)

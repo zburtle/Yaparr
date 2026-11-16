@@ -7,7 +7,7 @@ namespace Yaparr.Screen;
 /// Decodes a shared screen with FFmpeg's libraries inside this program (stage 6 of #225), where <see cref="ScreenViewer"/> used to start a separate FFmpeg and pass
 /// every frame in through a pipe and every picture out through another. Frames go in as the stream tree delivers them (H.264 as access units, VP8 and AV1 as the
 /// frames of an IVF file, without its headers) and each picture comes out as NV12 at the size asked for: the size of the stream, or a smaller one for a preview
-/// (scaled here, by the library that scales). H.264 can be decoded on the graphics card (Windows: Direct3D 12 or 11; Linux: NVIDIA's NVDEC or VA-API, see
+/// (scaled here, by the library that scales). H.264 and H.265 can be decoded on the graphics card (Windows: Direct3D 12 or 11; Linux: NVIDIA's NVDEC or VA-API, see
 /// <see cref="DecodeDevice"/>); the picture is
 /// then copied back to memory and goes on as a software one would. Not thread safe: one thread decodes.
 /// </summary>
@@ -39,14 +39,14 @@ public sealed unsafe class InProcessDecoder : IDisposable
     /// <summary>Whether FFmpeg's libraries are there and can decode <paramref name="codec"/> (nothing is started).</summary>
     public static bool IsAvailable(ScreenCodec codec)
     {
-        if (!FfmpegLibraries.TryLoad(out _)) return false;
+        if (!ScreenFeatures.Allows(codec) || !FfmpegLibraries.TryLoad(out _)) return false;
         return Find(codec) != null;
     }
 
     /// <summary>The name of the decoder used for <paramref name="codec"/> (like "libdav1d"), or null when there is none.</summary>
     public static string? DecoderName(ScreenCodec codec)
     {
-        if (!FfmpegLibraries.TryLoad(out _)) return null;
+        if (!ScreenFeatures.Allows(codec) || !FfmpegLibraries.TryLoad(out _)) return null;
         var found = Find(codec);
         return found == null ? null : Marshal(found->name);
     }
@@ -56,6 +56,7 @@ public sealed unsafe class InProcessDecoder : IDisposable
         switch (codec)
         {
             case ScreenCodec.H264: return ffmpeg.avcodec_find_decoder(AVCodecID.AV_CODEC_ID_H264);
+            case ScreenCodec.H265: return ffmpeg.avcodec_find_decoder(AVCodecID.AV_CODEC_ID_HEVC);   // FFmpeg's own decoder: on the graphics card where it can, in software where not
             case ScreenCodec.Vp8: return ffmpeg.avcodec_find_decoder(AVCodecID.AV_CODEC_ID_VP8);
             case ScreenCodec.Av1:
                 // dav1d is far faster than the reference decoder, and the library may or may not have it.
@@ -74,9 +75,10 @@ public sealed unsafe class InProcessDecoder : IDisposable
     /// </summary>
     public InProcessDecoder(ScreenCodec codec, DecodeDevice device = DecodeDevice.Processor)
     {
+        if (!ScreenFeatures.Allows(codec)) throw new PlatformNotSupportedException(ScreenFeatures.H265Off);
         if (!FfmpegLibraries.TryLoad(out var why)) throw new PlatformNotSupportedException(why);
         Codec = codec;
-        Device = codec == ScreenCodec.H264 && Fits(device) ? device : DecodeDevice.Processor;
+        Device = codec is ScreenCodec.H264 or ScreenCodec.H265 && Fits(device) ? device : DecodeDevice.Processor;
         var decoder = Find(codec);
         if (decoder == null) throw new PlatformNotSupportedException($"These FFmpeg libraries have no {codec} decoder.");
         _context = ffmpeg.avcodec_alloc_context3(decoder);

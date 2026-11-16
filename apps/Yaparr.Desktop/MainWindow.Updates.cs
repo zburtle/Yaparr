@@ -15,6 +15,7 @@ public partial class MainWindow
     private void StartUpdateWatch()
     {
         Av1Support.StartCheck(log: _log.Write);
+        if (ScreenFeatures.H265) H265Support.StartCheck(log: _log.Write);
         if (Program.UpdateFailed) StatusText.Text = "The update was not installed. Yaparr is still the older version.";
         if (!Updater.IsFlatpak) return;
         _ = Task.Run(async () =>
