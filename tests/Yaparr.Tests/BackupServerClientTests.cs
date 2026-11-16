@@ -351,7 +351,7 @@ public sealed class BackupServerClientTests : IDisposable
         var server = new FakeServer { Down = true };
         using var client = Client(server, "ycl_x");
         var ex = await Assert.ThrowsAsync<BackupServerException>(() => client.VersionsAsync());
-        Assert.StartsWith("Couldn't reach the backup server", ex.Message);
+        Assert.StartsWith("Couldn't reach Yaparr Cloud", ex.Message);
         Assert.False(ex.SignedOut);
     }
 

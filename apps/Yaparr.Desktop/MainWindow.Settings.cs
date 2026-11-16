@@ -16,7 +16,7 @@ public partial class MainWindow
     // The devices signed in as you are listed while that section is showing, kept up to date as they connect and disconnect.
     private readonly Avalonia.Threading.DispatcherTimer _devicesTimer = new() { Interval = TimeSpan.FromSeconds(2) };
 
-    // Opens the settings on a section: "devices", "notifications", "voice", "network", "vpn", "turn", "blocked", "backup" or "about".
+    // Opens the settings on a section: "devices", "notifications", "voice", "network", "vpn", "turn", "blocked", "cloud", "backup" or "about".
     internal void ShowSettings(string section = "devices")
     {
         section = section.ToLowerInvariant();   // the sections are found by their lower-case names; "Voice" used to land on the first one
@@ -67,11 +67,11 @@ public partial class MainWindow
         TurnPanel.SetActive(key == "turn");
         if (key == "network") NetworkView.Activate();
         if (key == "blocked") RefreshBlocked();
-        if (key == "backup") FillServerForm();
+        if (key == "cloud") FillServerForm();
         var sections = new (string Key, Control Panel)[]
         {
             ("devices", SectionDevices), ("notifications", SectionNotifications), ("voice", SectionVoice), ("network", SectionNetwork),
-            ("vpn", SectionVpn), ("turn", SectionTurn), ("blocked", SectionBlocked), ("backup", SectionBackup), ("about", SectionAbout),
+            ("vpn", SectionVpn), ("turn", SectionTurn), ("blocked", SectionBlocked), ("cloud", SectionCloud), ("backup", SectionBackup), ("about", SectionAbout),
         };
         foreach (var (name, panel) in sections) panel.IsVisible = name == key;
     }

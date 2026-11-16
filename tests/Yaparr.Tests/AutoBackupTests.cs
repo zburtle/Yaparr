@@ -395,7 +395,7 @@ public sealed class AutoBackupTests : IDisposable
         var state = data.LoadBackupServer();
         Assert.Equal(1, state.Failures);
         Assert.Equal(T0.AddMinutes(3) + TimeSpan.FromMinutes(5), state.RetryAfter);
-        Assert.Contains("Couldn't reach the backup server", state.AutoNote);
+        Assert.Contains("Couldn't reach Yaparr Cloud", state.AutoNote);
         Assert.Contains("Trying again later", state.AutoNote);
         Assert.True(state.AutoBackup);
 

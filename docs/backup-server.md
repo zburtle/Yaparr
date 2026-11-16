@@ -1,10 +1,10 @@
-# Backup server
+# Yaparr Cloud (backup server)
 
 A backup server keeps a **locked** copy of your profile backup, so you can bring your account back on any computer. It is optional: Yaparr works the same without one, and nothing is sent anywhere unless you use it. Whoever runs a server gives you its address and an account on it.
 
 ## Using it
 
-**Settings > Backup > Backup server**, on the desktop and on Android (the screens are the same; on a phone the sign-in comes back to the app through the phone's browser, so stay with it until the page says you are signed in and then come back to Yaparr):
+**Settings > Yaparr Cloud**, on the desktop and on Android (the screens are the same; on a phone the sign-in comes back to the app through the phone's browser, so stay with it until the page says you are signed in and then come back to Yaparr):
 
 1. The address is filled in for you: releases of Yaparr are made for **https://cloud.yaparr.com** (see below), and the address of the last server you used is offered instead if you have used another. You can type a different one. Choose **Sign in with your browser**. Your browser opens the server's sign-in page; type your email address and password there (an account is named by its owner's email address, which the person running the server enters when they make it; nothing is ever sent to it). Yaparr never sees them. When you are signed in the browser says so and Yaparr shows "Signed in to … as …".
 2. **Back up now** saves a backup. The first time, Yaparr makes a **recovery code** (like `K7QD-M3XF-9PLR-2WTE-HV8N-C4YB`) and shows it once: save it in a password manager or on paper. After that, backing up needs nothing typed.

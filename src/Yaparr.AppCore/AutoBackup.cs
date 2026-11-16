@@ -146,7 +146,7 @@ public sealed class AutoBackup
         catch (BackupServerException ex) when (ex.SignedOut)
         {
             state.Token = "";
-            state.AutoNote = "Automatic backups stopped: this device is no longer signed in to the backup server. Sign in again.";
+            state.AutoNote = "Automatic backups stopped: this device is no longer signed in to Yaparr Cloud. Sign in again.";
             _data.SaveBackupServer(state);
             _log?.Invoke("automatic backup: no longer signed in");
             return AutoBackupResult.SignedOut;
