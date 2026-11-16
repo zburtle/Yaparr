@@ -8,6 +8,17 @@ public class MediaCountersTests
     private static byte[] Frame(int n, int size) => Enumerable.Range(0, size).Select(i => (byte)(n * 31 + i)).ToArray();
 
     [Fact]
+    public async Task A_frame_is_not_spaced_out_when_nobody_is_watching()
+    {
+        using var c = await MediaTreeTests.Cluster.StartAsync(2, fanout: 2, rootFanout: 2);
+        using var source = c.Root.StartMedia(c.Rooms[0], "screen", "screen", kbps: 1000);
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        // At the pace of a 1 Mbit/s stream (at least 256 KB a second) this would take about four seconds.
+        await source.SendFrameAsync(Frame(0, 1_000_000), isKey: true);
+        Assert.True(watch.ElapsedMilliseconds < 1000, $"took {watch.ElapsedMilliseconds} ms");
+    }
+
+    [Fact]
     public async Task A_clean_link_counts_the_packets_that_came_and_nothing_else()
     {
         using var c = await MediaTreeTests.Cluster.StartAsync(2, fanout: 2, rootFanout: 2);
