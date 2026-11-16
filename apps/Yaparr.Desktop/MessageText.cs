@@ -14,6 +14,12 @@ public sealed class MessageText : SelectableTextBlock
     public static readonly StyledProperty<string?> BodyProperty = AvaloniaProperty.Register<MessageText, string?>(nameof(Body));
     public static readonly StyledProperty<IReadOnlyList<string>?> MarksProperty = AvaloniaProperty.Register<MessageText, IReadOnlyList<string>?>(nameof(Marks));
 
+    /// <summary>The pictures of custom emoji by name: a <c>:name:</c> in the words that has one is drawn as the picture, a line high.</summary>
+    public static readonly StyledProperty<IReadOnlyDictionary<string, IImage>?> EmojiImagesProperty =
+        AvaloniaProperty.Register<MessageText, IReadOnlyDictionary<string, IImage>?>(nameof(EmojiImages));
+
+    public IReadOnlyDictionary<string, IImage>? EmojiImages { get => GetValue(EmojiImagesProperty); set => SetValue(EmojiImagesProperty, value); }
+
     public string? Body { get => GetValue(BodyProperty); set => SetValue(BodyProperty, value); }
 
     /// <summary>Pieces of the words to make stand out, for example "@Alice".</summary>
@@ -32,7 +38,7 @@ public sealed class MessageText : SelectableTextBlock
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
-        if (change.Property == BodyProperty || change.Property == MarksProperty) Rebuild();
+        if (change.Property == BodyProperty || change.Property == MarksProperty || change.Property == EmojiImagesProperty || change.Property == FontSizeProperty) Rebuild();
     }
 
     private void Rebuild()
@@ -45,9 +51,21 @@ public sealed class MessageText : SelectableTextBlock
         void Words(string text)
         {
             foreach (var (part, marked) in Split(text, Marks))
-                Inlines.Add(marked
-                    ? new Run(part) { FontWeight = FontWeight.Bold, Background = new SolidColorBrush(Color.FromArgb(0x55, 0x80, 0x80, 0x80)) }
-                    : new Run(part));
+            {
+                if (marked)
+                {
+                    Inlines.Add(new Run(part) { FontWeight = FontWeight.Bold, Background = new SolidColorBrush(Color.FromArgb(0x55, 0x80, 0x80, 0x80)) });
+                    continue;
+                }
+                if (EmojiImages is not { Count: > 0 } images) { Inlines.Add(new Run(part)); continue; }
+                // A custom emoji that has arrived is its picture, a little taller than the words; one that has not stays as the :name: it was written.
+                foreach (var (piece, name) in CustomEmojiRules.Pieces(part))
+                {
+                    if (name != null && images.TryGetValue(name, out var picture))
+                        Inlines.Add(new InlineUIContainer(new Image { Source = picture, Height = FontSize * 1.4, Stretch = Stretch.Uniform, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center }));
+                    else Inlines.Add(new Run(piece));
+                }
+            }
         }
         foreach (var link in _links)
         {

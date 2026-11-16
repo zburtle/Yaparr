@@ -475,6 +475,8 @@ public partial class MainWindow : Window
         });
         _node.NetworkStatusChanged += _ => UI(UpdateStatus);
         _node.AttachmentChanged += update => UI(() => OnAttachmentChanged(update));
+        var emojiNode = _node;
+        EmojiPictures.Reader = hash => emojiNode.ReadAttachment(hash);
         if (OperatingSystem.IsWindows()) Microsoft.Win32.SystemEvents.PowerModeChanged += OnPowerModeChanged;
         _linkTimer.Tick += (_, _) => { RefreshPeers(); WatchConnection(); SaveMarks(); };
         SetUpConnectionWatch();
@@ -950,7 +952,7 @@ public partial class MainWindow : Window
         var parts = m.Parts;
         var vm = new MessageVm(m.Timestamp, m.From.DisplayName, parts.Body, m.IsCatchUp, isMine: mine, id: m.Id, attachment: m.Attachment)
         {
-            Source = m, Account = m.From.Account.Value, Key = m.Key, ReplyKey = parts.ReplyTo, Mentions = parts.Mentions, Card = parts.Preview,
+            Source = m, Account = m.From.Account.Value, Key = m.Key, ReplyKey = parts.ReplyTo, Mentions = parts.Mentions, Card = parts.Preview, Emoji = parts.Emoji,
             MentionsMe = _node != null && NamesMe(m),
             Channel = m.Channel, DeviceNote = mine && _node!.Id != m.From.Id ? "from your other device " + m.From.Id.Short : "",
         };
@@ -994,6 +996,10 @@ public partial class MainWindow : Window
 
     private void OnAttachmentChanged(AttachmentUpdate update)
     {
+        // The picture of a custom emoji a message uses has arrived: the words are drawn again with it.
+        if (update.State == AttachmentState.Ready)
+            foreach (var vm in _conversations.SelectMany(c => c.AllMessages).Where(m => m.Emoji != null && m.Emoji.Any(e => e.Hash == update.Hash)).ToList())
+                vm.RaiseEmoji();
         if (!_attachmentVms.TryGetValue(update.Hash, out var list)) return;
         foreach (var vm in list.ToList())
         {
@@ -1257,14 +1263,16 @@ public partial class MainWindow : Window
             var reply = _replyTo;
             var mentions = conv.IsRoom ? ActiveMentions(text) : new List<Mention>();
             var preview = await PreviewForAsync(text);
-            var id = await conv.Send(MessageEnvelope.Wrap(text, reply?.Key, mentions, preview));
+            // The custom emoji the words use go with the message, so everyone sees them whether they are yours or the room's.
+            var emoji = CustomEmojiFor(text, conv.IsRoom ? SelectedRoom : null);
+            var id = await conv.Send(MessageEnvelope.Wrap(text, reply?.Key, mentions, preview, emoji));
             InputBox.Text = "";
             ClearReply();
             _chosenMentions.Clear();
             conv.Add(new MessageVm(DateTimeOffset.Now, _node.DisplayName, text, isMine: true, id: id)
             {
                 Channel = conv.IsRoom ? conv.CurrentChannel : null,
-                Key = ChatMessage.KeyOf(_node.Id, id), ReplyKey = reply?.Key, Mentions = mentions, Card = preview,
+                Key = ChatMessage.KeyOf(_node.Id, id), ReplyKey = reply?.Key, Mentions = mentions, Card = preview, Emoji = emoji.Count == 0 ? null : emoji,
             });
             ScrollToEnd();
         }

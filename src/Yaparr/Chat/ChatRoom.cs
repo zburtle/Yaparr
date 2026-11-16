@@ -337,6 +337,15 @@ public sealed class ChatRoom
     /// <summary>Adds a picture to the room's GIF shelf (PNG, JPEG, GIF or WebP up to <see cref="GifLimits.MaxBytes"/>).</summary>
     public GifInfo AddGif(byte[] data) => _node.AddGif(this, data);
 
+    /// <summary>
+    /// The room's custom emoji, by name: pictures any member added to be written as <c>:name:</c> (see <see cref="CustomEmoji"/>). They are kept with the shelf
+    /// (the same signed list, removals and take-downs: <see cref="RemoveGif"/> and <see cref="DeleteGif"/> work on their ids), but are not pictures to send.
+    /// </summary>
+    public IReadOnlyList<GifInfo> Emoji => _node.GetEmoji(this);
+
+    /// <summary>Adds a custom emoji to the room under a name. Throws <see cref="ArgumentException"/>, with a message for the person, for a name or picture that cannot be used or a name that is taken.</summary>
+    public GifInfo AddEmoji(string name, byte[] data) => _node.AddEmoji(this, name, data);
+
     /// <summary>Removes a picture you added.</summary>
     public void RemoveGif(string id) => _node.RemoveGif(this, id);
 
@@ -434,8 +443,8 @@ public sealed class ChatRoom
     /// <paramref name="mentions"/> (accounts, up to <see cref="MessageEnvelope.MaxMentions"/>); the words themselves should say
     /// who is named: each <see cref="Mention"/> says whom, and the name as it is written after an @ in the words. Either can be left out. Returns the id of the message.
     /// </summary>
-    public Task<string> SendAsync(string text, string? channelId, string? replyTo, IReadOnlyCollection<Mention>? mentions = null, LinkPreview? preview = null) =>
-        Task.FromResult(_node.SendRoomMessage(this, MessageEnvelope.Wrap(text, replyTo, mentions, preview), channelId));
+    public Task<string> SendAsync(string text, string? channelId, string? replyTo, IReadOnlyCollection<Mention>? mentions = null, LinkPreview? preview = null, IReadOnlyCollection<CustomEmoji>? emoji = null) =>
+        Task.FromResult(_node.SendRoomMessage(this, MessageEnvelope.Wrap(text, replyTo, mentions, preview, emoji), channelId));
 
     /// <summary>
     /// Asks the members you are connected to for messages you do not have, by key (<see cref="ChatMessage.Key"/>), for example the
@@ -530,7 +539,7 @@ public sealed class DirectChat
     public Task<string> SendAsync(string text) => Task.FromResult(_node.SendDirectMessage(PeerId, text));
 
     /// <summary>Sends a message that answers the message with the key <paramref name="replyTo"/> (<see cref="ChatMessage.Key"/>).</summary>
-    public Task<string> SendAsync(string text, string? replyTo, LinkPreview? preview = null) => Task.FromResult(_node.SendDirectMessage(PeerId, MessageEnvelope.Wrap(text, replyTo, null, preview)));
+    public Task<string> SendAsync(string text, string? replyTo, LinkPreview? preview = null, IReadOnlyCollection<CustomEmoji>? emoji = null) => Task.FromResult(_node.SendDirectMessage(PeerId, MessageEnvelope.Wrap(text, replyTo, null, preview, emoji)));
 
     /// <summary>Who a message you sent has reached, while it is still being tracked.</summary>
     public IReadOnlyList<DeliveryRecipient> GetDeliveryDetails(string messageId) => _node.GetDeliveryDetails(messageId);

@@ -115,15 +115,7 @@ public partial class MainWindow
     private void ComposerEmoji_Click(object? sender, RoutedEventArgs e)
     {
         e.Handled = true;
-        _reactingTo = null;
-        _pickingForComposer = true;
-        if (!_emojiWired) WireEmojiPicker();
-        EmojiSearch.Text = "";
-        ShowEmojiGroup(0);
-        ReactionPopup.Placement = PlacementMode.TopEdgeAlignedLeft;
-        ReactionPopup.PlacementTarget = ComposerEmojiButton;
-        ReactionPopup.IsOpen = true;
-        EmojiSearch.Focus();
+        OpenComposerPicker(CustomTab.None);
     }
 
     private void OpenReactionPicker(MessageVm message, Control? near)
@@ -176,13 +168,20 @@ public partial class MainWindow
 
         EmojiSearch.TextChanged += (_, _) =>
         {
+            if (_clearingEmojiSearch) return;
             var query = EmojiSearch.Text ?? "";
-            if (query.Trim().Length == 0) { ShowEmojiGroup(_emojiGroup); return; }
+            if (query.Trim().Length == 0)
+            {
+                if (_customTab == CustomTab.None) ShowEmojiGroup(_emojiGroup);
+                return;
+            }
+            _customTab = CustomTab.None;
+            UpdateCustomTabs();
             var found = EmojiData.Search(query, 120);
             EmojiTitle.Text = found.Count == 0 ? "Nothing found" : found.Count + (found.Count == 1 ? " emoji" : " emoji");
             FillEmojiGrid(found);
         };
-        ReactionPopup.Closed += (_, _) => { _reactingTo = null; _pickingForComposer = false; };
+        ReactionPopup.Closed += (_, _) => { _reactingTo = null; _pickingForComposer = false; DetachCustomRoom(); };
     }
 
     private static string GroupIcon(string group) => group switch
@@ -201,6 +200,9 @@ public partial class MainWindow
 
     private void ShowEmojiGroup(int index)
     {
+        _customTab = CustomTab.None;
+        DetachCustomRoom();
+        UpdateCustomTabs();
         _emojiGroup = Math.Clamp(index, 0, EmojiData.Groups.Count - 1);
         var group = EmojiData.Groups[_emojiGroup];
         EmojiTitle.Text = group.Name;

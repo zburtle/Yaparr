@@ -5,8 +5,14 @@ using Yaparr.Chat;
 
 namespace Yaparr.Desktop;
 
-/// <summary>An emoji offered in the list that opens when you type a :shortcode.</summary>
-public sealed record EmojiSuggestion(string Emoji, string Code);
+/// <summary>An emoji offered in the list that opens when you type a :shortcode: a standard one (its emoji) or a custom one (its picture, written as its code).</summary>
+public sealed record EmojiSuggestion(string Emoji, string Code, Avalonia.Media.IImage? Image = null)
+{
+    public bool HasImage => Image != null;
+
+    /// <summary>What goes into the message: the emoji, or for a custom one its :name:.</summary>
+    public string Insert => Image != null ? Code : Emoji;
+}
 
 // Emoji in the message box: a :shortcode that is being typed offers the emoji that match (Enter or Tab takes the one selected), and a whole :shortcode:
 // becomes its emoji as the closing colon is typed. The button next to the box opens the picker, in the message box's own mode (see ComposerEmoji_Click).
@@ -35,16 +41,18 @@ public partial class MainWindow
 
         if (pending.Closed)
         {
-            // :thumbs_up: written out is the emoji. A name that is not one is left as typed.
+            // :thumbs_up: written out is the emoji. A name that is not one is left as typed (a custom emoji is written as :name: and stays so).
             if (EmojiTyping.FromShortcode(pending.Name) is { } exact) ReplaceInInput(pending.Start, caret, exact.Emoji);
             else CloseEmojiSuggest();
             return;
         }
 
-        var found = EmojiTyping.Complete(pending.Name, 8);
-        if (found.Count == 0) { CloseEmojiSuggest(); return; }
+        // Your own emoji and the room's come first, then the standard ones.
+        var choices = CustomMatches(pending.Name, 5).Where(c => c.Image != null).Select(c => new EmojiSuggestion("", ":" + c.Name + ":", c.Image)).ToList();
+        choices.AddRange(EmojiTyping.Complete(pending.Name, 8).Select(f => new EmojiSuggestion(f.Entry.Emoji, ":" + f.Code + ":")).Take(Math.Max(3, 8 - choices.Count)));
+        if (choices.Count == 0) { CloseEmojiSuggest(); return; }
         _emojiStart = pending.Start;
-        EmojiSuggestList.ItemsSource = found.Select(f => new EmojiSuggestion(f.Entry.Emoji, ":" + f.Code + ":")).ToList();
+        EmojiSuggestList.ItemsSource = choices;
         EmojiSuggestList.SelectedIndex = 0;
         EmojiSuggestPopup.IsOpen = true;
     }
@@ -75,7 +83,7 @@ public partial class MainWindow
     {
         if (EmojiSuggestList.SelectedItem is not EmojiSuggestion choice || _emojiStart < 0) return;
         var text = InputBox.Text ?? "";
-        ReplaceInInput(_emojiStart, Math.Clamp(InputBox.CaretIndex, _emojiStart, text.Length), choice.Emoji);
+        ReplaceInInput(_emojiStart, Math.Clamp(InputBox.CaretIndex, _emojiStart, text.Length), choice.Insert);
         InputBox.Focus();
     }
 

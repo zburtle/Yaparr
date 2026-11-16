@@ -38,6 +38,8 @@ public partial class MainView
 
     private void OpenReact(Line line)
     {
+        _pickingForComposer = false;
+        ReactHeading.Text = "React";
         _reactingTo = line;
         if (!_reactWired) WireReactPanel();
         ReactSearch.Text = "";
@@ -79,8 +81,15 @@ public partial class MainView
 
         ReactSearch.TextChanged += (_, _) =>
         {
+            if (_clearingReactSearch) return;
             var query = ReactSearch.Text ?? "";
-            if (query.Trim().Length == 0) { ShowReactGroup(_reactGroup); return; }
+            if (query.Trim().Length == 0)
+            {
+                if (_emojiTab == EmojiTab.None) ShowReactGroup(_reactGroup);
+                return;
+            }
+            _emojiTab = EmojiTab.None;
+            UpdateEmojiTabs();
             var found = EmojiData.Search(query, 120);
             ReactTitle.Text = found.Count == 0 ? "Nothing found" : found.Count + " emoji";
             FillReactGrid(found);
@@ -103,6 +112,9 @@ public partial class MainView
 
     private void ShowReactGroup(int index)
     {
+        _emojiTab = EmojiTab.None;
+        DetachEmojiRoom();
+        UpdateEmojiTabs();
         _reactGroup = Math.Clamp(index, 0, EmojiData.Groups.Count - 1);
         var group = EmojiData.Groups[_reactGroup];
         ReactTitle.Text = group.Name;
@@ -117,6 +129,13 @@ public partial class MainView
 
     private void ReactPicked(object? sender, RoutedEventArgs e)
     {
+        if ((sender as Control)?.Tag is string chosen && _pickingForComposer)
+        {
+            ReactPanel.IsVisible = false;
+            DetachEmojiRoom();
+            InsertIntoInput(chosen);
+            return;
+        }
         if ((sender as Control)?.Tag is not string emoji || _reactingTo is not { } line) return;
         ReactPanel.IsVisible = false;
         // Picking one you already have takes it off, as tapping it under the message does.
@@ -124,5 +143,9 @@ public partial class MainView
         _ = ReactAsync(line, emoji, on: !has);
     }
 
-    private void ReactCloseClicked(object? sender, RoutedEventArgs e) => ReactPanel.IsVisible = false;
+    private void ReactCloseClicked(object? sender, RoutedEventArgs e)
+    {
+        ReactPanel.IsVisible = false;
+        DetachEmojiRoom();
+    }
 }
