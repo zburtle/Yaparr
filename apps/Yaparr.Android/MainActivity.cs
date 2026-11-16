@@ -52,6 +52,8 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
 // in the browser, whose page hands them to the app.
 [IntentFilter(new[] { Intent.ActionView }, Categories = new[] { Intent.CategoryDefault, Intent.CategoryBrowsable }, DataScheme = "yaparr", DataHost = "join")]
 [IntentFilter(new[] { Intent.ActionView }, Categories = new[] { Intent.CategoryDefault, Intent.CategoryBrowsable }, DataScheme = "yaparr", DataHost = "chat")]
+// The button on a backup server's "You're in" page (yaparr://backup-signin/<code>/<server>), which signs this phone in once the person agrees.
+[IntentFilter(new[] { Intent.ActionView }, Categories = new[] { Intent.CategoryDefault, Intent.CategoryBrowsable }, DataScheme = "yaparr", DataHost = "backup-signin")]
 [IntentFilter(new[] { Intent.ActionView }, Categories = new[] { Intent.CategoryDefault, Intent.CategoryBrowsable }, DataScheme = "https", DataHost = "yaparr.com", DataPathPrefix = "/join", AutoVerify = true)]
 [IntentFilter(new[] { Intent.ActionView }, Categories = new[] { Intent.CategoryDefault, Intent.CategoryBrowsable }, DataScheme = "https", DataHost = "yaparr.com", DataPathPrefix = "/chat", AutoVerify = true)]
 [Activity(
@@ -68,6 +70,7 @@ public class MainActivity : AvaloniaMainActivity
     {
         Instance = this;
         AppHost.ScreenOpen = true;
+        ReleaseAsset.Load(this);
         App.Scanner = new QrScanner(this);
         base.OnCreate(savedInstanceState);
         // Opened by a link or a notification; not again when the activity is made anew after a turn of the screen.

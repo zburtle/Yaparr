@@ -58,8 +58,30 @@
                         <TextBlock Text="Use a backup made in Settings, Backup. For a new phone; if your old one is still in use, link instead." FontSize="13" Opacity="0.75" TextWrapping="Wrap" />
                     </StackPanel>
                 </Button>
+                <Button x:Name="ServerRestoreStartButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="18,14" Click="ServerRestoreStartClicked">
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="On a backup server" FontSize="17" FontWeight="SemiBold" />
+                        <TextBlock Text="Sign in to the server your backup is on, with your recovery code. For a new phone." FontSize="13" Opacity="0.75" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Button>
                 <TextBlock x:Name="ExistingStatus" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" />
                 <Button Content="Back" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="WelcomeBackClicked" />
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Taking an account over from a backup server: its address, the recovery code that opens the backup, and a sign-in in the browser. -->
+        <ScrollViewer x:Name="ServerRestorePanel" IsVisible="False">
+            <StackPanel Margin="20,56,20,24" Spacing="12" MaxWidth="480">
+                <TextBlock Text="Restore from a backup server" FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Ink}" />
+                <TextBlock Text="You sign in in your browser, and the backup is unlocked on this phone with your recovery code. The code is never sent to the server."
+                           TextWrapping="Wrap" Foreground="{DynamicResource Muted}" />
+                <TextBlock Text="Server address" Margin="0,8,0,0" Foreground="{DynamicResource Muted}" />
+                <TextBox x:Name="RestoreServerBox" PlaceholderText="https://cloud.yaparr.com" />
+                <TextBlock Text="Recovery code" Foreground="{DynamicResource Muted}" />
+                <TextBox x:Name="RestoreCodeBox" PlaceholderText="K7QD-M3XF-9PLR-2WTE-HV8N-C4YB" />
+                <Button x:Name="ServerRestoreButton" Classes="primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Sign in and restore" Click="ServerRestoreClicked" />
+                <TextBlock x:Name="ServerRestoreStatus" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" />
+                <Button Content="Back" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="ServerRestoreBackClicked" />
             </StackPanel>
         </ScrollViewer>
 
@@ -211,6 +233,22 @@
                     <TextBlock Text="Backup" FontWeight="SemiBold" Margin="0,14,0,0" Foreground="{DynamicResource Muted}" />
                     <TextBlock Text="A backup is a copy of your account, room keys and message history, to bring back on a new phone if you lose this one." TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />
                     <Button HorizontalAlignment="Stretch" Content="Back up this phone's account" Click="BackupClicked" />
+
+                    <TextBlock Text="Backup server" FontWeight="SemiBold" Margin="0,14,0,0" Foreground="{DynamicResource Muted}" />
+                    <TextBlock Text="If someone gives you the address of a backup server and an account on it, your backup can be kept there and brought back on any phone or computer. You sign in in your browser, and the backup is locked on this phone with a recovery code, so the server cannot read it. Nothing is sent anywhere unless you use this." TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />
+                    <StackPanel x:Name="ServerSignedOutPanel" Spacing="8">
+                        <TextBox x:Name="ServerUrlBox" PlaceholderText="https://cloud.yaparr.com" />
+                        <Button x:Name="ServerSignInButton" Classes="primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Sign in with your browser" Click="ServerSignInClicked" />
+                        <Button x:Name="ServerCancelSignInButton" IsVisible="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Cancel" Click="ServerCancelSignInClicked" />
+                    </StackPanel>
+                    <StackPanel x:Name="ServerSignedInPanel" Spacing="8" IsVisible="False">
+                        <TextBlock x:Name="ServerSignedInText" TextWrapping="Wrap" Foreground="{DynamicResource Ink}" />
+                        <Button x:Name="BackupToServerButton" Classes="primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Back up now" Click="BackupToServerClicked" />
+                        <Button x:Name="ShowRecoveryCodeButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Show recovery code" Click="ShowRecoveryCodeClicked" />
+                        <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Change password" Click="ServerChangePasswordClicked" />
+                        <Button x:Name="ServerSignOutButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Sign out" Click="ServerSignOutClicked" />
+                    </StackPanel>
+                    <TextBlock x:Name="ServerStatus" IsVisible="False" TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />
 
                     <TextBlock Text="About" FontWeight="SemiBold" Margin="0,14,0,0" Foreground="{DynamicResource Muted}" />
                     <TextBlock x:Name="VersionText" FontSize="13" Foreground="{DynamicResource Ink}" />
@@ -633,6 +671,7 @@
                     <TextBlock x:Name="PromptTitle" TextWrapping="Wrap" FontWeight="SemiBold" Foreground="{DynamicResource Ink}" />
                     <TextBox x:Name="PromptBox" MaxLength="40" />
                     <Button Classes="primary" HorizontalAlignment="Stretch" Content="Save" Click="PromptOkClicked" />
+                    <Button x:Name="PromptAltButton" IsVisible="False" HorizontalAlignment="Stretch" Click="PromptAltClicked" />
                     <Button HorizontalAlignment="Stretch" Content="Cancel" Click="PromptCancelClicked" />
                 </StackPanel>
             </Border>
@@ -662,6 +701,19 @@
                         <Button Grid.Column="2" Content="Close" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="NetworkCloseClicked" />
                     </Grid>
                 </Grid>
+            </Border>
+        </Border>
+
+        <!-- A recovery code: shown once when it is made, with a way to copy it, and again on request. -->
+        <Border x:Name="CodePanel" IsVisible="False" Background="#99000000">
+            <Border Background="{DynamicResource Surface}" CornerRadius="16" Margin="20" Padding="16" MaxWidth="440" VerticalAlignment="Center">
+                <StackPanel Spacing="12">
+                    <TextBlock x:Name="CodeText" TextWrapping="Wrap" Foreground="{DynamicResource Ink}" />
+                    <TextBox x:Name="CodeShown" IsReadOnly="True" FontSize="17" FontFamily="monospace" HorizontalContentAlignment="Center" TextAlignment="Center" />
+                    <Button x:Name="CodeCopyButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Copy" Click="CodeCopyClicked" />
+                    <Button x:Name="CodeDoneButton" Classes="primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="CodeDoneClicked" />
+                    <Button x:Name="CodeCancelButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Cancel" Click="CodeCancelClicked" />
+                </StackPanel>
             </Border>
         </Border>
 

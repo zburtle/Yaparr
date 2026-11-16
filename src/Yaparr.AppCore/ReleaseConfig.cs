@@ -20,10 +20,13 @@ public sealed class ReleaseConfig
 
     private sealed record FileModel(string? BackupServer);
 
-    private static readonly Lazy<ReleaseConfig> Shipped = new(() => Load(AppContext.BaseDirectory));
+    private static ReleaseConfig? s_current;
 
-    /// <summary>The config this program was released with.</summary>
-    public static ReleaseConfig Current => Shipped.Value;
+    /// <summary>The config this program was released with: the file beside it, or what the platform gave to <see cref="Use"/> (Android keeps it in the package).</summary>
+    public static ReleaseConfig Current => s_current ??= Load(AppContext.BaseDirectory);
+
+    /// <summary>For a platform where the file cannot sit beside the program: sets what <see cref="Current"/> is.</summary>
+    public static void Use(ReleaseConfig config) => s_current = config;
 
     /// <summary>Reads the file in a folder. A missing, unreadable or unusable file gives <see cref="None"/>, so a damaged release still starts.</summary>
     public static ReleaseConfig Load(string directory)
@@ -32,10 +35,24 @@ public sealed class ReleaseConfig
         {
             var path = Path.Combine(directory, FileName);
             if (!File.Exists(path) || new FileInfo(path).Length > 64 * 1024) return None;
-            var model = JsonSerializer.Deserialize<FileModel>(File.ReadAllText(path), new JsonSerializerOptions(JsonSerializerDefaults.Web) { ReadCommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
+            return Parse(File.ReadAllText(path));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return None;
+        }
+    }
+
+    /// <summary>Reads the text of the file. Anything that is not usable (not JSON, too big, a server that is not https) gives <see cref="None"/>.</summary>
+    public static ReleaseConfig Parse(string? json)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(json) || json.Length > 64 * 1024) return None;
+            var model = JsonSerializer.Deserialize<FileModel>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web) { ReadCommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
             return new ReleaseConfig { BackupServer = BackupServerClient.ParseServerAddress(model?.BackupServer) };
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        catch (JsonException)
         {
             return None;
         }

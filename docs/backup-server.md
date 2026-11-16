@@ -4,13 +4,13 @@ A backup server keeps a **locked** copy of your profile backup, so you can bring
 
 ## Using it
 
-**Settings > Backup > Backup server** on the desktop (Android does not have it yet):
+**Settings > Backup > Backup server**, on the desktop and on Android (the screens are the same; on a phone the sign-in comes back to the app through the phone's browser, so stay with it until the page says you are signed in and then come back to Yaparr):
 
 1. The address is filled in for you: releases of Yaparr are made for **https://cloud.yaparr.com** (see below), and the address of the last server you used is offered instead if you have used another. You can type a different one. Choose **Sign in with your browser**. Your browser opens the server's sign-in page; type your email address and password there (an account is named by its owner's email address, which the person running the server enters when they make it; nothing is ever sent to it). Yaparr never sees them. When you are signed in the browser says so and Yaparr shows "Signed in to … as …".
 2. **Back up now** saves a backup. The first time, Yaparr makes a **recovery code** (like `K7QD-M3XF-9PLR-2WTE-HV8N-C4YB`) and shows it once: save it in a password manager or on paper. After that, backing up needs nothing typed.
 3. **Show recovery code** shows it again on a computer that has it. **Change password** opens the server's page for that. **Sign out** makes the server forget this computer; the backups stay.
 
-**Starting from the sign-up page.** When someone signs up in their browser, the server's "You're in" page has an **Open Yaparr and sign in** button (on a computer; not on a phone, since Android has no backup server yet). It opens Yaparr, which asks "Sign in to the backup server …?" and names the server (and the account it would replace, if this computer is already signed in somewhere). On **Sign in** the app is signed in and opens Settings > Backup, so the password is not typed twice. If Yaparr is not installed or is older than this feature, nothing happens and the page's steps (above) still work. The recovery code is still made the first time you press **Back up now**.
+**Starting from the sign-up page.** When someone signs up in their browser, the server's "You're in" page has an **Open Yaparr and sign in** button (on a computer and on an Android phone; not on an iPhone, which has no app). It opens Yaparr, which asks "Sign in to the backup server …?" and names the server (and the account it would replace, if this computer is already signed in somewhere). On **Sign in** the app is signed in and opens Settings > Backup, so the password is not typed twice. If Yaparr is not installed or is older than this feature, nothing happens and the page's steps (above) still work. The recovery code is still made the first time you press **Back up now**.
 
 **Automatic backups.** Under the buttons, **Back up automatically** (off until you turn it on, which is possible after your first **Back up now**, since that is when your recovery code is made). While Yaparr is running, even in the notification area, it checks every five minutes and backs up:
 

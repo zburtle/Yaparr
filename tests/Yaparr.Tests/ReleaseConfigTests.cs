@@ -36,6 +36,14 @@ public sealed class ReleaseConfigTests : IDisposable
     public void A_missing_or_unusable_file_means_no_default_and_never_stops_the_app(string? json) => Assert.Null(LoadWith(json).BackupServer);
 
     [Fact]
+    public void The_text_of_the_file_can_be_read_without_a_folder_as_the_android_app_does_from_its_package()
+    {
+        Assert.Equal("https://cloud.yaparr.com/", ReleaseConfig.Parse("""{ "backupServer": "https://cloud.yaparr.com" }""").BackupServer?.ToString());
+        foreach (var bad in new[] { null, "", "   ", "not json", "[]", "{}", """{ "backupServer": "http://cloud.yaparr.com" }""", new string('x', 70_000) })
+            Assert.Null(ReleaseConfig.Parse(bad).BackupServer);
+    }
+
+    [Fact]
     public void A_huge_file_is_not_read()
     {
         File.WriteAllText(Path.Combine(_dir, ReleaseConfig.FileName), """{ "backupServer": "https://cloud.yaparr.com", "x": """ + "\"" + new string('a', 100_000) + "\" }");
