@@ -1,4 +1,4 @@
-﻿# Android app
+# Android app
 
 `apps/Yaparr.Android` is the Android app, built with Avalonia. It uses the same library as the desktop app. It opens onto the list of your rooms and direct chats (the one with the newest message first, with a count of what is unread); tap one to read and send text messages. The + button makes a room, joins one from an invite, or opens a chat with a person from their ID. In a room the menu has the people (tap one to write to them), Copy invite and Leave; a room with several text channels shows them as buttons above the messages. The phone's back button goes back from a chat to the list. Rooms are kept in the settings the same way as on the desktop, so a room you join on one of your devices turns up on the others.
 
@@ -101,7 +101,7 @@ A call goes on when you leave the screen: while you are in one, Yaparr runs a fo
 
 - **Who can wake you.** Anyone who has the wake address, which is everyone in your rooms. It lets them ask for a push and do nothing else, and the server limits it to six a minute and 200 a day for each address. Turning push off (or the person leaving) makes the address stop working: the server answers that nobody is there and the others forget it.
 - **What the server and the push app see.** That a wake-up was asked for, and when; never who wrote or what. The push app sees the same, and can be one you run yourself.
-- **Needs** the phone to be signed in to a Yaparr Cloud server (the backup server sign-in) and a UnifiedPush app. Without a push app the settings say so. **Firebase** as a fallback for phones with Google's services and no push app is planned and not built.
+- **Needs** the phone to be signed in to a Yaparr Cloud server (the backup server sign-in) and a UnifiedPush app. Without a push app the settings say so. **Firebase** (Google's push) is the fallback for phones with Google's services and no push app: the settings offer it as the last choice, and use it on their own when there is no push app. It is the one place the app uses Google's code (Firebase Messaging); the server sends it only "wake up", never a message. The app's Firebase settings are in `apps/Yaparr.Android/google-services.json` (not secret); the server needs the Firebase service account key (see the Yaparr.Cloud README). Not tried on a phone yet.
 - **Tried:** the receiver is in the manifest and ignores a broadcast without this app's token; the wake-address sharing, the waking rules and the server calls are covered by tests (`WakeTests`, `PushClientTests`, and the server's own). **Not tried** with a real distributor or a real server yet, and whether Android lets a push start the service on every phone.
 
 ## Notifications and staying connected

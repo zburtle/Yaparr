@@ -66,27 +66,58 @@ internal static class PushManager
         UnifiedPush.Register(context, distributor, state.DeviceId);
     }
 
+    /// <summary>Turns push on through Firebase, for a phone with no push app: asks Firebase for this phone's address and registers it.</summary>
+    public static void EnableFirebase(Context context)
+    {
+        if (!TryServer(out _, out _)) { Say("Sign in to your Yaparr Cloud account first."); return; }
+        lock (Gate)
+        {
+            var old = State;
+            AppHost.Data.SavePush(new PushState { DeviceId = old.DeviceId.Length > 0 ? old.DeviceId : Guid.NewGuid().ToString("N"), Server = old.Server, WakeAddress = old.WakeAddress });
+        }
+        Say("Asking Firebase…");
+        _ = Task.Run(async () =>
+        {
+            var token = await FirebasePush.TokenAsync();
+            if (string.IsNullOrEmpty(token)) { Say("Firebase could not be reached. Is this phone online, and does it have Google services?"); return; }
+            await RegisterAsync(PushRoute.Fcm, token, "");
+        });
+    }
+
+    /// <summary>Firebase gave this phone a new address (it does now and then): the server is told, if push is on through Firebase.</summary>
+    public static void OnNewFirebaseToken(Context context, string token)
+    {
+        if (State.Route != PushRoute.Fcm || string.IsNullOrEmpty(token)) return;
+        _ = Task.Run(() => RegisterAsync(PushRoute.Fcm, token, ""));
+    }
+
     /// <summary>The distributor gave an address: it is registered with the server and the wake address it gives back is told to the rooms.</summary>
     public static void OnNewEndpoint(Context context, string? endpoint)
     {
         if (string.IsNullOrEmpty(endpoint)) return;
-        _ = Task.Run(async () =>
+        _ = Task.Run(() => RegisterAsync(PushRoute.UnifiedPush, endpoint, State.Distributor));
+    }
+
+    private static async Task RegisterAsync(PushRoute route, string endpoint, string distributor)
+    {
+        try
         {
-            try
+            if (!TryServer(out var server, out var token)) { Say("Sign in to your Yaparr Cloud account first."); return; }
+            var current = State;
+            using var client = new PushClient(server, token);
+            var options = await client.OptionsAsync();
+            if (route == PushRoute.Fcm ? !options.Fcm : !options.UnifiedPush)
             {
-                if (!TryServer(out var server, out var token)) { Say("Sign in to your Yaparr Cloud account first."); return; }
-                var current = State;
-                using var client = new PushClient(server, token);
-                var options = await client.OptionsAsync();
-                if (!options.UnifiedPush) { Say("This server does not send push notifications."); return; }
-                var state = await PushSetup.EnsureAsync(client, server, current, PushRoute.UnifiedPush, endpoint, current.Distributor);
-                AppHost.Data.SavePush(state);
-                AppHost.Session?.SetWakeAddress(state.WakeAddress);
-                Say("");
+                Say(route == PushRoute.Fcm ? "This server does not send push notifications through Firebase." : "This server does not send push notifications.");
+                return;
             }
-            catch (BackupServerException ex) { Say(ex.SignedOut ? "Sign in to your Yaparr Cloud account again." : ex.Message); }
-            catch (Exception ex) when (ex is IOException or InvalidOperationException) { Say("Push could not be turned on: " + ex.Message); }
-        });
+            var state = await PushSetup.EnsureAsync(client, server, current, route, endpoint, distributor);
+            AppHost.Data.SavePush(state);
+            AppHost.Session?.SetWakeAddress(state.WakeAddress);
+            Say("");
+        }
+        catch (BackupServerException ex) { Say(ex.SignedOut ? "Sign in to your Yaparr Cloud account again." : ex.Message); }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException) { Say("Push could not be turned on: " + ex.Message); }
     }
 
     /// <summary>The push app dropped the registration (it was removed, or the person signed out of its server): push is off until the person chooses again.</summary>
@@ -105,7 +136,8 @@ internal static class PushManager
     public static void Disable(Context context)
     {
         var state = State;
-        if (state.Distributor.Length > 0 && state.DeviceId.Length > 0) UnifiedPush.Unregister(context, state.Distributor, state.DeviceId);
+        if (state.Route == PushRoute.Fcm) FirebasePush.Forget();
+        else if (state.Distributor.Length > 0 && state.DeviceId.Length > 0) UnifiedPush.Unregister(context, state.Distributor, state.DeviceId);
         AppHost.Data.SavePush(new PushState { DeviceId = state.DeviceId });
         AppHost.Session?.SetWakeAddress(null);
         Say("");
