@@ -148,8 +148,10 @@ public partial class MainWindow
         var button = new Button
         {
             Content = new Image { Source = image, Width = 28, Height = 28, Stretch = Stretch.Uniform },
-            Padding = new Thickness(4),
-            Margin = new Thickness(1),
+            Width = EmojiCell,
+            Height = EmojiCell,
+            Padding = new Thickness(0),
+            Margin = new Thickness(0),
             Background = Brushes.Transparent,
             BorderThickness = new Thickness(0),
             Tag = ":" + name + ":",
