@@ -110,9 +110,21 @@ public class ShareStatsTests
         stats.Answered(pacer.KeySent(1060));
         string line = stats.Figures(pacer, 0).DescribeKeys();
 
-        Assert.Contains("1 key frames (1 made because a viewer asked)", line);
+        Assert.Contains("1 key frames (1 made on request)", line);
         Assert.Contains("key frame 120 KB on average", line);
-        Assert.Contains("requests from viewers 1: 1 answered with a new key frame (after 60 ms on average, 60 ms at most)", line);
+        Assert.Contains("key frame requests 1 (1 from viewers, 0 from this program when sending fell behind): 1 answered with a new key frame (after 60 ms on average, 60 ms at most)", line);
+    }
+
+    [Fact]
+    public void A_request_made_by_this_program_is_counted_apart_from_the_viewers_requests()
+    {
+        var stats = new ShareStats();
+        var pacer = new KeyFramePacer(500);
+        pacer.Request(1000);
+        pacer.RequestOwn(30_000);
+        var figures = stats.Figures(pacer, 0);
+        Assert.Equal((2, 1), (figures.KeyRequests, figures.KeyRequestsByUs));
+        Assert.Contains("key frame requests 2 (1 from viewers, 1 from this program when sending fell behind)", figures.DescribeKeys());
     }
 
     [Fact]
@@ -164,7 +176,7 @@ public class ShareStatsTests
         foreach (var part in new[]
         {
             "call quality: sharing: 59.8 of 60 fps, 5200 kbit/s, H.264 on the NVIDIA graphics card, encoded in this program, picture 1920x1080",
-            "1 key frames (1 made because a viewer asked)", "key frame 150 KB on average", "requests from viewers 1: 1 answered with a new key frame (after 90 ms on average",
+            "1 key frames (1 made on request)", "key frame 150 KB on average", "key frame requests 1 (1 from viewers, 0 from this program when sending fell behind): 1 answered with a new key frame (after 90 ms on average",
             "encoding 5.0 ms per picture on average", "waiting for the capture 11.0 ms on average", "longest wait for a frame 41 ms",
             "3 packets sent again, 0 dropped, 2 watching, 1 of them directly (ab12 direct)", "this program 38% of a core, capture by GStreamer", "memory 410 MB",
             "garbage collections 12/3/1 (paused 5 ms; last background full collection paused 3 ms)", "capture restarted 1x", "graphics card: card 40% busy, video encoder 12% busy",

@@ -14,7 +14,7 @@ public sealed class KeyFramePacer
     private long _lastKeyAt = long.MinValue / 2;
     private long _pendingSince;          // when the oldest unanswered request arrived (0: none)
     private bool _forcing, _heldBackCounted;
-    private long _requested, _forced, _deferred, _satisfied;
+    private long _requested, _requestedByUs, _forced, _deferred, _satisfied;
 
     public KeyFramePacer(long minGapMs = 500) => _minGapMs = minGapMs;
 
@@ -25,6 +25,16 @@ public sealed class KeyFramePacer
         Interlocked.Increment(ref _requested);
         Interlocked.CompareExchange(ref _pendingSince, Math.Max(1, nowMs), 0);
         Volatile.Write(ref _wanted, 1);
+    }
+
+    /// <summary>
+    /// This program needs a key frame itself: the send queue fell too far behind and was thrown away (see <see cref="FrameSender"/>). It is answered like a viewer's request,
+    /// and counted with them, but also on its own, so that a log does not say a viewer asked when nobody was watching.
+    /// </summary>
+    public void RequestOwn(long nowMs = -1)
+    {
+        Interlocked.Increment(ref _requestedByUs);
+        Request(nowMs);
     }
 
     /// <summary>Whether the next picture should be made a key frame, at <paramref name="nowMs"/> (a millisecond clock).</summary>
@@ -59,10 +69,13 @@ public sealed class KeyFramePacer
         return (waiting || forced) && since > 0 ? Math.Max(0, nowMs - since) : -1;
     }
 
-    /// <summary>How many times a viewer asked.</summary>
+    /// <summary>How many times a key frame was asked for: by a viewer, or by this program (<see cref="RequestedByUs"/>).</summary>
     public long Requested => Interlocked.Read(ref _requested);
 
-    /// <summary>How many key frames were forced because a viewer asked.</summary>
+    /// <summary>How many of the requests were this program's own, after sending fell behind.</summary>
+    public long RequestedByUs => Interlocked.Read(ref _requestedByUs);
+
+    /// <summary>How many key frames were forced because one was asked for.</summary>
     public long Forced => Interlocked.Read(ref _forced);
 
     /// <summary>How many requests came too soon after a key frame and had to wait.</summary>

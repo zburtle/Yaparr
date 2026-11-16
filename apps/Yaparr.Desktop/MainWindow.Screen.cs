@@ -159,7 +159,7 @@ public partial class MainWindow
                 lowStream.StartedChanged += started => _log.Write(started
                     ? "screen sharing: a viewer's connection could not keep up, so a lower-quality stream was started for it"
                     : "screen sharing: the lower-quality stream was stopped (nobody needed it for a minute)");
-            sharer.KeyFrameAnswered += (ms, bytes) => _log.Write($"screen sharing: made a key frame {ms} ms after a viewer asked for one ({bytes / 1024} KB)");
+            sharer.KeyFrameAnswered += (ms, bytes) => _log.Write($"screen sharing: made a key frame {ms} ms after one was asked for ({bytes / 1024} KB)");
             sharer.Ended += ex => UI(() =>
             {
                 if (_sharer != sharer) return;
