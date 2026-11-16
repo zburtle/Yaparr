@@ -47,6 +47,26 @@ public class ConnectionService : Service
         else if (s_running != null) context.StopService(new Intent(context, typeof(ConnectionService)));
     }
 
+    /// <summary>
+    /// Starts the service because a push arrived, which Android lets a push from a distributor (or Firebase) do from the background. False when Android did not
+    /// allow it (the caller then says so with a notification instead).
+    /// </summary>
+    internal static bool StartForWake(Context context)
+    {
+        if (!OperatingSystem.IsAndroidVersionAtLeast(26)) return false;
+        try
+        {
+            if (s_running is { } running) { running.Promote(); return true; }
+            context.StartForegroundService(new Intent(context, typeof(ConnectionService)));
+            return true;
+        }
+        catch (Exception ex) when (ex is Java.Lang.IllegalStateException or Java.Lang.SecurityException || ex.GetType().Name == "ForegroundServiceStartNotAllowedException")
+        {
+            Android.Util.Log.Warn("Yaparr", "a push could not start the service: " + ex.Message);
+            return false;
+        }
+    }
+
     public override IBinder? OnBind(Intent? intent) => null;
 
     public override StartCommandResult OnStartCommand(Intent? intent, StartCommandFlags flags, int startId)

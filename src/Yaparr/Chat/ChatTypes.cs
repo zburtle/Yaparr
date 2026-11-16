@@ -94,6 +94,9 @@ internal sealed class Wire
     /// <summary>Whether the sender's connection is good enough to relay for the other members of a room. Absent from older versions.</summary>
     public bool? Rly { get; set; }
 
+    /// <summary>Where to ask for the sender's phone to be woken (a wake address), in a hello or when it changes; empty says there is none. Absent from older versions.</summary>
+    public string? Wake { get; set; }
+
     /// <summary>Settings passed between a person's own devices.</summary>
     public AccountEntry[]? Entries { get; set; }
 

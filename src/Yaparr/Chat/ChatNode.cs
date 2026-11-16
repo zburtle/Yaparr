@@ -174,6 +174,18 @@ public sealed class ChatNodeOptions
     /// <summary>File where recently seen room members are remembered, so a restart can dial them directly. Null disables it.</summary>
     public string? PeerCachePath { get; init; }
 
+    /// <summary>File where the wake addresses of people in our rooms are kept (see <see cref="WakeAddress"/>). Null keeps them only until the program ends.</summary>
+    public string? WakePeersPath { get; init; }
+
+    /// <summary>
+    /// Asks for someone's phone to be woken at a wake address, and says what came of it. Null (the default) never asks. The program decides how: Yaparr's apps
+    /// send the request to the push service named in the address.
+    /// </summary>
+    public Func<string, Task<WakeResult>>? WakePeer { get; init; }
+
+    /// <summary>The least time between two wake-ups asked of the same address (3 minutes).</summary>
+    public TimeSpan WakeCooldown { get; init; } = TimeSpan.FromMinutes(3);
+
     /// <summary>Where the learned clock differences between people are kept, so history stays in order after a restart.</summary>
     public string? ClockOffsetsPath { get; init; }
 
@@ -270,6 +282,8 @@ public sealed partial class ChatNode : IDisposable
             }
         }
         public string? Name { get; set; }
+        /// <summary>Where this person can be woken, when they said (a wake address).</summary>
+        public volatile string? WakeUrl;
         public volatile int Degree;
         /// <summary>Whether this peer relays for others: null until it says (older versions never do).</summary>
         private volatile int _canRelay;
@@ -367,6 +381,7 @@ public sealed partial class ChatNode : IDisposable
     {
         _options = options ?? new ChatNodeOptions();
         _peerCache = new PeerCache(_options.PeerCachePath);
+        _wakeBook = new WakeBook(_options.WakePeersPath);
         _clocks = new ClockOffsets(_options.ClockOffsetsPath);
         _blobs = new BlobStore(_options.AttachmentDirectory, _options.HistoryCipher);
         _floodBans = new FloodBans(_options.Limits);
@@ -614,6 +629,7 @@ public sealed partial class ChatNode : IDisposable
         if (_options.OwnsHistoryStore && _options.HistoryStore is IDisposable store) store.Dispose();
         System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged -= OnAddressChanged;
         _peerCache.Save();
+        _wakeBook.Save();
         // Who has been in each room is written when it changes and every so often; this catches the last few.
         foreach (var room in _rooms.Values.ToList()) MaintainRoster(room);
         foreach (var room in _rooms.Values.ToList()) LeaveRoomCore(room);
@@ -792,6 +808,7 @@ public sealed partial class ChatNode : IDisposable
         foreach (var member in members)
             Send(member.Connection, new Wire { Type = Wire.Message, Room = RefTo(room, member), Msgs = new[] { message } });
         PublishDelivery(outgoing);
+        WakeAbsentInRoom(room);
         return message.Id;
     }
 
@@ -1030,6 +1047,7 @@ public sealed partial class ChatNode : IDisposable
                     }
                 }
                 _peerCache.Save();
+                _wakeBook.Save();
                 long cutoff = now - 600_000;
                 foreach (var kv in _seenDirect.Where(kv => kv.Value < cutoff).ToList()) _seenDirect.TryRemove(kv.Key, out _);
                 _floodBans.Forget(now);
@@ -1367,6 +1385,7 @@ public sealed partial class ChatNode : IDisposable
         NoteMember(room, peer.Id, peer.Name);
         LogPeerEvent(peer.Id, $"{peer.Id.Short} entered room '{room.Name}'");
         if (!peer.Connection.IsRelayed) _peerCache.Remember(room.Key, peer.Id, peer.Connection.RemoteEndPoint);
+        NoteWakeAddress(peer, room);
 
         var others = room.MemberStates.Values.Where(m => m.Id != peer.Id && !m.Connection.IsRelayed).ToList();
         if (_options.TargetConnections > 0)
@@ -1485,6 +1504,7 @@ public sealed partial class ChatNode : IDisposable
         if (devices.Count == 0) QueueDirect(outgoing, recipient);
         foreach (var device in devices) Send(device.Connection, wire);
         PublishDelivery(outgoing);
+        if (devices.Count == 0) WakeAbsentDirect(recipient);
         RecordDirect(new DirectRecord(wire.Id!, recipient.Value, GetPeerInfo(peer)?.DisplayName ?? DirectNameOf(peer) ?? peer.Short, true, wire.Ts, text,
             proof.Pub, proof.Acct, proof.Cert, proof.Sig, wire.Ts), mirror: true);
         return wire.Id!;
@@ -1505,7 +1525,7 @@ public sealed partial class ChatNode : IDisposable
         CountConnectionMade(conn, previous?.Connection);
         if (_candidates.TryGetValue(conn.RemoteEndPoint.ToString(), out var dialed)) { dialed.Failures = 0; dialed.NextDial = 0; }
         // The hello must be the first thing on the connection, so send it before anyone can find the state and write to it.
-        Send(conn, new Wire { Type = Wire.Hello, Name = DisplayName, Deg = _peers.Count + (isNew ? 1 : 0), Rly = IsRelayCapable, Rooms = _rooms.Values.Select(r => RefTo(r, state)).ToArray() });
+        Send(conn, new Wire { Type = Wire.Hello, Name = DisplayName, Deg = _peers.Count + (isNew ? 1 : 0), Rly = IsRelayCapable, Wake = _wakeAddress, Rooms = _rooms.Values.Select(r => RefTo(r, state)).ToArray() });
         _peers[state.Id] = state;
         CloseIfSilent(state);
         foreach (var room in _rooms.Values)
@@ -1589,6 +1609,7 @@ public sealed partial class ChatNode : IDisposable
                 peer.SetRooms((wire.Rooms ?? Array.Empty<string>()).Where(r => r.Length <= 128).Take(256));
                 peer.Degree = wire.Deg;
                 peer.CanRelay = wire.Rly;
+                peer.WakeUrl = CleanWake(wire.Wake);
                 LogPeerEvent(peer.Id, $"hello from {peer.Id.Short} ({peer.Name}): declares {wire.Rooms?.Length ?? 0} room(s); we are in {_rooms.Count}");
                 if (first && !EnforceCap(peer)) break;
                 if (first) PeerConnected?.Invoke(peer.Info);
@@ -1637,6 +1658,10 @@ public sealed partial class ChatNode : IDisposable
                 // A member that can now relay may be the way to someone we could not reach.
                 foreach (var target in _introducedVia.Where(kv => kv.Value.ContainsKey(peer.Id)).Select(kv => kv.Key).ToList())
                     if (wire.Rly == true && WantsPeerRelay(target)) ScheduleRelayFallback(target);
+                break;
+
+            case Wire.Caps when wire.Wake != null:
+                OnWakeAddress(peer, wire.Wake);
                 break;
 
             case Wire.Rename when wire.Name != null:

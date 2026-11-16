@@ -197,6 +197,13 @@
                     <Button x:Name="BatteryButton" HorizontalAlignment="Stretch" Content="Let Yaparr run in the background" Click="BatteryClicked" />
                     <TextBlock x:Name="NotificationNote" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
 
+                    <TextBlock Text="Push notifications" FontWeight="SemiBold" Margin="0,14,0,0" Foreground="{DynamicResource Muted}" />
+                    <TextBlock Text="Wakes this phone when someone writes while Yaparr is closed, without keeping it connected all the time. It needs a push app such as ntfy (UnifiedPush) and your Yaparr Cloud account. The push carries nothing: no names and no words." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
+                    <TextBlock x:Name="PushState" TextWrapping="Wrap" FontSize="13" />
+                    <ComboBox x:Name="PushDistributorBox" HorizontalAlignment="Stretch" IsVisible="False" />
+                    <Button x:Name="PushOnButton" HorizontalAlignment="Stretch" Content="Turn on push notifications" Click="PushOnClicked" />
+                    <Button x:Name="PushOffButton" HorizontalAlignment="Stretch" Content="Turn off push notifications" Click="PushOffClicked" />
+
                     <TextBlock Text="Link previews" FontWeight="SemiBold" Margin="0,14,0,0" Foreground="{DynamicResource Muted}" />
                     <CheckBox x:Name="LinkPreviewCheck" Content="Show a preview under the links I send" Click="LinkPreviewChanged" />
                     <TextBlock Text="When you send a web link, this phone reads the page's title, description and picture and sends them with the message. The people who read it never contact the site, so it does not see their address, but it does see yours. Turn this off to send only the link." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />

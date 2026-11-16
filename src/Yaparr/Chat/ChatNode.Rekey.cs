@@ -321,5 +321,5 @@ public sealed partial class ChatNode
     }
 
     private void SendHelloTo(PeerState state) =>
-        Send(state.Connection, new Wire { Type = Wire.Hello, Name = DisplayName, Deg = _peers.Count, Rly = IsRelayCapable, Rooms = _rooms.Values.Select(r => RefTo(r, state)).ToArray() });
+        Send(state.Connection, new Wire { Type = Wire.Hello, Name = DisplayName, Deg = _peers.Count, Rly = IsRelayCapable, Wake = _wakeAddress, Rooms = _rooms.Values.Select(r => RefTo(r, state)).ToArray() });
 }

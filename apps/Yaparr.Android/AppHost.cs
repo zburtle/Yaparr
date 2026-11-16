@@ -60,7 +60,13 @@ internal static class AppHost
     public static bool CanStartWithoutScreen => Data.HasIdentity && !string.IsNullOrWhiteSpace(Settings.DisplayName);
 
     /// <summary>Whether the connection is wanted when the screen is closed: the person asked for it, or a call is going on.</summary>
-    public static bool KeepRunning => Settings.BackgroundConnection || s_session?.VoiceChat != null;
+    public static bool KeepRunning => Settings.BackgroundConnection || s_session?.VoiceChat != null || Environment.TickCount64 < WakeUntil;
+
+    /// <summary>
+    /// Until when the connection is wanted because a push woke the phone (a <see cref="Environment.TickCount64"/> value): a short while, to connect and be sent what
+    /// was missed, even though "Stay connected in the background" is off. See <see cref="PushManager.OnWake"/>.
+    /// </summary>
+    public static long WakeUntil { get; set; }
 
     /// <summary>Ends the session (and its connections). The next <see cref="GetOrCreateSession"/> makes a new one.</summary>
     public static void Shutdown()
