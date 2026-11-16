@@ -98,6 +98,14 @@ public sealed partial class Session : IDisposable
 
     private readonly Queue<string> _log = new();
 
+    /// <summary>Puts a line in the log that goes with a problem report (and nothing else): how many devices this one is connected to, and how many by way of a relay. Used after a push, to see whether the wake-up led to a connection.</summary>
+    public void LogConnections(string when)
+    {
+        if (_node is not { } node) { Log(when + ": not started"); return; }
+        var peers = node.ConnectedPeers;
+        Log($"{when}: connected to {peers.Count}, {peers.Count(p => p.IsRelayed)} of them relayed");
+    }
+
     private void Log(string line)
     {
         lock (_log)

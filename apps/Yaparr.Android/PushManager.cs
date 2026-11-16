@@ -155,6 +155,11 @@ internal static class PushManager
     /// <summary>A push arrived: the connection is brought up for a while so the people who wrote can send what they have, and it notifies as messages come in.</summary>
     public static void OnWake(Context context)
     {
+        // Kept in the log that goes with a problem report: that a push arrived, and whether it led to a connection a moment later and when the window ended.
+        AppHost.Session?.LogConnections("a push arrived");
+        Android.Util.Log.Info("Yaparr", "a push arrived");
+        foreach (var delay in new[] { TimeSpan.FromSeconds(15), WakeWindow })
+            _ = Task.Delay(delay).ContinueWith(_ => AppHost.Session?.LogConnections($"{(int)delay.TotalSeconds} s after a push"));
         AppHost.WakeUntil = Environment.TickCount64 + (long)WakeWindow.TotalMilliseconds;
         bool started = OperatingSystem.IsAndroidVersionAtLeast(26) && AppHost.CanStartWithoutScreen && ConnectionService.StartForWake(context);
         if (!started && !AppHost.ScreenOpen && OperatingSystem.IsAndroidVersionAtLeast(26)) Notifier.Wake(context);
