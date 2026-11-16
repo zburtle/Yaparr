@@ -103,6 +103,42 @@ public class EncoderAllCodecsTests(Xunit.Abstractions.ITestOutputHelper output)
     }
 
     [Fact]
+    public void H265_is_probed_on_each_card_and_the_decoder_is_looked_for()
+    {
+        if (!FfmpegLibraries.IsAvailable || !ScreenFeatures.H265) return;
+        bool nvenc = InProcessEncoder.Probe(ScreenCodec.H265, HardwareEncoder.Nvenc, out var why);
+        output.WriteLine($"H.265 on NVIDIA: {(nvenc ? "yes" : why)}");
+        if (!nvenc) Assert.NotEmpty(why);
+        var report = H265Support.Check();
+        output.WriteLine("H.265 check: " + report.Describe());
+        Assert.Equal(GraphicsAdapters.Installed(GraphicsAdapters.Vendors).Count, report.Encoders.Count + report.Refused.Count);
+        Assert.Equal(report.CanDecode, InProcessDecoder.IsAvailable(ScreenCodec.H265));
+    }
+
+    [Fact]
+    public void An_H265_picture_from_a_card_is_recognised_sized_and_decoded()
+    {
+        if (!FfmpegLibraries.IsAvailable || !ScreenFeatures.H265 || !InProcessDecoder.IsAvailable(ScreenCodec.H265)) return;
+        var card = HardwareEncoders.InOrder.FirstOrDefault(c => InProcessEncoder.Probe(ScreenCodec.H265, c, out _));
+        if (!HardwareEncoders.InOrder.Any(c => InProcessEncoder.Probe(ScreenCodec.H265, c, out _))) return;   // no card here does it
+        using var encoder = new InProcessEncoder(640, 360, new ScreenOptions { Fps = 10, Kbps = 500, KeyFrameSeconds = 1 }, null, ScreenCodec.H265, card);
+        var picture = new byte[encoder.PictureBytes];
+        Array.Fill(picture, (byte)90, 0, 640 * 360);
+        Array.Fill(picture, (byte)128, 640 * 360, picture.Length - 640 * 360);
+        var frames = new List<(byte[] Data, bool Key)>();
+        for (int n = 0; n < 4; n++) encoder.Encode(picture, n == 0, (frame, isKey) => frames.Add((frame.ToArray(), isKey)));
+        Assert.NotEmpty(frames);
+        var first = frames[0].Data;
+        Assert.True(ScreenCodecs.TryGetKeyFrame(first, out var codec, out int w, out int h));
+        Assert.Equal((ScreenCodec.H265, 640, 360), (codec, w, h));
+        using var decoder = new InProcessDecoder(ScreenCodec.H265);
+        int pictures = 0;
+        foreach (var (data, _) in frames) decoder.Decode(data, 0, 0, (nv12, pw, ph) => { pictures++; Assert.Equal((640, 360), (pw, ph)); });
+        Assert.True(pictures > 0, decoder.LastError);
+        output.WriteLine($"H.265 on {card}: {frames.Count} frames, {pictures} pictures decoded");
+    }
+
+    [Fact]
     public async Task A_real_share_in_VP8_is_captured_and_encoded_in_this_program()
     {
         if (!OperatingSystem.IsWindows() || !FfmpegLibraries.IsAvailable) return;
