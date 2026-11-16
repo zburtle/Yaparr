@@ -242,6 +242,7 @@ public sealed class AppData
     public void SaveSettings(AppSettings settings) => SecretStore.WriteAllText(SettingsPath, JsonSerializer.Serialize(settings, Json));
 
     private string BackupServerPath => Path.Combine(Directory, "backup-server.json");
+    private string PushPath => Path.Combine(Directory, "push.json");
 
     /// <summary>
     /// A fingerprint of what cannot be lost: the identity key, the key that locks the history, the account (its rooms, blocks and devices), the VPN configuration, the
@@ -287,6 +288,19 @@ public sealed class AppData
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
         }
         return false;
+    }
+
+    /// <summary>How this device is woken for push notifications, and the wake address it gave out. Sealed like the other files with secrets, and not part of a backup.</summary>
+    public PushState LoadPush()
+    {
+        try { return JsonSerializer.Deserialize<PushState>(SecretStore.ReadAllText(PushPath)) ?? new(); }
+        catch (Exception ex) when (ex is IOException or JsonException or System.Security.Cryptography.CryptographicException) { return new(); }
+    }
+
+    public void SavePush(PushState state)
+    {
+        SecretStore.WriteAllText(PushPath, JsonSerializer.Serialize(state, Json));
+        MakePrivate(PushPath);
     }
 
     /// <summary>What this device remembers about its backup server. It is sealed like the other files with secrets, and is not part of a backup.</summary>

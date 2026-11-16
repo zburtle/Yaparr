@@ -108,6 +108,27 @@ internal static class Notifier
         foreach (var id in ids) manager?.Cancel(id);
     }
 
+    /// <summary>
+    /// A push woke the phone but Android did not let the app connect from the background: all that can be said is that somebody wrote. It says nothing of who or
+    /// what, and a tap opens the app, which connects and gets what was missed.
+    /// </summary>
+    public static void Wake(Context context)
+    {
+        if (!Allowed(context) || Manager(context) is not { } manager) return;
+        const int id = 4998;
+        var open = PendingIntent.GetActivity(context, id, new Intent(context, typeof(MainActivity)).SetFlags(ActivityFlags.SingleTop), PendingIntentFlags.Immutable)!;
+        var icon = Icon.CreateWithResource(context, context.ApplicationInfo!.Icon)!;
+        manager.Notify(id, new Notification.Builder(context, ChannelId)
+            .SetSmallIcon(icon)
+            .SetContentTitle("Yaparr")
+            .SetContentText("Someone is trying to reach you. Tap to open Yaparr.")
+            .SetCategory(Notification.CategoryMessage)
+            .SetAutoCancel(true)
+            .SetContentIntent(open)
+            .SetVisibility(NotificationVisibility.Public)
+            .Build()!);
+    }
+
     /// <summary>A notification that is only there to show that they work: from the settings, so that the permission and the lock screen can be tried.</summary>
     public static bool Test(Context context)
     {

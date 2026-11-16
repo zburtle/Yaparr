@@ -166,10 +166,14 @@ public sealed partial class Session : IDisposable
             RolesDirectory = Path.Combine(_data.Directory, "roles"),
             EnableLocalDiscovery = traversal.LocalDiscovery,
             PeerCachePath = Path.Combine(_data.Directory, "peers.json"),
+            WakePeersPath = Path.Combine(_data.Directory, "wake-peers.json"),
+            WakePeer = address => PushClient.WakeAsync(address),
             ClockOffsetsPath = Path.Combine(_data.Directory, "clocks.json"),
             Dht = new Yaparr.Discovery.Dht.DhtOptions { NodeCachePath = Path.Combine(_data.Directory, "dht-nodes.txt") },
             Log = Log,
         });
+        // Where the people in the rooms can ask for this phone to be woken, when push is on (see PushManager).
+        if (_data.LoadPush() is { Registered: true } push) node.WakeAddressOfMine = push.WakeAddress;
         node.AttachmentChanged += update => UI(() => OnAttachmentChanged(update));
         EmojiPictures.Reader = hash => node.ReadAttachment(hash);
         node.BlockChanged += (id, blocked) => UI(() => OnBlockChanged(id, blocked));
@@ -993,6 +997,13 @@ public sealed partial class Session : IDisposable
     }
 
     /// <summary>Writes what has been read and the channel on show to the settings.</summary>
+    /// <summary>Tells the people in the rooms where to ask for this phone to be woken (null: nowhere, push is off).</summary>
+    public void SetWakeAddress(string? address)
+    {
+        try { _node!.WakeAddressOfMine = address; }
+        catch (ArgumentException) { /* an address that is not a wake address is not given out */ }
+    }
+
     public void Save()
     {
         if (!_marks.Dirty && !_channelChoiceDirty) return;

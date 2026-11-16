@@ -434,6 +434,7 @@ public partial class MainView : UserControl
         bool canService = OperatingSystem.IsAndroidVersionAtLeast(26);
         BackgroundCheck.IsVisible = BackgroundNote.IsVisible = BatteryButton.IsVisible = canService;
         NotificationNote.Text = "";
+        ShowPush();
         VersionText.Text = "Yaparr " + AppVersion();
         UpdateCheck.IsChecked = _settings.CheckForUpdates;
         ShowUpdateState();
