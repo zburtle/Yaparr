@@ -131,14 +131,24 @@ public partial class MainWindow
         EmojiSearch.Focus();
     }
 
-    private Button EmojiButton(string emoji, string? name, double size)
+    // Every emoji, in the quick row, the grid and the category row alike, sits in a square of the same size, nine to a row, so they line up in columns.
+    private const double EmojiCell = 38;
+    private const double EmojiSize = 22;
+
+    private Button EmojiButton(string emoji, string? name, double size = EmojiSize)
     {
         var button = new Button
         {
-            Content = new TextBlock { Text = emoji, FontFamily = EmojiFont, FontSize = size },
-            Padding = new Thickness(5, 3),
-            Margin = new Thickness(1),
+            Content = new TextBlock { Text = emoji, FontFamily = EmojiFont, FontSize = size, LineHeight = size * 1.5, TextAlignment = TextAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
+            ClipToBounds = false,
+            Width = EmojiCell,
+            Height = EmojiCell,
+            Padding = new Thickness(0),
+            Margin = new Thickness(0),
             Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
             Tag = emoji,
         };
         if (name != null) ToolTip.SetTip(button, name);
@@ -146,20 +156,37 @@ public partial class MainWindow
         return button;
     }
 
+    // The grid scrolls, and a height that is not a whole number of rows shows the last row cut in half: so the height is a whole number of rows.
+    private void SnapEmojiScroll()
+    {
+        const double room = 230;
+        if (EmojiGrid.Children.Count == 0 || EmojiGrid.Children[0].Bounds.Height <= 0) return;
+        double row = EmojiGrid.Children[0].Bounds.Height;
+        double height = Math.Max(row, Math.Floor(room / row) * row);
+        if (Math.Abs(EmojiScroll.MaxHeight - height) > 0.5) EmojiScroll.MaxHeight = height;
+    }
+
     private void WireEmojiPicker()
     {
         _emojiWired = true;
+        EmojiGrid.LayoutUpdated += (_, _) => SnapEmojiScroll();
         foreach (var emoji in EmojiData.Quick)
-            QuickRow.Children.Add(EmojiButton(emoji, EmojiData.Find(emoji)?.Name, 22));
+            QuickRow.Children.Add(EmojiButton(emoji, EmojiData.Find(emoji)?.Name));
 
         for (int i = 0; i < EmojiData.Groups.Count; i++)
         {
             int index = i;
             var tab = new Button
             {
-                Content = new TextBlock { Text = GroupIcon(EmojiData.Groups[i].Name), FontFamily = EmojiFont, FontSize = 16 },
-                Padding = new Thickness(6, 2),
+                Content = new TextBlock { Text = GroupIcon(EmojiData.Groups[i].Name), FontFamily = EmojiFont, FontSize = 18, LineHeight = 27, TextAlignment = TextAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
+                ClipToBounds = false,
+                Width = EmojiCell,
+                Height = EmojiCell,
+                Padding = new Thickness(0),
                 Background = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                HorizontalContentAlignment = HorizontalAlignment.Center,
+                VerticalContentAlignment = VerticalAlignment.Center,
             };
             ToolTip.SetTip(tab, EmojiData.Groups[i].Name);
             tab.Click += (_, _) => { EmojiSearch.Text = ""; ShowEmojiGroup(index); };
@@ -212,7 +239,7 @@ public partial class MainWindow
     private void FillEmojiGrid(IReadOnlyList<EmojiEntry> entries)
     {
         EmojiGrid.Children.Clear();
-        foreach (var entry in entries) EmojiGrid.Children.Add(EmojiButton(entry.Emoji, entry.Name, 20));
+        foreach (var entry in entries) EmojiGrid.Children.Add(EmojiButton(entry.Emoji, entry.Name));
     }
 
     private void EmojiPicked_Click(object? sender, RoutedEventArgs e)

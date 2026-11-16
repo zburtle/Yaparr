@@ -732,11 +732,11 @@
                         </DockPanel>
                     </Border>
                     <Popup x:Name="ReactionPopup" Placement="Pointer" IsLightDismissEnabled="True">
-                        <Border Padding="8" CornerRadius="12" Width="340" Background="{DynamicResource AppBg}" BorderBrush="{DynamicResource Line}" BorderThickness="1">
+                        <Border Padding="8" CornerRadius="12" Width="380" Background="{DynamicResource AppBg}" BorderBrush="{DynamicResource Line}" BorderThickness="1">
                             <StackPanel Spacing="6">
-                                <WrapPanel x:Name="QuickRow" HorizontalAlignment="Center" />
+                                <WrapPanel x:Name="QuickRow" Width="342" HorizontalAlignment="Left" />
                                 <TextBox x:Name="EmojiSearch" Watermark="Search emoji" MaxLength="40" />
-                                <StackPanel x:Name="EmojiTabs" Orientation="Horizontal" HorizontalAlignment="Center" />
+                                <StackPanel x:Name="EmojiTabs" Orientation="Horizontal" HorizontalAlignment="Left" />
                                 <!-- from the message box only: your own emoji, and the room's -->
                                 <StackPanel x:Name="CustomTabs" Orientation="Horizontal" Spacing="4" IsVisible="False">
                                     <Button x:Name="MyEmojiTab" Content="My emoji" Padding="10,3" CornerRadius="14" Click="MyEmoji_Click" />
@@ -744,8 +744,8 @@
                                     <Button x:Name="AddEmojiButton" Content="Add…" Padding="10,3" CornerRadius="14" IsVisible="False" Click="AddEmoji_Click" ToolTip.Tip="Make an emoji from a small picture" />
                                 </StackPanel>
                                 <TextBlock x:Name="EmojiTitle" Classes="muted small" Margin="4,0,0,0" />
-                                <ScrollViewer MaxHeight="230" HorizontalScrollBarVisibility="Disabled">
-                                    <WrapPanel x:Name="EmojiGrid" />
+                                <ScrollViewer x:Name="EmojiScroll" MaxHeight="230" HorizontalScrollBarVisibility="Disabled">
+                                    <WrapPanel x:Name="EmojiGrid" HorizontalAlignment="Left" />
                                 </ScrollViewer>
                             </StackPanel>
                         </Border>
