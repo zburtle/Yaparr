@@ -106,7 +106,7 @@ public sealed class ShareStats
         Interlocked.Read(ref _keyMaxEver), Interlocked.Read(ref _deltaMaxEver), Interlocked.Read(ref _encodeMaxEver), Interlocked.Read(ref _readMaxEver), Interlocked.Read(ref _answerMaxEver),
         Interlocked.Read(ref _repeated),
         Interlocked.Read(ref _sends), Interlocked.Read(ref _sendTicks), Interlocked.Read(ref _queueTicks), Interlocked.Read(ref _queueLate), Interlocked.Read(ref _dropped),
-        Interlocked.Read(ref _sendMaxEver), Interlocked.Read(ref _queueMaxEver));
+        Interlocked.Read(ref _sendMaxEver), Interlocked.Read(ref _queueMaxEver), pacer.RequestedByUs);
 
     /// <summary>The largest values since this reader (0 or 1) last asked, and starts again from nothing.</summary>
     public ShareMaxima TakeMaxima(int reader) => new(
@@ -129,7 +129,7 @@ public readonly record struct ShareFigures(
     long Keys, long KeyBytes, long Deltas, long DeltaBytes, long Encodes, long EncodeTicks, long OverBudget, long Reads, long ReadTicks, long Bunched, long Stalled,
     long KeyRequests, long KeysForced, long KeyRequestsHeldBack, long KeyRequestsMetByRegularKey, long Answers, long AnswerMs, int Restarts,
     long KeyMaxEver, long DeltaMaxEver, long EncodeMaxTicksEver, long WaitMaxTicksEver, long AnswerMaxMsEver, long Repeated = 0,
-    long Sends = 0, long SendTicks = 0, long QueueTicks = 0, long QueueLate = 0, long Dropped = 0, long SendMaxTicksEver = 0, long QueueMaxTicksEver = 0)
+    long Sends = 0, long SendTicks = 0, long QueueTicks = 0, long QueueLate = 0, long Dropped = 0, long SendMaxTicksEver = 0, long QueueMaxTicksEver = 0, long KeyRequestsByUs = 0)
 {
     /// <summary>What happened between <paramref name="before"/> and now (the largest values are not totals, so they are left as they are).</summary>
     public ShareFigures Since(ShareFigures before) => this with
@@ -141,7 +141,7 @@ public readonly record struct ShareFigures(
         KeyRequestsMetByRegularKey = KeyRequestsMetByRegularKey - before.KeyRequestsMetByRegularKey, Answers = Answers - before.Answers,
         AnswerMs = AnswerMs - before.AnswerMs, Restarts = Restarts - before.Restarts, Repeated = Repeated - before.Repeated,
         Sends = Sends - before.Sends, SendTicks = SendTicks - before.SendTicks, QueueTicks = QueueTicks - before.QueueTicks, QueueLate = QueueLate - before.QueueLate,
-        Dropped = Dropped - before.Dropped,
+        Dropped = Dropped - before.Dropped, KeyRequestsByUs = KeyRequestsByUs - before.KeyRequestsByUs,
     };
 
     private static double Kb(double bytes) => bytes / 1024.0;
@@ -160,8 +160,8 @@ public readonly record struct ShareFigures(
     {
         double keyMax = Kb(maxima?.KeyBytes ?? KeyMaxEver), deltaMax = Kb(maxima?.DeltaBytes ?? DeltaMaxEver);
         double answerMax = maxima?.AnswerMs ?? AnswerMaxMsEver;
-        return $"{Keys} key frames ({KeysForced} made because a viewer asked), key frame {KeyAverageKb:0} KB on average and {keyMax:0} KB at most, other frames {DeltaAverageKb:0.0} KB and {deltaMax:0} KB at most"
-               + $"; requests from viewers {KeyRequests}: {KeysForced} answered with a new key frame{(Answers > 0 ? $" (after {AnswerAverageMs:0} ms on average, {answerMax:0} ms at most)" : "")}, {KeyRequestsHeldBack} held back for a moment, {KeyRequestsMetByRegularKey} met by a regular key frame";
+        return $"{Keys} key frames ({KeysForced} made on request), key frame {KeyAverageKb:0} KB on average and {keyMax:0} KB at most, other frames {DeltaAverageKb:0.0} KB and {deltaMax:0} KB at most"
+               + $"; key frame requests {KeyRequests} ({KeyRequests - KeyRequestsByUs} from viewers, {KeyRequestsByUs} from this program when sending fell behind): {KeysForced} answered with a new key frame{(Answers > 0 ? $" (after {AnswerAverageMs:0} ms on average, {answerMax:0} ms at most)" : "")}, {KeyRequestsHeldBack} held back for a moment, {KeyRequestsMetByRegularKey} met by a regular key frame";
     }
 
     /// <summary>One line about the encoder in this program; empty when none was used.</summary>

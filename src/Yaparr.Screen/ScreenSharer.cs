@@ -249,7 +249,7 @@ public sealed partial class ScreenSharer : IDisposable
         var seconds = (DateTime.UtcNow - _shareStartedAt).TotalSeconds;
         text.AppendLine($"  Sharing: {(_options.Portal != null ? (_options.Portal.IsWindow ? "a window, chosen in the desktop's picker" : "a screen, chosen in the desktop's picker") : _options.WindowHandle != null ? "a window" : "a monitor")}, {_options.Fps} fps, {_options.Kbps} kbit/s, up to {_options.MaxWidth}x{_options.MaxHeight}, a key frame every {_options.KeyFrameSeconds:0.#} s");
         text.AppendLine($"  Encoder: {ScreenCodecs.Describe(Codec, Encoder)}, in this program{(FallbackReason is { } why ? $" (not used: {why})" : "")}");
-        text.AppendLine($"  Sent: {Frames} frames, {KeyFrames} of them key frames ({KeyFramesForced} made because a viewer asked), {Bytes / 1024} KB in {seconds:0} s ({(seconds > 1 ? Frames / seconds : 0):0.0} frames per second on average)");
+        text.AppendLine($"  Sent: {Frames} frames, {KeyFrames} of them key frames ({KeyFramesForced} made on request), {Bytes / 1024} KB in {seconds:0} s ({(seconds > 1 ? Frames / seconds : 0):0.0} frames per second on average)");
         var figures = Figures();
         text.AppendLine($"  Key frames: {figures.DescribeKeys()}");
         if (figures.Encodes > 0) text.AppendLine($"  Encoder in this program: {figures.DescribeEncoding(FrameBudgetMs)}; picture {(PictureSize is { } size ? $"{size.Width}x{size.Height}" : "unknown")}");
@@ -351,7 +351,7 @@ public sealed partial class ScreenSharer : IDisposable
 
     private FrameSender? _sender;
 
-    private FrameSender Sender => _sender ??= new FrameSender(DeliverAsync, _stats, () => _pacer.Request(), () => TimeSpan.FromMilliseconds(FrameBudgetMs).Ticks);
+    private FrameSender Sender => _sender ??= new FrameSender(DeliverAsync, _stats, () => _pacer.RequestOwn(), () => TimeSpan.FromMilliseconds(FrameBudgetMs).Ticks);
 
     /// <summary>How far behind sending may fall before what is queued is thrown away and a key frame is asked for.</summary>
     public static TimeSpan MaxSendBacklog => FrameSender.MaxBacklog;
@@ -417,7 +417,7 @@ public sealed partial class ScreenSharer : IDisposable
     /// <summary>Something the share did on its own that is worth a line in the log (it followed a window that changed size, say). On another thread, so a handler has to be quick.</summary>
     public event Action<string>? Note;
 
-    /// <summary>How many key frames were made on the very next picture because a viewer asked for one.</summary>
+    /// <summary>How many key frames were made on the very next picture because one was asked for.</summary>
     public long KeyFramesForced => _pacer.Forced;
 
     private volatile bool _captureOnCard;
