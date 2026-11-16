@@ -32,7 +32,7 @@ public partial class MainView : UserControl
         InitializeComponent();
         // The box takes several lines (a pasted report, say); Enter still sends, so it is caught before the box turns it into a new line.
         InputBox.AddHandler(KeyDownEvent, InputKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
-        _screens = new Control[] { WelcomePanel, NamePanel, ExistingPanel, LinkPanel, ListPanel, ChatPanel, SettingsPanel };
+        _screens = new Control[] { WelcomePanel, NamePanel, ExistingPanel, LinkPanel, ServerRestorePanel, ListPanel, ChatPanel, SettingsPanel };
         NameBox.Text = _settings.DisplayName ?? "";
         ApplyTheme();
         // A phone that has an account but no name (it was made, then closed before the name was typed) only needs the name; there is nothing to go back to.
@@ -101,12 +101,13 @@ public partial class MainView : UserControl
         foreach (var s in _screens) s.IsVisible = s == screen;
     }
 
-    private bool AnyOverlay => AddPanel.IsVisible || PeoplePanel.IsVisible || ConfirmPanel.IsVisible || RoutePanel.IsVisible || PicturePanel.IsVisible || ActionPanel.IsVisible || PromptPanel.IsVisible || BlockedPanel.IsVisible || NetworkPanel.IsVisible || SoundPanel.IsVisible || ShelfPanel.IsVisible || SharePanel.IsVisible || WatchPanel.IsVisible || ReactPanel.IsVisible;
+    private bool AnyOverlay => AddPanel.IsVisible || PeoplePanel.IsVisible || ConfirmPanel.IsVisible || RoutePanel.IsVisible || PicturePanel.IsVisible || ActionPanel.IsVisible || PromptPanel.IsVisible || BlockedPanel.IsVisible || NetworkPanel.IsVisible || SoundPanel.IsVisible || ShelfPanel.IsVisible || SharePanel.IsVisible || WatchPanel.IsVisible || ReactPanel.IsVisible || CodePanel.IsVisible;
 
     // One step back; false when there is nothing to go back to and the phone may leave the app.
     private bool GoBack()
     {
-        if (PromptPanel.IsVisible) { PromptPanel.IsVisible = false; return true; }
+        if (CodePanel.IsVisible) { CodeCancelClicked(null, new RoutedEventArgs()); return true; }
+        if (PromptPanel.IsVisible) { PromptCancelClicked(null, new RoutedEventArgs()); return true; }
         if (BlockedPanel.IsVisible) { BlockedPanel.IsVisible = false; return true; }
         if (ActionPanel.IsVisible) { ActionPanel.IsVisible = false; return true; }
         if (ShelfPanel.IsVisible) { ShelfPanel.IsVisible = false; return true; }
@@ -117,12 +118,13 @@ public partial class MainView : UserControl
         if (NetworkPanel.IsVisible) { NetworkPanel.IsVisible = false; return true; }
         if (PicturePanel.IsVisible) { PictureCloseClicked(null, new RoutedEventArgs()); return true; }
         if (RoutePanel.IsVisible) { RoutePanel.IsVisible = false; return true; }
-        if (ConfirmPanel.IsVisible) { ConfirmPanel.IsVisible = false; return true; }
+        if (ConfirmPanel.IsVisible) { ConfirmNoClicked(null, new RoutedEventArgs()); return true; }
         if (PeoplePanel.IsVisible) { PeoplePanel.IsVisible = false; return true; }
         if (AddPanel.IsVisible) { AddPanel.IsVisible = false; return true; }
         if (SettingsPanel.IsVisible) { SettingsBackClicked(null, new RoutedEventArgs()); return true; }
         if (ChatPanel.IsVisible) { BackToList(); return true; }
         if (LinkPanel.IsVisible) { LinkBackClicked(null, new RoutedEventArgs()); return true; }
+        if (ServerRestorePanel.IsVisible) { ServerRestoreBackClicked(null, new RoutedEventArgs()); return true; }
         if (ExistingPanel.IsVisible || (NamePanel.IsVisible && NameBackButton.IsVisible)) { WelcomeBackClicked(null, new RoutedEventArgs()); return true; }
         return false;
     }
@@ -274,6 +276,7 @@ public partial class MainView : UserControl
             while (!AnyOverlay && LinkInbox.Take() is { } link)
             {
                 if (link.Kind == DeepLinkKind.Join) HandleJoinLink(session, link.Value);
+                else if (link.Kind == DeepLinkKind.BackupSignIn) HandleBackupSignInLink(link);
                 else HandleChatLink(session, link.Value);
             }
         }
@@ -434,6 +437,7 @@ public partial class MainView : UserControl
         bool canService = OperatingSystem.IsAndroidVersionAtLeast(26);
         BackgroundCheck.IsVisible = BackgroundNote.IsVisible = BatteryButton.IsVisible = canService;
         NotificationNote.Text = "";
+        FillServerForm();
         VersionText.Text = "Yaparr " + AppVersion();
         UpdateCheck.IsChecked = _settings.CheckForUpdates;
         ShowUpdateState();
@@ -622,22 +626,19 @@ public partial class MainView : UserControl
     private async void RestoreClicked(object? sender, RoutedEventArgs e)
     {
         if (MainActivity.Instance is not { } activity || _data.HasIdentity) return;
-        var path = await activity.PickFileAsync("application/zip");
+        // Any type: a locked backup (.yapbak) has no type the chooser knows to offer under "zip".
+        var path = await activity.PickFileAsync("*/*");
         if (path == null) { ExistingStatus.Text = "No backup chosen."; return; }
         try
         {
-            if (AppData.IsBackupLocked(path))
-            {
-                ExistingStatus.Text = "This backup is locked with a passphrase, which this app cannot open yet. Restore it on a computer, or make a plain backup.";
-                return;
-            }
             string staging;
-            try { staging = await Task.Run(() => _data.StageProfile(path)); }
+            try { staging = await StageBackupFileAsync(path, ExistingStatus); }
             catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
             {
                 ExistingStatus.Text = ex.Message;
                 return;
             }
+            if (staging.Length == 0) return;     // a locked backup, and the person backed out of its code
             try { await Task.Run(() => _data.ApplyStagedProfile(staging)); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -1585,12 +1586,18 @@ public partial class MainView : UserControl
     // ---- a line of text to answer, and renaming a room ----
 
     private Action<string>? _prompted;
+    private Action? _promptDeclined, _promptAlternative;
 
-    private void AskText(string title, string initial, Action<string> done)
+    private void AskText(string title, string initial, Action<string> done, Action? declined = null, string? alternative = null, Action? chosen = null, int maxLength = 40)
     {
         PromptTitle.Text = title;
+        PromptBox.MaxLength = maxLength;
         PromptBox.Text = initial;
         _prompted = done;
+        _promptDeclined = declined;
+        _promptAlternative = chosen;
+        PromptAltButton.Content = alternative;
+        PromptAltButton.IsVisible = alternative != null;
         PromptPanel.IsVisible = true;
         PromptBox.Focus();
         PromptBox.SelectAll();
@@ -1600,15 +1607,30 @@ public partial class MainView : UserControl
     {
         PromptPanel.IsVisible = false;
         var done = _prompted;
+        var declined = _promptDeclined;
         _prompted = null;
+        _promptDeclined = _promptAlternative = null;
         var text = (PromptBox.Text ?? "").Trim();
         if (text.Length > 0) done?.Invoke(text);
+        else declined?.Invoke();
+    }
+
+    private void PromptAltClicked(object? sender, RoutedEventArgs e)
+    {
+        PromptPanel.IsVisible = false;
+        var chosen = _promptAlternative;
+        _prompted = null;
+        _promptDeclined = _promptAlternative = null;
+        chosen?.Invoke();
     }
 
     private void PromptCancelClicked(object? sender, RoutedEventArgs e)
     {
         PromptPanel.IsVisible = false;
+        var declined = _promptDeclined;
         _prompted = null;
+        _promptDeclined = _promptAlternative = null;
+        declined?.Invoke();
     }
 
     // A new name for the room, for you only; the others keep the name they gave it.
@@ -1687,11 +1709,14 @@ public partial class MainView : UserControl
         });
     }
 
-    private void Ask(string text, string yes, Func<Task> action)
+    private Action? _declined;
+
+    private void Ask(string text, string yes, Func<Task> action, Action? declined = null)
     {
         ConfirmText.Text = text;
         ConfirmYes.Content = yes;
         _confirmed = action;
+        _declined = declined;
         ConfirmPanel.IsVisible = true;
     }
 
@@ -1700,6 +1725,7 @@ public partial class MainView : UserControl
         ConfirmPanel.IsVisible = false;
         var action = _confirmed;
         _confirmed = null;
+        _declined = null;
         if (action != null) await action();
         _ = HandleLinksAsync();
     }
@@ -1707,6 +1733,10 @@ public partial class MainView : UserControl
     private void ConfirmNoClicked(object? sender, RoutedEventArgs e)
     {
         ConfirmPanel.IsVisible = false;
+        var declined = _declined;
+        _confirmed = null;
+        _declined = null;
+        declined?.Invoke();
         _ = HandleLinksAsync();
     }
 }

@@ -34,6 +34,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- What this release is offered with (the backup server's address): the file the desktop ships, so there is one place to change it. Read at start-up (ReleaseAsset). -->
+    <AndroidAsset Include="..\Yaparr.Desktop\yaparr.release.json" Link="Assets\yaparr.release.json" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Yaparr\Yaparr.csproj" />
     <ProjectReference Include="..\..\src\Yaparr.AppCore\Yaparr.AppCore.csproj" />
     <!-- The stream formats and codec facts of a shared screen (H.264 and VP8 frames, the names of the sound streams). Nothing is captured or decoded with FFmpeg on the phone. -->
