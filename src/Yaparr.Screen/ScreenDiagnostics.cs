@@ -36,6 +36,7 @@ public static class ScreenDiagnostics
         Line($"  Graphics adapters: {GraphicsAdapters.Describe()}");
         Line($"  Decoders they have: {string.Join(", ", FfmpegLibraries.Decoders())}");
         Line($"  AV1: {(Av1Support.Latest?.Describe() ?? "not checked yet")}");
+        Line($"  H.265: {(ScreenFeatures.H265 ? H265Support.Latest?.Describe() ?? "not checked yet" : "switched off in this version")}");
         if (OperatingSystem.IsLinux() && Where("xrandr") != "missing")
         {
             var monitors = await RunAsync("xrandr", "--listmonitors", ct).ConfigureAwait(false);

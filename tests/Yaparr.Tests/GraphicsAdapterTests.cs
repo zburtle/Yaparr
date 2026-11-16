@@ -84,11 +84,11 @@ public class GraphicsAdapterTests(Xunit.Abstractions.ITestOutputHelper output)
         Assert.DoesNotContain(none, p => p.Encoder is HardwareEncoder.Nvenc or HardwareEncoder.Amf or HardwareEncoder.Qsv);
 
         // Not known: the whole list, as before.
-        var unknown = ScreenSharer.Plan(new ScreenOptions { X11Display = null, Display = Monitor }, null, adaptersGiven: true);
+        var unknown = ScreenSharer.Plan(new ScreenOptions { X11Display = null, Display = Monitor }, null, adaptersGiven: true, h265: false);
         Assert.Equal(HardwareEncoders.InOrder.Count + 1, unknown.Count);
 
         // Named on purpose: tried whatever the adapters are.
-        var named = ScreenSharer.Plan(new ScreenOptions { X11Display = null, Display = Monitor, Encoder = HardwareEncoder.Amf }, new[] { GpuVendor.Intel }, adaptersGiven: true);
+        var named = ScreenSharer.Plan(new ScreenOptions { X11Display = null, Display = Monitor, Encoder = HardwareEncoder.Amf }, new[] { GpuVendor.Intel }, adaptersGiven: true, h265: false);
         Assert.Equal(new (ScreenCodec, HardwareEncoder?)[] { (ScreenCodec.H264, HardwareEncoder.Amf), (ScreenCodec.Vp8, null) }, named);
 
         // AV1 asked for: on the same cards only, and then what Auto would have done.

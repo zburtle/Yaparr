@@ -113,12 +113,14 @@ public partial class MainWindow
 
         var dialog = new ShareDialog(_node.MeasuredUploadBytesPerSecond);
         dialog.PreferAv1(_settings.ScreenShareAv1);
+        dialog.PreferH265(_settings.ScreenShareH265);
         dialog.PreferAdaptQuality(_settings.ScreenShareAdaptQuality);
         if (!await dialog.ShowDialog<bool>(this) || dialog.Result == null) return;
         var options = dialog.Result;
-        if (_settings.ScreenShareAv1 != dialog.Av1Picked || _settings.ScreenShareAdaptQuality != dialog.AdaptPicked)
+        if (_settings.ScreenShareAv1 != dialog.Av1Picked || _settings.ScreenShareH265 != dialog.H265Picked || _settings.ScreenShareAdaptQuality != dialog.AdaptPicked)
         {
             _settings.ScreenShareAv1 = dialog.Av1Picked;
+            _settings.ScreenShareH265 = dialog.H265Picked;
             _settings.ScreenShareAdaptQuality = dialog.AdaptPicked;
             _data.SaveSettings(_settings);
         }
