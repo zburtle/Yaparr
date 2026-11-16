@@ -184,7 +184,7 @@ public partial class MainWindow
         _server.Username = username;
         _server.Token = token;
         _data.SaveBackupServer(_server);
-        _log.Write("signed in to a backup server");
+        _log.Write("signed in to Yaparr Cloud");
     }
 
     // The button on a backup server's "You're in" page opened the app: yaparr://backup-signin/<code>/<server>. Like every link it only asks:
@@ -192,7 +192,7 @@ public partial class MainWindow
     // question is what stops a made-up link from signing the app in to someone else's account.)
     private async Task SignInFromLinkAsync(DeepLink link)
     {
-        const string title = "Sign in to a backup server";
+        const string title = "Sign in to Yaparr Cloud";
         if (!link.TryGetBackupSignIn(out var code, out var server)) return;
         var current = _data.LoadBackupServer();
         var host = server.Authority;
@@ -200,7 +200,7 @@ public partial class MainWindow
             ? $"\n\nThis computer is signed in to {(Uri.TryCreate(current.Url, UriKind.Absolute, out var now) ? now.Authority : current.Url)} as {current.Username}; this replaces that."
             : "";
         if (!await Dialogs.ConfirmAsync(this, title,
-                $"A link from the sign-up page of the backup server {host} asks to sign this computer in to it, so you can keep a locked backup of your profile there." +
+                $"A link from the sign-up page of Yaparr Cloud on {host} asks to sign this computer in to it, so you can keep a locked backup of your profile there." +
                 "\n\nOnly continue if you have just signed up there and pressed \"Open Yaparr and sign in\"." + replaces,
                 "Sign in", "Cancel")) return;
 
@@ -208,7 +208,7 @@ public partial class MainWindow
         {
             var (token, username) = await BackupServerClient.TradeHandoffCodeAsync(server, code);
             AdoptSignIn(server, token, username);
-            ShowSettings("backup");
+            ShowSettings("cloud");
             ServerUrlBox.Text = ReleaseConfig.Current.BackupServerToOffer(_server.Url);
             ShowServerState();
             ServerStatusIs($"Signed in to {host} as {username}. Press Back up now to save your first backup; Yaparr then makes a recovery code for you to keep.");
@@ -314,7 +314,7 @@ public partial class MainWindow
         {
             var choice = await Dialogs.ChoiceAsync(this, title,
                 "This account already has a backup on the server, made on another device. Type that device's recovery code so one code opens all your backups " +
-                "(Settings > Backup > Show recovery code on that device).\n\nOr make a new code for this computer; the older backups will still need the old one.",
+                "(Settings > Yaparr Cloud > Show recovery code on that device).\n\nOr make a new code for this computer; the older backups will still need the old one.",
                 "Type the code", "Make a new code", "Cancel");
             if (choice == "Type the code")
             {

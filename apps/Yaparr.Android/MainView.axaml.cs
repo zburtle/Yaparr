@@ -445,6 +445,7 @@ public partial class MainView : UserControl
         _loadingSettings = false;
         ShowTheme();
         ShowOnly(SettingsPanel);
+        ResetSettingsSections();
     }
 
     private static string AppVersion()
@@ -459,6 +460,7 @@ public partial class MainView : UserControl
 
     private void SettingsBackClicked(object? sender, RoutedEventArgs e)
     {
+        if (SettingsBackToList()) return;
         _data.SaveSettings(_settings);
         ShowOnly(ListPanel);
     }

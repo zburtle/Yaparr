@@ -199,7 +199,7 @@ public partial class MainView
     {
         if (newest > 0)
         {
-            var intro = "This account already has a backup on the server, made on another device. Type that device's recovery code (Settings > Backup > Show recovery code there) " +
+            var intro = "This account already has a backup on the server, made on another device. Type that device's recovery code (Settings > Yaparr Cloud > Show recovery code there) " +
                         "so one code opens all your backups, or make a new code for this phone; the older backups will still need the old one.";
             var temp = Path.Combine(Path.GetTempPath(), "yaparr-server-check-" + Guid.NewGuid().ToString("N") + ".yapbak");
             try
@@ -360,7 +360,7 @@ public partial class MainView
         var replaces = current.SignedIn
             ? $"\n\nThis phone is signed in to {(Uri.TryCreate(current.Url, UriKind.Absolute, out var now) ? now.Authority : current.Url)} as {current.Username}; this replaces that."
             : "";
-        Ask($"A link from the sign-up page of the backup server {server.Authority} asks to sign this phone in to it, so you can keep a locked backup of your account there." +
+        Ask($"A link from the sign-up page of Yaparr Cloud on {server.Authority} asks to sign this phone in to it, so you can keep a locked backup of your account there." +
             "\n\nOnly continue if you have just signed up there and tapped \"Open Yaparr and sign in\"." + replaces, "Sign in", async () =>
         {
             try

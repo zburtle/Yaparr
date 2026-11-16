@@ -1002,6 +1002,7 @@
                     <ComboBoxItem Content="VPN" Tag="vpn" />
                     <ComboBoxItem Content="TURN relay" Tag="turn" />
                     <ComboBoxItem Content="Blocked people" Tag="blocked" />
+                    <ComboBoxItem Content="Yaparr Cloud" Tag="cloud" />
                     <ComboBoxItem Content="Backup" Tag="backup" />
                     <ComboBoxItem Content="About" Tag="about" />
                 </ComboBox>
@@ -1014,6 +1015,7 @@
                         <TreeViewItem Header="TURN relay" Tag="turn" />
                     </TreeViewItem>
                     <TreeViewItem Header="Blocked people" Tag="blocked" />
+                    <TreeViewItem Header="Yaparr Cloud" Tag="cloud" />
                     <TreeViewItem Header="Backup" Tag="backup" />
                     <TreeViewItem Header="About" Tag="about" />
                 </TreeView>
@@ -1098,15 +1100,11 @@
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                         </StackPanel>
-                        <StackPanel x:Name="SectionBackup" Spacing="10" IsVisible="False">
-                            <TextBlock Text="Backup" FontSize="15" FontWeight="SemiBold" />
+                        <StackPanel x:Name="SectionCloud" Spacing="10" IsVisible="False">
+                            <TextBlock Text="Yaparr Cloud" FontSize="15" FontWeight="SemiBold" />
                             <TextBlock Classes="muted" TextWrapping="Wrap"
-                                       Text="Saves a zip of everything Yaparr keeps for you: your identity key, rooms, message history, pictures and settings. Keep it somewhere safe; it holds your account key." />
-                            <Button Content="Back up profile…" HorizontalAlignment="Left" Click="BackupProfile_Click" />
-                            <TextBlock Text="Backup server" FontWeight="SemiBold" Margin="0,12,0,0" />
-                            <TextBlock Classes="muted" TextWrapping="Wrap"
-                                       Text="If someone gives you the address of a backup server and an account on it, your backup can be kept there and brought back on any computer from its first-start screen. You sign in in your browser, and the backup is locked on this computer with a recovery code, so the server cannot read it. Nothing is sent anywhere unless you use this." />
-                            <StackPanel x:Name="ServerSignedOutPanel" Spacing="4" MaxWidth="420" HorizontalAlignment="Left">
+                                       Text="An optional account on a Yaparr Cloud server, such as cloud.yaparr.com, whose address someone gives you. It keeps a locked backup of your account that you can bring back on any computer or phone, and on a phone it can wake Yaparr when someone writes to you. You sign in in your browser. The server cannot read your backup (it is locked here with a recovery code), and nothing is sent anywhere unless you use this." />
+                                                        <StackPanel x:Name="ServerSignedOutPanel" Spacing="4" MaxWidth="420" HorizontalAlignment="Left">
                                 <TextBlock Text="Server address" Classes="muted" />
                                 <TextBox x:Name="ServerUrlBox" MinWidth="320" PlaceholderText="https://backup.example.org" />
                                 <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
@@ -1128,6 +1126,14 @@
                                 <TextBlock x:Name="AutoBackupStatus" Classes="muted" TextWrapping="Wrap" FontSize="12" />
                             </StackPanel>
                             <TextBlock x:Name="ServerStatus" Classes="muted" TextWrapping="Wrap" IsVisible="False" />
+                        </StackPanel>
+                        <StackPanel x:Name="SectionBackup" Spacing="10" IsVisible="False">
+                            <TextBlock Text="Backup" FontSize="15" FontWeight="SemiBold" />
+                            <TextBlock Classes="muted" TextWrapping="Wrap"
+                                       Text="Saves a zip of everything Yaparr keeps for you: your identity key, rooms, message history, pictures and settings. Keep it somewhere safe; it holds your account key." />
+                            <Button Content="Back up profile…" HorizontalAlignment="Left" Click="BackupProfile_Click" />
+                            <TextBlock Classes="muted" TextWrapping="Wrap"
+                                       Text="To keep a locked backup on Yaparr Cloud, and bring it back on any computer, see Yaparr Cloud." />
                         </StackPanel>
                         <StackPanel x:Name="SectionAbout" Spacing="10" IsVisible="False">
                             <TextBlock Text="About" FontSize="15" FontWeight="SemiBold" />

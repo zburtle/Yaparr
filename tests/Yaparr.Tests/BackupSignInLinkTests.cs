@@ -125,7 +125,7 @@ public sealed class BackupSignInLinkTests
     {
         var down = new FakeServer(_ => throw new HttpRequestException("connection refused"));
         var ex = await Assert.ThrowsAsync<BackupServerException>(() => BackupServerClient.TradeHandoffCodeAsync(new Uri("https://cloud.yaparr.com"), Code, new HttpClient(down)));
-        Assert.StartsWith("Couldn't reach the backup server", ex.Message);
+        Assert.StartsWith("Couldn't reach Yaparr Cloud", ex.Message);
 
         var empty = new FakeServer(_ => Json(HttpStatusCode.OK, new { username = "sam@example.com" }));   // no token
         await Assert.ThrowsAsync<BackupServerException>(() => BackupServerClient.TradeHandoffCodeAsync(new Uri("https://cloud.yaparr.com"), Code, new HttpClient(empty)));

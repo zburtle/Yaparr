@@ -162,10 +162,10 @@ public sealed class BrowserSignIn : IDisposable
             using var response = await http.PostAsJsonAsync(new Uri(_server, "/v1/token"), new { code, verifier = _verifier }, cancel);
             if (!response.IsSuccessStatusCode) throw await BackupServerClient.FailureAsync(response, cancel);
             var answer = await response.Content.ReadFromJsonAsync<TokenJson>(BackupServerClient.Json, cancel);
-            if (string.IsNullOrEmpty(answer?.Token)) throw new BackupServerException("The backup server did not finish the sign-in.");
+            if (string.IsNullOrEmpty(answer?.Token)) throw new BackupServerException("Yaparr Cloud did not finish the sign-in.");
             return (answer.Token, answer.Username ?? "");
         }
-        catch (HttpRequestException ex) { throw new BackupServerException("Couldn't reach the backup server: " + ex.Message, inner: ex); }
+        catch (HttpRequestException ex) { throw new BackupServerException("Couldn't reach Yaparr Cloud: " + ex.Message, inner: ex); }
         finally { if (owned) http.Dispose(); }
     }
 
@@ -249,11 +249,11 @@ public sealed class BackupServerClient : IDisposable
             using var response = await http.PostAsJsonAsync(new Uri(server, "/v1/token/handoff"), new { code }, cancel);
             if (!response.IsSuccessStatusCode) throw await FailureAsync(response, cancel);
             var answer = await response.Content.ReadFromJsonAsync<BrowserSignIn.TokenJson>(Json, cancel);
-            if (string.IsNullOrEmpty(answer?.Token)) throw new BackupServerException("The backup server did not finish the sign-in.");
+            if (string.IsNullOrEmpty(answer?.Token)) throw new BackupServerException("Yaparr Cloud did not finish the sign-in.");
             return (answer.Token, answer.Username ?? "");
         }
-        catch (HttpRequestException ex) { throw new BackupServerException("Couldn't reach the backup server: " + ex.Message, inner: ex); }
-        catch (TaskCanceledException ex) when (!cancel.IsCancellationRequested) { throw new BackupServerException("The backup server took too long to answer.", inner: ex); }
+        catch (HttpRequestException ex) { throw new BackupServerException("Couldn't reach Yaparr Cloud: " + ex.Message, inner: ex); }
+        catch (TaskCanceledException ex) when (!cancel.IsCancellationRequested) { throw new BackupServerException("Yaparr Cloud took too long to answer.", inner: ex); }
         finally { if (owned) http.Dispose(); }
     }
 
@@ -285,19 +285,19 @@ public sealed class BackupServerClient : IDisposable
     private async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancel)
     {
         try { return await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancel); }
-        catch (HttpRequestException ex) { throw new BackupServerException("Couldn't reach the backup server: " + ex.Message, inner: ex); }
-        catch (TaskCanceledException ex) when (!cancel.IsCancellationRequested) { throw new BackupServerException("The backup server took too long to answer.", inner: ex); }
+        catch (HttpRequestException ex) { throw new BackupServerException("Couldn't reach Yaparr Cloud: " + ex.Message, inner: ex); }
+        catch (TaskCanceledException ex) when (!cancel.IsCancellationRequested) { throw new BackupServerException("Yaparr Cloud took too long to answer.", inner: ex); }
     }
 
     // What the server said went wrong, in its own words where it gave some.
     internal static async Task<BackupServerException> FailureAsync(HttpResponseMessage response, CancellationToken cancel)
     {
         if (response.StatusCode == HttpStatusCode.Unauthorized)
-            return new BackupServerException("This computer is no longer signed in to the backup server. Sign in again.", response.StatusCode);
+            return new BackupServerException("This computer is no longer signed in to Yaparr Cloud. Sign in again.", response.StatusCode);
         string? message = null;
         try { message = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancel)).RootElement.GetProperty("error").GetString(); }
         catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException) { }
-        return new BackupServerException(message ?? $"The backup server answered {(int)response.StatusCode} {response.ReasonPhrase}.", response.StatusCode);
+        return new BackupServerException(message ?? $"Yaparr Cloud answered {(int)response.StatusCode} {response.ReasonPhrase}.", response.StatusCode);
     }
 
     private sealed record VersionJson(int Version, long Size, DateTimeOffset At);

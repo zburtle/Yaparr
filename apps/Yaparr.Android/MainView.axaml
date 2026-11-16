@@ -60,7 +60,7 @@
                 </Button>
                 <Button x:Name="ServerRestoreStartButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="18,14" Click="ServerRestoreStartClicked">
                     <StackPanel Spacing="2">
-                        <TextBlock Text="On a backup server" FontSize="17" FontWeight="SemiBold" />
+                        <TextBlock Text="From Yaparr Cloud" FontSize="17" FontWeight="SemiBold" />
                         <TextBlock Text="Sign in to the server your backup is on, with your recovery code. For a new phone." FontSize="13" Opacity="0.75" TextWrapping="Wrap" />
                     </StackPanel>
                 </Button>
@@ -72,7 +72,7 @@
         <!-- Taking an account over from a backup server: its address, the recovery code that opens the backup, and a sign-in in the browser. -->
         <ScrollViewer x:Name="ServerRestorePanel" IsVisible="False">
             <StackPanel Margin="20,56,20,24" Spacing="12" MaxWidth="480">
-                <TextBlock Text="Restore from a backup server" FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Ink}" />
+                <TextBlock Text="Restore from Yaparr Cloud" FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Ink}" />
                 <TextBlock Text="You sign in in your browser, and the backup is unlocked on this phone with your recovery code. The code is never sent to the server."
                            TextWrapping="Wrap" Foreground="{DynamicResource Muted}" />
                 <TextBlock Text="Server address" Margin="0,8,0,0" Foreground="{DynamicResource Muted}" />
@@ -164,9 +164,58 @@
                     <TextBlock Grid.Column="1" Text="Settings" FontSize="20" FontWeight="Bold" VerticalAlignment="Center" Foreground="{DynamicResource Ink}" />
                 </Grid>
             </Border>
-            <ScrollViewer Grid.Row="1">
-                <StackPanel Margin="16,12,16,32" Spacing="10" MaxWidth="520">
-                    <TextBlock Text="You" FontWeight="SemiBold" Foreground="{DynamicResource Muted}" />
+            <!-- A list of sections and the page of the chosen one: side by side when the window is wide, one at a time on a phone (see SettingsLayout). -->
+            <Grid x:Name="SettingsBody" Grid.Row="1" ColumnDefinitions="*,0">
+                <ScrollViewer x:Name="SettingsListScroll">
+                    <StackPanel x:Name="SettingsList" Margin="12,12,12,32" Spacing="4" MaxWidth="520">
+                        <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="16,12" Tag="you" Click="SettingsSectionClicked">
+                            <StackPanel>
+                                <TextBlock Text="You &amp; appearance" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Ink}" />
+                                <TextBlock Text="Name, picture, theme" FontSize="12" Foreground="{DynamicResource Muted}" />
+                            </StackPanel>
+                        </Button>
+                        <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="16,12" Tag="voice" Click="SettingsSectionClicked">
+                            <StackPanel>
+                                <TextBlock Text="Voice" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Ink}" />
+                                <TextBlock Text="Microphone and volume" FontSize="12" Foreground="{DynamicResource Muted}" />
+                            </StackPanel>
+                        </Button>
+                        <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="16,12" Tag="network" Click="SettingsSectionClicked">
+                            <StackPanel>
+                                <TextBlock Text="Network" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Ink}" />
+                                <TextBlock Text="Why connecting may fail" FontSize="12" Foreground="{DynamicResource Muted}" />
+                            </StackPanel>
+                        </Button>
+                        <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="16,12" Tag="notifications" Click="SettingsSectionClicked">
+                            <StackPanel>
+                                <TextBlock Text="Notifications &amp; links" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Ink}" />
+                                <TextBlock Text="Alerts, background, link previews" FontSize="12" Foreground="{DynamicResource Muted}" />
+                            </StackPanel>
+                        </Button>
+                        <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="16,12" Tag="cloud" Click="SettingsSectionClicked">
+                            <StackPanel>
+                                <TextBlock Text="Yaparr Cloud" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Ink}" />
+                                <TextBlock Text="Account, backup and push" FontSize="12" Foreground="{DynamicResource Muted}" />
+                            </StackPanel>
+                        </Button>
+                        <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="16,12" Tag="backup" Click="SettingsSectionClicked">
+                            <StackPanel>
+                                <TextBlock Text="Backup" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Ink}" />
+                                <TextBlock Text="Save your account to a file" FontSize="12" Foreground="{DynamicResource Muted}" />
+                            </StackPanel>
+                        </Button>
+                        <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="16,12" Tag="about" Click="SettingsSectionClicked">
+                            <StackPanel>
+                                <TextBlock Text="About" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Ink}" />
+                                <TextBlock Text="Version, updates, diagnostics" FontSize="12" Foreground="{DynamicResource Muted}" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </ScrollViewer>
+                <ScrollViewer x:Name="SettingsPageScroll" Grid.Column="1" IsVisible="False">
+                    <StackPanel Margin="16,12,16,32" Spacing="10" MaxWidth="520" HorizontalAlignment="Left">
+                        <StackPanel x:Name="Section_you" Spacing="10" IsVisible="False">
+                    <TextBlock Text="You" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource Ink}" />
                     <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
                         <Border x:Name="MyPicture" Width="64" Height="64" CornerRadius="32" Background="{DynamicResource Accent}">
                             <TextBlock x:Name="MyPictureInitial" Foreground="White" FontWeight="SemiBold" FontSize="26" HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -192,8 +241,9 @@
                         <Button x:Name="ThemeLight" Grid.Column="1" Content="Light" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="ThemeClicked" Tag="Light" />
                         <Button x:Name="ThemeDark" Grid.Column="2" Content="Dark" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="ThemeClicked" Tag="Dark" />
                     </Grid>
-
-                    <TextBlock Text="Voice" FontWeight="SemiBold" Margin="0,14,0,0" Foreground="{DynamicResource Muted}" />
+                        </StackPanel>
+                        <StackPanel x:Name="Section_voice" Spacing="10" IsVisible="False">
+                    <TextBlock Text="Voice" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource Ink}" />
                     <CheckBox x:Name="AlwaysOnCheck" Content="Send all the time, not only when I talk" Click="VoiceSettingChanged" />
                     <StackPanel>
                         <TextBlock Text="Microphone sensitivity (how loud you have to be to be heard)" TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Ink}" />
@@ -205,12 +255,14 @@
                     </StackPanel>
                     <CheckBox x:Name="AutoVolumeCheck" Content="Even out my microphone (raise a quiet one, lower a loud one)" Click="VoiceSettingChanged" />
                     <TextBlock Text="Echo and noise are taken out by Android itself, as in a phone call." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
-
-                    <TextBlock Text="Network" FontWeight="SemiBold" Margin="0,14,0,0" Foreground="{DynamicResource Muted}" />
+                        </StackPanel>
+                        <StackPanel x:Name="Section_network" Spacing="10" IsVisible="False">
+                    <TextBlock Text="Network" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource Ink}" />
                     <TextBlock Text="Looks at how this phone can be reached and why connecting to someone may fail." TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />
                     <Button HorizontalAlignment="Stretch" Content="Check the connection" Click="NetworkClicked" />
-
-                    <TextBlock Text="Notifications" FontWeight="SemiBold" Margin="0,14,0,0" Foreground="{DynamicResource Muted}" />
+                        </StackPanel>
+                        <StackPanel x:Name="Section_notifications" Spacing="10" IsVisible="False">
+                    <TextBlock Text="Notifications" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource Ink}" />
                     <CheckBox x:Name="NotifyCheck" Content="Notify me of messages" Click="NotificationSettingChanged" />
                     <TextBlock Text="Direct messages, mentions and replies to you. In a room's menu you can turn on every message. The lock screen shows who wrote and where, never the words." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
                     <CheckBox x:Name="BackgroundCheck" Content="Stay connected in the background" Click="NotificationSettingChanged" />
@@ -219,23 +271,13 @@
                     <Button x:Name="BatteryButton" HorizontalAlignment="Stretch" Content="Let Yaparr run in the background" Click="BatteryClicked" />
                     <TextBlock x:Name="NotificationNote" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
 
-                    <TextBlock Text="Push notifications" FontWeight="SemiBold" Margin="0,14,0,0" Foreground="{DynamicResource Muted}" />
-                    <TextBlock Text="Wakes this phone when someone writes while Yaparr is closed, without keeping it connected all the time. It needs a push app such as ntfy (UnifiedPush) and your Yaparr Cloud account. The push carries nothing: no names and no words." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
-                    <TextBlock x:Name="PushState" TextWrapping="Wrap" FontSize="13" />
-                    <ComboBox x:Name="PushDistributorBox" HorizontalAlignment="Stretch" IsVisible="False" />
-                    <Button x:Name="PushOnButton" HorizontalAlignment="Stretch" Content="Turn on push notifications" Click="PushOnClicked" />
-                    <Button x:Name="PushOffButton" HorizontalAlignment="Stretch" Content="Turn off push notifications" Click="PushOffClicked" />
-
                     <TextBlock Text="Link previews" FontWeight="SemiBold" Margin="0,14,0,0" Foreground="{DynamicResource Muted}" />
                     <CheckBox x:Name="LinkPreviewCheck" Content="Show a preview under the links I send" Click="LinkPreviewChanged" />
                     <TextBlock Text="When you send a web link, this phone reads the page's title, description and picture and sends them with the message. The people who read it never contact the site, so it does not see their address, but it does see yours. Turn this off to send only the link." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
-
-                    <TextBlock Text="Backup" FontWeight="SemiBold" Margin="0,14,0,0" Foreground="{DynamicResource Muted}" />
-                    <TextBlock Text="A backup is a copy of your account, room keys and message history, to bring back on a new phone if you lose this one." TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />
-                    <Button HorizontalAlignment="Stretch" Content="Back up this phone's account" Click="BackupClicked" />
-
-                    <TextBlock Text="Backup server" FontWeight="SemiBold" Margin="0,14,0,0" Foreground="{DynamicResource Muted}" />
-                    <TextBlock Text="If someone gives you the address of a backup server and an account on it, your backup can be kept there and brought back on any phone or computer. You sign in in your browser, and the backup is locked on this phone with a recovery code, so the server cannot read it. Nothing is sent anywhere unless you use this." TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />
+                        </StackPanel>
+                        <StackPanel x:Name="Section_cloud" Spacing="10" IsVisible="False">
+                    <TextBlock Text="Yaparr Cloud" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource Ink}" />
+                    <TextBlock Text="An optional account on a Yaparr Cloud server, such as cloud.yaparr.com, whose address someone gives you. It keeps a locked backup of your account to bring back on any phone or computer, and it can wake this phone when someone writes to you. You sign in in your browser. The server cannot read your backup (it is locked on this phone with a recovery code), and nothing is sent anywhere unless you use this." TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />
                     <StackPanel x:Name="ServerSignedOutPanel" Spacing="8">
                         <TextBox x:Name="ServerUrlBox" PlaceholderText="https://cloud.yaparr.com" />
                         <Button x:Name="ServerSignInButton" Classes="primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Sign in with your browser" Click="ServerSignInClicked" />
@@ -250,7 +292,20 @@
                     </StackPanel>
                     <TextBlock x:Name="ServerStatus" IsVisible="False" TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />
 
-                    <TextBlock Text="About" FontWeight="SemiBold" Margin="0,14,0,0" Foreground="{DynamicResource Muted}" />
+                    <TextBlock Text="Push notifications" FontWeight="SemiBold" Margin="0,14,0,0" Foreground="{DynamicResource Muted}" />
+                    <TextBlock Text="Wakes this phone when someone writes while Yaparr is closed, without keeping it connected all the time. It uses your Yaparr Cloud account and a push app such as ntfy (UnifiedPush); with no push app, Google's Firebase is used instead. The push carries nothing: no names and no words." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
+                    <TextBlock x:Name="PushState" TextWrapping="Wrap" FontSize="13" />
+                    <ComboBox x:Name="PushDistributorBox" HorizontalAlignment="Stretch" IsVisible="False" />
+                    <Button x:Name="PushOnButton" HorizontalAlignment="Stretch" Content="Turn on push notifications" Click="PushOnClicked" />
+                    <Button x:Name="PushOffButton" HorizontalAlignment="Stretch" Content="Turn off push notifications" Click="PushOffClicked" />
+                        </StackPanel>
+                        <StackPanel x:Name="Section_backup" Spacing="10" IsVisible="False">
+                    <TextBlock Text="Backup" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource Ink}" />
+                    <TextBlock Text="A backup is a copy of your account, room keys and message history, to bring back on a new phone if you lose this one." TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />
+                    <Button HorizontalAlignment="Stretch" Content="Back up this phone's account" Click="BackupClicked" />
+                        </StackPanel>
+                        <StackPanel x:Name="Section_about" Spacing="10" IsVisible="False">
+                    <TextBlock Text="About" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource Ink}" />
                     <TextBlock x:Name="VersionText" FontSize="13" Foreground="{DynamicResource Ink}" />
                     <TextBlock x:Name="UpdateText" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Accent}" />
                     <Button x:Name="UpdateButton" HorizontalAlignment="Stretch" Content="Check for updates" Click="UpdateClicked" />
@@ -258,8 +313,10 @@
                     <TextBlock Text="An update is downloaded from Yaparr's releases on GitHub, which sees this phone's address, and is checked against the checksum published with it. Android asks you to confirm before it is installed, and only accepts a package signed with the same key as this app." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
                     <Button HorizontalAlignment="Stretch" Content="Copy what this phone is connected to" Click="DiagnosticsClicked" />
                     <TextBlock Text="Copies who this phone is connected to and what it has been doing, for a report of a problem." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
-                </StackPanel>
-            </ScrollViewer>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
         </Grid>
 
         <!-- One room or direct chat: the messages, and a box to write in. -->

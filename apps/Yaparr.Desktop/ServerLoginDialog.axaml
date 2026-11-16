@@ -5,7 +5,7 @@
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
     <StackPanel Margin="16" Spacing="4">
         <TextBlock TextWrapping="Wrap" Margin="0,0,0,8"
-                   Text="Bring your account back from a backup you saved on a backup server. You sign in in your browser, and the backup is unlocked here with your recovery code, which is never sent to the server." />
+                   Text="Bring your account back from a backup you saved on Yaparr Cloud. You sign in in your browser, and the backup is unlocked here with your recovery code, which is never sent to the server." />
         <TextBlock Text="Server address" Classes="muted" />
         <TextBox x:Name="UrlBox" PlaceholderText="https://backup.example.org" />
         <TextBlock Text="Recovery code" Classes="muted" Margin="0,8,0,0" />
