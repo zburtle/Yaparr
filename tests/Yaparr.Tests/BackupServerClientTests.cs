@@ -281,6 +281,26 @@ public sealed class BackupServerClientTests : IDisposable
     }
 
     [Fact]
+    public async Task An_older_copy_can_be_chosen_and_opens_with_the_code_it_was_locked_with()
+    {
+        var server = new FakeServer();
+        using var client = Client(server);
+        string old = RecoveryCode.Generate(), recent = RecoveryCode.Generate();
+        Assert.Equal(1, await client.UploadAsync(LockedBackup(old, "one.yapbak"), basedOn: 0));
+        Assert.Equal(2, await client.UploadAsync(LockedBackup(recent, "two.yapbak"), basedOn: 1));
+
+        var newest = Path.Combine(_dir, "newest.yapbak");
+        Assert.Equal(2, await client.DownloadAsync(newest));
+        Assert.True(BackupServerClient.CodeOpens(newest, recent));
+        Assert.False(BackupServerClient.CodeOpens(newest, old));                         // the case the picker is for: the old code does not open the newest
+
+        var first = Path.Combine(_dir, "first.yapbak");
+        Assert.Equal(1, await client.DownloadAsync(first, version: 1));
+        Assert.True(BackupServerClient.CodeOpens(first, old));
+        Assert.False(BackupServerClient.CodeOpens(first, recent));
+    }
+
+    [Fact]
     public async Task A_save_over_a_newer_backup_is_refused_and_says_which_is_newest()
     {
         var server = new FakeServer();
