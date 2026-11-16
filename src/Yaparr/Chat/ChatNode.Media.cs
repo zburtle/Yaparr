@@ -169,6 +169,9 @@ public sealed class MediaSource : IDisposable
             var piece = frame.Slice(i * per, Math.Min(per, frame.Length - i * per));
             _node.PublishMedia(_group, Fragments.Pack(id, i, count, isKey, piece.Span), isKey && i == 0);
             sent += piece.Length + MediaWire.HeaderSize + Fragments.HeaderSize;
+            // Nobody to send to (nobody is watching): nothing goes on the wire, so there is nothing to space out, and waiting would only hold the frame sender back (each frame
+            // took most of the time between two pictures, and any stall then built a backlog that was thrown away). The packets are still made, for the cache a new viewer starts from.
+            if (copies == 0) continue;
             double ahead = sent * 1000.0 / rate - System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
             if (ahead > 2) await Task.Delay((int)ahead, ct).ConfigureAwait(false);
         }
