@@ -151,6 +151,7 @@ public partial class MainWindow
             Padding = new Thickness(4),
             Margin = new Thickness(1),
             Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
             Tag = ":" + name + ":",
         };
         ToolTip.SetTip(button, ":" + name + ":" + (sharedBy != null ? "\nadded by " + sharedBy.OwnerName : ""));

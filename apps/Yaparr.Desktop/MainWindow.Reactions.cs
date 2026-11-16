@@ -136,9 +136,12 @@ public partial class MainWindow
         var button = new Button
         {
             Content = new TextBlock { Text = emoji, FontFamily = EmojiFont, FontSize = size },
-            Padding = new Thickness(5, 3),
+            Padding = new Thickness(6, 5),
             Margin = new Thickness(1),
             Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
             Tag = emoji,
         };
         if (name != null) ToolTip.SetTip(button, name);
@@ -146,9 +149,20 @@ public partial class MainWindow
         return button;
     }
 
+    // The grid scrolls, and a height that is not a whole number of rows shows the last row cut in half: so the height is a whole number of rows.
+    private void SnapEmojiScroll()
+    {
+        const double room = 230;
+        if (EmojiGrid.Children.Count == 0 || EmojiGrid.Children[0].Bounds.Height <= 0) return;
+        double row = EmojiGrid.Children[0].Bounds.Height + 2;
+        double height = Math.Max(row, Math.Floor(room / row) * row);
+        if (Math.Abs(EmojiScroll.MaxHeight - height) > 0.5) EmojiScroll.MaxHeight = height;
+    }
+
     private void WireEmojiPicker()
     {
         _emojiWired = true;
+        EmojiGrid.LayoutUpdated += (_, _) => SnapEmojiScroll();
         foreach (var emoji in EmojiData.Quick)
             QuickRow.Children.Add(EmojiButton(emoji, EmojiData.Find(emoji)?.Name, 22));
 

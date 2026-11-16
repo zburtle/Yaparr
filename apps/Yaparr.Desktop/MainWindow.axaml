@@ -744,7 +744,7 @@
                                     <Button x:Name="AddEmojiButton" Content="Add…" Padding="10,3" CornerRadius="14" IsVisible="False" Click="AddEmoji_Click" ToolTip.Tip="Make an emoji from a small picture" />
                                 </StackPanel>
                                 <TextBlock x:Name="EmojiTitle" Classes="muted small" Margin="4,0,0,0" />
-                                <ScrollViewer MaxHeight="230" HorizontalScrollBarVisibility="Disabled">
+                                <ScrollViewer x:Name="EmojiScroll" MaxHeight="230" HorizontalScrollBarVisibility="Disabled">
                                     <WrapPanel x:Name="EmojiGrid" />
                                 </ScrollViewer>
                             </StackPanel>
