@@ -64,6 +64,7 @@ public partial class MainWindow
         node.MailboxEnabled = _data.LoadBackupServer().SignedIn;
         // A small cloud next to the names of people who use Yaparr Cloud (what they say about themselves, see ChatNode.UsesCloud).
         MessageVm.CloudCheck = account => account.Length == 64 && account.All(Uri.IsHexDigit) && _node?.UsesCloud(new PeerId(account)) == true;
+        PeerVm.IUseCloud = () => _node?.MailboxEnabled == true;
         VoiceMemberVm.CloudCheck = device => device.All(Uri.IsHexDigit) && _node?.UsesCloudDevice(new PeerId(device)) == true;
         node.CloudUsersChanged += () => UI(() =>
         {
