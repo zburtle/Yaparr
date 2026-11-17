@@ -32,6 +32,9 @@ public sealed partial class ChatNode
     /// <summary>The name changed because another of your devices renamed you. Remember the new name.</summary>
     public event Action<string>? DisplayNameChanged;
 
+    /// <summary>Raised when the account's name, rooms or blocks change on this device (made here, or heard from another device), so a cloud sync can run soon.</summary>
+    public event Action? AccountChanged;
+
     /// <summary>Everything the account currently holds, for saving or for handing to a device being linked.</summary>
     public IReadOnlyList<AccountEntry> AccountEntries
     {
@@ -86,6 +89,12 @@ public sealed partial class ChatNode
         && (e.Key == NameKey || e.Key.StartsWith(BlockPrefix, StringComparison.Ordinal) || e.Key.StartsWith(RoomPrefix, StringComparison.Ordinal)
             || e.Key.StartsWith(ReadPrefix, StringComparison.Ordinal));
 
+    /// <summary>True if <paramref name="candidate"/> is the one to keep over <paramref name="current"/> (null: nothing held): the same order every device uses.</summary>
+    public static bool IsNewerEntry(AccountEntry candidate, AccountEntry? current) => Newer(candidate, current);
+
+    /// <summary>Whether an entry is one that belongs on the account's cloud copy: the name, rooms and blocks (what is read of a chat stays between the devices).</summary>
+    public static bool IsCloudEntry(AccountEntry e) => e.Key == NameKey || e.Key.StartsWith(BlockPrefix, StringComparison.Ordinal) || e.Key.StartsWith(RoomPrefix, StringComparison.Ordinal);
+
     // A total order, so devices that see the same entries in a different order still end up with the same one.
     private static bool Newer(AccountEntry candidate, AccountEntry? current)
     {
@@ -112,6 +121,7 @@ public sealed partial class ChatNode
             SaveAccountStateLocked();
         }
         SendToSiblings(new[] { entry });
+        AccountChanged?.Invoke();
     }
 
     private void NoteRoomChanged(ChatRoom room, bool joined)
@@ -148,7 +158,25 @@ public sealed partial class ChatNode
     {
         // Only another of your own devices may change your settings; the connection's certificate is what proves it.
         if (!IsSibling(peer)) return;
-        var applied = new List<AccountEntry>();
+        // The sender is behind on these, for example after being switched off for a while. Equal entries are not
+        // sent back, which is what ends the exchange.
+        SendEntries(peer, MergeAccountEntries(entries, out _));
+    }
+
+    /// <summary>
+    /// Takes entries that came from the account's cloud copy (see <c>AccountCloudSync</c>), which only the person's own devices can write: the newer ones win over what
+    /// this device holds, exactly as when another device sends them, and are passed on to the other devices that are online.
+    /// </summary>
+    public void ApplyCloudEntries(IReadOnlyList<AccountEntry> entries)
+    {
+        MergeAccountEntries(entries.Where(IsCloudEntry).ToArray(), out var applied);
+        SendToSiblings(applied);
+    }
+
+    // Keeps the entries that are newer than the held ones and applies them; returns the held ones that are newer than the ones given.
+    private List<AccountEntry> MergeAccountEntries(AccountEntry[] entries, out List<AccountEntry> applied)
+    {
+        applied = new List<AccountEntry>();
         var newerHere = new List<AccountEntry>();
         lock (_acctGate)
         {
@@ -162,9 +190,8 @@ public sealed partial class ChatNode
             if (applied.Count > 0) SaveAccountStateLocked();
         }
         foreach (var e in applied) ApplyEntry(e);
-        // The sender is behind on these, for example after being switched off for a while. Equal entries are not
-        // sent back, which is what ends the exchange.
-        SendEntries(peer, newerHere);
+        if (applied.Any(IsCloudEntry)) AccountChanged?.Invoke();
+        return newerHere;
     }
 
     private void ApplyEntry(AccountEntry e)

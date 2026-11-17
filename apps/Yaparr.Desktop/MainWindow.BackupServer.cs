@@ -41,8 +41,38 @@ public partial class MainWindow
     {
         _autoTimer.Tick += (_, _) => _ = RunAutoBackupAsync();
         _autoTimer.Start();
+        _cloudSyncTimer.Tick += (_, _) => _ = RunCloudSyncAsync();
+        _cloudSyncTimer.Start();
         // And once soon after the app opens, so a change made while it was closed does not wait the first five minutes.
         Avalonia.Threading.DispatcherTimer.RunOnce(() => _ = RunAutoBackupAsync(), TimeSpan.FromSeconds(45));
+        // The name, rooms and blocks are kept the same on all devices through the server as well (AccountCloudSync): once soon after the app opens, every few
+        // minutes to hear what other devices did, and shortly after a change made here (a burst of changes is one sync).
+        if (_node != null) _node.AccountChanged += () => UI(() => _cloudSyncSoon.Debounce());
+        Avalonia.Threading.DispatcherTimer.RunOnce(() => _ = RunCloudSyncAsync(), TimeSpan.FromSeconds(20));
+    }
+
+    private readonly Avalonia.Threading.DispatcherTimer _cloudSyncTimer = new() { Interval = TimeSpan.FromMinutes(5) };
+    private CloudSyncDelay? _cloudSyncDelay;
+    private CloudSyncDelay _cloudSyncSoon => _cloudSyncDelay ??= new CloudSyncDelay(() => _ = RunCloudSyncAsync());
+
+    // Waits a few seconds after the last change before it syncs.
+    private sealed class CloudSyncDelay
+    {
+        private readonly Avalonia.Threading.DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(5) };
+
+        public CloudSyncDelay(Action run)
+        {
+            _timer.Tick += (_, _) => { _timer.Stop(); run(); };
+        }
+
+        public void Debounce() { _timer.Stop(); _timer.Start(); }
+    }
+
+    private async Task RunCloudSyncAsync()
+    {
+        if (_node is not { } node) return;
+        try { await Task.Run(() => AccountCloudSync.RunAsync(_data, node, log: _log.Write)); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { _log.Write("sync: " + ex.Message); }
     }
 
     private async Task RunAutoBackupAsync()
