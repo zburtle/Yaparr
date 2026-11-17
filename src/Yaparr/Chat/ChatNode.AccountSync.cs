@@ -87,14 +87,15 @@ public sealed partial class ChatNode
     private static bool IsValidEntry(AccountEntry e) =>
         e.Key is { Length: > 0 and <= MaxEntryKey } && (e.Value == null || e.Value.Length <= MaxEntryValue)
         && (e.Key == NameKey || e.Key.StartsWith(BlockPrefix, StringComparison.Ordinal) || e.Key.StartsWith(RoomPrefix, StringComparison.Ordinal)
-            || e.Key.StartsWith(ReadPrefix, StringComparison.Ordinal) || e.Key.StartsWith(DmPrefix, StringComparison.Ordinal));
+            || e.Key.StartsWith(ReadPrefix, StringComparison.Ordinal) || e.Key.StartsWith(DmPrefix, StringComparison.Ordinal)
+            || e.Key.StartsWith(PinPrefix, StringComparison.Ordinal));
 
     /// <summary>True if <paramref name="candidate"/> is the one to keep over <paramref name="current"/> (null: nothing held): the same order every device uses.</summary>
     public static bool IsNewerEntry(AccountEntry candidate, AccountEntry? current) => Newer(candidate, current);
 
-    /// <summary>Whether an entry is one that belongs on the account's cloud copy: the name, rooms, blocks and the secrets of direct conversations (what is read of a chat stays between the devices).</summary>
+    /// <summary>Whether an entry is one that belongs on the account's cloud copy: the name, rooms, blocks, pins and the secrets of direct conversations (what is read of a chat stays between the devices).</summary>
     public static bool IsCloudEntry(AccountEntry e) => e.Key == NameKey || e.Key.StartsWith(BlockPrefix, StringComparison.Ordinal) || e.Key.StartsWith(RoomPrefix, StringComparison.Ordinal)
-        || e.Key.StartsWith(DmPrefix, StringComparison.Ordinal);
+        || e.Key.StartsWith(DmPrefix, StringComparison.Ordinal) || e.Key.StartsWith(PinPrefix, StringComparison.Ordinal);
 
     // A total order, so devices that see the same entries in a different order still end up with the same one.
     private static bool Newer(AccountEntry candidate, AccountEntry? current)
@@ -123,6 +124,7 @@ public sealed partial class ChatNode
         }
         SendToSiblings(new[] { entry });
         AccountChanged?.Invoke();
+        if (key.StartsWith(PinPrefix, StringComparison.Ordinal)) PinsChanged?.Invoke();
     }
 
     private void NoteRoomChanged(ChatRoom room, bool joined)
@@ -135,6 +137,8 @@ public sealed partial class ChatNode
             if (_acct.TryGetValue(key, out var existing) && existing.Deleted != joined) return;
         }
         Stamp(key, value, deleted: !joined);
+        // A room that is left is not kept pinned (it would only be an entry for a room that is gone).
+        if (!joined && IsPinId(room.Key)) Unpin(true, room.Key);
     }
 
     private void NoteBlockChanged(PeerId person, bool blocked) => Stamp(BlockPrefix + person.Value, "1", deleted: !blocked);
@@ -192,6 +196,7 @@ public sealed partial class ChatNode
         }
         foreach (var e in applied) ApplyEntry(e);
         if (applied.Any(IsCloudEntry)) AccountChanged?.Invoke();
+        if (applied.Any(e => e.Key.StartsWith(PinPrefix, StringComparison.Ordinal))) PinsChanged?.Invoke();
         return newerHere;
     }
 

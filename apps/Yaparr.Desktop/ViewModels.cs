@@ -596,6 +596,21 @@ public sealed class ConversationVm : Observable
     public string? PeerId { get; init; }
     public bool HasPeerId => PeerId != null;
 
+    /// <summary>The room's id (<c>ChatRoom.RoomId</c>), for a room.</summary>
+    public string? RoomId { get; init; }
+
+    /// <summary>What a pin of this conversation is kept under: the room's id, or the other person's id in a direct chat.</summary>
+    public string? PinId => IsRoom ? RoomId : PeerId;
+
+    private bool _isPinned;
+
+    /// <summary>Pinned conversations stay at the top of their list, in an order the person sets.</summary>
+    public bool IsPinned
+    {
+        get => _isPinned;
+        set { if (_isPinned == value) return; _isPinned = value; Raise(); }
+    }
+
     // ---- voice channel ----
 
     public ObservableCollection<VoiceMemberVm> VoiceMembers { get; } = new();

@@ -37,6 +37,12 @@ When you send a message with a web link, Yaparr reads the page (title, descripti
 
 A room made by this version lists its channels under it, text and voice. Click a text channel to show it, a voice channel to join it. The owner and admins right-click a channel to rename it, move it up or down (the first text and voice channels stay first) or delete it. The app remembers which text channel was on show in each room, and keeps count of what you have not read in each channel across restarts: the number on a room is what has arrived in its channels since you last looked at them, and a first start after an upgrade counts everything already there as read.
 
+## Pinning rooms and chats
+
+Right-click a room or a direct chat and choose **Pin to top**: it moves to the top of its list (the rooms and the direct chats each have one) and shows a small pin by its name. The others stay as they were. Right-click a pinned one for **Unpin**, **Move up** and **Move down**, or drag it to a new place among the pinned ones: dropped on a row it takes that row's place, and dropped below the pinned ones it goes last of them. A pinned room or chat cannot be dragged into the other list, and the others cannot be dragged at all. A new pin goes after the ones pinned already, and leaving a room unpins it.
+
+Pins belong to your account, so a room you pin here is pinned, in the same place, on your other devices and on your phone, including ones that were off when you pinned it (they are kept as account entries, see [Synced state](sync.md#pins)).
+
 To install it, see [Installer and updates](installer-and-updates.md).
 
 ## Notifications

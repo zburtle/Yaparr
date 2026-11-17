@@ -4,6 +4,8 @@
 
 It connects while the app is open, and keeps connected with the screen closed when you turn on **Stay connected in the background** (off by default); it notifies of messages when it is not on the screen (see Notifications below). (Sharing the phone's own screen is there on Android 14 and newer, and watching someone else's, from the phone's call). Voice, pictures and GIFs, the GIF shelf, replies and mentions, moderation, settings, the connection check, backup and the soundboard are all there (see the sections below); what is still missing from them is listed in each section and in #127.
 
+**Pinning.** A long press on a room or direct chat in the list opens a small window: **Pin** puts it at the top of the list, above the chats ordered by their newest message, with a small pin by its name; **Unpin** takes it off. For a pinned one, **Move up** and **Move down** change its place among the pinned ones (there is no dragging on the phone). Pins belong to your account, so they are the same on the computer app and on your other phones (see [Synced state](sync.md#pins)).
+
 **Settings** are a list of sections (You & appearance, Voice, Network, Notifications & links, Yaparr Cloud, Backup, About). On a phone the list and a section's page take turns, and back goes from the page to the list; when the window is at least 640 dp wide (a tablet, a phone on its side) they sit side by side, as on the computer.
 
 ## Build and run

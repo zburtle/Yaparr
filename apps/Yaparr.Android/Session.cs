@@ -198,6 +198,9 @@ public sealed partial class Session : IDisposable
         node.AvatarChanged += account => UI(() => OnAvatarChanged(account));
         AvatarBrushes.Source = account => _node?.AvatarOf(new PeerId(account));
         node.SyncedRoomChanged += OnSyncedRoomChanged;
+        // The pins are read before any chat is added, so each lands in its place; later changes (here, or from another device) follow.
+        _pins = new PinnedFirst(node.Pins);
+        node.PinsChanged += () => UI(RefreshPins);
         node.DisplayNameChanged += OnDisplayNameChanged;
         node.IncomingDirectChat += chat => UI(() => AddDirect(chat));
         node.PeerConnected += _ => UI(SayConnection);
@@ -973,14 +976,71 @@ public sealed partial class Session : IDisposable
         finally { chat.Status = before; }
     }
 
-    // The chat with the newest message goes first.
+    // The chat with the newest message goes first, below the pinned ones.
     private void Resort(Chat chat)
     {
         int from = Chats.IndexOf(chat);
         if (from < 0) return;
         int to = from;
-        while (to > 0 && Chats[to - 1].LastActivity < chat.LastActivity) to--;
+        while (to > 0 && !Chats[to - 1].IsPinned && Chats[to - 1].LastActivity < chat.LastActivity) to--;
         if (to != from) Chats.Move(from, to);
+        ArrangePins();
+    }
+
+    // ---- pins ----
+
+    // Pinned chats stay above the others, in the order the person set. The pins belong to the account (ChatNode.Pins), so they are the same on the computer app and on
+    // the person's other phones; the others keep the order they have (newest message first).
+    private PinnedFirst _pins = new(Array.Empty<PinnedConversation>());
+
+    private void RefreshPins()
+    {
+        if (_node is not { } node) return;
+        _pins = new PinnedFirst(node.Pins);
+        ArrangePins();
+    }
+
+    private void ArrangePins()
+    {
+        foreach (var chat in Chats) chat.IsPinned = _pins.IsPinned(chat.IsRoom, chat.PinId);
+        PinnedFirst.Apply(Chats, c => _pins.RankOf(c.IsRoom, c.PinId));
+    }
+
+    /// <summary>Pins the chat (after the ones pinned already), or takes it off the pinned ones.</summary>
+    public void TogglePin(Chat chat)
+    {
+        if (_node is not { } node || chat.PinId is not { } id) return;
+        if (chat.IsPinned) node.Unpin(chat.IsRoom, id); else node.Pin(chat.IsRoom, id);
+    }
+
+    // The pinned chats in the order they are shown, as the node holds them.
+    private List<PinnedConversation> PinsShown()
+    {
+        if (_node is not { } node) return new();
+        var held = node.Pins;
+        return Chats.Where(c => c.IsPinned && c.PinId != null)
+            .Select(c => held.FirstOrDefault(p => p.IsRoom == c.IsRoom && p.Id == c.PinId))
+            .OfType<PinnedConversation>().ToList();
+    }
+
+    /// <summary>Whether a pinned chat can go one place up (<paramref name="step"/> -1) or down (1) among the pinned ones.</summary>
+    public bool CanMovePin(Chat chat, int step)
+    {
+        var shown = PinsShown();
+        int at = shown.FindIndex(p => p.IsRoom == chat.IsRoom && p.Id == chat.PinId);
+        return chat.IsPinned && at >= 0 && at + step >= 0 && at + step < shown.Count;
+    }
+
+    /// <summary>Moves a pinned chat one place up (<paramref name="step"/> -1) or down (1) among the pinned ones.</summary>
+    public void MovePin(Chat chat, int step)
+    {
+        if (_node is not { } node || !chat.IsPinned || chat.PinId is not { } id) return;
+        var shown = PinsShown();
+        int at = shown.FindIndex(p => p.IsRoom == chat.IsRoom && p.Id == id);
+        int to = at + step;
+        if (at < 0 || to < 0 || to >= shown.Count) return;
+        var (after, before) = PinnedFirst.Neighbours(shown, shown[at], to);
+        node.MovePin(chat.IsRoom, id, after, before);
     }
 
     // ---- what is on show ----

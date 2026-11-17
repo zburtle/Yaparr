@@ -65,6 +65,7 @@ public partial class MainWindow : Window
         RoomList.ItemsSource = _roomItems;
         ChatList.ItemsSource = _chatItems;
         _conversations.CollectionChanged += SyncConversationLists;
+        WirePinning();
         ToolTip.SetTip(InfoIcon, "Yaparr v" + Updater.CurrentVersion);
         ToolTip.SetTip(PeersIcon, "Starting…");
         ToolTip.SetTip(NetworkIcon, "Checking the network…");
@@ -492,6 +493,7 @@ public partial class MainWindow : Window
         AvatarPictures.Source = account => _node?.AvatarOf(new PeerId(account));
         _node.AccountLearned += _ => UI(ClaimOwnMessages);
         _node.SyncedRoomChanged += OnSyncedRoomChanged;
+        _node.PinsChanged += () => UI(RefreshPins);
         _node.DisplayNameChanged += OnDisplayNameChanged;
         _node.PeerConnected += p => UI(() => { Remember(p); RefreshPeers(); UpdateStatus(); });
         _node.PeerDisconnected += p => UI(() => { Remember(p); RefreshPeers(p.Account); UpdateStatus(); });
@@ -625,11 +627,6 @@ public partial class MainWindow : Window
 
     private const string PrivatePrefix = "";
 
-    private void ConversationMenu_Opening(object? sender, CancelEventArgs e)
-    {
-        if (_selected is not { IsRoom: true }) e.Cancel = true;
-    }
-
     private void RetryMessage_Click(object? sender, RoutedEventArgs e)
     {
         if (_selected is { Retry: { } retry } && MessageList.SelectedItem is MessageVm { CanRetry: true, Id: { } id }) retry(id);
@@ -718,7 +715,7 @@ public partial class MainWindow : Window
         // A message goes to the text channel on show; the first one needs no channel named.
         conv = new ConversationVm(title, isRoom: true,
             text => conv.CurrentChannel == RoomChannels.DefaultText ? room.SendAsync(text) : room.SendAsync(text, conv.CurrentChannel),
-            room.Retry) { Invite = invite };
+            room.Retry) { Invite = invite, RoomId = room.RoomId };
         _roomConversations[room] = conv;
         room.DeliveryChanged += s => UI(() => conv.ApplyDelivery(s, room.GetDeliveryDetails(s.MessageId)));
 

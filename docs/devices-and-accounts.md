@@ -34,7 +34,7 @@ connections, relays, voice and delivery work per device; what is shared is the p
 - **Logging out.** **Settings > Devices > Log out…** removes the account from this computer (identity key, rooms and room keys, history, pictures and settings; the FFmpeg program, updates and logs stay) and restarts Yaparr at the first-start screen, where you can start fresh, link, or restore a backup. It offers a backup first. The running app does not delete anything itself: `AppData.RequestLogOut` leaves a note (`logout.pending`) holding its process id, and at the next start `AppData.CompleteLogOut` waits for that process to exit and then removes the profile, so open files and late settings saves cannot bring it back. Your other devices are not touched. Computer app only so far.
 - **Sharing your id.** Give people your account id (**Copy my ID**), which is the same on every device. A direct chat
   with a person reaches all of their devices, and counts as delivered when every connected device confirmed it.
-- **What stays in step.** Your name, blocks and the list of rooms follow you between devices
+- **What stays in step.** Your name, blocks, the list of rooms and which rooms and chats you pinned (and in what order) follow you between devices
   (`ChatNode.SyncedRoomChanged`, `DisplayNameChanged`, `AccountEntries`), over connections whose certificate proves they
   are your own. Changes are kept in `account.json` and a device that was off catches up when it meets another; the newest
   change wins. Room history syncs between your devices like it does between any two members of the room.
