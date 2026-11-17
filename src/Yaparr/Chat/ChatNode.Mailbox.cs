@@ -78,7 +78,18 @@ public sealed partial class ChatNode
     /// Whether the messages written here are also sealed and queued for the room's mailbox (see <see cref="TakeMailboxPosts"/>). The app turns it on while it is
     /// signed in to a Yaparr Cloud server, and turns it off otherwise, so nothing piles up that nobody will send.
     /// </summary>
-    public bool MailboxEnabled { get; set; }
+    public bool MailboxEnabled
+    {
+        get => _mailboxEnabled;
+        set
+        {
+            if (_mailboxEnabled == value) return;
+            _mailboxEnabled = value;
+            AnnounceCloud();
+        }
+    }
+
+    private volatile bool _mailboxEnabled;
 
     /// <summary>A message was queued for a mailbox: the app sends it soon (a burst is one call).</summary>
     public event Action? MailboxQueued;

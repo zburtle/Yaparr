@@ -62,6 +62,18 @@ public partial class MainWindow
     {
         if (_node is not { } node) return;
         node.MailboxEnabled = _data.LoadBackupServer().SignedIn;
+        // A small cloud next to the names of people who use Yaparr Cloud (what they say about themselves, see ChatNode.UsesCloud).
+        MessageVm.CloudCheck = account => account.Length == 64 && account.All(Uri.IsHexDigit) && _node?.UsesCloud(new PeerId(account)) == true;
+        VoiceMemberVm.CloudCheck = device => device.All(Uri.IsHexDigit) && _node?.UsesCloudDevice(new PeerId(device)) == true;
+        node.CloudUsersChanged += () => UI(() =>
+        {
+            foreach (var conv in _conversations)
+            {
+                foreach (var vm in conv.AllMessages) vm.RaiseCloud();
+                foreach (var channel in conv.VoiceChannels) foreach (var member in channel.Members) member.RaiseCloud();
+            }
+            RefreshPeers();   // the people list is made again, so its clouds follow
+        });
         _mailboxDelay = new CloudSyncDelay(() => _ = RunMailboxAsync());
         node.MailboxQueued += () => UI(() => _mailboxDelay.Debounce());
         _mailboxTimer.Tick += (_, _) => _ = RunMailboxAsync();

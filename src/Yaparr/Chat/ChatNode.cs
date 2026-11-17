@@ -1278,7 +1278,7 @@ public sealed partial class ChatNode : IDisposable
     private void SendLinks(ChatRoom room)
     {
         var direct = room.MemberStates.Values
-            .Select(s => new WirePeer { Id = s.Id.Value, Name = s.Name })
+            .Select(s => new WirePeer { Id = s.Id.Value, Name = s.Name, Cld = _cloudDevices.ContainsKey(s.Id.Value) ? true : null })
             .ToArray();
         foreach (var member in room.MemberStates.Values)
             Send(member.Connection, new Wire
@@ -1533,7 +1533,7 @@ public sealed partial class ChatNode : IDisposable
         CountConnectionMade(conn, previous?.Connection);
         if (_candidates.TryGetValue(conn.RemoteEndPoint.ToString(), out var dialed)) { dialed.Failures = 0; dialed.NextDial = 0; }
         // The hello must be the first thing on the connection, so send it before anyone can find the state and write to it.
-        Send(conn, new Wire { Type = Wire.Hello, Name = DisplayName, Deg = _peers.Count + (isNew ? 1 : 0), Rly = IsRelayCapable, Wake = _wakeAddress, Rooms = _rooms.Values.Select(r => RefTo(r, state)).ToArray() });
+        Send(conn, new Wire { Type = Wire.Hello, Name = DisplayName, Deg = _peers.Count + (isNew ? 1 : 0), Rly = IsRelayCapable, Wake = _wakeAddress, Cld = MailboxEnabled ? true : null, Rooms = _rooms.Values.Select(r => RefTo(r, state)).ToArray() });
         _peers[state.Id] = state;
         CloseIfSilent(state);
         foreach (var room in _rooms.Values)
@@ -1618,6 +1618,7 @@ public sealed partial class ChatNode : IDisposable
                 peer.Degree = wire.Deg;
                 peer.CanRelay = wire.Rly;
                 peer.WakeUrl = CleanWake(wire.Wake);
+                NoteCloudDevice(peer.Id, wire.Cld == true);
                 LogPeerEvent(peer.Id, $"hello from {peer.Id.Short} ({peer.Name}): declares {wire.Rooms?.Length ?? 0} room(s); we are in {_rooms.Count}");
                 if (first && !EnforceCap(peer)) break;
                 if (first) PeerConnected?.Invoke(peer.Info);
@@ -1655,6 +1656,10 @@ public sealed partial class ChatNode : IDisposable
 
             case Wire.DirectBack:
                 OnDirectBack(peer, wire);
+                break;
+
+            case Wire.Cloud when peer.Name != null:
+                NoteCloudDevice(peer.Id, wire.Cld == true);
                 break;
 
             case Wire.DmKey when wire.Text is { Length: <= 64 }:
@@ -1709,7 +1714,10 @@ public sealed partial class ChatNode : IDisposable
                 var links = new Dictionary<string, string>();
                 foreach (var p in wire.Peers.Take(256))
                     if (IsValidPeerId(p.Id) && p.Id != peer.Id.Value)
+                    {
+                        if (p.Cld == true) NoteCloudDevice(new PeerId(p.Id), true);
                         links[p.Id] = string.IsNullOrWhiteSpace(p.Name) ? new PeerId(p.Id).Short : p.Name.Length > 64 ? p.Name[..64] : p.Name;
+                    }
                 peer.SetLinks(linkRoom.Key, links);
                 if (wire.Deg > 0) peer.Degree = wire.Deg;
                 RefreshIndirect(linkRoom);

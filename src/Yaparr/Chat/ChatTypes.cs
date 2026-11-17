@@ -97,6 +97,9 @@ internal sealed class Wire
     /// <summary>Where to ask for the sender's phone to be woken (a wake address), in a hello or when it changes; empty says there is none. Absent from older versions.</summary>
     public string? Wake { get; set; }
 
+    /// <summary>True when the sender is signed in to a Yaparr Cloud server (in a hello and in a <c>cld</c> message); said about itself, not a proof.</summary>
+    public bool? Cld { get; set; }
+
     /// <summary>Settings passed between a person's own devices.</summary>
     public AccountEntry[]? Entries { get; set; }
 
@@ -149,7 +152,7 @@ internal sealed class Wire
 
     public const string Avatar = "av", AvatarGet = "avget", AvatarData = "avdata";
 
-    public const string Direct = "dm", DirectSync = "dmsync", DmKey = "dmkey";
+    public const string Direct = "dm", DirectSync = "dmsync", DmKey = "dmkey", Cloud = "cld";
 
     /// <summary>A request for the direct messages before a time (<c>Text</c> is the other person's account, <c>Ts</c> the time, <c>N</c> how many), and the answer (<c>Dm</c>, in the order of the asker's side of the conversation).</summary>
     public const string DirectBack = "dmback";
@@ -170,4 +173,5 @@ internal sealed class WirePeer
     public string Id { get; set; } = "";
     public string EndPoint { get; set; } = "";
     public string? Name { get; set; }
+    public bool? Cld { get; set; }
 }

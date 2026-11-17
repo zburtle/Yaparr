@@ -7,7 +7,11 @@ using Yaparr.Identity;
 namespace Yaparr.AndroidApp;
 
 /// <summary>A person of a room, for the list of people.</summary>
-public sealed record Person(string Name, string Id, string Role = "");
+public sealed record Person(string Name, string Id, string Role = "")
+{
+    /// <summary>Whether this person has said they use Yaparr Cloud (a small cloud shows next to their name).</summary>
+    public bool UsesCloud => Id is { Length: 64 } && Line.CloudCheck?.Invoke(Id) == true;
+}
 
 /// <summary>
 /// The running app behind the screens: the chat node, and a <see cref="Chat"/> for each room and direct chat. It keeps the rooms
@@ -1053,6 +1057,9 @@ public sealed partial class Session : IDisposable
     private void StartMailbox(ChatNode node)
     {
         node.MailboxEnabled = _data.LoadBackupServer().SignedIn;
+        // A small cloud next to the names of people who use Yaparr Cloud (what they say about themselves, see ChatNode.UsesCloud).
+        Line.CloudCheck = account => account.Length == 64 && account.All(Uri.IsHexDigit) && _node?.UsesCloud(new PeerId(account)) == true;
+        node.CloudUsersChanged += () => UI(() => { foreach (var chat in Chats) foreach (var line in chat.AllLines) line.RaiseCloud(); });
         _mailboxTimer.Tick += (_, _) => _ = RunMailboxAsync();
         _mailboxTimer.Start();
         _mailboxSoon.Tick += (_, _) => { _mailboxSoon.Stop(); _ = RunMailboxAsync(); };
