@@ -161,6 +161,8 @@ internal static class PushManager
         foreach (var delay in new[] { TimeSpan.FromSeconds(15), WakeWindow })
             _ = Task.Delay(delay).ContinueWith(_ => AppHost.Session?.LogConnections($"{(int)delay.TotalSeconds} s after a push"));
         AppHost.WakeUntil = Environment.TickCount64 + (long)WakeWindow.TotalMilliseconds;
+        // What was left in the rooms' mailboxes while the phone was away: fetched at once, no connection needed.
+        AppHost.Session?.MailboxNow();
         bool started = OperatingSystem.IsAndroidVersionAtLeast(26) && AppHost.CanStartWithoutScreen && ConnectionService.StartForWake(context);
         if (!started && !AppHost.ScreenOpen && OperatingSystem.IsAndroidVersionAtLeast(26)) Notifier.Wake(context);
         // After the window the service stops again, unless the person keeps the connection on.
