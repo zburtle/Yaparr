@@ -24,6 +24,8 @@ public sealed partial class Session : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly DispatcherTimer _saveTimer = new() { Interval = TimeSpan.FromSeconds(10) };
     private readonly DispatcherTimer _syncTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+    private readonly DispatcherTimer _cloudTimer = new() { Interval = TimeSpan.FromMinutes(5) };
+    private readonly DispatcherTimer _cloudSoon = new() { Interval = TimeSpan.FromSeconds(5) };
     private readonly DeviceSearch _deviceSearch = new();
     private string? _banner;
     private double? _bannerProgress;
@@ -197,6 +199,7 @@ public sealed partial class Session : IDisposable
         _saveTimer.Start();
         _syncTimer.Tick += (_, _) => UpdateSync();
         _syncTimer.Start();
+        StartCloudSync(node);
         SayConnection();
 
         foreach (var stored in node.StoredDirectChats) AddDirect(stored);
@@ -1021,8 +1024,29 @@ public sealed partial class Session : IDisposable
         catch (IOException) { }
     }
 
+    // The name, rooms and blocks are kept the same on all devices through the server too (AccountCloudSync): soon after the app opens, every few minutes, and a few
+    // seconds after a change (a burst of changes is one sync). It does nothing until this phone is signed in to a server and has a recovery code.
+    private void StartCloudSync(ChatNode node)
+    {
+        _cloudTimer.Tick += (_, _) => _ = RunCloudSyncAsync();
+        _cloudTimer.Start();
+        _cloudSoon.Tick += (_, _) => { _cloudSoon.Stop(); _ = RunCloudSyncAsync(); };
+        node.AccountChanged += () => UI(() => { _cloudSoon.Stop(); _cloudSoon.Start(); });
+        DispatcherTimer.RunOnce(() => _ = RunCloudSyncAsync(), TimeSpan.FromSeconds(20));
+    }
+
+    private async Task RunCloudSyncAsync()
+    {
+        if (_node is not { } node) return;
+        try { await Task.Run(() => AccountCloudSync.RunAsync(_data, node, log: Log, cancel: _cts.Token)); }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { Log("sync: " + ex.Message); }
+    }
+
     public void Dispose()
     {
+        _cloudTimer.Stop();
+        _cloudSoon.Stop();
         _saveTimer.Stop();
         _syncTimer.Stop();
         LeaveVoice();
