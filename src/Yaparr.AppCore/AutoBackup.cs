@@ -48,7 +48,7 @@ public static class AutoBackupPlan
     public static AutoBackupWhy Decide(BackupServerState state, string currentKeys, DateTimeOffset? keysChangedSince, Func<bool> historyChanged, DateTimeOffset now)
     {
         // Off, signed out, or never backed up by hand (which is when the recovery code is made, and the person is shown it): nothing is sent on its own.
-        if (!state.AutoBackup || !state.SignedIn || state.RecoveryCode.Length == 0 || state.Version <= 0) return AutoBackupWhy.Nothing;
+        if (!state.SignedIn || state.RecoveryCode.Length == 0 || state.Version <= 0) return AutoBackupWhy.Nothing;
         // Waiting for the person after another device saved a newer backup, or backing off after a failure.
         if (state.AutoPaused) return AutoBackupWhy.Nothing;
         if (state.RetryAfter is { } retry && now < retry) return AutoBackupWhy.Nothing;
@@ -99,7 +99,7 @@ public sealed class AutoBackup
         try
         {
             var state = _data.LoadBackupServer();
-            if (!state.AutoBackup || !state.SignedIn) { _pending = null; return AutoBackupResult.Nothing; }
+            if (!state.SignedIn) { _pending = null; return AutoBackupResult.Nothing; }
 
             var now = _now();
             var keys = _data.KeysFingerprint();

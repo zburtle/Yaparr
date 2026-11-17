@@ -21,7 +21,6 @@ public partial class MainWindow
 
     private AutoBackup? _auto;
     private readonly Avalonia.Threading.DispatcherTimer _autoTimer = new() { Interval = TimeSpan.FromMinutes(5) };
-    private bool _showingAuto;
 
     // One for the window: it and the backup the person asks for share its gate, so they never run at once.
     private AutoBackup Auto
@@ -49,6 +48,17 @@ public partial class MainWindow
         // minutes to hear what other devices did, and shortly after a change made here (a burst of changes is one sync).
         if (_node != null) _node.AccountChanged += () => UI(() => _cloudSyncSoon.Debounce());
         Avalonia.Threading.DispatcherTimer.RunOnce(() => _ = RunCloudSyncAsync(), TimeSpan.FromSeconds(20));
+        Avalonia.Threading.DispatcherTimer.RunOnce(() => _ = FirstBackupAtLaunchAsync(), TimeSpan.FromSeconds(10));
+    }
+
+    // Signed in and never backed up (it was signed in before this, or the first backup after sign-in did not happen): the first backup starts, which shows the
+    // recovery code. It cannot be closed before the code is copied, so it comes back at the next start only if the app was closed in between.
+    private async Task FirstBackupAtLaunchAsync()
+    {
+        var state = _data.LoadBackupServer();
+        if (!state.SignedIn || state.RecoveryCode.Length > 0 || state.Version > 0) return;
+        _server = state;
+        await StartFirstBackupAsync();
     }
 
     private readonly Avalonia.Threading.DispatcherTimer _cloudSyncTimer = new() { Interval = TimeSpan.FromMinutes(5) };
@@ -82,31 +92,6 @@ public partial class MainWindow
         catch (Exception ex) when (ex is not OperationCanceledException) { _log.Write("automatic backup: " + ex.Message); }
     }
 
-    private async void AutoBackup_Click(object? sender, RoutedEventArgs e)
-    {
-        if (_showingAuto) return;
-        var on = AutoBackupCheck.IsChecked == true;
-        _server = _data.LoadBackupServer();
-        if (on && (_server.RecoveryCode.Length == 0 || _server.Version <= 0))
-        {
-            // The first backup is by hand: it is when the recovery code is made, and shown.
-            ShowServerState();
-            ServerStatusIs("Back up by hand once first (Back up now): that makes your recovery code, which automatic backups lock the backup with.", problem: true);
-            return;
-        }
-        _server.AutoBackup = on;
-        if (on) _server.AutoNote = "";
-        _data.SaveBackupServer(_server);
-        ShowServerState();
-        ServerStatusIs("");
-        if (on)
-        {
-            _log.Write("automatic backups turned on");
-            await Task.Delay(1000);
-            await RunAutoBackupAsync();
-        }
-    }
-
     private static string Ago(DateTimeOffset when)
     {
         var span = DateTimeOffset.UtcNow - when;
@@ -135,14 +120,11 @@ public partial class MainWindow
             (_server.Version > 0 ? $" The last backup from this computer is version {_server.Version}." : " No backup has been saved from this computer yet.");
         ShowRecoveryCodeButton.IsVisible = _server.RecoveryCode.Length > 0;
 
-        _showingAuto = true;
-        AutoBackupCheck.IsChecked = _server.AutoBackup;
-        AutoBackupCheck.IsEnabled = _server.AutoBackup || (_server.RecoveryCode.Length > 0 && _server.Version > 0);
-        _showingAuto = false;
         var trouble = _server.AutoPaused || _server.Failures > 0 || _server.AutoNote.StartsWith("Automatic backups stopped", StringComparison.Ordinal);
         AutoBackupStatus.Text = trouble ? _server.AutoNote
-            : _server.AutoBackup ? (_server.LastBackup is { } last ? $"On. {(_server.AutoNote.Length > 0 ? _server.AutoNote + " " : "")}Last backup: version {_server.Version}, {Ago(last)}." : "On.")
-            : "";
+            : _server.RecoveryCode.Length == 0 || _server.Version <= 0 ? "Automatic backups start after your first backup, which makes your recovery code."
+            : _server.LastBackup is { } last ? $"Backs up automatically. {(_server.AutoNote.Length > 0 ? _server.AutoNote + " " : "")}Last backup: version {_server.Version}, {Ago(last)}."
+            : "Backs up automatically.";
         AutoBackupStatus.IsVisible = AutoBackupStatus.Text.Length > 0;
     }
 
@@ -194,6 +176,7 @@ public partial class MainWindow
             ShowServerState();
             ServerStatusIs("");
             Activate();
+            await StartFirstBackupAsync();
         }
         catch (OperationCanceledException) { ServerStatusIs(""); }
         catch (BackupServerException ex) { ServerStatusIs(ex.Message, problem: true); }
@@ -241,9 +224,25 @@ public partial class MainWindow
             ShowSettings("cloud");
             ServerUrlBox.Text = ReleaseConfig.Current.BackupServerToOffer(_server.Url);
             ShowServerState();
-            ServerStatusIs($"Signed in to {host} as {username}. Press Back up now to save your first backup; Yaparr then makes a recovery code for you to keep.");
+            ServerStatusIs($"Signed in to {host} as {username}. Press Back up now to save your first backup; Yaparr then makes a recovery code for you to keep, and backs up automatically after that.");
+            await StartFirstBackupAsync();
         }
         catch (BackupServerException ex) { await Dialogs.MessageAsync(this, title, ex.Message); }
+    }
+
+    // Right after signing in to an account that has no backup yet, the first one starts by itself: it makes the recovery code (shown for the person to keep),
+    // which automatic backups and the sync of name, rooms and blocks both need, so nothing waits for the sync first. If the server already has a backup, which
+    // another device made, nothing is saved without the person choosing (Back up now asks which code opens it).
+    private async Task StartFirstBackupAsync()
+    {
+        if (_node == null || !_server.SignedIn || _server.RecoveryCode.Length > 0) return;
+        try
+        {
+            using var client = new BackupServerClient(new Uri(_server.Url), _server.Token);
+            if ((await client.VersionsAsync()).Count > 0) return;
+        }
+        catch (BackupServerException ex) { ServerFailed(ex); return; }
+        await BackupToServerAsync();
     }
 
     private void ServerCancelSignIn_Click(object? sender, RoutedEventArgs e) => _serverSignIn?.Cancel();
@@ -282,10 +281,11 @@ public partial class MainWindow
         if (_server.RecoveryCode.Length > 0) await ShowRecoveryCodeAsync(_server.RecoveryCode, isNew: false);
     }
 
-    // Shows the recovery code with a button to copy it. For a new code the person has to say they saved it (false if they back out).
+    // Shows the recovery code with a button to copy it. A new code cannot be dismissed before it has been copied (or copying failed, and it has to be written
+    // down): there is no Cancel, the window's close button does nothing, and "I have saved it" waits for the copy. Only then does the backup go on.
     private async Task<bool> ShowRecoveryCodeAsync(string code, bool isNew)
     {
-        bool saved = false;
+        bool saved = false, copied = !isNew;
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 8 };
         var dialog = new Window
         {
@@ -296,21 +296,23 @@ public partial class MainWindow
             ShowInTaskbar = false,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
         };
+        Button? doneButton = null;
         var copy = new Button { Content = "Copy" };
         copy.Click += async (_, _) =>
         {
-            copy.Content = await Dialogs.CopyAsync(dialog, code) ? "Copied" : "Couldn't copy";
+            var ok = await Dialogs.CopyAsync(dialog, code);
+            copy.Content = ok ? "Copied" : "Couldn't copy: write it down";
+            copied = true;
+            if (doneButton != null) doneButton.IsEnabled = true;
         };
         buttons.Children.Add(copy);
         if (isNew)
         {
-            var done = new Button { Content = "I have saved it", IsDefault = true };
+            var done = doneButton = new Button { Content = "I have saved it", IsDefault = true, IsEnabled = false };
             done.Classes.Add("primary");
             done.Click += (_, _) => { saved = true; dialog.Close(); };
-            var cancel = new Button { Content = "Cancel", IsCancel = true };
-            cancel.Click += (_, _) => dialog.Close();
             buttons.Children.Add(done);
-            buttons.Children.Add(cancel);
+            dialog.Closing += (_, e) => { if (!saved) e.Cancel = true; };
         }
         else
         {
