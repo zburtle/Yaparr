@@ -288,6 +288,7 @@
                         <Button x:Name="BackupToServerButton" Classes="primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Back up now" Click="BackupToServerClicked" />
                         <Button x:Name="ShowRecoveryCodeButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Show recovery code" Click="ShowRecoveryCodeClicked" />
                         <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Change password" Click="ServerChangePasswordClicked" />
+                        <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Delete my account" Click="ServerDeleteAccountClicked" />
                         <Button x:Name="ServerSignOutButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Sign out" Click="ServerSignOutClicked" />
                     </StackPanel>
                     <TextBlock x:Name="ServerStatus" IsVisible="False" TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />

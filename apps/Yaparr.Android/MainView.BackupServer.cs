@@ -131,6 +131,12 @@ public partial class MainView
         if (Uri.TryCreate(_server.Url, UriKind.Absolute, out var server)) await OpenInBrowserAsync(BackupServerClient.PasswordPage(server));
     }
 
+    // The account, with its backup, synced settings and wake-up registrations, is deleted on the server's own page, in the browser.
+    private async void ServerDeleteAccountClicked(object? sender, RoutedEventArgs e)
+    {
+        if (Uri.TryCreate(_server.Url, UriKind.Absolute, out var server)) await OpenInBrowserAsync(BackupServerClient.DeleteAccountPage(server));
+    }
+
     // ---- small helpers that wait for an answer ----
 
     private Task<bool> ConfirmAsync(string text, string yes)
