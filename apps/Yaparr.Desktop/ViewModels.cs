@@ -373,6 +373,9 @@ public sealed class MessageVm : Observable
 
 public sealed record PeerVm(string Id, string Name, bool Online, DateTimeOffset LastSeen, bool IsRelayed = false, PeerLink Link = PeerLink.Offline, bool Blocked = false, RoomRole Role = RoomRole.Member, bool BannedHere = false)
 {
+    /// <summary>Whether this person has said they use Yaparr Cloud (a small cloud shows next to their name).</summary>
+    public bool UsesCloud => MessageVm.CloudCheck?.Invoke(Id) == true;
+
     public string Display => BannedHere ? Name + "  (banned)" : Role switch { RoomRole.Owner => Name + "  (owner)", RoomRole.Admin => Name + "  (admin)", _ => Name };
     public string Initial => AvatarPictures.Has(Id) ? "" : Avatars.Initial(Name);
     public IBrush Avatar => AvatarPictures.For(Id) ?? Avatars.BrushFor(Name);
@@ -1001,6 +1004,13 @@ public sealed class VoiceMemberVm : Observable
     {
         Id = id; _name = name; IsSelf = isSelf;
     }
+
+    /// <summary>Asks whether the account of a device has said it uses Yaparr Cloud (set once by the window).</summary>
+    public static Func<string, bool>? CloudCheck { get; set; }
+
+    public bool UsesCloud => Id is { Length: 64 } && CloudCheck?.Invoke(Id) == true;
+
+    public void RaiseCloud() => Raise(nameof(UsesCloud));
 
     public string Id { get; }
     public string Name

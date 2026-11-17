@@ -19,6 +19,7 @@
                                                                HorizontalAlignment="Center" VerticalAlignment="Center" />
                                                 </Border>
                                                 <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                                                <Path IsVisible="{Binding UsesCloud}" Data="M7,18 A4,4 0 0 1 6.5,10.03 A6,6 0 0 1 17.9,11.5 A3.5,3.5 0 0 1 17.5,18 Z" Stroke="{DynamicResource Muted}" StrokeThickness="1.9" StrokeLineCap="Round" StrokeJoin="Round" Stretch="Uniform" Width="13" Height="13" VerticalAlignment="Center" ToolTip.Tip="Uses Yaparr Cloud" />
                                                 <TextBlock Text="{Binding Status}" Classes="muted small" VerticalAlignment="Center" />
                                                 <TextBlock Text="{Binding Where}" Classes="muted small where" VerticalAlignment="Center" />
                                                 <Button Content="🔊" Classes="ghost" IsVisible="{Binding CanSetVolume}" Padding="4,0" FontSize="11"
@@ -871,7 +872,10 @@
                                     </Grid>
                                     <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center"
                                                 Classes="person" Classes.offline="{Binding !Online}">
-                                        <TextBlock Text="{Binding Display}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                        <StackPanel Orientation="Horizontal" Spacing="5">
+                                            <TextBlock Text="{Binding Display}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                            <Path IsVisible="{Binding UsesCloud}" Data="M7,18 A4,4 0 0 1 6.5,10.03 A6,6 0 0 1 17.9,11.5 A3.5,3.5 0 0 1 17.5,18 Z" Stroke="{DynamicResource Muted}" StrokeThickness="1.9" StrokeLineCap="Round" StrokeJoin="Round" Stretch="Uniform" Width="14" Height="14" VerticalAlignment="Center" ToolTip.Tip="Uses Yaparr Cloud" />
+                                        </StackPanel>
                                         <TextBlock Classes="state" Classes.online="{Binding Online}" Classes.warn="{Binding Warn}" Text="{Binding StateText}" />
                                     </StackPanel>
                                 </Grid>

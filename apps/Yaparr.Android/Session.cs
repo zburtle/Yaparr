@@ -7,7 +7,11 @@ using Yaparr.Identity;
 namespace Yaparr.AndroidApp;
 
 /// <summary>A person of a room, for the list of people.</summary>
-public sealed record Person(string Name, string Id, string Role = "");
+public sealed record Person(string Name, string Id, string Role = "")
+{
+    /// <summary>Whether this person has said they use Yaparr Cloud (a small cloud shows next to their name).</summary>
+    public bool UsesCloud => Id is { Length: 64 } && Line.CloudCheck?.Invoke(Id) == true;
+}
 
 /// <summary>
 /// The running app behind the screens: the chat node, and a <see cref="Chat"/> for each room and direct chat. It keeps the rooms

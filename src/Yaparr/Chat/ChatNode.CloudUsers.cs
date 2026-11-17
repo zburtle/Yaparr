@@ -24,6 +24,9 @@ public sealed partial class ChatNode
         return false;
     }
 
+    /// <summary>The same for one device (a connection or a member of a voice channel): whether the account it belongs to uses Yaparr Cloud.</summary>
+    public bool UsesCloudDevice(PeerId device) => UsesCloud(AccountOf(device));
+
     private void NoteCloudDevice(PeerId device, bool on)
     {
         bool changed = on

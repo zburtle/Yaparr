@@ -698,7 +698,10 @@
                         <ListBox.ItemTemplate>
                             <DataTemplate x:DataType="local:Person">
                                 <Grid ColumnDefinitions="*,Auto">
-                                    <TextBlock Text="{Binding Name}" Padding="6,10" FontSize="16" Foreground="{DynamicResource Ink}" />
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <TextBlock Text="{Binding Name}" Padding="6,10,0,10" FontSize="16" Foreground="{DynamicResource Ink}" />
+                                        <Path IsVisible="{Binding UsesCloud}" Data="M7,18 A4,4 0 0 1 6.5,10.03 A6,6 0 0 1 17.9,11.5 A3.5,3.5 0 0 1 17.5,18 Z" Stroke="{DynamicResource Muted}" StrokeThickness="1.9" StrokeLineCap="Round" StrokeJoin="Round" Stretch="Uniform" Width="15" Height="15" VerticalAlignment="Center" />
+                                    </StackPanel>
                                     <TextBlock Grid.Column="1" Text="{Binding Role}" Padding="6,10" FontSize="13" Foreground="{DynamicResource Accent}" />
                                 </Grid>
                             </DataTemplate>

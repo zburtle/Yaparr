@@ -41,7 +41,7 @@ using Avalonia.Android;
 namespace Yaparr.AndroidApp;
 
 /// <summary>Starts Avalonia when the process starts, before any screen. Its label and icon are what the installer, the settings and the app list show.</summary>
-[Application(Label = "Yaparr", Icon = "@drawable/icon")]
+[Application(Label = "Yaparr", Icon = "@mipmap/ic_launcher", RoundIcon = "@mipmap/ic_launcher_round")]
 public class AndroidApp : AvaloniaAndroidApplication<App>
 {
     public AndroidApp(nint javaReference, JniHandleOwnership transfer) : base(javaReference, transfer) { }
@@ -60,7 +60,8 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
 [IntentFilter(new[] { Intent.ActionView }, Categories = new[] { Intent.CategoryDefault, Intent.CategoryBrowsable }, DataScheme = "https", DataHost = "yaparr.com", DataPathPrefix = "/chat", AutoVerify = true)]
 [Activity(
     Label = "Yaparr",
-    Icon = "@drawable/icon",
+    Icon = "@mipmap/ic_launcher",
+    RoundIcon = "@mipmap/ic_launcher_round",
     Theme = "@style/YaparrTheme",
     MainLauncher = true,
     LaunchMode = LaunchMode.SingleTask,

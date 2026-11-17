@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The parrot of assets/logo/yaparr-icon.svg without its background, scaled into the 66 dp that every launcher shape keeps (the rest of the 108 dp is cropped or masked). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group android:scaleX="0.29" android:scaleY="0.29" android:translateX="14.56" android:translateY="19.49">
+        <path android:pathData="M70,92L50,58" android:strokeColor="#F2A93B" android:strokeWidth="13" android:strokeLineCap="round" />
+        <path android:pathData="M88,86L80,48" android:strokeColor="#F0605F" android:strokeWidth="13" android:strokeLineCap="round" />
+        <path android:pathData="M106,86L112,50" android:strokeColor="#F2A93B" android:strokeWidth="13" android:strokeLineCap="round" />
+        <path android:pathData="M30,140a56,56 0 1,0 112,0a56,56 0 1,0 -112,0z" android:fillColor="#FFFFFF" />
+        <path android:pathData="M59,158a13,13 0 1,0 26,0a13,13 0 1,0 -26,0z" android:fillColor="#F2A93B" android:fillAlpha="0.35" />
+        <group android:rotation="-14" android:pivotX="134" android:pivotY="109">
+            <path android:pathData="M134,98C168,90 198,104 198,134C188,122 168,118 134,120z" android:fillColor="#F2A93B" />
+        </group>
+        <path android:pathData="M134,142C160,144 182,150 186,166C168,176 148,168 134,158z" android:fillColor="#E08A1E" />
+        <path android:pathData="M42,112L102,124M102,124L124,98" android:strokeColor="#26306B" android:strokeWidth="6" android:strokeLineCap="round" />
+        <path android:pathData="M87,124a15,15 0 1,0 30,0a15,15 0 1,0 -30,0z" android:fillColor="#26306B" />
+        <path android:pathData="M208,122a22,22 0 0,1 0,34" android:strokeColor="#FFFFFF" android:strokeWidth="10" android:strokeLineCap="round" />
+        <path android:pathData="M222,108a42,42 0 0,1 0,64" android:strokeColor="#FFFFFF" android:strokeAlpha="0.75" android:strokeWidth="10" android:strokeLineCap="round" />
+    </group>
+</vector>
