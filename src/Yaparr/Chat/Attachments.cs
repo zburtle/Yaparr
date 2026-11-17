@@ -146,7 +146,7 @@ public static class ImageSniffer
 /// A picture or GIF attached to a message. The message itself only carries this small description (including a
 /// content hash, which the message signature covers); the file is fetched separately from whoever has it.
 /// </summary>
-public sealed record Attachment(string Hash, string FileName, long Size, string Mime, int Width, int Height, byte[]? Thumbnail = null, string? ReplyTo = null)
+public sealed record Attachment(string Hash, string FileName, long Size, string Mime, int Width, int Height, byte[]? Thumbnail = null, string? ReplyTo = null, BlobRef? Relay = null)
 {
     public const long MaxBytes = 8 * 1024 * 1024;
     public const int MaxThumbnailBytes = 3000;
@@ -169,6 +169,7 @@ public sealed record Attachment(string Hash, string FileName, long Size, string 
             H = Hash, N = FileName, S = Size, M = Mime, W = Width, X = Height,
             T = Thumbnail is { Length: > 0 } ? Convert.ToBase64String(Thumbnail) : null,
             R = replyTo?.ToLowerInvariant(),
+            B = Relay?.Id, K = Relay?.Key, V = Relay?.Server,
             C = string.IsNullOrWhiteSpace(caption) ? null : caption.Trim() is { Length: > 1000 } longCaption ? longCaption[..1000] : caption.Trim(),
         };
         return Marker + JsonSerializer.Serialize(dto, Json);
@@ -195,7 +196,9 @@ public sealed record Attachment(string Hash, string FileName, long Size, string 
                 if (thumb != null && !(thumb.Length <= MaxThumbnailBytes && ImageSniffer.TryRead(thumb, out var t)
                         && t.Frames == 1 && t.Width <= MaxThumbnailDimension && t.Height <= MaxThumbnailDimension)) thumb = null;
             }
-            attachment = new Attachment(hash.ToLowerInvariant(), CleanName(dto.N), dto.S, dto.M, dto.W, dto.X, thumb, dto.R is { } reply && MessageEnvelope.IsKey(reply) ? reply.ToLowerInvariant() : null);
+            // Where a locked copy waits on a server, when there is one: ignored unless every part of it is well formed.
+            BlobRef? relay = dto.B != null && dto.K != null && dto.V != null && new BlobRef(dto.V, dto.B.ToLowerInvariant(), dto.K) is { IsWellFormed: true } r ? r : null;
+            attachment = new Attachment(hash.ToLowerInvariant(), CleanName(dto.N), dto.S, dto.M, dto.W, dto.X, thumb, dto.R is { } reply && MessageEnvelope.IsKey(reply) ? reply.ToLowerInvariant() : null, relay);
             caption = dto.C ?? "";
             return true;
         }
@@ -221,6 +224,9 @@ public sealed record Attachment(string Hash, string FileName, long Size, string 
         public string? T { get; set; }
         public string? C { get; set; }
         public string? R { get; set; }
+        public string? B { get; set; }   // the locked copy's id on a server
+        public string? K { get; set; }   // the key that opens it
+        public string? V { get; set; }   // the server
     }
 }
 

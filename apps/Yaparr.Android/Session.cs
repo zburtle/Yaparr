@@ -27,6 +27,9 @@ public sealed partial class Session : IDisposable
     private readonly DispatcherTimer _cloudTimer = new() { Interval = TimeSpan.FromMinutes(5) };
     private readonly DispatcherTimer _cloudSoon = new() { Interval = TimeSpan.FromSeconds(5) };
     private readonly DispatcherTimer _autoBackupTimer = new() { Interval = TimeSpan.FromMinutes(5) };
+    private readonly DispatcherTimer _mailboxTimer = new() { Interval = TimeSpan.FromMinutes(5) };
+    private readonly DispatcherTimer _mailboxSoon = new() { Interval = TimeSpan.FromSeconds(4) };
+    private int _mailboxBusy;
     private readonly DeviceSearch _deviceSearch = new();
     private string? _banner;
     private double? _bannerProgress;
@@ -201,6 +204,7 @@ public sealed partial class Session : IDisposable
         _syncTimer.Tick += (_, _) => UpdateSync();
         _syncTimer.Start();
         StartCloudSync(node);
+        StartMailbox(node);
         SayConnection();
 
         foreach (var stored in node.StoredDirectChats) AddDirect(stored);
@@ -901,7 +905,7 @@ public sealed partial class Session : IDisposable
     {
         if (_node is not { } node) return;
         var prepared = await Task.Run(() => ImageTools.Prepare(original, fileName));
-        var attachment = node.PrepareAttachment(prepared.Bytes, prepared.FileName, prepared.Thumbnail);
+        var attachment = await node.RelayAttachmentAsync(node.PrepareAttachment(prepared.Bytes, prepared.FileName, prepared.Thumbnail));
         var text = attachment.ToText(caption, replyKey);
         string id;
         string? channel = null;
@@ -1043,6 +1047,31 @@ public sealed partial class Session : IDisposable
         DispatcherTimer.RunOnce(() => _ = RunAutoBackupAsync(), TimeSpan.FromSeconds(45));
     }
 
+    // The mailbox of each room on the server (MailboxSync): what was written here is left there, locked, for members who are away, and what others left for this phone is
+    // fetched: soon after the session starts, every few minutes, a few seconds after something is written here, and when a push wakes the phone. It does nothing until the
+    // phone is signed in to a server.
+    private void StartMailbox(ChatNode node)
+    {
+        node.MailboxEnabled = _data.LoadBackupServer().SignedIn;
+        _mailboxTimer.Tick += (_, _) => _ = RunMailboxAsync();
+        _mailboxTimer.Start();
+        _mailboxSoon.Tick += (_, _) => { _mailboxSoon.Stop(); _ = RunMailboxAsync(); };
+        node.MailboxQueued += () => UI(() => { _mailboxSoon.Stop(); _mailboxSoon.Start(); });
+        DispatcherTimer.RunOnce(() => _ = RunMailboxAsync(), TimeSpan.FromSeconds(3));
+    }
+
+    /// <summary>Leaves what was written here in the mailboxes and reads them for what was left: now (after a push, or a sign-in).</summary>
+    public void MailboxNow() => UI(() => _ = RunMailboxAsync());
+
+    private async Task RunMailboxAsync()
+    {
+        if (_node is not { } node || Interlocked.Exchange(ref _mailboxBusy, 1) == 1) return;
+        try { await Task.Run(() => MailboxSync.RunAsync(_data, node, log: Log, cancel: _cts.Token)); }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { Log("mailbox: " + ex.Message); }
+        finally { Interlocked.Exchange(ref _mailboxBusy, 0); }
+    }
+
     private async Task RunAutoBackupAsync()
     {
         try { await Task.Run(() => AppHost.Auto.CheckAsync(_cts.Token)); }
@@ -1063,6 +1092,8 @@ public sealed partial class Session : IDisposable
         _cloudTimer.Stop();
         _cloudSoon.Stop();
         _autoBackupTimer.Stop();
+        _mailboxTimer.Stop();
+        _mailboxSoon.Stop();
         _saveTimer.Stop();
         _syncTimer.Stop();
         LeaveVoice();

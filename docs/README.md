@@ -15,6 +15,7 @@ Yaparr is a serverless chat, voice and screen sharing library for .NET with a de
 
 - [Rooms and messages](rooms-and-messages.md): forwarding, connection limits, presence, catch-up and delivery.
 - [Pictures and GIFs](pictures-and-gifs.md)
+- [Mailbox](mailbox.md): messages and pictures left on Yaparr Cloud, locked, for people who are offline (design).
 - [Voice channels](voice.md)
 - [Soundboard](soundboard.md)
 - [Sharing a screen](screen-sharing.md)

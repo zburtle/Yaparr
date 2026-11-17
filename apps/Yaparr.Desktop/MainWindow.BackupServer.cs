@@ -49,6 +49,32 @@ public partial class MainWindow
         if (_node != null) _node.AccountChanged += () => UI(() => _cloudSyncSoon.Debounce());
         Avalonia.Threading.DispatcherTimer.RunOnce(() => _ = RunCloudSyncAsync(), TimeSpan.FromSeconds(20));
         Avalonia.Threading.DispatcherTimer.RunOnce(() => _ = FirstBackupAtLaunchAsync(), TimeSpan.FromSeconds(10));
+        StartMailbox();
+    }
+
+    // The mailbox of each room on the server (MailboxSync): what was written here is left there, locked, for members who are away, and what others left for this device
+    // is fetched. Soon after the app opens, every five minutes, and a few seconds after something is written here. Nothing happens until this device is signed in.
+    private readonly Avalonia.Threading.DispatcherTimer _mailboxTimer = new() { Interval = TimeSpan.FromMinutes(5) };
+    private CloudSyncDelay? _mailboxDelay;
+    private int _mailboxBusy;
+
+    private void StartMailbox()
+    {
+        if (_node is not { } node) return;
+        node.MailboxEnabled = _data.LoadBackupServer().SignedIn;
+        _mailboxDelay = new CloudSyncDelay(() => _ = RunMailboxAsync());
+        node.MailboxQueued += () => UI(() => _mailboxDelay.Debounce());
+        _mailboxTimer.Tick += (_, _) => _ = RunMailboxAsync();
+        _mailboxTimer.Start();
+        Avalonia.Threading.DispatcherTimer.RunOnce(() => _ = RunMailboxAsync(), TimeSpan.FromSeconds(8));
+    }
+
+    private async Task RunMailboxAsync()
+    {
+        if (_node is not { } node || Interlocked.Exchange(ref _mailboxBusy, 1) == 1) return;
+        try { await Task.Run(() => MailboxSync.RunAsync(_data, node, log: _log.Write)); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { _log.Write("mailbox: " + ex.Message); }
+        finally { Interlocked.Exchange(ref _mailboxBusy, 0); }
     }
 
     // Signed in and never backed up (it was signed in before this, or the first backup after sign-in did not happen): the first backup starts, which shows the
@@ -198,6 +224,7 @@ public partial class MainWindow
         _server.Token = token;
         _data.SaveBackupServer(_server);
         _log.Write("signed in to Yaparr Cloud");
+        if (_node != null) { _node.MailboxEnabled = true; _ = RunMailboxAsync(); }
     }
 
     // The button on a backup server's "You're in" page opened the app: yaparr://backup-signin/<code>/<server>. Like every link it only asks:

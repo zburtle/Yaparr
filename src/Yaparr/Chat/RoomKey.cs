@@ -83,6 +83,15 @@ public sealed class RoomKey
 
     internal byte[] SecretBytes => _secret;
 
+    /// <summary>
+    /// Names the room's mailbox on a Yaparr Cloud server (base64url, 43 characters). Made from the current secret, so only members can compute it and a replaced
+    /// secret means a new, empty mailbox that a removed member cannot reach.
+    /// </summary>
+    public string MailboxId => Base64Url.EncodeToString(Derive("yaparr/mailbox-id/v1"));
+
+    /// <summary>The key that seals what is left in the mailbox. It never leaves the devices.</summary>
+    internal byte[] MailboxKey => Derive("yaparr/mailbox-key/v1");
+
     public override string ToString()
     {
         if (_owner == null) return Base64Url.EncodeToString(_secret);

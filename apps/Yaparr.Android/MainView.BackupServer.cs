@@ -77,6 +77,7 @@ public partial class MainView
         _server.Username = username;
         _server.Token = token;
         _data.SaveBackupServer(_server);
+        AppHost.Session?.MailboxNow();   // starts leaving and fetching what rooms have in their mailboxes
     }
 
     // The server said this phone is not signed in any more (signed out elsewhere, a changed password, a removed account): the sign-in shows again.

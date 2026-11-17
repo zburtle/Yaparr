@@ -149,7 +149,7 @@ internal sealed class Wire
 
     public const string Avatar = "av", AvatarGet = "avget", AvatarData = "avdata";
 
-    public const string Direct = "dm", DirectSync = "dmsync";
+    public const string Direct = "dm", DirectSync = "dmsync", DmKey = "dmkey";
 
     /// <summary>A request for the direct messages before a time (<c>Text</c> is the other person's account, <c>Ts</c> the time, <c>N</c> how many), and the answer (<c>Dm</c>, in the order of the asker's side of the conversation).</summary>
     public const string DirectBack = "dmback";

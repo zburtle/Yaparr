@@ -1049,7 +1049,7 @@ public partial class MainWindow : Window
         try
         {
             var prepared = await Task.Run(() => ImageTools.Prepare(original, fileName));
-            var attachment = _node.PrepareAttachment(prepared.Bytes, prepared.FileName, prepared.Thumbnail);
+            var attachment = await _node.RelayAttachmentAsync(_node.PrepareAttachment(prepared.Bytes, prepared.FileName, prepared.Thumbnail));
             var caption = InputBox.Text?.Trim() ?? "";
             var reply = _replyTo;
             var id = await conv.Send(attachment.ToText(caption, reply?.Key));

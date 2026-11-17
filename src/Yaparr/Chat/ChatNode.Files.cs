@@ -170,6 +170,20 @@ public sealed partial class ChatNode
             RaiseAttachment(a.Hash, AttachmentState.Ready, a.Size, a.Size);
             return AttachmentState.Ready;
         }
+        // Nobody who is connected has it: it may be waiting, locked, on the server the sender left it on.
+        if (a.Relay != null && BlobRelay != null)
+        {
+            if (trustedOnly || (!force && a.Size > _options.MaxAutoFetchBytes)) deferred = true;
+            else
+            {
+                RaiseAttachment(a.Hash, AttachmentState.Fetching, 0, a.Size);
+                if (await FetchFromRelayAsync(a, linked.Token).ConfigureAwait(false))
+                {
+                    RaiseAttachment(a.Hash, AttachmentState.Ready, a.Size, a.Size);
+                    return AttachmentState.Ready;
+                }
+            }
+        }
         var state = deferred ? AttachmentState.NeedsConfirmation : AttachmentState.Unavailable;
         RaiseAttachment(a.Hash, state, 0, a.Size);
         return state;

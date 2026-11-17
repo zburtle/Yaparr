@@ -804,6 +804,7 @@ public sealed partial class ChatNode : IDisposable
             throw new InvalidOperationException("There is no such text channel in this room.");
         var message = SignedMessage.Create(_identity, room.Key, DisplayName, text, NextTimestamp(), channel);
         room.History.TryAdd(message);
+        QueueForMailbox(room, message);
         _options.Log?.Invoke($"sending a message in '{room.Name}' to {room.MemberStates.Count} member(s)");
         var members = room.MemberStates.Values.ToList();
         var outgoing = new Outgoing(message.Id) { Room = room, Signed = message, SentAt = Environment.TickCount64 };
@@ -1217,7 +1218,7 @@ public sealed partial class ChatNode : IDisposable
     }
 
     // Returns how many of the messages were earlier history that was asked for (kept, not shown as news).
-    private int ProcessGroupMessages(PeerState peer, ChatRoom room, StoredMessage[] messages, bool live, List<string> received)
+    private int ProcessGroupMessages(PeerState? peer, ChatRoom room, StoredMessage[] messages, bool live, List<string> received, bool fromMailbox = false)
     {
         int earlier = 0;
         foreach (var m in messages.Take(live ? 1 : 100))
@@ -1234,10 +1235,12 @@ public sealed partial class ChatNode : IDisposable
             if (IsBannedIn(room, new PeerId(m.From)) || IsMessageDeleted(room, m)) continue;
             if (live) _clocks.Observe(m.From, m.Ts, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
             bool fresh = live && m.Ts >= DateTimeOffset.UtcNow.Subtract(LiveWindow).ToUnixTimeMilliseconds();
+            // From a mailbox: a message from the last few minutes is news (it is how a device that was asleep hears), an older one is shown as missed.
+            if (fromMailbox) fresh = m.Ts >= DateTimeOffset.UtcNow.Subtract(MailboxFreshWindow).ToUnixTimeMilliseconds();
             NoteMember(room, new PeerId(m.From), m.Name);
             if (!room.History.TryAdd(m)) continue;
             // Earlier history that was asked for is kept and read when it is scrolled to: it is not news, so it is not announced or shown as it arrives.
-            if (!live && Environment.TickCount64 < room.BackfillUntil && m.Ts <= room.BackfillBefore)
+            if (!live && !fromMailbox && Environment.TickCount64 < room.BackfillUntil && m.Ts <= room.BackfillBefore)
             {
                 earlier++;
                 if (!IsBlocked(new PeerId(m.From)) && !MessageEnvelope.IsReactionText(m.Text)) AutoFetch(ToChatMessage(room, m, catchUp: true));
@@ -1246,12 +1249,12 @@ public sealed partial class ChatNode : IDisposable
             // A blocked author's message is kept (so it is not asked for again) but never shown or downloaded.
             if (!IsBlocked(new PeerId(m.From)))
             {
-                _options.Log?.Invoke($"message from {new PeerId(m.From).Short} in '{room.Name}' via {peer.Id.Short}{(fresh ? "" : " (catch-up)")}");
+                _options.Log?.Invoke($"message from {new PeerId(m.From).Short} in '{room.Name}' via {peer?.Id.Short ?? "the mailbox"}{(fresh ? "" : " (catch-up)")}");
                 var shown = ToChatMessage(room, m, catchUp: !fresh);
                 room.RaiseMessage(shown);
                 AutoFetch(shown);
             }
-            if (fresh) ForwardToMembers(peer, room, m);
+            if (fresh && live && peer != null) ForwardToMembers(peer, room, m);
         }
         return earlier;
     }
@@ -1507,6 +1510,7 @@ public sealed partial class ChatNode : IDisposable
         _outbox[wire.Id!] = outgoing;
         if (devices.Count == 0) QueueDirect(outgoing, recipient);
         foreach (var device in devices) Send(device.Connection, wire);
+        QueueDirectForMailbox(devices, recipient, wire, proof);
         PublishDelivery(outgoing);
         if (devices.Count == 0) WakeAbsentDirect(recipient);
         RecordDirect(new DirectRecord(wire.Id!, recipient.Value, GetPeerInfo(peer)?.DisplayName ?? DirectNameOf(peer) ?? peer.Short, true, wire.Ts, text,
@@ -1618,6 +1622,7 @@ public sealed partial class ChatNode : IDisposable
                 if (first && !EnforceCap(peer)) break;
                 if (first) PeerConnected?.Invoke(peer.Info);
                 if (first && IsSibling(peer)) { SendAccountState(peer); SendDirectSync(peer); SendViewing(peer); }
+                if (first) SendDmKeyIfKnown(peer);
                 if (first) SendAvatars(peer);
                 foreach (var room in _rooms.Values)
                     if (peer.Declares(RefFrom(room, peer))) OnPeerEntersRoom(peer, room);
@@ -1650,6 +1655,10 @@ public sealed partial class ChatNode : IDisposable
 
             case Wire.DirectBack:
                 OnDirectBack(peer, wire);
+                break;
+
+            case Wire.DmKey when wire.Text is { Length: <= 64 }:
+                OnDmKey(peer, wire.Text);
                 break;
 
             case Wire.DirectSync when wire.Have != null:

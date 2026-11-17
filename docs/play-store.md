@@ -12,11 +12,11 @@ Text to paste into the Play Console, written from what the app and the Yaparr Cl
 
 **App name:** Yaparr
 
-**Short description (80 characters):** Chat, voice and screen sharing between friends. No servers in the middle.
+**Short description (80 characters):** Chat, voice and screen sharing between friends. Nothing a server can read.
 
 **Full description:**
 
-> Yaparr is a chat app for you and your friends. Messages, pictures, voice and shared screens go straight from phone to phone, not through a company's servers.
+> Yaparr is a chat app for you and your friends. Messages, pictures, voice and shared screens go straight from phone to phone. When a friend is away, a locked copy of your message can wait on Yaparr Cloud for up to 30 days; nobody at Yaparr can open it.
 >
 > • Rooms and direct messages, with replies, mentions, reactions, emoji and GIFs you upload yourself
 > • Voice channels and a soundboard
@@ -32,7 +32,7 @@ Text to paste into the Play Console, written from what the app and the Yaparr Cl
 
 ## Data safety form
 
-The form asks what is collected and shared. "Collected" means sent off the device to the developer or a service the developer runs. Messages and pictures go between the people's own devices and are not sent to a server of the developer's; the answers below are for the optional Yaparr Cloud only.
+The form asks what is collected and shared. "Collected" means sent off the device to the developer or a service the developer runs. Messages and pictures go between the people's own devices; with a Yaparr Cloud account a locked copy of a room message also waits on the server for up to 30 days (the mailbox, `docs/mailbox.md`). The answers below are for the optional Yaparr Cloud only.
 
 | Question | Answer | Why |
 |---|---|---|
@@ -41,7 +41,7 @@ The form asks what is collected and shared. "Collected" means sent off the devic
 | Do you provide a way for users to request that data be deleted? | Yes (the deletion page, `/account/delete`) | Required. |
 | **Personal info > Email address** | Collected, **not shared**; purpose: account management; **optional** | Names the Yaparr Cloud account. Nothing is ever emailed. |
 | **Personal info > User IDs** | Collected, not shared; purpose: app functionality; optional | Account id, device ids, wake token (only a hash is kept). |
-| **App activity / Messages** | **Not collected** | Messages never reach the server. A backup is a file locked with a code only the person has; the server cannot read it. |
+| **App activity / Messages** | **Collected (optional), not shared; purpose: app functionality; encrypted in transit and at rest** | With a Yaparr Cloud account, a copy of each room message and direct message the person writes, and of each picture they send, is left on the server for the other people, locked with a key that only they have (made from the room's secret, or from a secret shared by the two people in a direct chat), which the server never has: nobody at Yaparr can read it. Kept 30 days, then removed; removed with the account. Counted as collected because it is held on a service the developer runs, even though the developer cannot read it. If you prefer, answer "Other user-generated content" instead of "Messages". A backup is a file locked with a code only the person has; the server cannot read it either. |
 | **Files and docs** | Not collected | The backup is locked on the device; counted as not readable by the developer. If you prefer to be conservative, declare "Other user-generated content: collected, optional, app functionality, encrypted so the developer cannot read it". |
 | **Device or other IDs** | Collected, not shared; purpose: app functionality; optional | The push endpoint (a UnifiedPush address or a Firebase token) so the phone can be woken. |
 | Location, contacts, calendar, health, financial info, web browsing, photos and videos, audio, diagnostics | Not collected | The camera is used on the phone only to read a link QR code, and the microphone only for voice; neither goes to the developer. Diagnostics stay in a log file on the device that the person can choose to share. |
@@ -70,13 +70,14 @@ Chat between people who join by invitation, with no moderation by the developer:
 >
 > *Last changed: (date).*
 >
-> **In short.** Yaparr sends your messages, pictures, voice and shared screens directly between you and the people you talk to. We do not run servers that relay them, and we cannot read them. We do not use ads, trackers or analytics.
+> **In short.** Yaparr sends your messages, pictures, voice and shared screens directly between you and the people you talk to. When someone is offline and you have a Yaparr Cloud account, a copy of your room messages also waits for them on Yaparr Cloud, locked so that we cannot read it. We do not use ads, trackers or analytics.
 >
 > **What stays on your devices.** Your messages, pictures, rooms, blocks and settings are stored on your devices. A diagnostics log is kept on the device; it leaves only if you share it.
 >
 > **What the people you talk to see.** Because the connection is direct, the people in a room can see the network address (IP address) your device connects from, as with any direct connection. They also see your name and picture.
 >
 > **Yaparr Cloud (optional).** If you sign in to a Yaparr Cloud server (ours, at cloud.yaparr.com, or one you or a friend run), it keeps:
+> - **messages waiting for people who are offline**: a locked copy of each message you write in a room or in a direct chat, and of the pictures you send, for up to 30 days. It is locked on your device with a key that only the room's members have, so the server cannot read it. We can see that your account left or fetched something, when, how big it was and from which address, and an opaque id that stands for the room, but not what is in it or who the room's members are;
 > - your **email address**, which only names the account (nothing is ever emailed), and a hash of your password;
 > - an **encrypted backup** of your profile and an **encrypted copy of your name, rooms and blocks** that keeps your devices the same. They are locked on your device with a recovery code that never leaves your devices, so the server cannot read them;
 > - **how to wake your phone**: a push address (from a UnifiedPush app, or a Firebase token if you choose Google's push), a device id, and a secret wake token (only a hash is kept). When someone writes to you while your phone is off, their app asks the server to wake your phone; the server sends a push with **no content** (no name, no words, no room). The sender needs no account;
@@ -86,7 +87,7 @@ Chat between people who join by invitation, with no moderation by the developer:
 >
 > **Google's push (optional fallback).** If you choose Firebase push because you have no UnifiedPush app, Google delivers the content-free wake-up and sees your device token and the time. Nothing else is sent through it.
 >
-> **Deleting your data.** You can delete your account, with its backup, synced copy and push registrations, at (address of the deletion page). Removing the app removes the data on the device. People you talked to keep the messages they received.
+> **Deleting your data.** You can delete your account, with its backup, synced copy, push registrations and the locked messages it left for others, at (address of the deletion page). Removing the app removes the data on the device. People you talked to keep the messages they received.
 >
 > **Children.** Yaparr is not directed at children under 13 **(confirm the age you set in the Console)**.
 >
