@@ -468,6 +468,9 @@ public partial class MainWindow : Window
             RolesDirectory = Path.Combine(_data.Directory, "roles"),
             EnableLocalDiscovery = traversal.LocalDiscovery,
             PeerCachePath = Path.Combine(_data.Directory, "peers.json"),
+            // A phone that is not connected is asked to look when a message is sent to it (see PushManager on the phone): the phone gave its wake address to the people in its rooms.
+            WakePeersPath = Path.Combine(_data.Directory, "wake-peers.json"),
+            WakePeer = address => PushClient.WakeAsync(address),
             ClockOffsetsPath = Path.Combine(_data.Directory, "clocks.json"),
             Dht = new Yaparr.Discovery.Dht.DhtOptions { NodeCachePath = Path.Combine(_data.Directory, "dht-nodes.txt") },
             Vpn = _vpn.LoadConfigIfEnabled(),
