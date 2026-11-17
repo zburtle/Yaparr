@@ -371,35 +371,22 @@ public sealed class MessageVm : Observable
     public static MessageVm System(string text) => new(DateTimeOffset.Now, "", text, isSystem: true);
 }
 
-public sealed record PeerVm(string Id, string Name, bool Online, DateTimeOffset LastSeen, bool IsRelayed = false, PeerLink Link = PeerLink.Offline, bool Blocked = false, RoomRole Role = RoomRole.Member, bool BannedHere = false)
+public sealed record PeerVm(string Id, string Name, bool Online, DateTimeOffset LastSeen, bool IsRelayed = false, PeerLink Link = PeerLink.Offline, bool Blocked = false, RoomRole Role = RoomRole.Member, bool BannedHere = false, bool KnownCloud = false)
 {
-    /// <summary>Whether this person has said they use Yaparr Cloud (a small cloud shows next to their name).</summary>
-    public bool UsesCloud => MessageVm.CloudCheck?.Invoke(Id) == true;
+    /// <summary>Whether this person has said they use Yaparr Cloud (a small cloud shows next to their name): now, or the last time they were connected.</summary>
+    public bool UsesCloud => KnownCloud || MessageVm.CloudCheck?.Invoke(Id) == true;
+
+    /// <summary>Whether you use Yaparr Cloud yourself (set once by the window), for the tooltip.</summary>
+    public static Func<bool>? IUseCloud { get; set; }
 
     public string Display => BannedHere ? Name + "  (banned)" : Role switch { RoomRole.Owner => Name + "  (owner)", RoomRole.Admin => Name + "  (admin)", _ => Name };
     public string Initial => AvatarPictures.Has(Id) ? "" : Avatars.Initial(Name);
     public IBrush Avatar => AvatarPictures.For(Id) ?? Avatars.BrushFor(Name);
     public bool Warn => Link is PeerLink.NotResponding or PeerLink.Reconnecting;
 
-    public string StateText => BannedHere ? "banned from this room" : Blocked ? "blocked" : Link switch
-    {
-        PeerLink.Direct => "direct",
-        PeerLink.ViaServer => "via TURN",
-        PeerLink.Relayed => "via member",
-        PeerLink.Reconnecting => "reconnecting…",
-        PeerLink.NotResponding => "not responding",
-        _ => Online ? (IsRelayed ? "via member" : "online") : "offline",
-    };
+    public string StateText => BannedHere ? "banned from this room" : Blocked ? "blocked" : PeerStatus.Text(Link, Online, IsRelayed, UsesCloud);
 
-    public string Tip => (Blocked ? "Blocked. You see nothing from them. Right-click to unblock." : Link switch
-    {
-        PeerLink.Direct => "Connected directly to them.",
-        PeerLink.ViaServer => "Connected through the shared relay server (TURN). It works, but its bandwidth is limited, so Yaparr keeps looking for a better path.",
-        PeerLink.Relayed => "Connected through another member who forwards your traffic. They cannot read it.",
-        PeerLink.Reconnecting => "The connection dropped. Yaparr is trying again.",
-        PeerLink.NotResponding => "Connected, but the last message was not confirmed.",
-        _ => Online ? "Online." : $"Last seen {LastSeen.LocalDateTime:g}",
-    }) + "\n" + Id;
+    public string Tip => (Blocked ? "Blocked. You see nothing from them. Right-click to unblock." : PeerStatus.Tip(Link, Online, IsRelayed, UsesCloud, IUseCloud?.Invoke() == true, LastSeen)) + "\n" + Id;
 }
 
 /// <summary>One emoji under a message: the emoji, how many put it there, whether you did, and who (for the tooltip). The last chip, <see cref="IsMore"/>, counts the ones that did not fit in the row ("+4") and opens the rest.</summary>

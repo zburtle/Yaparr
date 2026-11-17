@@ -4,7 +4,7 @@
 
 `apps/Yaparr.Desktop` is the chat app, built with Avalonia so it runs on Windows and Linux: a list of rooms and direct chats,
 messages with delivery marks, the people in the room, and buttons to create or join a room (the room key is under the room title: click it to copy it, or use Copy link to copy a link that opens Yaparr; see [Links](#links)) or
-open a direct chat by peer ID. Under each connected person in the People list it says how you reach them: *direct*, *via server* (through the TURN relay you set up or imported, whose bandwidth is limited) or *via member* (another member forwards your traffic; they cannot read it). Your name, identity key, joined rooms and message history are kept in
+open a direct chat by peer ID. Under each connected person in the People list it says how you reach them: *direct*, *via relay server* (through the TURN relay you set up or imported, whose bandwidth is limited), *via member* (another member forwards your traffic; they cannot read it), *reconnecting…* or *not responding*; hover over it for what it means. A person who is not connected reads *offline*, or *offline · on Yaparr Cloud* when they were last heard to use it: what you write to them waits for them on the server (see [Mailbox](mailbox.md)). The phone shows the same words under the names of the people in a room. Your name, identity key, joined rooms and message history are kept in
 `%LOCALAPPDATA%\Yaparr` so you keep the same peer ID and rejoin your rooms on the next start. To run two copies on
 one machine, give each its own folder: `Yaparr.Desktop.exe --name alice --data C:\temp\alice` (the launch profiles
 `alice` and `bob` do this). Run it with `dotnet run --project apps/Yaparr.Desktop`.

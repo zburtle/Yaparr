@@ -7,7 +7,7 @@ using Yaparr.Identity;
 namespace Yaparr.AndroidApp;
 
 /// <summary>A person of a room, for the list of people.</summary>
-public sealed record Person(string Name, string Id, string Role = "")
+public sealed record Person(string Name, string Id, string Role = "", string Status = "")
 {
     /// <summary>Whether this person has said they use Yaparr Cloud (a small cloud shows next to their name).</summary>
     public bool UsesCloud => Id is { Length: 64 } && Line.CloudCheck?.Invoke(Id) == true;
@@ -542,7 +542,10 @@ public sealed partial class Session : IDisposable
         foreach (var p in chat.Room.Members)
         {
             if (_node.IsMyDevice(p.Id)) continue;
-            people.TryAdd(p.Account.Value, new Person(p.DisplayName, p.Account.Value, RoleText(chat.Room.RoleOf(p.Account))));
+            bool cloud = _node.UsesCloud(p.Account);
+            var link = _node.GetLink(p.Account);
+            people.TryAdd(p.Account.Value, new Person(p.DisplayName, p.Account.Value, RoleText(chat.Room.RoleOf(p.Account)),
+                PeerStatus.Text(link, true, p.IsRelayed, cloud)));
         }
         return people.Values.OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
     }
