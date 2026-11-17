@@ -18,6 +18,7 @@ public partial class MainWindow
     private MessageVm? _replyTo;
     private readonly List<Mention> _chosenMentions = new();
     private int _mentionStart = -1, _mentionDone = -1;
+    private string _mentionDoneTag = "";
 
     private void SetUpReplies()
     {
@@ -65,6 +66,7 @@ public partial class MainWindow
     {
         ClearReply();
         _chosenMentions.Clear();
+        _mentionDone = -1;
         CloseMentionList();
     }
 
@@ -106,8 +108,11 @@ public partial class MainWindow
         var text = InputBox.Text ?? "";
         int caret = Math.Clamp(InputBox.CaretIndex, 0, text.Length);
         int at = caret == 0 ? -1 : text.LastIndexOf('@', caret - 1);
-        if (SelectedRoom is not { } room || _node == null || at < 0 || (at > 0 && !char.IsWhiteSpace(text[at - 1])) || at == _mentionDone) { CloseMentionList(); return; }
-        if (_mentionDone >= 0 && at != _mentionDone) _mentionDone = -1;
+        // The @ that was just completed (a name picked from the list) stays closed while that name is there. Once it is gone (the message was sent, or the name was
+        // deleted) the next @ at the same place opens the list again; this used to stay shut for good after the first pick at the start of a message.
+        bool completed = _mentionDone >= 0 && at == _mentionDone && text.AsSpan(at).StartsWith(_mentionDoneTag, StringComparison.OrdinalIgnoreCase);
+        if (!completed) _mentionDone = -1;
+        if (SelectedRoom is not { } room || _node == null || at < 0 || (at > 0 && !char.IsWhiteSpace(text[at - 1])) || completed) { CloseMentionList(); return; }
         var query = text[(at + 1)..caret];
         if (query.Length > 40 || query.Contains('\n')) { CloseMentionList(); return; }
 
@@ -145,6 +150,7 @@ public partial class MainWindow
         int caret = Math.Clamp(InputBox.CaretIndex, _mentionStart, text.Length);
         var tag = "@" + choice.Name;
         _mentionDone = _mentionStart;
+        _mentionDoneTag = tag;
         InputBox.Text = text[.._mentionStart] + tag + " " + text[caret..];
         InputBox.CaretIndex = _mentionStart + tag.Length + 1;
         _chosenMentions.RemoveAll(m => m.Account == choice.Account);

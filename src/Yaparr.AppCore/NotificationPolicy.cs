@@ -3,7 +3,7 @@ namespace Yaparr.AppCore;
 /// <summary>
 /// When a new message is worth a notification on the phone, and what the notification says. Direct messages, mentions and replies to you always are; other
 /// messages in a room only when that room is set to notify for every message. Nothing is shown while the app is open (the unread marks do that), for a
-/// message that is old (history arriving after a reconnect), or for one you wrote yourself. The lock screen shows who and where, never the words.
+/// message that is old (history arriving after a reconnect), for one you wrote yourself, or for a chat that another of your devices has open in front of you. The lock screen shows who and where, never the words.
 /// </summary>
 internal static class NotificationPolicy
 {
@@ -14,11 +14,12 @@ internal static class NotificationPolicy
     /// <param name="MentionsMe">Names you (or everyone, from an admin).</param>
     /// <param name="ReplyToMe">Answers one of your messages.</param>
     /// <param name="RoomNotifiesAll">The room is set to notify for every message.</param>
-    public readonly record struct Message(bool IsDirect, bool Mine, bool MentionsMe, bool ReplyToMe, bool RoomNotifiesAll, TimeSpan Age);
+    /// <param name="ShownElsewhere">Another of your devices is showing this chat right now, so you are looking at it.</param>
+    public readonly record struct Message(bool IsDirect, bool Mine, bool MentionsMe, bool ReplyToMe, bool RoomNotifiesAll, TimeSpan Age, bool ShownElsewhere = false);
 
     public static bool ShouldNotify(in Message message, bool appInForeground, bool notificationsOn)
     {
-        if (!notificationsOn || appInForeground || message.Mine || message.Age > Fresh) return false;
+        if (!notificationsOn || appInForeground || message.Mine || message.ShownElsewhere || message.Age > Fresh) return false;
         return message.IsDirect || message.MentionsMe || message.ReplyToMe || message.RoomNotifiesAll;
     }
 

@@ -284,6 +284,10 @@ public sealed partial class ChatNode : IDisposable
         public string? Name { get; set; }
         /// <summary>Where this person can be woken, when they said (a wake address).</summary>
         public volatile string? WakeUrl;
+
+        /// <summary>What this device of ours says it is showing, and when it said so (see <c>SetViewing</c>). Only set for another device of our own account.</summary>
+        public volatile ViewTarget? Viewing;
+        public long ViewingAt;
         public volatile int Degree;
         /// <summary>Whether this peer relays for others: null until it says (older versions never do).</summary>
         private volatile int _canRelay;
@@ -808,7 +812,7 @@ public sealed partial class ChatNode : IDisposable
         foreach (var member in members)
             Send(member.Connection, new Wire { Type = Wire.Message, Room = RefTo(room, member), Msgs = new[] { message } });
         PublishDelivery(outgoing);
-        WakeAbsentInRoom(room);
+        WakeAbsentInRoom(room, MentionedAccounts(room, text));
         return message.Id;
     }
 
@@ -1613,7 +1617,7 @@ public sealed partial class ChatNode : IDisposable
                 LogPeerEvent(peer.Id, $"hello from {peer.Id.Short} ({peer.Name}): declares {wire.Rooms?.Length ?? 0} room(s); we are in {_rooms.Count}");
                 if (first && !EnforceCap(peer)) break;
                 if (first) PeerConnected?.Invoke(peer.Info);
-                if (first && IsSibling(peer)) { SendAccountState(peer); SendDirectSync(peer); }
+                if (first && IsSibling(peer)) { SendAccountState(peer); SendDirectSync(peer); SendViewing(peer); }
                 if (first) SendAvatars(peer);
                 foreach (var room in _rooms.Values)
                     if (peer.Declares(RefFrom(room, peer))) OnPeerEntersRoom(peer, room);
@@ -1634,6 +1638,10 @@ public sealed partial class ChatNode : IDisposable
 
             case Wire.Account when wire.Entries != null:
                 OnAccountEntries(peer, wire.Entries);
+                break;
+
+            case Wire.View:
+                OnViewing(peer, wire);
                 break;
 
             case Wire.Direct when wire.Dm != null:
