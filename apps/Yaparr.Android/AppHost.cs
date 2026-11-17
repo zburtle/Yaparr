@@ -17,6 +17,9 @@ internal static class AppHost
 
     public static AppData Data { get; } = new(AppData.DefaultDirectory);
 
+    /// <summary>Automatic backups to the backup server (see <see cref="AutoBackup"/>). One for the process: the session checks it on a timer, and a backup the person asks for waits on its gate.</summary>
+    public static AutoBackup Auto { get; } = new(Data, log: line => Android.Util.Log.Info("Yaparr", line));
+
     /// <summary>The settings, read once; the screen and the session share this object, so a change made in one is seen by the other.</summary>
     public static AppSettings Settings => s_settings ??= Data.LoadSettings();
 

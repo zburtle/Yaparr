@@ -45,8 +45,7 @@ public sealed class BackupServerState
 
     // ---- automatic backups (see AutoBackup) ----
 
-    /// <summary>Back up by itself: when what cannot be lost changes, and once a day for the history. Off until the person turns it on.</summary>
-    public bool AutoBackup { get; set; }
+    // Automatic backups are always on while signed in; they start once a first backup has made the recovery code. An old file may still have an "AutoBackup" value, which is ignored.
     /// <summary>When the last backup (by hand or automatic) was saved.</summary>
     public DateTimeOffset? LastBackup { get; set; }
     /// <summary>The keys, rooms, name and account as they were at that backup (<see cref="AppData.KeysFingerprint"/>), to tell when they have changed since.</summary>

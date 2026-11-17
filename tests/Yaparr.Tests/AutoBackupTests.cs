@@ -17,12 +17,24 @@ public sealed class AutoBackupTests : IDisposable
 
     // ---- when a backup is due ----
 
+    [Fact]
+    public void Signed_in_there_is_nothing_to_switch_on_but_nothing_is_due_until_the_first_backup_made_the_code()
+    {
+        var fresh = new BackupServerState { Url = "https://cloud.yaparr.com", Username = "sam@example.com", Token = "ycl_x" };
+        Assert.Equal(AutoBackupWhy.Nothing, Decide(fresh, keys: "changed", since: T0.AddHours(-1), history: true));   // no code, no backup yet
+        fresh.RecoveryCode = Code; fresh.Version = 1;
+        Assert.Equal(AutoBackupWhy.KeysChanged, Decide(fresh, keys: "changed", since: T0.AddHours(-1)));              // after the first one it runs by itself
+        // A file saved when there was a switch, with it off, loads (the value is ignored) and backups are due all the same.
+        var old = System.Text.Json.JsonSerializer.Deserialize<BackupServerState>("{\"Url\":\"https://cloud.yaparr.com\",\"Token\":\"ycl_x\",\"RecoveryCode\":\"" + Code + "\",\"Version\":3,\"AutoBackup\":false}")!;
+        Assert.Equal(AutoBackupWhy.KeysChanged, Decide(old, keys: "changed", since: T0.AddHours(-1)));
+    }
+
     private static BackupServerState Ready(Action<BackupServerState>? change = null)
     {
         var state = new BackupServerState
         {
             Url = "https://cloud.yaparr.com", Username = "sam@example.com", Token = "ycl_x", RecoveryCode = Code, Version = 3,
-            AutoBackup = true, LastBackup = T0.AddHours(-1), KeysFingerprint = "keys-1",
+            LastBackup = T0.AddHours(-1), KeysFingerprint = "keys-1",
         };
         change?.Invoke(state);
         return state;
@@ -32,9 +44,8 @@ public sealed class AutoBackupTests : IDisposable
         AutoBackupPlan.Decide(s, keys, since, () => history, now ?? T0);
 
     [Fact]
-    public void Nothing_is_sent_unless_it_is_on_and_there_is_a_first_backup_made_by_hand()
+    public void Nothing_is_sent_unless_signed_in_and_there_is_a_first_backup_made_by_hand()
     {
-        Assert.Equal(AutoBackupWhy.Nothing, Decide(Ready(s => s.AutoBackup = false), keys: "changed", since: T0.AddHours(-1), history: true));
         Assert.Equal(AutoBackupWhy.Nothing, Decide(Ready(s => s.Token = ""), keys: "changed", since: T0.AddHours(-1)));
         Assert.Equal(AutoBackupWhy.Nothing, Decide(Ready(s => s.RecoveryCode = ""), keys: "changed", since: T0.AddHours(-1)));
         Assert.Equal(AutoBackupWhy.Nothing, Decide(Ready(s => s.Version = 0), keys: "changed", since: T0.AddHours(-1)));   // no backup yet: no code to lock with
@@ -201,7 +212,7 @@ public sealed class AutoBackupTests : IDisposable
         var now = T0;
         var state = new BackupServerState
         {
-            Url = "https://cloud.yaparr.com", Username = "sam@example.com", Token = "ycl_x", RecoveryCode = Code, AutoBackup = true,
+            Url = "https://cloud.yaparr.com", Username = "sam@example.com", Token = "ycl_x", RecoveryCode = Code,
         };
         state.RecordBackup(1, data.KeysFingerprint(), T0);
         change?.Invoke(state);
@@ -325,7 +336,6 @@ public sealed class AutoBackupTests : IDisposable
         var state = data.LoadBackupServer();
         Assert.True(state.AutoPaused);
         Assert.Contains("another device saved a newer backup (version 2)", state.AutoNote);
-        Assert.True(state.AutoBackup);                                           // still on: it waits
 
         // Waiting does not ask the server again every few minutes.
         var asked = server.Gets;
@@ -397,7 +407,6 @@ public sealed class AutoBackupTests : IDisposable
         Assert.Equal(T0.AddMinutes(3) + TimeSpan.FromMinutes(5), state.RetryAfter);
         Assert.Contains("Couldn't reach Yaparr Cloud", state.AutoNote);
         Assert.Contains("Trying again later", state.AutoNote);
-        Assert.True(state.AutoBackup);
 
         advance(TimeSpan.FromMinutes(4));
         var gets = server.Gets;
@@ -444,15 +453,14 @@ public sealed class AutoBackupTests : IDisposable
     }
 
     [Fact]
-    public async Task Turned_off_or_signed_out_it_does_nothing_at_all()
+    public async Task Signed_out_it_does_nothing_at_all()
     {
-        var (data, server, auto, _, advance) = Setup(s => s.AutoBackup = false);
+        var (data, server, auto, _, advance) = Setup(s => s.Token = "");
         ChangeARoom(data);
         advance(TimeSpan.FromDays(3));
         Assert.Equal(AutoBackupResult.Nothing, await auto.CheckAsync());
 
         var state = data.LoadBackupServer();
-        state.AutoBackup = true;
         state.Token = "";
         data.SaveBackupServer(state);
         Assert.Equal(AutoBackupResult.Nothing, await auto.CheckAsync());
@@ -466,18 +474,16 @@ public sealed class AutoBackupTests : IDisposable
         var state = Ready(s => { s.AutoNote = "a note"; s.Failures = 2; s.FirstFailure = T0; s.RetryAfter = T0.AddMinutes(10); s.AutoPaused = true; });
         data.SaveBackupServer(state);
         var loaded = data.LoadBackupServer();
-        Assert.True(loaded.AutoBackup);
         Assert.True(loaded.AutoPaused);
         Assert.Equal("a note", loaded.AutoNote);
         Assert.Equal(2, loaded.Failures);
         Assert.Equal(T0.AddMinutes(10), loaded.RetryAfter);
         Assert.Equal("keys-1", loaded.KeysFingerprint);
 
-        // A file written before automatic backups existed has none of this: everything is off.
+        // A file written before automatic backups existed has none of this: it loads, with nothing remembered.
         System.IO.File.Delete(Path.Combine(data.Directory, "backup-server.json"));
         data.SaveBackupServer(new BackupServerState { Url = "https://cloud.yaparr.com", Token = "ycl_x", RecoveryCode = Code, Version = 4 });
         var old = data.LoadBackupServer();
-        Assert.False(old.AutoBackup);
         Assert.Null(old.LastBackup);
         Assert.Equal("", old.KeysFingerprint);
     }

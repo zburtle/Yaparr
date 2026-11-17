@@ -286,6 +286,7 @@
                     <StackPanel x:Name="ServerSignedInPanel" Spacing="8" IsVisible="False">
                         <TextBlock x:Name="ServerSignedInText" TextWrapping="Wrap" Foreground="{DynamicResource Ink}" />
                         <Button x:Name="BackupToServerButton" Classes="primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Back up now" Click="BackupToServerClicked" />
+                        <TextBlock x:Name="AutoBackupStatus" IsVisible="False" TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />
                         <Button x:Name="ShowRecoveryCodeButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Show recovery code" Click="ShowRecoveryCodeClicked" />
                         <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Change password" Click="ServerChangePasswordClicked" />
                         <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Delete my account" Click="ServerDeleteAccountClicked" />

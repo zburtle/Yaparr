@@ -15,6 +15,7 @@ public partial class MainView
 {
     private BackupServerState _server = new();
     private CancellationTokenSource? _serverSignIn, _serverRestore;
+    private Action? _autoChanged;
 
     // Shown beside the address in the browser's sign-in page and in the server's list of devices.
     private static string DeviceName() => $"{Android.OS.Build.Manufacturer} {Android.OS.Build.Model}".Trim();
@@ -26,6 +27,19 @@ public partial class MainView
         ServerUrlBox.Text = ReleaseConfig.Current.BackupServerToOffer(_server.Url);
         ShowServerState();
         ServerNote("");
+        // What an automatic backup did (made one, paused, failed) shows here when it happens.
+        if (_autoChanged != null) AppHost.Auto.Changed -= _autoChanged;
+        _autoChanged = () => Avalonia.Threading.Dispatcher.UIThread.Post(() => { _server = _data.LoadBackupServer(); ShowServerState(); });
+        AppHost.Auto.Changed += _autoChanged;
+    }
+
+    private static string Ago(DateTimeOffset when)
+    {
+        var span = DateTimeOffset.UtcNow - when;
+        if (span < TimeSpan.FromMinutes(1)) return "just now";
+        if (span < TimeSpan.FromHours(1)) return $"{(int)span.TotalMinutes} minute{((int)span.TotalMinutes == 1 ? "" : "s")} ago";
+        if (span < TimeSpan.FromDays(1)) return $"{(int)span.TotalHours} hour{((int)span.TotalHours == 1 ? "" : "s")} ago";
+        return $"{(int)span.TotalDays} day{((int)span.TotalDays == 1 ? "" : "s")} ago";
     }
 
     private void ShowServerState()
@@ -37,6 +51,13 @@ public partial class MainView
         ServerSignedInText.Text = $"Signed in to {host} as {_server.Username}." +
             (_server.Version > 0 ? $" The last backup from this phone is version {_server.Version}." : " No backup has been saved from this phone yet.");
         ShowRecoveryCodeButton.IsVisible = _server.RecoveryCode.Length > 0;
+
+        var trouble = _server.AutoPaused || _server.Failures > 0 || _server.AutoNote.StartsWith("Automatic backups stopped", StringComparison.Ordinal);
+        AutoBackupStatus.Text = trouble ? _server.AutoNote
+            : _server.RecoveryCode.Length == 0 || _server.Version <= 0 ? "Automatic backups start after your first backup, which makes your recovery code."
+            : _server.LastBackup is { } last ? $"Backs up automatically. {(_server.AutoNote.Length > 0 ? _server.AutoNote + " " : "")}Last backup: version {_server.Version}, {Ago(last)}."
+            : "Backs up automatically.";
+        AutoBackupStatus.IsVisible = AutoBackupStatus.Text.Length > 0;
     }
 
     private void ServerNote(string text, bool problem = false)
@@ -97,6 +118,7 @@ public partial class MainView
             AdoptSignIn(server, token, username);
             ShowServerState();
             ServerNote("");
+            await StartFirstBackupAsync();
         }
         catch (OperationCanceledException) { ServerNote(""); }
         catch (BackupServerException ex) { ServerNote(ex.Message, problem: true); }
@@ -105,6 +127,31 @@ public partial class MainView
             ServerSignInButton.IsEnabled = ServerUrlBox.IsEnabled = true;
             ServerCancelSignInButton.IsVisible = false;
         }
+    }
+
+    // Right after signing in to an account that has no backup yet, the first one starts by itself: it makes the recovery code (shown for the person to keep),
+    // which automatic backups and the sync of name, rooms and blocks both need. If the server already has a backup, which another device made, nothing is
+    // saved without the person choosing (Back up now asks which code opens it).
+    private async Task StartFirstBackupAsync()
+    {
+        if (!_server.SignedIn || _server.RecoveryCode.Length > 0) return;
+        try
+        {
+            using var client = new BackupServerClient(new Uri(_server.Url), _server.Token);
+            if ((await client.VersionsAsync()).Count > 0) return;
+        }
+        catch (BackupServerException ex) { ServerFailed(ex); return; }
+        BackupToServerClicked(null, new RoutedEventArgs());
+    }
+
+    // Signed in and never backed up (it was signed in before this, or the first backup after sign-in did not happen): the first backup starts, which shows the
+    // recovery code. It cannot be closed before the code is copied, so it comes back at the next start only if the app was closed in between.
+    private async Task FirstBackupAtLaunchAsync()
+    {
+        var state = _data.LoadBackupServer();
+        if (!state.SignedIn || state.RecoveryCode.Length > 0 || state.Version > 0) return;
+        _server = state;
+        await StartFirstBackupAsync();
     }
 
     private void ServerCancelSignInClicked(object? sender, RoutedEventArgs e) => _serverSignIn?.Cancel();
@@ -157,6 +204,7 @@ public partial class MainView
     // ---- the recovery code ----
 
     private TaskCompletionSource<bool>? _codeAnswer;
+    private bool _codeMustBeCopied;
 
     // Shows the recovery code with a button to copy it. For a new code the person has to say they saved it (false if they back out).
     private Task<bool> ShowRecoveryCodeAsync(string code, bool isNew)
@@ -168,7 +216,10 @@ public partial class MainView
         CodeShown.Text = code;
         CodeCopyButton.Content = "Copy";
         CodeDoneButton.Content = isNew ? "I have saved it" : "Close";
-        CodeCancelButton.IsVisible = isNew;
+        // A new code cannot be dismissed before it has been copied (or copying failed, and it has to be written down): there is no Cancel, and Back does nothing.
+        _codeMustBeCopied = isNew;
+        CodeDoneButton.IsEnabled = !isNew;
+        CodeCancelButton.IsVisible = false;
         CodePanel.IsVisible = true;
         _codeAnswer = new TaskCompletionSource<bool>();
         return _codeAnswer.Task;
@@ -176,7 +227,9 @@ public partial class MainView
 
     private async void CodeCopyClicked(object? sender, RoutedEventArgs e)
     {
-        if (TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard) { CodeCopyButton.Content = "Couldn't copy"; return; }
+        _codeMustBeCopied = false;
+        CodeDoneButton.IsEnabled = true;
+        if (TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard) { CodeCopyButton.Content = "Couldn't copy: write it down"; return; }
         await clipboard.SetTextAsync(CodeShown.Text ?? "");
         CodeCopyButton.Content = "Copied";
     }
@@ -240,8 +293,13 @@ public partial class MainView
         if (!_server.SignedIn) return;
         BackupToServerButton.IsEnabled = ServerSignOutButton.IsEnabled = false;
         var temp = Path.Combine(Path.GetTempPath(), "yaparr-server-backup-" + Guid.NewGuid().ToString("N") + ".yapbak");
+        // An automatic backup may be under way: wait for it, then read what it left (so what is saved below does not undo it).
+        ServerNote("Waiting for a backup that is running…");
+        await AppHost.Auto.Gate.WaitAsync();
         try
         {
+            _server = _data.LoadBackupServer();
+            if (!_server.SignedIn) { ShowServerState(); ServerNote("Signed out.", problem: true); return; }
             ServerNote("Checking the server…");
             _data.SaveSettings(_settings);
             using var client = new BackupServerClient(new Uri(_server.Url), _server.Token);
@@ -265,9 +323,13 @@ public partial class MainView
 
             ServerNote("Making the backup…");
             var recoveryCode = _server.RecoveryCode;
+            // Taken before the backup is made: what changes while it is being made is then seen as changed, and saved next time.
+            var keys = _data.KeysFingerprint();
             await Task.Run(() => _data.ExportProfile(temp, recoveryCode));
             ServerNote("Sending the backup…");
-            _server.Version = await client.UploadAsync(temp, newest);
+            var version = await client.UploadAsync(temp, newest);
+            _server.RecordBackup(version, keys, DateTimeOffset.UtcNow);     // also lifts a pause: the person has seen what the server has and chosen
+            _server.AutoNote = "";
             _data.SaveBackupServer(_server);
             ShowServerState();
             ServerNote($"Backed up (version {_server.Version}). It is locked with your recovery code, so the server cannot read it.");
@@ -277,6 +339,7 @@ public partial class MainView
         finally
         {
             try { File.Delete(temp); } catch (IOException) { }
+            AppHost.Auto.Gate.Release();
             BackupToServerButton.IsEnabled = ServerSignOutButton.IsEnabled = true;
         }
     }

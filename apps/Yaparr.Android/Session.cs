@@ -26,6 +26,7 @@ public sealed partial class Session : IDisposable
     private readonly DispatcherTimer _syncTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly DispatcherTimer _cloudTimer = new() { Interval = TimeSpan.FromMinutes(5) };
     private readonly DispatcherTimer _cloudSoon = new() { Interval = TimeSpan.FromSeconds(5) };
+    private readonly DispatcherTimer _autoBackupTimer = new() { Interval = TimeSpan.FromMinutes(5) };
     private readonly DeviceSearch _deviceSearch = new();
     private string? _banner;
     private double? _bannerProgress;
@@ -1035,6 +1036,18 @@ public sealed partial class Session : IDisposable
         _cloudSoon.Tick += (_, _) => { _cloudSoon.Stop(); _ = RunCloudSyncAsync(); };
         node.AccountChanged += () => UI(() => { _cloudSoon.Stop(); _cloudSoon.Start(); });
         DispatcherTimer.RunOnce(() => _ = RunCloudSyncAsync(), TimeSpan.FromSeconds(20));
+        // Automatic backups: every few minutes, and once soon after the app opens so a change made while it was closed does not wait. It does nothing unless the
+        // person is signed in to a server, has a recovery code and has it turned on.
+        _autoBackupTimer.Tick += (_, _) => _ = RunAutoBackupAsync();
+        _autoBackupTimer.Start();
+        DispatcherTimer.RunOnce(() => _ = RunAutoBackupAsync(), TimeSpan.FromSeconds(45));
+    }
+
+    private async Task RunAutoBackupAsync()
+    {
+        try { await Task.Run(() => AppHost.Auto.CheckAsync(_cts.Token)); }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { Log("automatic backup: " + ex.Message); }
     }
 
     private async Task RunCloudSyncAsync()
@@ -1049,6 +1062,7 @@ public sealed partial class Session : IDisposable
     {
         _cloudTimer.Stop();
         _cloudSoon.Stop();
+        _autoBackupTimer.Stop();
         _saveTimer.Stop();
         _syncTimer.Stop();
         LeaveVoice();

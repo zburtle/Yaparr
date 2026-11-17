@@ -106,7 +106,7 @@ public partial class MainView : UserControl
     // One step back; false when there is nothing to go back to and the phone may leave the app.
     private bool GoBack()
     {
-        if (CodePanel.IsVisible) { CodeCancelClicked(null, new RoutedEventArgs()); return true; }
+        if (CodePanel.IsVisible) { if (!_codeMustBeCopied) CodeCancelClicked(null, new RoutedEventArgs()); return true; }
         if (PromptPanel.IsVisible) { PromptCancelClicked(null, new RoutedEventArgs()); return true; }
         if (BlockedPanel.IsVisible) { BlockedPanel.IsVisible = false; return true; }
         if (ActionPanel.IsVisible) { ActionPanel.IsVisible = false; return true; }
@@ -171,6 +171,8 @@ public partial class MainView : UserControl
             _linksReady = true;
             OpenFromNotification();
             await HandleLinksAsync();
+            await Task.Delay(5000);
+            await FirstBackupAtLaunchAsync();
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
