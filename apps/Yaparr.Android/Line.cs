@@ -27,6 +27,13 @@ public sealed partial class Line : Observable
     /// <summary>The account that wrote the message (its picture is looked up by it).</summary>
     public string? Account => Source?.From.Account.Value;
 
+    /// <summary>Asks whether an account has said it uses Yaparr Cloud (set once by the session): the cloud shows next to the name.</summary>
+    public static Func<string, bool>? CloudCheck { get; set; }
+
+    public bool UsesCloud => Account is { Length: > 0 } a && CloudCheck?.Invoke(a) == true;
+
+    public void RaiseCloud() => Raise(nameof(UsesCloud));
+
     public IBrush WhoTint => AvatarBrushes.For(Account) ?? Theme.TintFor(Who);
 
     public string WhoInitial => AvatarBrushes.For(Account) != null ? "" : Who.Length == 0 ? "?" : new System.Globalization.StringInfo(Who).SubstringByTextElements(0, 1).ToUpperInvariant();

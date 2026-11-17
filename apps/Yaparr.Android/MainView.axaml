@@ -440,6 +440,7 @@
                                         <TextBlock Text="{Binding WhoInitial}" Foreground="White" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                     </Border>
                                     <TextBlock Text="{Binding Who}" FontSize="11" FontWeight="SemiBold" Opacity="0.75" Foreground="{Binding Ink}" VerticalAlignment="Center" />
+                                    <Path IsVisible="{Binding UsesCloud}" Data="M7,18 A4,4 0 0 1 6.5,10.03 A6,6 0 0 1 17.9,11.5 A3.5,3.5 0 0 1 17.5,18 Z" Stroke="{Binding Ink}" Opacity="0.75" StrokeThickness="1.9" StrokeLineCap="Round" StrokeJoin="Round" Stretch="Uniform" Width="13" Height="13" VerticalAlignment="Center" />
                                 </StackPanel>
                                 <Border IsVisible="{Binding HasReply}" Background="#22000000" CornerRadius="8" Padding="8,4" Tapped="QuoteTapped">
                                     <StackPanel>

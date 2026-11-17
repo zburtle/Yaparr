@@ -1053,6 +1053,9 @@ public sealed partial class Session : IDisposable
     private void StartMailbox(ChatNode node)
     {
         node.MailboxEnabled = _data.LoadBackupServer().SignedIn;
+        // A small cloud next to the names of people who use Yaparr Cloud (what they say about themselves, see ChatNode.UsesCloud).
+        Line.CloudCheck = account => account.Length == 64 && account.All(Uri.IsHexDigit) && _node?.UsesCloud(new PeerId(account)) == true;
+        node.CloudUsersChanged += () => UI(() => { foreach (var chat in Chats) foreach (var line in chat.AllLines) line.RaiseCloud(); });
         _mailboxTimer.Tick += (_, _) => _ = RunMailboxAsync();
         _mailboxTimer.Start();
         _mailboxSoon.Tick += (_, _) => { _mailboxSoon.Stop(); _ = RunMailboxAsync(); };

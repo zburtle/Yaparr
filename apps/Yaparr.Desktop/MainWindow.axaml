@@ -617,6 +617,7 @@
                                             <TextBlock Text="{Binding SenderInitial}" FontSize="11" />
                                         </Border>
                                         <TextBlock Text="{Binding Sender}" Foreground="{Binding SenderBrush}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                        <Path IsVisible="{Binding UsesCloud}" Data="M7,18 A4,4 0 0 1 6.5,10.03 A6,6 0 0 1 17.9,11.5 A3.5,3.5 0 0 1 17.5,18 Z" Stroke="{DynamicResource Muted}" StrokeThickness="1.9" StrokeLineCap="Round" StrokeJoin="Round" Stretch="Uniform" Width="14" Height="14" VerticalAlignment="Center" ToolTip.Tip="Uses Yaparr Cloud" />
                                     </StackPanel>
                                     <DockPanel IsVisible="{Binding !IsSystem}" LastChildFill="True">
                                     <StackPanel DockPanel.Dock="{Binding BubbleDock}" Spacing="4">

@@ -208,6 +208,13 @@ public sealed class MessageVm : Observable
 
     public DateTimeOffset Time { get; }
     public string Sender { get; }
+
+    /// <summary>Asks whether an account has said it uses Yaparr Cloud (set once by the window): the cloud shows next to the name.</summary>
+    public static Func<string, bool>? CloudCheck { get; set; }
+
+    public bool UsesCloud => Account is { Length: > 0 } a && CloudCheck?.Invoke(a) == true;
+
+    public void RaiseCloud() => Raise(nameof(UsesCloud));
     public string Text { get; }
     public bool IsCatchUp { get; }
     public bool IsSystem { get; }

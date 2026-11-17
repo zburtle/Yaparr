@@ -74,7 +74,7 @@ Chat between people who join by invitation, with no moderation by the developer:
 >
 > **What stays on your devices.** Your messages, pictures, rooms, blocks and settings are stored on your devices. A diagnostics log is kept on the device; it leaves only if you share it.
 >
-> **What the people you talk to see.** Because the connection is direct, the people in a room can see the network address (IP address) your device connects from, as with any direct connection. They also see your name and picture.
+> **What the people you talk to see.** Because the connection is direct, the people in a room can see the network address (IP address) your device connects from, as with any direct connection. They also see your name and picture, and a small cloud next to your name if you are signed in to Yaparr Cloud.
 >
 > **Yaparr Cloud (optional).** If you sign in to a Yaparr Cloud server (ours, at cloud.yaparr.com, or one you or a friend run), it keeps:
 > - **messages waiting for people who are offline**: a locked copy of each message you write in a room or in a direct chat, and of the pictures you send, for up to 30 days. It is locked on your device with a key that only the room's members have, so the server cannot read it. We can see that your account left or fetched something, when, how big it was and from which address, and an opaque id that stands for the room, but not what is in it or who the room's members are;
