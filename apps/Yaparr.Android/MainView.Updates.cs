@@ -15,7 +15,7 @@ public partial class MainView
     // not offered again until there is another.
     private async Task CheckForUpdateAtStartAsync()
     {
-        if (!_settings.CheckForUpdates || AppUpdater.IsTestBuild) return;
+        if (AppUpdater.IsStoreBuild || !_settings.CheckForUpdates || AppUpdater.IsTestBuild) return;
         try
         {
             await Task.Delay(TimeSpan.FromSeconds(8));
@@ -40,6 +40,12 @@ public partial class MainView
     // What the settings say about updates, and what the button does.
     private void ShowUpdateState()
     {
+        if (AppUpdater.IsStoreBuild)
+        {
+            // Google Play updates the app.
+            UpdateCheck.IsVisible = UpdateButton.IsVisible = UpdateText.IsVisible = false;
+            return;
+        }
         UpdateCheck.IsVisible = !AppUpdater.IsTestBuild;
         if (AppUpdater.IsTestBuild)
         {
@@ -55,7 +61,7 @@ public partial class MainView
 
     private async void UpdateClicked(object? sender, RoutedEventArgs e)
     {
-        if (_updating) return;
+        if (_updating || AppUpdater.IsStoreBuild) return;
         if (_update != null) { await InstallUpdateAsync(_update); return; }
         _updating = true;
         UpdateButton.IsEnabled = false;

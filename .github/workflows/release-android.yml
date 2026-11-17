@@ -112,6 +112,16 @@ jobs:
             -p:AndroidSigningKeyPass=env:ANDROID_KEY_PASSWORD
           mkdir -p artifacts
           cp apps/Yaparr.Android/bin/Release/net10.0-android/org.yaparr.android-Signed.apk "artifacts/Yaparr-$version.apk"
+          # The same app as an Android App Bundle for Google Play, without the update from GitHub (see docs/android-app.md, "Google Play"). Signed with the
+          # upload key (here the same release key; Play signs what people install with its own). It is kept as a workflow artifact, not in the GitHub release.
+          dotnet build apps/Yaparr.Android -c Release --no-incremental -p:PlayStore=true \
+            -p:ApplicationVersion=$((major * 1000000 + minor * 1000 + patch)) -p:ApplicationDisplayVersion="$version" \
+            -p:JavaSdkDirectory="$JAVA_HOME_21_X64" -p:AndroidSdkDirectory="$ANDROID_HOME" \
+            -p:AndroidKeyStore=true -p:AndroidSigningKeyStore="$RUNNER_TEMP/yaparr-release.keystore" \
+            -p:AndroidSigningStorePass=env:ANDROID_KEYSTORE_PASSWORD -p:AndroidSigningKeyAlias="$ANDROID_KEY_ALIAS" \
+            -p:AndroidSigningKeyPass=env:ANDROID_KEY_PASSWORD
+          mkdir -p play
+          cp apps/Yaparr.Android/bin/Release/net10.0-android/org.yaparr.android-Signed.aab "play/Yaparr-$version.aab"
           rm -f "$RUNNER_TEMP/yaparr-release.keystore"
 
       # The certificate's fingerprint is what yaparr.com's asset links file names, so that links to the site open in the app.
@@ -127,6 +137,14 @@ jobs:
         with:
           name: installer-android
           path: artifacts/*.apk
+          if-no-files-found: error
+
+      # For uploading to the Play Console by hand (or later by a job). Not an installer: nothing downloads it to install.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: steps.key.outputs.signed == 'true'
+        with:
+          name: play-bundle-android
+          path: play/*.aab
           if-no-files-found: error
 
   publish:

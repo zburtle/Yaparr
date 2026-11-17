@@ -20,6 +20,16 @@
   </PropertyGroup>
 
   <!--
+    The build for Google Play (-p:PlayStore=true): an Android App Bundle, which is what Play takes, and without the update from GitHub (Play does not allow an app
+    to replace itself from anywhere else, and Play updates it) and without the permission to install packages that goes with it. The package that is released on
+    GitHub is the same app with those two things in. See docs/android-app.md, "Google Play".
+  -->
+  <PropertyGroup Condition="'$(PlayStore)' == 'true'">
+    <AndroidPackageFormat>aab</AndroidPackageFormat>
+    <DefineConstants>$(DefineConstants);PLAY_STORE</DefineConstants>
+  </PropertyGroup>
+
+  <!--
     Every build is signed with the same key, so one build installs over the last instead of having to be uninstalled first (Android
     refuses an update signed with a different key, and without this each machine makes a key of its own). This key is only for builds
     that are tried on a phone: it is in the repository, so it proves nothing about who made a package. A release has to be signed with a

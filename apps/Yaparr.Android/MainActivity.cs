@@ -29,7 +29,9 @@ using Avalonia.Android;
 
 // Updating the app from its own releases hands the downloaded package to Android's installer, which asks for the person's confirmation. Android asks
 // them once to allow Yaparr to install packages.
+#if !PLAY_STORE   // Google Play updates the app itself and does not allow the permission.
 [assembly: UsesPermission(Android.Manifest.Permission.RequestInstallPackages)]
+#endif
 
 // The camera is only for reading a link QR code, and the app works without one.
 [assembly: UsesPermission(Android.Manifest.Permission.Camera)]
