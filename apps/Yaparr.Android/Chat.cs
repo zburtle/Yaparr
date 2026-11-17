@@ -65,6 +65,18 @@ public sealed class Chat : Observable
 
     public bool IsRoom => Room != null;
 
+    /// <summary>What a pin of this chat is kept under: the room's id, or the other person's id in a direct chat.</summary>
+    public string? PinId => Room?.RoomId ?? Direct?.PeerId.Value;
+
+    private bool _isPinned;
+
+    /// <summary>Pinned chats stay at the top of the list, in an order the person sets.</summary>
+    public bool IsPinned
+    {
+        get => _isPinned;
+        set { if (_isPinned == value) return; _isPinned = value; Raise(); }
+    }
+
     /// <summary>The messages of the channel on show (all of them in a direct chat).</summary>
     public ObservableCollection<Line> Shown { get; } = new();
 

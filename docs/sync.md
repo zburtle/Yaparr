@@ -23,6 +23,14 @@ These were already the same on a person's devices while they were online togethe
 - Runs about 20 seconds after the app opens, every five minutes, and a few seconds after a change (`ChatNode.AccountChanged`). It needs the device to be signed in to a server and to have a recovery code (made at the first backup by hand); until then it does nothing.
 - The state (cursor, entries, what is waiting to be sent) is a sealed file `sync-<server and account>.json` (`FileSyncState`), not part of a backup.
 
+## Pins
+
+Pinned rooms and chats (see [The desktop app](desktop-app.md#pinning-rooms-and-chats)) are account entries too, one for each pinned room or chat: `pin:r:<room id>` and `pin:d:<person id>`. The value is the pin's **position** among the pinned ones, a short text of lowercase digits and letters that sorts into the order they are shown in (`PinOrder`); an unpin is the entry marked deleted. `PinOrder.Between(before, after)` always makes a position strictly between two others, so moving one pinned room changes only its own entry: two devices that each move a different one never overwrite each other, and the newer write of the same pin wins by the rule above. Pinning one more goes after the last, and moving to the top goes before the first, in steps of a digit, so a position grows by a character only about every 17th time that is done over and over.
+
+`ChatNode.Pins` lists them first to last, `Pin`, `Unpin` and `MovePin` change them (and raise `PinsChanged`, also when another device or the cloud copy changed one), and leaving a room unpins it. A pin for a room or chat this device does not have is kept and not shown. They go through `AccountCloudSync` with the rest (they are `account` entries to the server), so no server change was needed. `PinnedFirst` (AppCore) is what both apps use to keep the pinned ones at the top of a list and to work out, for a move, the positions of the neighbours.
+
+Tests: `tests/Yaparr.Tests/PinTests.cs`.
+
 ## Parts
 
 | | |
@@ -31,7 +39,8 @@ These were already the same on a person's devices while they were online togethe
 | `SyncSealer` | locks and opens values |
 | `SyncClient`, `ISyncTransport` | the two calls to the server, `GET` and `PUT /v1/sync` |
 | `SyncEngine`, `ISyncState`, `MemorySyncState`, `FileSyncState` | the writes, the merge and the sync; the state is what a device keeps between syncs (a sealed file in the app, in memory in tests) |
-| `AccountCloudSync` | the name, rooms and blocks of `ChatNode` through the engine |
+| `AccountCloudSync` | the name, rooms, blocks and pins of `ChatNode` through the engine |
+| `PinOrder`, `PinnedFirst` | the positions of pinned rooms and chats, and keeping them at the top of a list |
 
 Tests: `tests/Yaparr.Tests/AccountCloudSyncTests.cs` (two real nodes of one account that are never online together), `tests/Yaparr.Tests/SyncTests.cs` (the engine runs against a fake server that keeps records the way the real one does), and Yaparr.Cloud's `SyncStoreTests` and `SyncApiTests`.
 

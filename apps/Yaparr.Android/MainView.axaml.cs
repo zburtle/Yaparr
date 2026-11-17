@@ -45,6 +45,8 @@ public partial class MainView : UserControl
         DetachedFromVisualTree += (_, _) => Unhook();
         // Messages are not picked from the list: a press does something (a long press opens the actions), and nothing stays highlighted.
         Messages.SelectionChanged += (_, _) => Messages.SelectedItem = null;
+        // A touch of the chat list starts without a long press behind it (see ChatHeld).
+        ChatList.AddHandler(PointerPressedEvent, (_, _) => _chatHeld = false, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         // A phone that has been used before opens straight onto its rooms.
         if (_data.HasIdentity && !string.IsNullOrWhiteSpace(_settings.DisplayName)) _ = BeginAsync(_settings.DisplayName);
     }
@@ -329,7 +331,26 @@ public partial class MainView : UserControl
     {
         if (ChatList.SelectedItem is not Chat chat) return;
         ChatList.SelectedItem = null;
+        // The finger that held a row (see ChatHeld) is lifted: that is not a tap to open it.
+        if (_chatHeld) { _chatHeld = false; return; }
         OpenChat(chat);
+    }
+
+    // Set while a long press on a row is going on; every new touch of the list starts without it.
+    private bool _chatHeld;
+
+    // A long press on a room or chat in the list: pin it or unpin it, and move a pinned one up or down among the pinned ones.
+    private void ChatHeld(object? sender, HoldingRoutedEventArgs e)
+    {
+        if (e.HoldingState != HoldingState.Started || sender is not Control { DataContext: Chat chat } || _session is not { } session) return;
+        e.Handled = true;
+        _chatHeld = true;
+        ActionTitle.Text = chat.Title;
+        ActionList.Children.Clear();
+        AddAction(chat.IsPinned ? "Unpin" : "Pin", () => session.TogglePin(chat));
+        if (session.CanMovePin(chat, -1)) AddAction("Move up", () => session.MovePin(chat, -1));
+        if (session.CanMovePin(chat, 1)) AddAction("Move down", () => session.MovePin(chat, 1));
+        ActionPanel.IsVisible = true;
     }
 
     // ---- the soundboard ----

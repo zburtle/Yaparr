@@ -131,13 +131,17 @@
                 <ListBox x:Name="ChatList" Background="Transparent" SelectionChanged="ChatSelected">
                     <ListBox.ItemTemplate>
                         <DataTemplate x:DataType="local:Chat">
-                            <Grid ColumnDefinitions="Auto,*,Auto" Margin="4,6">
+                            <Grid ColumnDefinitions="Auto,*,Auto" Margin="4,6" Background="Transparent" Holding="ChatHeld">
                                 <Border Width="46" Height="46" CornerRadius="23" Background="{Binding Tint}">
                                     <TextBlock Text="{Binding Initial}" Foreground="White" FontWeight="SemiBold" FontSize="18"
                                                HorizontalAlignment="Center" VerticalAlignment="Center" />
                                 </Border>
                                 <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center" Spacing="2">
-                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource Ink}" />
+                                    <Grid ColumnDefinitions="Auto,*">
+                                        <Path IsVisible="{Binding IsPinned}" Data="M3,0.5 H7 M3.5,0.5 L3.2,4.2 L1.2,6.2 H8.8 L6.8,4.2 L6.5,0.5 M5,6.2 V10.5" Stroke="{DynamicResource Muted}"
+                                              StrokeThickness="1.1" StrokeLineCap="Round" StrokeJoin="Round" Width="10" Height="11" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource Ink}" />
+                                    </Grid>
                                     <TextBlock Text="{Binding Preview}" IsVisible="{Binding ShowPreview}" FontSize="13" MaxLines="1" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource Muted}" />
                                     <TextBlock Text="{Binding SyncText}" IsVisible="{Binding HasSyncText}" FontSize="13" MaxLines="1" Foreground="{DynamicResource Accent}" />
                                     <ProgressBar IsVisible="{Binding IsSyncing}" IsIndeterminate="True" Height="2" MinHeight="2" MinWidth="0" Width="64" HorizontalAlignment="Left" />

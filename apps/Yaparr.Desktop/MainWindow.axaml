@@ -359,7 +359,12 @@
                                             <TextBlock Text="{Binding Initial}" FontSize="15" />
                                         </Border>
                                         <StackPanel Grid.Column="1" Margin="10,0,6,0" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                            <Grid ColumnDefinitions="Auto,*">
+                                                <Path IsVisible="{Binding IsPinned}" Data="M3,0.5 H7 M3.5,0.5 L3.2,4.2 L1.2,6.2 H8.8 L6.8,4.2 L6.5,0.5 M5,6.2 V10.5" Stroke="{DynamicResource Muted}"
+                                                      StrokeThickness="1.1" StrokeLineCap="Round" StrokeJoin="Round" Width="10" Height="11" Margin="0,0,6,0" VerticalAlignment="Center"
+                                                      ToolTip.Tip="Pinned" />
+                                                <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                            </Grid>
                                             <TextBlock Text="{Binding Subtitle}" IsVisible="{Binding ShowSubtitle}" Classes="muted small" />
                                             <TextBlock Text="{Binding SyncText}" IsVisible="{Binding HasSyncText}" Classes="small" Foreground="{DynamicResource Accent}" />
                                             <ProgressBar IsVisible="{Binding IsSyncing}" IsIndeterminate="True" Height="2" MinHeight="2" MinWidth="0" Width="64" HorizontalAlignment="Left" Margin="0,2,0,0" />
@@ -483,8 +488,12 @@
                                      SelectionChanged="ConversationList_SelectionChanged">
                             <ListBox.ContextMenu>
                                 <ContextMenu Opening="ConversationMenu_Opening">
-                                    <MenuItem Header="Room _settings…" Click="RoomSettings_Click" />
-                                    <MenuItem Header="_Leave room" Click="LeaveRoom_Click" />
+                                    <MenuItem Tag="pin" Header="_Pin to top" Click="TogglePin_Click" />
+                                    <MenuItem Tag="up" Header="Move _up" Click="MovePinUp_Click" />
+                                    <MenuItem Tag="down" Header="Move _down" Click="MovePinDown_Click" />
+                                    <Separator Tag="room" />
+                                    <MenuItem Tag="room" Header="Room _settings…" Click="RoomSettings_Click" />
+                                    <MenuItem Tag="room" Header="_Leave room" Click="LeaveRoom_Click" />
                                 </ContextMenu>
                             </ListBox.ContextMenu>
                             </ListBox>
@@ -498,8 +507,12 @@
                                      SelectionChanged="ConversationList_SelectionChanged">
                             <ListBox.ContextMenu>
                                 <ContextMenu Opening="ConversationMenu_Opening">
-                                    <MenuItem Header="Room _settings…" Click="RoomSettings_Click" />
-                                    <MenuItem Header="_Leave room" Click="LeaveRoom_Click" />
+                                    <MenuItem Tag="pin" Header="_Pin to top" Click="TogglePin_Click" />
+                                    <MenuItem Tag="up" Header="Move _up" Click="MovePinUp_Click" />
+                                    <MenuItem Tag="down" Header="Move _down" Click="MovePinDown_Click" />
+                                    <Separator Tag="room" />
+                                    <MenuItem Tag="room" Header="Room _settings…" Click="RoomSettings_Click" />
+                                    <MenuItem Tag="room" Header="_Leave room" Click="LeaveRoom_Click" />
                                 </ContextMenu>
                             </ListBox.ContextMenu>
                             </ListBox>
