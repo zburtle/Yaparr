@@ -26,6 +26,14 @@ public static class AppUpdater
     /// <summary>Told how an install ended, when Android says (not when it worked: the app is then replaced and closed).</summary>
     public static event Action<string>? InstallFailed;
 
+    /// <summary>True for the build made for Google Play (<c>-p:PlayStore=true</c>): Play updates the app, so it never looks for or installs an update itself, and nothing here contacts GitHub.</summary>
+    public static bool IsStoreBuild { get; } =
+#if PLAY_STORE
+        true;
+#else
+        false;
+#endif
+
     /// <summary>True for a build made for trying on a phone: it is signed with a key that is not the release key, so a release could not replace it.</summary>
     public static bool IsTestBuild =>
         (Application.Context.ApplicationInfo?.Flags & ApplicationInfoFlags.Debuggable) != 0;
