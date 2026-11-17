@@ -154,7 +154,7 @@ internal sealed class Wire
     /// <summary>A request for the direct messages before a time (<c>Text</c> is the other person's account, <c>Ts</c> the time, <c>N</c> how many), and the answer (<c>Dm</c>, in the order of the asker's side of the conversation).</summary>
     public const string DirectBack = "dmback";
 
-    public const string Caps = "caps", Rename = "name", Account = "acct", Media = "media", Sound = "snd", Gif = "gif", Play = "play", Roles = "roles", Moderate = "mod", Channels = "chan", Rekey = "rekey", Takeover = "takeover", Speed = "speed";
+    public const string Caps = "caps", Rename = "name", Account = "acct", Media = "media", Sound = "snd", Gif = "gif", Play = "play", Roles = "roles", Moderate = "mod", Channels = "chan", Rekey = "rekey", Takeover = "takeover", Speed = "speed", View = "view";
 
     /// <summary>With <see cref="Wire.Back"/>: how many earlier messages are asked for.</summary>
     public int N { get; set; }

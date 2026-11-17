@@ -759,7 +759,9 @@ public sealed partial class Session : IDisposable
     {
         if (!_settings.NotifyMessages) return;
         bool replyToMe = line.ReplyKey is { } key && chat.FindByKey(key) is { Mine: true };
-        var facts = new NotificationPolicy.Message(!chat.IsRoom, line.Mine, line.MentionsMe, replyToMe, NotifiesAll(chat), DateTimeOffset.UtcNow - m.Timestamp);
+        // A chat that another of your devices (the computer) has open in front of you needs no notification here.
+        bool shownElsewhere = _node is { } node && (chat.Room is { } room ? node.SiblingIsViewing(room.RoomId, m.Channel, null) : chat.Direct is { } direct && node.SiblingIsViewing(null, null, direct.PeerId));
+        var facts = new NotificationPolicy.Message(!chat.IsRoom, line.Mine, line.MentionsMe, replyToMe, NotifiesAll(chat), DateTimeOffset.UtcNow - m.Timestamp, shownElsewhere);
         if (!NotificationPolicy.ShouldNotify(facts, AppHost.InForeground, _settings.NotifyMessages)) return;
         if (!OperatingSystem.IsAndroidVersionAtLeast(26)) return;
         bool gif = line.Attachment?.Mime == "image/gif";

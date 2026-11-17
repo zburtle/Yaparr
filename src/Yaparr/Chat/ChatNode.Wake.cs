@@ -55,12 +55,26 @@ public sealed partial class ChatNode
 
     private bool IsConnectedPerson(string person) => _peers.Values.Any(s => s.Id.Value == person || s.AccountId.Value == person);
 
-    // A message went to a room: the members we know how to wake and are not connected to are asked to look.
-    private void WakeAbsentInRoom(ChatRoom room)
+    // The accounts a message of a room is for: those it names (everyone in it for @everyone) and the author of the message it answers, from the words as they were sent.
+    private HashSet<PeerId> MentionedAccounts(ChatRoom room, string text)
+    {
+        var parts = MessageEnvelope.Parse(text);
+        var named = new HashSet<PeerId>();
+        foreach (var mention in parts.Mentions) named.Add(mention.Account);
+        if (parts.ReplyTo is { } key && room.History.Find(new[] { key }).FirstOrDefault() is { } answered && IsValidPeerId(answered.From))
+            named.Add(AccountOf(new PeerId(answered.From)));
+        return named;
+    }
+
+    // A message went to a room: the members we know how to wake and are not connected to are asked to look. A member who is named or answered is asked even when another device of
+    // theirs is connected, since that device may be somewhere they are not looking (the phone itself stays quiet when the person is looking at the chat on that device).
+    private void WakeAbsentInRoom(ChatRoom room, IReadOnlySet<PeerId> mentioned)
     {
         if (_options.WakePeer == null) return;
+        bool everyone = mentioned.Contains(Mention.Everyone.Account);
         var absent = _wakeBook.ForRoom(room.Key).Where(e => !IsMyDevice(new PeerId(e.Device)) && !IsMyDevice(new PeerId(e.Account))
-            && !IsConnectedPerson(e.Account) && !IsConnectedPerson(e.Device) && !IsBannedIn(room, new PeerId(e.Account)) && !IsBannedIn(room, new PeerId(e.Device))).ToList();
+            && !IsConnectedPerson(e.Device) && !IsBannedIn(room, new PeerId(e.Account)) && !IsBannedIn(room, new PeerId(e.Device))
+            && (!IsConnectedPerson(e.Account) || everyone || mentioned.Contains(new PeerId(e.Account)))).ToList();
         Wake(absent);
     }
 
