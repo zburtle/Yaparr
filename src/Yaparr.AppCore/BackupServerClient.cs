@@ -260,6 +260,9 @@ public sealed class BackupServerClient : IDisposable
     /// <summary>The page where a person changes their password, for the browser.</summary>
     public static Uri PasswordPage(Uri server) => new(server, "/account/password");
 
+    /// <summary>The server's page where the owner deletes the account and everything it holds (backup, synced settings, wake-up registrations).</summary>
+    public static Uri DeleteAccountPage(Uri server) => new(server, "/account/delete");
+
     public BackupServerClient(Uri server, string token, HttpClient? http = null)
     {
         _token = token;

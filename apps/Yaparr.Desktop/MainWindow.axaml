@@ -1118,6 +1118,7 @@
                                     <Button x:Name="BackupToServerButton" Content="Back up now" Classes="primary" Click="BackupToServer_Click" />
                                     <Button x:Name="ShowRecoveryCodeButton" Content="Show recovery code" Click="ShowRecoveryCode_Click" />
                                     <Button Content="Change password" Click="ServerChangePassword_Click" ToolTip.Tip="Opens the server's page in your browser" />
+                                    <Button Content="Delete my account" Click="ServerDeleteAccount_Click" ToolTip.Tip="Opens the server's page in your browser, where the account and everything it holds is deleted" />
                                     <Button x:Name="ServerSignOutButton" Content="Sign out" Click="ServerSignOut_Click" />
                                 </WrapPanel>
                                 <CheckBox x:Name="AutoBackupCheck" Content="Back up automatically" Margin="0,6,0,0" Click="AutoBackup_Click" />

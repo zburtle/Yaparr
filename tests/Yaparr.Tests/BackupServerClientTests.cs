@@ -379,4 +379,8 @@ public sealed class BackupServerClientTests : IDisposable
     [Fact]
     public void The_password_page_is_on_the_server() =>
         Assert.Equal("https://backup.example.org/account/password", BackupServerClient.PasswordPage(Server).ToString());
+
+    [Fact]
+    public void The_page_for_deleting_the_account_is_on_the_server() =>
+        Assert.Equal("https://backup.example.org/account/delete", BackupServerClient.DeleteAccountPage(Server).ToString());
 }

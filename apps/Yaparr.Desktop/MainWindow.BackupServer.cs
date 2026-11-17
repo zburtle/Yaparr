@@ -271,6 +271,12 @@ public partial class MainWindow
             await GetTopLevel(this)!.Launcher.LaunchUriAsync(BackupServerClient.PasswordPage(server));
     }
 
+    private async void ServerDeleteAccount_Click(object? sender, RoutedEventArgs e)
+    {
+        if (Uri.TryCreate(_server.Url, UriKind.Absolute, out var server))
+            await GetTopLevel(this)!.Launcher.LaunchUriAsync(BackupServerClient.DeleteAccountPage(server));
+    }
+
     private async void ShowRecoveryCode_Click(object? sender, RoutedEventArgs e)
     {
         if (_server.RecoveryCode.Length > 0) await ShowRecoveryCodeAsync(_server.RecoveryCode, isNew: false);
