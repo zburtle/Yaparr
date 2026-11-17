@@ -161,6 +161,14 @@ A release build looks for a newer release when it opens (a few seconds after the
 
 The key is only for builds that are tried on a phone. It is in the repository, so it proves nothing about who made a package. A release for other people has to be signed with a key kept secret (pass its path and passwords as `AndroidSigningKeyStore` and so on, which win over the project's), and Google Play needs its own signing setup.
 
+## Google Play
+
+The app can be built for Google Play with `-p:PlayStore=true`. That build is an Android App Bundle (`.aab`, which Play takes in place of an `.apk`), and it is the same app without two things Play does not allow or does itself: it never looks for or installs an update from GitHub (the update setting and button are hidden, `AppUpdater.IsStoreBuild`), and it does not ask for `REQUEST_INSTALL_PACKAGES`. The release workflow makes it next to the `.apk`, with the same version code, and keeps it as the workflow artifact `play-bundle-android` (it is not attached to the GitHub release, so the site and the in-app update never see it).
+
+Signing: the bundle is signed with the release key here, which is the *upload* key. When the app is set up in the Play Console with Play App Signing, Google signs what people install with its own key, so a phone that has the GitHub package (signed with the release key) cannot be updated by the Play version, or the other way round: one has to be uninstalled once. Keep the keystore.
+
+What is left for the Play Console (not done by code): a developer account, the store listing, a privacy policy and the Data safety form, the content rating and the user-generated-content answers (blocking is in the app), and a declaration for each foreground service type the app uses (remote messaging for the background connection, microphone for calls, media projection for screen sharing), each with a short explanation of what the person sees. A new personal account may have to run a closed test with a minimum number of testers before it can publish; check the Console. Push works without Google's services (UnifiedPush) with Firebase only as the fallback; the listing and policy should say so.
+
 ## What is stored
 
 In the app's private storage (`files/Yaparr`): the identity key, the name, the last invite, the message history and the peer cache. Android keeps this away from other apps.
