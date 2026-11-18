@@ -120,7 +120,7 @@ public partial class MainView
         _serverSignIn = new CancellationTokenSource();
         try
         {
-            using var signIn = new BrowserSignIn(server, DeviceName());
+            using var signIn = new BrowserSignIn(server, DeviceName(), throughAppLink: true);
             if (!await OpenInBrowserAsync(signIn.LoginUrl)) { ServerNote("Couldn't open your browser.", problem: true); return; }
             ServerNote("Waiting for you to sign in in your browser. When it says you are signed in, come back to Yaparr.");
             var (token, username) = await signIn.WaitAsync(cancel: _serverSignIn.Token);
@@ -383,7 +383,7 @@ public partial class MainView
         var temp = Path.Combine(Path.GetTempPath(), "yaparr-server-restore-" + Guid.NewGuid().ToString("N") + ".yapbak");
         try
         {
-            using var signIn = new BrowserSignIn(server, DeviceName());
+            using var signIn = new BrowserSignIn(server, DeviceName(), throughAppLink: true);
             if (!await OpenInBrowserAsync(signIn.LoginUrl)) { ServerRestoreStatus.Text = "Couldn't open your browser."; return; }
             ServerRestoreStatus.Text = "Waiting for you to sign in in your browser. When it says you are signed in, come back to Yaparr.";
             var (token, username) = await signIn.WaitAsync(cancel: _serverRestore.Token);
