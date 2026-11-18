@@ -1,11 +1,15 @@
 using System.Net;
+using System.Net.Sockets;
 
 namespace Yaparr.Vpn;
 
 public sealed class WireGuardConfig
 {
     public required byte[] PrivateKey { get; init; }
+    /// <summary>The interface's address: its IPv4 address when it has one, otherwise its IPv6 address.</summary>
     public required IPAddress Address { get; init; }
+    /// <summary>The interface's IPv6 address, when the configuration gives one.</summary>
+    public IPAddress? IPv6Address { get; init; }
     public required byte[] PeerPublicKey { get; init; }
     public byte[]? PresharedKey { get; init; }
     public required string Endpoint { get; init; }
@@ -13,6 +17,9 @@ public sealed class WireGuardConfig
     public int PersistentKeepalive { get; init; }
 
     public string EndpointHost => SplitEndpoint(Endpoint).Host;
+
+    /// <summary>The interface address to use inside the tunnel for destinations of this family, or null when there is none.</summary>
+    public IPAddress? AddressFor(AddressFamily family) => new[] { Address, IPv6Address }.FirstOrDefault(a => a?.AddressFamily == family);
 
     public static (string Host, int Port) SplitEndpoint(string endpoint)
     {
@@ -59,11 +66,15 @@ public sealed class WireGuardConfig
         if (!peer.TryGetValue("Endpoint", out var endpoint)) throw new FormatException("The [Peer] section has no Endpoint.");
         SplitEndpoint(endpoint);
 
-        var address = addresses.Split(',')
+        var parsed = addresses.Split(',')
             .Select(a => a.Trim().Split('/')[0])
             .Select(a => IPAddress.TryParse(a, out var ip) ? ip : null)
-            .FirstOrDefault(ip => ip is { AddressFamily: System.Net.Sockets.AddressFamily.InterNetwork })
-            ?? throw new FormatException("The interface needs an IPv4 Address.");
+            .Where(ip => ip != null)
+            .Select(ip => ip!)
+            .ToList();
+        var ipv4 = parsed.FirstOrDefault(ip => ip.AddressFamily == AddressFamily.InterNetwork);
+        var ipv6 = parsed.FirstOrDefault(ip => ip.AddressFamily == AddressFamily.InterNetworkV6);
+        var address = ipv4 ?? ipv6 ?? throw new FormatException("The interface needs an IPv4 or IPv6 Address.");
 
         int mtu = iface.TryGetValue("MTU", out var m) && int.TryParse(m, out var parsedMtu) && parsedMtu is >= 576 and <= 1500 ? parsedMtu : 1420;
         int keepalive = peer.TryGetValue("PersistentKeepalive", out var k) && int.TryParse(k, out var parsedKeepalive) && parsedKeepalive > 0 ? parsedKeepalive : 0;
@@ -72,6 +83,7 @@ public sealed class WireGuardConfig
         {
             PrivateKey = DecodeKey(privateKey, "PrivateKey"),
             Address = address,
+            IPv6Address = ipv6,
             PeerPublicKey = DecodeKey(publicKey, "PublicKey"),
             PresharedKey = peer.TryGetValue("PresharedKey", out var psk) ? DecodeKey(psk, "PresharedKey") : null,
             Endpoint = endpoint,

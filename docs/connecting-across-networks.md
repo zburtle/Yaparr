@@ -15,6 +15,12 @@ Peers behind home routers have to punch through their NATs. Yaparr does this in 
    switches to the relay only for peers that cannot be reached directly. A TURN server is the one piece of
    infrastructure involved; it forwards encrypted packets and cannot read them.
 
+### IPv6
+
+Yaparr listens on both IPv4 and IPv6 with one socket when the system allows it. If your computer has a public IPv6 address, the node publishes it alongside its IPv4 addresses in the peer record (in separate entries with their own signature, so older versions still read the IPv4 part). IPv6 needs no address translation, so a peer with a public IPv6 address can be reached directly, provided a firewall lets the port through. Addresses that are only local (link-local, unique-local) are not published.
+
+Not yet: IPv6 relay through a TURN server (IPv6 traffic always goes directly), IPv6 addresses in the DHT itself, and finding peers on the local network over IPv6.
+
 ## Built-in WireGuard VPN
 
 Yaparr contains its own WireGuard client (Noise IKpsk2, ChaCha20-Poly1305, BLAKE2s). In the Desktop app use
@@ -26,7 +32,7 @@ Yaparr's internet traffic is dropped instead of leaking out directly.
 Peers then see the VPN server's address, so a symmetric NAT on your side stops mattering as long as the server's
 outbound mapping is stable (a plain Linux WireGuard server with masquerading is). The NAT check is re-run through the
 tunnel and shown in the status bar. The config, including its private key, is saved as `vpn.conf` in the profile
-folder and is therefore part of a backup. Only IPv4 servers and a single peer are supported; the client does
+folder and is therefore part of a backup. The server's address can be IPv4 or IPv6, and the interface can have an IPv4 address, an IPv6 address, or both. Traffic is carried over either family as long as the configuration has an address of that family; public traffic for a family the configuration does not cover is dropped. A single peer is supported, and the client does
 not answer handshakes started by the server, so it relies on its own 2-minute rekey.
 
 Settings live in `network.json` in the profile folder (all keys optional). The Desktop app looks for peers on the local network too unless `localDiscovery` is `false`:

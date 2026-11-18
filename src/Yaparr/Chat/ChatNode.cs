@@ -954,6 +954,24 @@ public sealed partial class ChatNode : IDisposable
         catch (OperationCanceledException) { }
     }
 
+    /// <summary>
+    /// Our own internet-reachable IPv6 addresses on this port. IPv6 needs no address translation, so these are the
+    /// addresses other people can use directly, provided a firewall lets the port through.
+    /// </summary>
+    private IEnumerable<IPEndPoint> LocalIPv6EndPoints()
+    {
+        if (!_mux.DualStack) yield break;
+        foreach (var nic in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+        {
+            if (nic.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up) continue;
+            foreach (var unicast in nic.GetIPProperties().UnicastAddresses)
+            {
+                if (Yaparr.Discovery.Dht.PeerRecord.IsReachableIPv6(unicast.Address))
+                    yield return new IPEndPoint(unicast.Address, _mux.LocalPort);
+            }
+        }
+    }
+
     private readonly SemaphoreSlim _recordGate = new(1, 1);
     private string _recordPublished = "";
     private long _recordPublishedAt;
@@ -970,7 +988,7 @@ public sealed partial class ChatNode : IDisposable
         {
             var status = NetworkStatus;
             var endpoints = new[] { status.Mapping?.ExternalEndPoint, status.Nat.PublicEndPoint, status.Relay }
-                .OfType<IPEndPoint>().Concat(_options.AdvertisedEndPoints).Distinct().ToList();
+                .OfType<IPEndPoint>().Concat(_options.AdvertisedEndPoints).Concat(LocalIPv6EndPoints()).Distinct().ToList();
             if (endpoints.Count == 0) return;
 
             string fingerprint = string.Join(",", endpoints);
