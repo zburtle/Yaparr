@@ -46,13 +46,14 @@ modules:
     build-commands:
       - make PREFIX=/app LIBDIR=lib install
 
-  # Sharing and watching a screen use FFmpeg's libraries (libavcodec.so and the others), which Yaparr loads into itself: they copy an X11 screen (x11grab),
-  # encode (H.264, H.265 and AV1 on an NVIDIA card or through VA-API on an Intel or AMD one, VP8 in software) and decode (VP8, H.264, H.265 and AV1 with dav1d, H.264
-  # and H.265 on the card through NVDEC or VA-API). The H.265 parts (hevc_nvenc, hevc_vaapi, the hevc decoder, parser and hwaccels) are the same as in Yaparr.FFmpeg's
-  # build-linux.sh with WITH_HEVC=1, its default; without the decoder a viewer gets no picture from an H.265 share. On Wayland GStreamer reads the desktop's stream and hands its pictures to the encoder in Yaparr. No ffmpeg program is
-  # built (--disable-programs). It has nothing else (no GPL parts, no network). It is LGPL 2.1; the libraries are shared libraries kept in a
-  # folder of their own (/app/lib/yaparr-ffmpeg) so that they can be replaced (the launcher puts that folder on LD_LIBRARY_PATH). The libraries it uses (libvpx, libva,
-  # libxcb) are the runtime's own. This is the same FFmpeg commit as the Windows build and the Linux build of Yaparr.FFmpeg (the libraries Yaparr is
+  # Sharing and watching a screen use FFmpeg's libraries (libavcodec.so and the others), which Yaparr loads into itself. They always ENCODE (H.264, H.265 and AV1 on an
+  # NVIDIA card or through VA-API on an Intel or AMD one, VP8 in software) and DECODE (VP8, H.264, H.265 and AV1 with dav1d, H.264 and H.265 on the card through NVDEC
+  # or VA-API), on X11 and on Wayland alike. Only the CAPTURE differs: on X11 FFmpeg copies the screen itself (x11grab); on Wayland GStreamer reads the desktop's stream
+  # and hands its pictures to the encoder in Yaparr, so x11grab is not used there. No ffmpeg program is built or run anywhere (--disable-programs).
+  # The H.265 parts (hevc_nvenc, hevc_vaapi, the hevc decoder, parser and hwaccels) are the same as in Yaparr.FFmpeg's build-linux.sh with WITH_HEVC=1, its default;
+  # without the decoder a viewer gets no picture from an H.265 share. The build has nothing else (no GPL parts, no network). It is LGPL 2.1; the libraries are shared
+  # libraries kept in a folder of their own (/app/lib/yaparr-ffmpeg) so that they can be replaced (the launcher puts that folder on LD_LIBRARY_PATH). The libraries it
+  # uses (libvpx, libva, libxcb) are the runtime's own. This is the same FFmpeg commit as the Windows build and the Linux build of Yaparr.FFmpeg (the libraries Yaparr is
   # written against), not a release: Yaparr needs the one with the newer library versions.
   - name: ffmpeg
     buildsystem: simple
