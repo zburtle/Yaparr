@@ -47,7 +47,7 @@ Not there yet: @everyone, and asking the other members for an original message t
 
 ## Reactions
 
-**React…** in a message's long-press menu opens a panel with the thirteen quick emoji (👍 💯 ❤️ 😂 😭 🔥 🙏 😍 🎉 👀 🤔 😮 👎), a search box and the rest of the emoji by group. The emoji shows under the message with how many put it there; tap one to add yours (the count goes up by one) or, if it is yours, to take it back (it goes down by one), and tap the small grey circle with a plus next to them to add another emoji. Rooms and direct chats; see [Rooms and messages](rooms-and-messages.md#reactions). Not there yet: seeing who put an emoji there.
+**React…** in a message's long-press menu opens a panel with the thirteen quick emoji (👍 💯 ❤️ 😂 😭 🔥 🙏 😍 🎉 👀 🤔 😮 👎), a search box and the rest of the emoji by group. The emoji shows under the message with how many put it there; tap one to add yours (the count goes up by one) or, if it is yours, to take it back (it goes down by one), and tap the small grey circle with a plus next to them to add another emoji. Rooms and direct chats; see [Rooms and messages](rooms-and-messages.md#reactions). Not there yet: seeing who put an emoji there. The **My emoji** and **This room** tabs of the panel hold your own custom emoji and the room's: tap one to react with its picture. Everyone sees the picture, whichever set it came from.
 
 ## Emoji in your messages
 

@@ -119,10 +119,16 @@ public sealed class MessageVm : Observable
         {
             var names = r.Accounts.Select(nameOf).OrderBy(n => n, StringComparer.CurrentCultureIgnoreCase).ToList();
             var who = names.Count <= 8 ? string.Join(", ", names) : string.Join(", ", names.Take(8)) + " and " + (names.Count - 8) + " more";
-            Reactions.Add(new ReactionChipVm(this, r.Emoji, r.Count, r.Accounts.Contains(me), who + "\n" + (EmojiData.Find(r.Emoji)?.Name ?? "")));
+            Reactions.Add(new ReactionChipVm(this, r.Emoji, r.Count, r.Accounts.Contains(me), who + "\n" + (r.Custom != null ? ":" + r.Custom.Name + ":" : EmojiData.Find(r.Emoji)?.Name ?? ""), r.Custom));
         }
         if (reactions.Count > 0) Reactions.Add(ReactionChipVm.More(this));
         Raise(nameof(HasReactions));
+    }
+
+    /// <summary>The picture of a custom emoji used as a reaction on this message arrived: those chips are drawn again.</summary>
+    public void RaiseReactionPictures(string hash)
+    {
+        foreach (var chip in Reactions.Where(c => c.Custom?.Hash == hash).ToList()) chip.RaisePicture();
     }
 
     /// <summary>The card the sender attached for a link in the words, shown below them.</summary>
@@ -392,9 +398,28 @@ public sealed record PeerVm(string Id, string Name, bool Online, DateTimeOffset 
 /// <summary>One emoji under a message: the emoji, how many put it there, whether you did, and who (for the tooltip). The last chip, <see cref="IsMore"/>, counts the ones that did not fit in the row ("+4") and opens the rest.</summary>
 public sealed class ReactionChipVm : Observable
 {
-    public ReactionChipVm(MessageVm owner, string emoji, int count, bool mine, string tooltip)
+    public ReactionChipVm(MessageVm owner, string emoji, int count, bool mine, string tooltip, CustomEmoji? custom = null)
     {
-        Owner = owner; Emoji = emoji; Count = count; Mine = mine; Tooltip = tooltip;
+        Owner = owner; Emoji = emoji; Count = count; Mine = mine; Tooltip = tooltip; Custom = custom;
+    }
+
+    /// <summary>The custom emoji this reaction is (a room's or someone's own), or null for a standard emoji.</summary>
+    public CustomEmoji? Custom { get; }
+
+    /// <summary>The picture of a custom emoji, once it is on this computer.</summary>
+    public IImage? Picture => Custom == null ? null : EmojiPictures.For(Custom);
+    public bool ShowPicture => Picture != null;
+
+    /// <summary>The emoji as text: the emoji itself, or for a custom one its :name: until its picture has arrived.</summary>
+    public string EmojiText => Custom != null ? ":" + Custom.Name + ":" : Emoji;
+    public bool ShowEmojiText => ShowEmoji && Picture == null;
+
+    /// <summary>The picture of this custom emoji arrived: the chip is drawn again with it.</summary>
+    public void RaisePicture()
+    {
+        Raise(nameof(Picture));
+        Raise(nameof(ShowPicture));
+        Raise(nameof(ShowEmojiText));
     }
 
     public static ReactionChipVm More(MessageVm owner) => new(owner, "", 0, false, "Show or hide the rest of the reactions") { IsMore = true };
@@ -513,6 +538,9 @@ public sealed class ConversationVm : Observable
 
     /// <summary>Puts an emoji on a message or takes it off: the message's key, the emoji, whether to put it on, and the message's channel.</summary>
     public Func<string, string, bool, string?, Task>? React { get; set; }
+
+    /// <summary>Puts a custom emoji on a message, or takes it off: the key of the message, the emoji, on or off, the channel.</summary>
+    public Func<string, CustomEmoji, bool, string?, Task>? ReactCustom { get; set; }
 
     private int _unread;
     private string _title;

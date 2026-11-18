@@ -43,11 +43,12 @@ public partial class MainView
 
     private void UpdateEmojiTabs()
     {
-        ReactCustomTabs.IsVisible = _pickingForComposer;
+        // The tabs of yours and the room's are there when reacting too (to react with one); adding and removing is for the message box's picker.
+        ReactCustomTabs.IsVisible = _pickingForComposer || _reactingTo != null;
         EmojiRoomTab.IsVisible = _current?.Room != null;
         EmojiMineTab.Classes.Set("primary", _emojiTab == EmojiTab.Mine);
         EmojiRoomTab.Classes.Set("primary", _emojiTab == EmojiTab.Room);
-        EmojiAddButton.IsVisible = _emojiTab != EmojiTab.None;
+        EmojiAddButton.IsVisible = _emojiTab != EmojiTab.None && _pickingForComposer;
     }
 
     private void EmojiMineClicked(object? sender, RoutedEventArgs e) { _emojiTab = EmojiTab.Mine; ShowReactCustom(); }
@@ -106,7 +107,7 @@ public partial class MainView
             }
         }
         ReactTitle.Text = count > 0
-            ? (_emojiTab == EmojiTab.Mine ? "My emoji" : "This room's emoji") + " · type :name: to use one. Hold one to remove it."
+            ? (_emojiTab == EmojiTab.Mine ? "My emoji" : "This room's emoji") + (_reactingTo != null ? " · tap one to react" : " · type :name: to use one. Hold one to remove it.")
             : _emojiTab == EmojiTab.Mine ? "Nothing here yet. Add a small picture and give it a name." : "No emoji in this room yet. Anyone here can add one.";
     }
 
@@ -121,7 +122,7 @@ public partial class MainView
             Tag = ":" + name + ":",
         };
         bool held = false;
-        if (removeLabel != null && remove != null)
+        if (removeLabel != null && remove != null && _pickingForComposer)
             tile.Holding += (_, args) =>
             {
                 if (args.HoldingState != HoldingState.Started) return;

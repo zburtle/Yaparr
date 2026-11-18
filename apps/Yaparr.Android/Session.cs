@@ -846,8 +846,13 @@ public sealed partial class Session : IDisposable
     {
         // The picture of a custom emoji a message uses has arrived: the words are drawn again with it.
         if (update.State == AttachmentState.Ready)
+        {
             foreach (var line in _rooms.Values.Concat(_directs.Values).SelectMany(c => c.AllLines).Where(l => l.Emoji != null && l.Emoji.Any(e => e.Hash == update.Hash)).ToList())
                 line.RaiseEmoji();
+            // ...and the same for a custom emoji someone put on a message as a reaction.
+            foreach (var line in _rooms.Values.Concat(_directs.Values).SelectMany(c => c.AllLines).Where(l => l.Reactions.Any(c => c.Custom?.Hash == update.Hash)).ToList())
+                line.RaiseReactionPictures(update.Hash);
+        }
         if (!_pictureLines.TryGetValue(update.Hash, out var list)) return;
         foreach (var line in list.ToList())
         {

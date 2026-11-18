@@ -26,6 +26,7 @@ public partial class MainView
         e.Handled = true;
         if ((sender as Control)?.DataContext is not ReactionChip chip) return;
         if (chip.IsAdd) { OpenReact(chip.Owner); return; }
+        if (chip.Custom != null) { _ = ReactCustomAsync(chip.Owner, chip.Custom, on: !chip.Mine); return; }
         _ = ReactAsync(chip.Owner, chip.Emoji, on: !chip.Mine);
     }
 
@@ -33,6 +34,13 @@ public partial class MainView
     {
         if (_session == null || _current is not { } chat) return;
         try { await _session.ReactAsync(chat, line, emoji, on); }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { ShowChatNote(chat, "Couldn't react: " + ex.Message); }
+    }
+
+    private async Task ReactCustomAsync(Line line, CustomEmoji custom, bool on)
+    {
+        if (_session == null || _current is not { } chat) return;
+        try { await _session.ReactAsync(chat, line, custom, on); }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { ShowChatNote(chat, "Couldn't react: " + ex.Message); }
     }
 
@@ -138,6 +146,15 @@ public partial class MainView
         }
         if ((sender as Control)?.Tag is not string emoji || _reactingTo is not { } line) return;
         ReactPanel.IsVisible = false;
+        DetachEmojiRoom();
+        // A custom emoji (its :name:, from the tabs of yours and the room's): the reaction carries its picture.
+        if (emoji.Length > 2 && emoji[0] == ':' && emoji[^1] == ':')
+        {
+            if (_session == null || _current is not { } chat || _session.PrepareReactionEmoji(chat, emoji[1..^1]) is not { } custom) return;
+            var customKey = MessageEnvelope.CustomKey(custom);
+            _ = ReactCustomAsync(line, custom, on: !line.Reactions.Any(r => r.Emoji == customKey && r.Mine));
+            return;
+        }
         // Picking one you already have takes it off, as tapping it under the message does.
         bool has = line.Reactions.Any(r => r.Emoji == emoji && r.Mine);
         _ = ReactAsync(line, emoji, on: !has);

@@ -111,6 +111,9 @@ public sealed partial class ChatNode
         else if (message.Attachment == null && message.Parts.Emoji is { } emoji)
             foreach (var e in emoji.Where(e => !_blobs.Has(e.Hash)))
                 _ = StartFetch(message with { Attachment = e.AsAttachment() }, force: false, trustedOnly, CancellationToken.None);
+        // The custom emoji someone put on a message as a reaction is fetched the same way, so the reaction shows its picture as soon as it can.
+        else if (message.Attachment == null && message.Parts.Reaction?.Custom is { } reacted && !_blobs.Has(reacted.Hash))
+            _ = StartFetch(message with { Attachment = reacted.AsAttachment() }, force: false, trustedOnly, CancellationToken.None);
     }
 
     // Files that no message shows any more (their messages were deleted) are removed, unless another message, a sound or a GIF still uses the same file.

@@ -19,11 +19,17 @@ public partial class MainWindow
     private readonly Dictionary<ConversationVm, DispatcherTimer> _reactionTimers = new();
 
     /// <summary>Hooks a conversation up to the reactions of its room or direct chat.</summary>
-    private void WireReactions(ConversationVm conv, Func<IReadOnlyCollection<string>, ReactionSet> source, Func<string, string, bool, string?, Task> send)
+    private void WireReactions(ConversationVm conv, Func<IReadOnlyCollection<string>, ReactionSet> source, Func<string, string, bool, string?, Task> send,
+        Func<string, CustomEmoji, bool, string?, Task> sendCustom)
     {
         conv.ReactionSource = source;
         conv.React = send;
+        conv.ReactCustom = sendCustom;
     }
+
+    // The pictures of custom emoji used as reactions that are not on this computer yet are asked for once each (they are also fetched as a live reaction arrives,
+    // this is for the ones read back from the history).
+    private readonly HashSet<string> _reactionPicturesAsked = new();
 
     // Reactions come in bursts (everyone clicking the same emoji): they are put on the messages once for the lot.
     private void ScheduleReactions(ConversationVm conv)
@@ -48,7 +54,14 @@ public partial class MainWindow
         catch (Exception ex) when (ex is InvalidOperationException) { return; }
         var me = _node.AccountId;
         foreach (var vm in conv.AllMessages)
-            if (vm.Key != null) vm.SetReactions(set.For(vm.Key), me, account => AccountName(conv, account, me));
+        {
+            if (vm.Key == null) continue;
+            var reactions = set.For(vm.Key);
+            vm.SetReactions(reactions, me, account => AccountName(conv, account, me));
+            foreach (var custom in reactions.Select(r => r.Custom).OfType<CustomEmoji>())
+                if (vm.Source != null && !_node.HasAttachment(custom.Hash) && _reactionPicturesAsked.Add(custom.Hash))
+                    _ = _node.FetchEmojiAsync(vm.Source, custom);
+        }
     }
 
     // A person's name for the list of who reacted: you, someone in this room or chat, someone met before, or the start of their ID.
@@ -83,6 +96,22 @@ public partial class MainWindow
         try
         {
             await conv.React(message.Key, emoji, on, message.Channel);
+            RefreshReactions(conv);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+        {
+            StatusText.Text = "Couldn't react: " + ex.Message;
+        }
+    }
+
+    // A custom emoji picked in the picker: yours or the room's, as the reaction.
+    private async Task ToggleReactionAsync(MessageVm message, CustomEmoji custom, bool on)
+    {
+        var conv = _conversations.FirstOrDefault(c => c.AllMessages.Contains(message));
+        if (conv?.ReactCustom == null || message.Key == null) return;
+        try
+        {
+            await conv.ReactCustom(message.Key, custom, on, message.Channel);
             RefreshReactions(conv);
         }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
@@ -252,6 +281,18 @@ public partial class MainWindow
         }
         if ((sender as Control)?.Tag is not string emoji || _reactingTo is not { } message) return;
         ReactionPopup.IsOpen = false;
+        // A custom emoji (its :name:, from the tabs of yours and the room's): the reaction carries its picture.
+        if (emoji.Length > 2 && emoji[0] == ':' && emoji[^1] == ':')
+        {
+            var name = emoji[1..^1];
+            if (_node == null || CustomBytes(name, SelectedRoom) is not { } bytes) return;
+            CustomEmoji custom;
+            try { custom = _node.PrepareEmoji(name, bytes); }
+            catch (ArgumentException ex) { StatusText.Text = "Couldn't react: " + ex.Message; return; }
+            var customKey = MessageEnvelope.CustomKey(custom);
+            _ = ToggleReactionAsync(message, custom, on: !message.Reactions.Any(r => r.Emoji == customKey && r.Mine));
+            return;
+        }
         // Picking one you already have takes it off, as clicking it under the message does.
         bool has = message.Reactions.Any(r => r.Emoji == emoji && r.Mine);
         _ = ToggleReactionAsync(message, emoji, on: !has);

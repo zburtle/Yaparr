@@ -91,18 +91,27 @@ public static class MessageEnvelope
     /// The text to send for putting <paramref name="emoji"/> on the message with key <paramref name="target"/> (<see cref="ChatMessage.Key"/>), or taking it off
     /// again. It is a message of its own that is not shown as one (see <see cref="ReactionEvent"/>); the words are only for versions that do not know it.
     /// </summary>
-    public static string WrapReaction(string target, string emoji, bool on, byte[]? accountKey = null, byte[]? deviceCertificate = null)
+    public static string WrapReaction(string target, string emoji, bool on, byte[]? accountKey = null, byte[]? deviceCertificate = null, CustomEmoji? custom = null)
     {
         if (!IsKey(target)) throw new ArgumentException("That is not the key of a message.", nameof(target));
-        if (!EmojiData.TryNormalize(emoji, out var standard)) throw new ArgumentException("That is not an emoji that can be used as a reaction.", nameof(emoji));
+        string standard;
+        if (custom != null)
+        {
+            // A custom emoji as the reaction: its description travels with the reaction, so everyone can fetch and show the picture. A version that does not know this
+            // finds no standard emoji in it and ignores the reaction.
+            if (!CustomEmojiRules.IsAcceptable(custom)) throw new ArgumentException("That is not a custom emoji that can be used as a reaction.", nameof(custom));
+            standard = CustomKey(custom);
+        }
+        else if (!EmojiData.TryNormalize(emoji, out standard!)) throw new ArgumentException("That is not an emoji that can be used as a reaction.", nameof(emoji));
         var header = JsonSerializer.Serialize(new Header { X = new HeaderReaction
         {
             T = target.ToLowerInvariant(), E = standard, O = on ? null : 0,
+            K = custom == null ? null : new HeaderEmoji { N = custom.Name, H = custom.Hash, S = custom.Size, M = custom.Mime, W = custom.Width, G = custom.Height },
             // From a linked device: the proof of whose it is, so that every device can tell the reaction is the account's even if it has never met this one.
             A = accountKey != null && deviceCertificate != null ? Convert.ToBase64String(accountKey) : null,
             C = accountKey != null && deviceCertificate != null ? Convert.ToBase64String(deviceCertificate) : null,
         } }, Json);
-        return Marker + header + End + (on ? "reacted " : "took back ") + standard;
+        return Marker + header + End + (on ? "reacted " : "took back ") + (custom != null ? ":" + custom.Name + ":" : standard);
     }
 
     // The header of a reaction starts with its field, so a reaction can be told from any other message without reading it all.
@@ -173,8 +182,22 @@ public static class MessageEnvelope
     }
 
     // A reaction from the header: a message key and an emoji of the set, or nothing.
-    private static ReactionEvent? ReadReaction(HeaderReaction? x) =>
-        x?.T != null && IsKey(x.T) && EmojiData.TryNormalize(x.E, out var emoji) ? new ReactionEvent(x.T.ToLowerInvariant(), emoji, x.O != 0, x.A is { Length: <= 200 } ? x.A : null, x.C is { Length: <= 400 } ? x.C : null) : null;
+    private static ReactionEvent? ReadReaction(HeaderReaction? x)
+    {
+        if (x?.T == null || !IsKey(x.T)) return null;
+        string? account = x.A is { Length: <= 200 } ? x.A : null, certificate = x.C is { Length: <= 400 } ? x.C : null;
+        // A custom emoji: held to the same limits as one in a message; anything that does not hold is not a reaction.
+        if (x.K is { } k)
+        {
+            if (k.N == null || k.H == null || k.M == null) return null;
+            var custom = new CustomEmoji(k.N, k.H.ToLowerInvariant(), k.S, k.M, k.W, k.G);
+            return CustomEmojiRules.IsAcceptable(custom) ? new ReactionEvent(x.T.ToLowerInvariant(), CustomKey(custom), x.O != 0, account, certificate, custom) : null;
+        }
+        return EmojiData.TryNormalize(x.E, out var emoji) ? new ReactionEvent(x.T.ToLowerInvariant(), emoji, x.O != 0, account, certificate) : null;
+    }
+
+    /// <summary>What names a custom emoji as a reaction: its name and the hash of its picture (so a name that two people gave to two pictures is two reactions).</summary>
+    public static string CustomKey(CustomEmoji emoji) => ":" + emoji.Name + ":" + emoji.Hash;
 
     // A message key (SignedMessage.KeyOf): 32 hexadecimal digits.
     internal static bool IsKey(string s) => s.Length == 32 && s.All(Uri.IsHexDigit);
@@ -215,6 +238,7 @@ public static class MessageEnvelope
         public int? O { get; set; }   // 0 when it is taken off
         public string? A { get; set; }   // the account key of a linked device
         public string? C { get; set; }   // the account's certificate for that device
+        public HeaderEmoji? K { get; set; }   // a custom emoji used as the reaction
     }
 
     private sealed class HeaderPreview
