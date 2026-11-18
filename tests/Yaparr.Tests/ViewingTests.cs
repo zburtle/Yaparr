@@ -45,13 +45,16 @@ public class ViewingTests
         await TestUtil.WaitFor(() => phone.MyDevices.Count > 1 && computer.MyDevices.Count > 1, 30_000);
 
         Assert.False(phone.SiblingIsViewing(room.RoomId, null, null));
+        Assert.False(phone.SiblingIsActive());
         computer.SetViewing(new ViewTarget(room.RoomId, null, null));
         await TestUtil.WaitFor(() => phone.SiblingIsViewing(room.RoomId, null, null), 20_000);
+        Assert.True(phone.SiblingIsActive());   // in use, whichever chat it shows (a chat the phone is not showing waits a little before the computer says so)
         Assert.True(phone.SiblingIsViewing(room.RoomId, RoomChannels.DefaultText, null));
         Assert.False(phone.SiblingIsViewing(room.RoomId, "some-other-channel", null));
 
         computer.SetViewing(null);
         await TestUtil.WaitFor(() => !phone.SiblingIsViewing(room.RoomId, null, null), 20_000);
+        Assert.False(phone.SiblingIsActive());
     }
 
     [Fact]

@@ -103,6 +103,14 @@ public partial class MainWindow
                 case "room":
                     item.IsVisible = conv.IsRoom;
                     break;
+                case "mute":
+                    item.IsVisible = conv.IsRoom;
+                    if (item is MenuItem mute) mute.Header = RoomFor(conv) is { } room && IsMuted(room) ? "Un_mute notifications" : "_Mute notifications";
+                    break;
+                case "sound":
+                    item.IsVisible = conv.IsRoom;
+                    if (item is MenuItem sound && RoomFor(conv) is { } soundRoom) BuildRoomSoundMenu(sound, soundRoom);
+                    break;
             }
         }
     }

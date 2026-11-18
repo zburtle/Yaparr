@@ -492,6 +492,8 @@
                                     <MenuItem Tag="up" Header="Move _up" Click="MovePinUp_Click" />
                                     <MenuItem Tag="down" Header="Move _down" Click="MovePinDown_Click" />
                                     <Separator Tag="room" />
+                                    <MenuItem Tag="mute" Header="_Mute notifications" Click="ToggleMute_Click" />
+                                    <MenuItem Tag="sound" Header="Message _sound" />
                                     <MenuItem Tag="room" Header="Room _settings…" Click="RoomSettings_Click" />
                                     <MenuItem Tag="room" Header="_Leave room" Click="LeaveRoom_Click" />
                                 </ContextMenu>

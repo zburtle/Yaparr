@@ -50,6 +50,15 @@ public sealed partial class ChatNode
         peer.ViewingAt = Environment.TickCount64;
     }
 
+    /// <summary>Whether another of your devices that is connected is in use right now (it is showing some chat in front of the person, whichever it is).</summary>
+    public bool SiblingIsActive()
+    {
+        long now = Environment.TickCount64;
+        foreach (var peer in _peers.Values)
+            if (IsSibling(peer) && peer.Viewing != null && now - peer.ViewingAt <= ViewingFresh.TotalMilliseconds) return true;
+        return false;
+    }
+
     /// <summary>
     /// Whether another of your devices that is connected is showing this chat right now: the room's text channel (<paramref name="channel"/> null is the first one), or
     /// the conversation with <paramref name="directWith"/>. A phone does not notify for what the computer in front of the person already shows.
