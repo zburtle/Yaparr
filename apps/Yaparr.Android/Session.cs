@@ -300,6 +300,7 @@ public sealed partial class Session : IDisposable
         room.MediaGroupsChanged += () => UI(() => RefreshShares(chat));
         room.SoundsChanged += () => UI(() => SoundsChanged?.Invoke(chat));
         room.GifsChanged += () => UI(() => GifsChanged?.Invoke(chat));
+        room.EarlierHistoryReceived += () => UI(() => OnEarlierArrived(chat));
         room.ChannelsChanged += () => UI(() => RefreshVoice(chat));
         room.VoiceChannelRemoved += id => UI(() => { if (_callChat == chat && chat.VoiceChannelId == id) LeaveVoice(); });
         // The owner took you out of voice, or out of the room, without banning you (see ChatRoom.KickFromVoice and RemoveFromRoom).
@@ -697,6 +698,7 @@ public sealed partial class Session : IDisposable
         _directs[direct.PeerId.Value] = chat;
         direct.MessageReceived += m => UI(() => OnMessage(chat, m));
         direct.ReactionsChanged += _ => UI(() => ScheduleReactions(chat));
+        direct.EarlierHistoryReceived += () => UI(() => OnEarlierArrived(chat));
         // Another of your devices read it: nothing here is new any more.
         direct.ReadChanged += () => UI(chat.ClearAllUnread);
         var readUpTo = direct.ReadUpTo;

@@ -55,6 +55,32 @@ public sealed class Chat : Observable
         Room = room;
         Direct = direct;
         Invite = invite;
+        Shown.CollectionChanged += (_, _) => Raise(nameof(CanLoadEarlier));
+    }
+
+    // ---- scrolling back ----
+
+    private string _earlierText = "Load earlier messages";
+    private bool _earlierGaveUp;
+
+    /// <summary>True while older messages are being put at the top of the list, so the list is not scrolled down to the newest as it is for a new message.</summary>
+    public bool AddingEarlier { get; set; }
+
+    /// <summary>Earlier messages were asked for from the others and the answer is awaited, to be read when it comes.</summary>
+    public bool WaitingForEarlier { get; set; }
+
+    /// <summary>What the button above the messages says: to load earlier ones, or what is happening about them.</summary>
+    public string EarlierText => _earlierText;
+
+    /// <summary>The button above the messages is shown whenever there is a message to go back from.</summary>
+    public bool CanLoadEarlier => Shown.Count > 0 && !_earlierGaveUp;
+
+    public void SetEarlier(string text, bool gaveUp = false)
+    {
+        _earlierText = text;
+        _earlierGaveUp = gaveUp;
+        Raise(nameof(EarlierText));
+        Raise(nameof(CanLoadEarlier));
     }
 
     public ChatRoom? Room { get; }
@@ -277,6 +303,8 @@ public sealed class Chat : Observable
     public void SelectChannel(string id)
     {
         _channel = id;
+        WaitingForEarlier = false;
+        SetEarlier("Load earlier messages");
         foreach (var chip in Channels) chip.Selected = chip.Id == id;
         Shown.Clear();
         foreach (var line in _all.Where(Belongs)) Shown.Add(line);
