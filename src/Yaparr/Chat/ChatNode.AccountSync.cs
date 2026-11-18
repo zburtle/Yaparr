@@ -118,7 +118,17 @@ public sealed partial class ChatNode
         AccountEntry entry;
         lock (_acctGate)
         {
-            entry = new AccountEntry(key, value, NextTimestamp(), deleted);
+            long ts = NextTimestamp();
+            // A change made here is newer than what this device holds for the key, whatever its clock says. A device stamps one more than its last stamp when it writes
+            // twice in a millisecond, so its stamps can run ahead of the clock; a change made on another device just after hearing of one of those would otherwise get
+            // an older stamp and lose to it, on both devices.
+            if (_acct.TryGetValue(key, out var held) && ts <= held.Ts)
+            {
+                ts = held.Ts + 1;
+                long last;
+                while ((last = Interlocked.Read(ref _lastTimestamp)) < ts && Interlocked.CompareExchange(ref _lastTimestamp, ts, last) != last) { }
+            }
+            entry = new AccountEntry(key, value, ts, deleted);
             _acct[key] = entry;
             SaveAccountStateLocked();
         }
