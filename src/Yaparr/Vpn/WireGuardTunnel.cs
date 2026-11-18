@@ -46,7 +46,7 @@ internal sealed class ReplayWindow
 public sealed class WireGuardTunnel : ITunnel, IDisposable
 {
     private const byte TypeInitiation = 1, TypeResponse = 2, TypeCookie = 3, TypeData = 4;
-    private const long RekeyAfterMs = 120_000, RejectAfterMs = 180_000, RetryMs = 3_000;
+    private const long RekeyAfterMs = 120_000, RejectAfterMs = 180_000, RetryMs = 3_000, ResolveRetryMs = 5_000;
 
     private sealed class Session
     {
@@ -74,9 +74,9 @@ public sealed class WireGuardTunnel : ITunnel, IDisposable
     private IPEndPoint? _server;
     private Session? _current, _previous;
     private Pending? _pending;
-    private long _lastInitiation, _lastSend, _lastReceive, _handshakeAt;
+    private long _lastInitiation, _lastSend, _lastReceive, _handshakeAt, _lastResolve;
     private int _ipId;
-    private bool _oversizeLogged, _silentLogged;
+    private bool _oversizeLogged, _familyLogged, _silentLogged;
     private static readonly TimeSpan SilentWarning = TimeSpan.FromSeconds(45);
     private VpnState _state = VpnState.Disconnected;
 
@@ -110,29 +110,62 @@ public sealed class WireGuardTunnel : ITunnel, IDisposable
 
     public async Task<bool> ConnectAsync(TimeSpan timeout, CancellationToken ct = default)
     {
-        var (host, port) = WireGuardConfig.SplitEndpoint(_config.Endpoint);
-        var addresses = await Dns.GetHostAddressesAsync(host, AddressFamily.InterNetwork, ct).ConfigureAwait(false);
-        if (addresses.Length == 0) throw new SocketException((int)SocketError.HostNotFound);
-        _server = new IPEndPoint(addresses[0], port);
-
-        _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
-        if (OperatingSystem.IsWindows()) _socket.IOControl(-1744830452, new byte[] { 0 }, null);
-        _socket.Bind(new IPEndPoint(IPAddress.Any, 0));
-
         SetState(VpnState.Connecting);
-        _ = Task.Run(ReceiveLoopAsync);
         _ = Task.Run(TimerLoopAsync);
-        lock (_gate) SendInitiationLocked();
+        // A failed lookup does not throw: the tunnel stays up in the "connecting" state, drops public traffic (the kill
+        // switch), and the timer loop keeps trying the lookup until the server's address is known.
+        if (await TryResolveServerAsync(ct).ConfigureAwait(false))
+            lock (_gate) SendInitiationLocked();
+        else
+            _log?.Invoke($"VPN: cannot look up {_config.EndpointHost} yet; public traffic stays off until it can be");
 
         try { await _firstHandshake.Task.WaitAsync(timeout, ct).ConfigureAwait(false); return true; }
         catch (TimeoutException) { return false; }
     }
 
+    private async Task<bool> TryResolveServerAsync(CancellationToken ct)
+    {
+        var (host, port) = WireGuardConfig.SplitEndpoint(_config.Endpoint);
+        try
+        {
+            var addresses = await Dns.GetHostAddressesAsync(host, AddressFamily.Unspecified, ct).ConfigureAwait(false);
+            // IPv4 is preferred when the name has both, as before. A server with only an IPv6 address gets an IPv6 socket.
+            var address = addresses.FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork) ?? addresses.FirstOrDefault();
+            if (address == null) return false;
+            lock (_gate)
+            {
+                if (_cts.IsCancellationRequested) return false;
+                _server = new IPEndPoint(address, port);
+                _socket ??= OpenSocket(address.AddressFamily);
+            }
+            return true;
+        }
+        catch (SocketException) { return false; }
+    }
+
+    private Socket OpenSocket(AddressFamily family)
+    {
+        var socket = new Socket(family, SocketType.Dgram, ProtocolType.Udp);
+        if (OperatingSystem.IsWindows()) socket.IOControl(-1744830452, new byte[] { 0 }, null);
+        socket.Bind(new IPEndPoint(family == AddressFamily.InterNetworkV6 ? IPAddress.IPv6Any : IPAddress.Any, 0));
+        _ = Task.Run(() => ReceiveLoopAsync(socket));
+        return socket;
+    }
+
     public bool TrySend(ReadOnlySpan<byte> packet, IPEndPoint to)
     {
-        if ((!TunnelLocalAddresses && TurnClient.IsLocal(to.Address)) || to.AddressFamily != AddressFamily.InterNetwork) return false;
+        if (!TunnelLocalAddresses && TurnClient.IsLocal(to.Address)) return false;
+        // Packets the tunnel cannot carry (no address of that family in the configuration) are dropped, never sent directly.
+        var source = _config.AddressFor(to.AddressFamily);
+        if (source == null)
+        {
+            if (!_familyLogged) { _familyLogged = true; _log?.Invoke($"dropping a packet for {to.AddressFamily} destinations: the VPN configuration has no address of that family"); }
+            return true;
+        }
 
-        int total = 28 + packet.Length;
+        bool v6 = to.AddressFamily == AddressFamily.InterNetworkV6;
+        int headerLength = v6 ? 40 : 20;
+        int total = headerLength + 8 + packet.Length;
         if (total > _config.Mtu)
         {
             if (!_oversizeLogged) { _oversizeLogged = true; _log?.Invoke($"dropping a {packet.Length}-byte packet that does not fit the tunnel MTU"); }
@@ -140,19 +173,33 @@ public sealed class WireGuardTunnel : ITunnel, IDisposable
         }
 
         var ip = new byte[total];
-        ip[0] = 0x45;
-        BinaryPrimitives.WriteUInt16BigEndian(ip.AsSpan(2), (ushort)total);
-        BinaryPrimitives.WriteUInt16BigEndian(ip.AsSpan(4), (ushort)Interlocked.Increment(ref _ipId));
-        BinaryPrimitives.WriteUInt16BigEndian(ip.AsSpan(6), 0x4000);
-        ip[8] = 64;
-        ip[9] = 17;
-        _config.Address.GetAddressBytes().CopyTo(ip, 12);
-        to.Address.GetAddressBytes().CopyTo(ip, 16);
-        BinaryPrimitives.WriteUInt16BigEndian(ip.AsSpan(10), Checksum(ip.AsSpan(0, 20)));
-        BinaryPrimitives.WriteUInt16BigEndian(ip.AsSpan(20), (ushort)_mux.LocalPort);
-        BinaryPrimitives.WriteUInt16BigEndian(ip.AsSpan(22), (ushort)to.Port);
-        BinaryPrimitives.WriteUInt16BigEndian(ip.AsSpan(24), (ushort)(8 + packet.Length));
-        packet.CopyTo(ip.AsSpan(28));
+        if (v6)
+        {
+            ip[0] = 0x60;
+            BinaryPrimitives.WriteUInt16BigEndian(ip.AsSpan(4), (ushort)(8 + packet.Length));
+            ip[6] = 17;
+            ip[7] = 64;
+            source.GetAddressBytes().CopyTo(ip, 8);
+            to.Address.GetAddressBytes().CopyTo(ip, 24);
+        }
+        else
+        {
+            ip[0] = 0x45;
+            BinaryPrimitives.WriteUInt16BigEndian(ip.AsSpan(2), (ushort)total);
+            BinaryPrimitives.WriteUInt16BigEndian(ip.AsSpan(4), (ushort)Interlocked.Increment(ref _ipId));
+            BinaryPrimitives.WriteUInt16BigEndian(ip.AsSpan(6), 0x4000);
+            ip[8] = 64;
+            ip[9] = 17;
+            source.GetAddressBytes().CopyTo(ip, 12);
+            to.Address.GetAddressBytes().CopyTo(ip, 16);
+            BinaryPrimitives.WriteUInt16BigEndian(ip.AsSpan(10), Checksum(ip.AsSpan(0, 20)));
+        }
+        BinaryPrimitives.WriteUInt16BigEndian(ip.AsSpan(headerLength), (ushort)_mux.LocalPort);
+        BinaryPrimitives.WriteUInt16BigEndian(ip.AsSpan(headerLength + 2), (ushort)to.Port);
+        BinaryPrimitives.WriteUInt16BigEndian(ip.AsSpan(headerLength + 4), (ushort)(8 + packet.Length));
+        packet.CopyTo(ip.AsSpan(headerLength + 8));
+        // IPv6 has no header checksum, and a UDP checksum is mandatory over IPv6.
+        if (v6) BinaryPrimitives.WriteUInt16BigEndian(ip.AsSpan(headerLength + 6), UdpChecksumV6(ip.AsSpan(8, 16), ip.AsSpan(24, 16), ip.AsSpan(headerLength)));
 
         lock (_gate)
         {
@@ -171,6 +218,31 @@ public sealed class WireGuardTunnel : ITunnel, IDisposable
     {
         uint sum = 0;
         for (int i = 0; i < header.Length; i += 2) sum += BinaryPrimitives.ReadUInt16BigEndian(header[i..]);
+        while (sum >> 16 != 0) sum = (sum & 0xFFFF) + (sum >> 16);
+        return (ushort)~sum;
+    }
+
+    private static ushort UdpChecksumV6(ReadOnlySpan<byte> source, ReadOnlySpan<byte> destination, ReadOnlySpan<byte> udp)
+    {
+        uint sum = SumWords(source, 0);
+        sum = SumWords(destination, sum);
+        sum += (uint)udp.Length; // the pseudo-header's UDP length (small, so the high 16 bits are zero)
+        sum += 17;               // the pseudo-header's next header: UDP
+        sum = SumWords(udp, sum);
+        ushort result = Fold(sum);
+        return result == 0 ? (ushort)0xFFFF : result;
+    }
+
+    private static uint SumWords(ReadOnlySpan<byte> data, uint sum)
+    {
+        int i = 0;
+        for (; i + 1 < data.Length; i += 2) sum += BinaryPrimitives.ReadUInt16BigEndian(data[i..]);
+        if (i < data.Length) sum += (uint)(data[i] << 8);
+        return sum;
+    }
+
+    private static ushort Fold(uint sum)
+    {
         while (sum >> 16 != 0) sum = (sum & 0xFFFF) + (sum >> 16);
         return (ushort)~sum;
     }
@@ -247,15 +319,15 @@ public sealed class WireGuardTunnel : ITunnel, IDisposable
         Transmit(message);
     }
 
-    private async Task ReceiveLoopAsync()
+    private async Task ReceiveLoopAsync(Socket socket)
     {
         var buffer = new byte[2048];
-        EndPoint any = new IPEndPoint(IPAddress.Any, 0);
+        EndPoint any = new IPEndPoint(socket.AddressFamily == AddressFamily.InterNetworkV6 ? IPAddress.IPv6Any : IPAddress.Any, 0);
         while (!_cts.IsCancellationRequested)
         {
             try
             {
-                var result = await _socket!.ReceiveFromAsync(buffer, SocketFlags.None, any, _cts.Token).ConfigureAwait(false);
+                var result = await socket.ReceiveFromAsync(buffer, SocketFlags.None, any, _cts.Token).ConfigureAwait(false);
                 if (!((IPEndPoint)result.RemoteEndPoint).Equals(_server) || result.ReceivedBytes < 4) continue;
                 Handle(buffer.AsSpan(0, result.ReceivedBytes));
             }
@@ -339,6 +411,7 @@ public sealed class WireGuardTunnel : ITunnel, IDisposable
 
     private void DeliverIp(byte[] ip)
     {
+        if ((ip[0] >> 4) == 6) { DeliverIpv6(ip); return; }
         if ((ip[0] >> 4) != 4) return;
         int headerLength = (ip[0] & 0x0F) * 4;
         int total = BinaryPrimitives.ReadUInt16BigEndian(ip.AsSpan(2));
@@ -354,6 +427,22 @@ public sealed class WireGuardTunnel : ITunnel, IDisposable
         _mux.Inject(ip.AsMemory(headerLength + 8, length), source, viaRelay: false);
     }
 
+    private void DeliverIpv6(byte[] ip)
+    {
+        // Extension headers are not supported: only a UDP packet directly after the 40-byte header is delivered.
+        if (ip.Length < 48 || ip[6] != 17) return;
+        int total = 40 + BinaryPrimitives.ReadUInt16BigEndian(ip.AsSpan(4));
+        if (total > ip.Length) return;
+
+        int sourcePort = BinaryPrimitives.ReadUInt16BigEndian(ip.AsSpan(40));
+        int destinationPort = BinaryPrimitives.ReadUInt16BigEndian(ip.AsSpan(42));
+        int length = BinaryPrimitives.ReadUInt16BigEndian(ip.AsSpan(44)) - 8;
+        if (destinationPort != _mux.LocalPort || length < 0 || 48 + length > total) return;
+
+        var source = new IPEndPoint(new IPAddress(ip.AsSpan(8, 16)), sourcePort);
+        _mux.Inject(ip.AsMemory(48, length), source, viaRelay: false);
+    }
+
     private async Task TimerLoopAsync()
     {
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
@@ -361,6 +450,12 @@ public sealed class WireGuardTunnel : ITunnel, IDisposable
         {
             while (await timer.WaitForNextTickAsync(_cts.Token).ConfigureAwait(false))
             {
+                if (_server == null && Environment.TickCount64 - _lastResolve >= ResolveRetryMs)
+                {
+                    _lastResolve = Environment.TickCount64;
+                    if (await TryResolveServerAsync(_cts.Token).ConfigureAwait(false))
+                        lock (_gate) SendInitiationLocked();
+                }
                 bool live;
                 lock (_gate)
                 {

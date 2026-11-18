@@ -69,6 +69,7 @@ public sealed class PeerRecord
 {
     public const int MaxEndPoints = 12;
     private const string Context = "yaparr-peer-record-v1";
+    private const string Context6 = "yaparr-peer-record-v1-ipv6";
     private static readonly byte[] Salt = Encoding.ASCII.GetBytes("yaparr");
 
     public required PeerId Peer { get; init; }
@@ -84,15 +85,22 @@ public sealed class PeerRecord
         return (seed, MutableItem.PublicKeyFromSeed(seed));
     }
 
+    /// <summary>
+    /// IPv6 endpoints live in their own entries, "e6" (18 bytes each: address and port) with their own signature "s6".
+    /// Readers that only know the IPv4 format ignore them and still check the IPv4 part, so both kinds of client can read the record.
+    /// </summary>
     public static byte[] Encode(PeerIdentity identity, IEnumerable<IPEndPoint> endPoints, long time)
     {
-        var list = endPoints.Where(e => e.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork).Distinct().Take(MaxEndPoints).ToList();
-        var compact = new byte[list.Count * 6];
-        for (int i = 0; i < list.Count; i++)
+        var canonical = endPoints.Select(e => e.Address.IsIPv4MappedToIPv6 ? new IPEndPoint(e.Address.MapToIPv4(), e.Port) : e).Distinct().ToList();
+        var v4 = canonical.Where(e => e.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork).Take(MaxEndPoints).ToList();
+        var v6 = canonical.Where(e => e.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6 && IsReachableIPv6(e.Address)).Take(MaxEndPoints).ToList();
+
+        var compact = new byte[v4.Count * 6];
+        for (int i = 0; i < v4.Count; i++)
         {
-            list[i].Address.GetAddressBytes().CopyTo(compact, i * 6);
-            compact[i * 6 + 4] = (byte)(list[i].Port >> 8);
-            compact[i * 6 + 5] = (byte)list[i].Port;
+            v4[i].Address.GetAddressBytes().CopyTo(compact, i * 6);
+            compact[i * 6 + 4] = (byte)(v4[i].Port >> 8);
+            compact[i * 6 + 5] = (byte)v4[i].Port;
         }
         var record = new BDict
         {
@@ -101,8 +109,29 @@ public sealed class PeerRecord
             ["t"] = time,
             ["s"] = identity.Sign(SignedPart(compact, time)),
         };
+        if (v6.Count > 0)
+        {
+            var compact6 = new byte[v6.Count * 18];
+            for (int i = 0; i < v6.Count; i++)
+            {
+                v6[i].Address.GetAddressBytes().CopyTo(compact6, i * 18);
+                compact6[i * 18 + 16] = (byte)(v6[i].Port >> 8);
+                compact6[i * 18 + 17] = (byte)v6[i].Port;
+            }
+            record["e6"] = compact6;
+            record["s6"] = identity.Sign(SignedPart6(compact6, time));
+        }
         // Stored as an opaque byte string so the bytes that were signed are exactly the bytes that come back.
         return Bencode.Encode(record);
+    }
+
+    /// <summary>True for an IPv6 address other peers on the internet can reach: not loopback, link-local, site-local, unique-local, multicast or unspecified.</summary>
+    public static bool IsReachableIPv6(IPAddress address)
+    {
+        if (address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6) return false;
+        if (address.IsIPv6LinkLocal || address.IsIPv6SiteLocal || address.IsIPv6Multicast || IPAddress.IsLoopback(address) || address.Equals(IPAddress.IPv6None)) return false;
+        if (address.Equals(IPAddress.IPv6Any)) return false;
+        return (address.GetAddressBytes()[0] & 0xFE) != 0xFC; // unique local fc00::/7
     }
 
     /// <summary>Checks the record against the peer it is supposed to describe; null if it is not valid.</summary>
@@ -122,6 +151,16 @@ public sealed class PeerRecord
                 int port = (compact[i + 4] << 8) | compact[i + 5];
                 if (port != 0) endPoints.Add(new IPEndPoint(new IPAddress(compact.AsSpan(i, 4)), port));
             }
+            // The IPv6 part is optional and checked on its own: a bad one is ignored, the IPv4 part still counts.
+            if (d.Bytes("e6") is { } compact6 && d.Bytes("s6") is { } sig6 && compact6.Length % 18 == 0 && compact6.Length / 18 <= MaxEndPoints
+                && PeerIdentity.Verify(key, SignedPart6(compact6, time), sig6))
+            {
+                for (int i = 0; i < compact6.Length; i += 18)
+                {
+                    int port = (compact6[i + 16] << 8) | compact6[i + 17];
+                    if (port != 0) endPoints.Add(new IPEndPoint(new IPAddress(compact6.AsSpan(i, 16)), port));
+                }
+            }
             return new PeerRecord { Peer = expected, EndPoints = endPoints, Time = time };
         }
         catch (Exception ex) when (ex is FormatException or InvalidCastException) { return null; }
@@ -129,4 +168,7 @@ public sealed class PeerRecord
 
     private static byte[] SignedPart(byte[] compact, long time) =>
         [.. Encoding.ASCII.GetBytes(Context), .. BitConverter.GetBytes(time), .. compact];
+
+    private static byte[] SignedPart6(byte[] compact6, long time) =>
+        [.. Encoding.ASCII.GetBytes(Context6), .. BitConverter.GetBytes(time), .. compact6];
 }

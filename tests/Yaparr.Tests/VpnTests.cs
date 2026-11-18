@@ -8,7 +8,7 @@ namespace Yaparr.Tests;
 
 internal sealed class TestWireGuardServer : IDisposable
 {
-    private readonly UdpClient _socket = new(new IPEndPoint(IPAddress.Loopback, 0));
+    private readonly UdpClient _socket;
     private readonly CancellationTokenSource _cts = new();
     private readonly byte[] _privateKey = WireGuardCrypto.GeneratePrivateKey();
     private readonly byte[]? _psk;
@@ -17,8 +17,9 @@ internal sealed class TestWireGuardServer : IDisposable
     private IPEndPoint? _client;
     private long _counter;
 
-    public TestWireGuardServer(byte[]? presharedKey = null)
+    public TestWireGuardServer(byte[]? presharedKey = null, bool ipv6 = false)
     {
+        _socket = new UdpClient(new IPEndPoint(ipv6 ? IPAddress.IPv6Loopback : IPAddress.Loopback, 0));
         _psk = presharedKey;
         PublicKey = WireGuardCrypto.PublicKey(_privateKey);
         _ = Task.Run(RunAsync);
@@ -123,6 +124,18 @@ internal sealed class TestWireGuardServer : IDisposable
         var plain = WireGuardCrypto.Open(_receiveKey, counter, m.AsSpan(16), Array.Empty<byte>());
         if (plain == null || plain.Length < 28) return;
 
+        if ((plain[0] >> 4) == 6)
+        {
+            // An IPv6 inner packet: record it (the test server does not answer these).
+            int payloadLength = BinaryPrimitives.ReadUInt16BigEndian(plain.AsSpan(4));
+            if (plain.Length < 48 || 40 + payloadLength > plain.Length) return;
+            var to6 = new IPEndPoint(new IPAddress(plain.AsSpan(24, 16)), BinaryPrimitives.ReadUInt16BigEndian(plain.AsSpan(42)));
+            var payload6 = plain[48..(40 + payloadLength)];
+            if (!UdpChecksumOkV6(plain.AsSpan(8, 16), plain.AsSpan(24, 16), plain.AsSpan(40, payloadLength))) Interlocked.Increment(ref BadIPv6Checksums);
+            lock (Received) Received.Add((to6, payload6, BinaryPrimitives.ReadUInt16BigEndian(plain.AsSpan(40))));
+            return;
+        }
+
         int total = BinaryPrimitives.ReadUInt16BigEndian(plain.AsSpan(2));
         var to = new IPEndPoint(new IPAddress(plain.AsSpan(16, 4)), BinaryPrimitives.ReadUInt16BigEndian(plain.AsSpan(22)));
         int sourcePort = BinaryPrimitives.ReadUInt16BigEndian(plain.AsSpan(20));
@@ -134,6 +147,24 @@ internal sealed class TestWireGuardServer : IDisposable
 
         if (Reply?.Invoke(to, payload) is { } answer)
             await SendIp(to, sourcePort, new IPAddress(plain.AsSpan(12, 4)), answer);
+    }
+
+    /// <summary>IPv6 packets from the client whose UDP checksum did not verify. Written independently of the client's code.</summary>
+    public int BadIPv6Checksums;
+
+    private static bool UdpChecksumOkV6(ReadOnlySpan<byte> source, ReadOnlySpan<byte> destination, ReadOnlySpan<byte> udp)
+    {
+        uint sum = 0;
+        for (int i = 0; i < 16; i += 2)
+        {
+            sum += BinaryPrimitives.ReadUInt16BigEndian(source[i..]);
+            sum += BinaryPrimitives.ReadUInt16BigEndian(destination[i..]);
+        }
+        sum += (uint)udp.Length + 17;
+        for (int i = 0; i + 1 < udp.Length; i += 2) sum += BinaryPrimitives.ReadUInt16BigEndian(udp[i..]);
+        if (udp.Length % 2 == 1) sum += (uint)(udp[^1] << 8);
+        while (sum >> 16 != 0) sum = (sum & 0xFFFF) + (sum >> 16);
+        return sum == 0xFFFF;
     }
 
     private async Task SendIp(IPEndPoint from, int toPort, IPAddress toAddress, byte[] payload)
@@ -268,6 +299,20 @@ public class WireGuardConfigTests
         var ex = Assert.Throws<FormatException>(() => WireGuardConfig.Parse(text));
         Assert.Contains("PrivateKey", ex.Message);
     }
+
+    [Fact]
+    public void A_dual_stack_configuration_keeps_both_addresses_and_an_IPv6_endpoint_parses()
+    {
+        var dual = WireGuardConfig.Parse($"[Interface]\nPrivateKey = {Key(1)}\nAddress = 10.2.0.2/32, fd00::2/128\n[Peer]\nPublicKey = {Key(2)}\nEndpoint = vpn.example.com:51820\n");
+        Assert.Equal(IPAddress.Parse("10.2.0.2"), dual.Address);
+        Assert.Equal(IPAddress.Parse("fd00::2"), dual.IPv6Address);
+        Assert.Equal(IPAddress.Parse("fd00::2"), dual.AddressFor(System.Net.Sockets.AddressFamily.InterNetworkV6));
+
+        var v6 = WireGuardConfig.Parse($"[Interface]\nPrivateKey = {Key(1)}\nAddress = fd00::2/128\n[Peer]\nPublicKey = {Key(2)}\nEndpoint = [2001:db8::1]:51820\n");
+        Assert.Equal(IPAddress.Parse("fd00::2"), v6.Address);
+        Assert.Equal("2001:db8::1", v6.EndpointHost);
+        Assert.Null(v6.AddressFor(System.Net.Sockets.AddressFamily.InterNetwork));
+    }
 }
 
 public class WireGuardTunnelTests
@@ -316,6 +361,40 @@ public class WireGuardTunnelTests
     }
 
     [Fact]
+    public async Task A_server_reached_over_IPv6_carries_IPv6_traffic_inside_the_tunnel()
+    {
+        using var server = new TestWireGuardServer(ipv6: true);
+        using var mux = new UdpMux();
+        mux.Start();
+        var config = new WireGuardConfig
+        {
+            PrivateKey = WireGuardCrypto.GeneratePrivateKey(),
+            Address = IPAddress.Parse("10.8.0.2"),
+            IPv6Address = IPAddress.Parse("fd00:8::2"),
+            PeerPublicKey = server.PublicKey,
+            Endpoint = server.EndPoint.ToString(),
+            PersistentKeepalive = 1,
+        };
+        using var tunnel = new WireGuardTunnel(config, mux);
+        mux.Tunnel = tunnel;
+        Assert.True(await tunnel.ConnectAsync(TimeSpan.FromSeconds(5)));
+        Assert.Equal(VpnState.Connected, tunnel.State);
+
+        var remote = new IPEndPoint(IPAddress.Parse("2001:db8::50"), 6881);
+        var payload = new byte[] { 7, 7, 7 };
+        mux.Send(payload, remote);
+
+        bool found = false;
+        for (int i = 0; i < 100 && !found; i++)
+        {
+            lock (server.Received) found = server.Received.Any(r => r.Payload.SequenceEqual(payload) && r.To.Equals(remote) && r.SourcePort == mux.LocalPort);
+            if (!found) await Task.Delay(50);
+        }
+        Assert.True(found, "the IPv6 packet did not reach the server through the tunnel");
+        Assert.Equal(0, server.BadIPv6Checksums);
+    }
+
+    [Fact]
     public async Task Traffic_to_local_addresses_bypasses_the_tunnel()
     {
         using var server = new TestWireGuardServer();
@@ -346,6 +425,36 @@ public class WireGuardTunnelTests
 
         Assert.False(await tunnel.ConnectAsync(TimeSpan.FromMilliseconds(500)));
         Assert.NotEqual(VpnState.Connected, tunnel.State);
+        Assert.True(tunnel.TrySend(new byte[] { 1 }, new IPEndPoint(IPAddress.Parse("203.0.113.1"), 53)));
+    }
+
+    [Fact]
+    public void Public_IPv6_traffic_is_dropped_when_the_configuration_has_no_IPv6_address()
+    {
+        using var mux = new UdpMux();
+        var config = WireGuardConfig.Parse(
+            "[Interface]\nPrivateKey = " + Convert.ToBase64String(new byte[32]) + "\nAddress = 10.0.0.2/32\n" +
+            "[Peer]\nPublicKey = " + Convert.ToBase64String(new byte[32]) + "\nEndpoint = 203.0.113.9:51820\nAllowedIPs = 0.0.0.0/0\n");
+        using var tunnel = new WireGuardTunnel(config, mux);
+
+        // A public IPv6 destination cannot travel through the IPv4 tunnel, so it must be dropped (kill switch), not sent directly.
+        Assert.True(tunnel.TrySend(new byte[] { 1 }, new IPEndPoint(IPAddress.Parse("2606:4700:4700::1111"), 53)));
+        // Local IPv6 (unique local) stays direct.
+        Assert.False(tunnel.TrySend(new byte[] { 1 }, new IPEndPoint(IPAddress.Parse("fd00::1"), 53)));
+    }
+
+    [Fact]
+    public async Task An_unresolvable_server_does_not_throw_and_keeps_public_traffic_dropped()
+    {
+        var config = WireGuardConfig.Parse(
+            "[Interface]\nPrivateKey = " + Convert.ToBase64String(new byte[32]) + "\nAddress = 10.0.0.2/32\n" +
+            "[Peer]\nPublicKey = " + Convert.ToBase64String(new byte[32]) + "\nEndpoint = no-such-host.invalid:51820\nAllowedIPs = 0.0.0.0/0\n");
+        using var mux = new UdpMux();
+        mux.Start();
+        using var tunnel = new WireGuardTunnel(config, mux);
+        mux.Tunnel = tunnel;
+
+        Assert.False(await tunnel.ConnectAsync(TimeSpan.FromMilliseconds(500)));
         Assert.True(tunnel.TrySend(new byte[] { 1 }, new IPEndPoint(IPAddress.Parse("203.0.113.1"), 53)));
     }
 

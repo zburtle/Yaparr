@@ -28,14 +28,45 @@ public sealed class UdpMux : IDisposable
 
     public UdpMux(int port = 0)
     {
-        _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
-        if (OperatingSystem.IsWindows())
-        {
-            _socket.IOControl(-1744830452, new byte[] { 0 }, null);
-        }
-        _socket.Bind(new IPEndPoint(IPAddress.Any, port));
+        _socket = OpenSocket(port, out bool dualStack);
+        DualStack = dualStack;
         LocalPort = ((IPEndPoint)_socket.LocalEndPoint!).Port;
     }
+
+    /// <summary>
+    /// Opens one socket for both families when the system allows it (IPv4 peers then appear as ordinary IPv4 addresses);
+    /// otherwise an IPv4-only socket, as before.
+    /// </summary>
+    private static Socket OpenSocket(int port, out bool dualStack)
+    {
+        try
+        {
+            var socket = new Socket(AddressFamily.InterNetworkV6, SocketType.Dgram, ProtocolType.Udp) { DualMode = true };
+            try
+            {
+                if (OperatingSystem.IsWindows()) socket.IOControl(-1744830452, new byte[] { 0 }, null);
+                socket.Bind(new IPEndPoint(IPAddress.IPv6Any, port));
+                dualStack = true;
+                return socket;
+            }
+            catch
+            {
+                socket.Dispose();
+                throw;
+            }
+        }
+        catch (Exception ex) when (ex is SocketException or NotSupportedException)
+        {
+            dualStack = false;
+            var socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+            if (OperatingSystem.IsWindows()) socket.IOControl(-1744830452, new byte[] { 0 }, null);
+            socket.Bind(new IPEndPoint(IPAddress.Any, port));
+            return socket;
+        }
+    }
+
+    /// <summary>True when the socket also sends and receives IPv6.</summary>
+    public bool DualStack { get; }
 
     public int LocalPort { get; }
 
@@ -91,13 +122,13 @@ public sealed class UdpMux : IDisposable
     private async Task ReceiveLoopAsync()
     {
         var buffer = new byte[65536];
-        EndPoint any = new IPEndPoint(IPAddress.Any, 0);
+        EndPoint any = new IPEndPoint(DualStack ? IPAddress.IPv6Any : IPAddress.Any, 0);
         while (!_cts.IsCancellationRequested)
         {
             try
             {
                 var result = await _socket.ReceiveFromAsync(buffer, SocketFlags.None, any, _cts.Token).ConfigureAwait(false);
-                var from = (IPEndPoint)result.RemoteEndPoint;
+                var from = AsCanonical((IPEndPoint)result.RemoteEndPoint);
                 Deliver(buffer.AsMemory(0, result.ReceivedBytes), from, viaRelay: false);
             }
             catch (OperationCanceledException) { break; }
@@ -105,6 +136,10 @@ public sealed class UdpMux : IDisposable
             catch (SocketException ex) { Log?.Invoke($"receive error: {ex.SocketErrorCode}"); }
         }
     }
+
+    /// <summary>An IPv4 peer seen through the IPv6 socket is ::ffff:a.b.c.d; report it as the plain IPv4 address everyone else uses.</summary>
+    internal static IPEndPoint AsCanonical(IPEndPoint e) =>
+        e.Address.IsIPv4MappedToIPv6 ? new IPEndPoint(e.Address.MapToIPv4(), e.Port) : e;
 
     public void Dispose()
     {
