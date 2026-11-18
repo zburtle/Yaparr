@@ -122,7 +122,13 @@ public class QualityReportTests
             views[0].QualityProvider = () => new ViewerQualitySample(true, false, 60, false);
             views[1].QualityProvider = () => new ViewerQualitySample(true, true, 22, true);
             views[2].QualityProvider = () => new ViewerQualitySample(true, true, 14, false);
-            await TestUtil.WaitFor(() => source.Room.Viewers == 3, 40_000);
+            try { await TestUtil.WaitFor(() => source.Room.Viewers == 3, 40_000); }
+            catch (TimeoutException)
+            {
+                // Which way the chain went when it did not add up (this has timed out on a busy build agent and never on a desk).
+                var shape = string.Join("; ", views.Select((v, i) => $"viewer {i + 1}: attached {v.Status.Attached}, parent {(v.Status.Parent == c.Root.Id ? "sharer" : v.Status.Parent?.ToString() ?? "none")}, {v.Status.Children.Count} children"));
+                throw new TimeoutException($"The sharer heard {source.Room.Viewers} of 3 viewers ({shape}).");
+            }
             var room = source.Room;
             Assert.Equal(3, room.Viewers);
             Assert.Equal(2, room.Troubled);
