@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text.Json;
+using Yaparr.Identity;
 
 namespace Yaparr.Chat;
 
@@ -71,8 +72,24 @@ public sealed partial class ChatNode
 {
     private const int MaxMailboxQueue = 500;
 
-    /// <summary>Messages this device authored that are waiting to be left in a mailbox (only while <see cref="MailboxEnabled"/>).</summary>
-    private readonly ConcurrentQueue<MailboxPost> _mailboxQueue = new();
+    // A sealed message waiting to be left in a mailbox. It is only left if, when its time comes, someone is still known to be away (room) or the other person has no device
+    // connected (direct chat): see ShouldLeave. A message given back after a failed send was decided already.
+    private sealed record QueuedMailboxPost(MailboxPost Post, long Due, ChatRoom? Room, PeerId? Direct, bool Decided);
+
+    /// <summary>Messages this device authored that may be left in a mailbox (only while <see cref="MailboxEnabled"/> and <see cref="MailboxLeaving"/>).</summary>
+    private readonly ConcurrentQueue<QueuedMailboxPost> _mailboxQueue = new();
+
+    /// <summary>
+    /// Whether a message is left on the server for people who are away (the person's own choice, on by default). Turned off, nothing is left there; what others leave for
+    /// this device is still read. Peer to peer stays the way messages travel either way: the server only ever holds what someone known to be away has not received.
+    /// </summary>
+    public bool MailboxLeaving { get; set; } = true;
+
+    /// <summary>How long a message is given to reach everyone peer to peer before it is left on the server for someone who is still away (a minute).</summary>
+    internal TimeSpan MailboxWait { get; set; } = TimeSpan.FromSeconds(60);
+
+    /// <summary>Someone not seen in the room for longer than this is not waited for: the server keeps what it holds for about as long (see Yaparr.Cloud, <c>MailboxKeepDays</c>).</summary>
+    internal static readonly TimeSpan MailboxKnownFor = TimeSpan.FromDays(7);
 
     /// <summary>
     /// Whether the messages written here are also sealed and queued for the room's mailbox (see <see cref="TakeMailboxPosts"/>). The app turns it on while it is
@@ -99,17 +116,47 @@ public sealed partial class ChatNode
 
     private void QueueForMailbox(ChatRoom room, StoredMessage message)
     {
-        if (!MailboxEnabled || _mailboxQueue.Count >= MaxMailboxQueue) return;
+        if (!MailboxEnabled || !MailboxLeaving || _mailboxQueue.Count >= MaxMailboxQueue) return;
         var key = room.CurrentKey;
-        _mailboxQueue.Enqueue(new MailboxPost(key.MailboxId, SignedMessage.Key(message), MailboxSeal.Seal(key, message)));
-        MailboxQueued?.Invoke();
+        EnqueueForMailbox(new MailboxPost(key.MailboxId, SignedMessage.Key(message), MailboxSeal.Seal(key, message)), room, null);
     }
 
-    /// <summary>Takes up to <paramref name="max"/> sealed messages to leave in mailboxes, oldest first. Give back (<see cref="ReturnMailboxPosts"/>) any that could not be sent.</summary>
+    private void EnqueueForMailbox(MailboxPost post, ChatRoom? room, PeerId? direct)
+    {
+        long due = Environment.TickCount64 + (long)MailboxWait.TotalMilliseconds;
+        _mailboxQueue.Enqueue(new QueuedMailboxPost(post, due, room, direct, false));
+        // The app is told when it is due, not when it is written: until then the message has the chance to reach everyone peer to peer.
+        var wait = TimeSpan.FromMilliseconds(Math.Max(0, due - Environment.TickCount64));
+        _ = Task.Delay(wait, _cts.Token).ContinueWith(t => { if (!t.IsCanceled) MailboxQueued?.Invoke(); }, TaskScheduler.Default);
+    }
+
+    /// <summary>
+    /// Whether anyone this device has seen in the room in the last week is away now (and is not blocked or banned there): someone a message cannot have reached
+    /// peer to peer. A room where everyone known is connected has nothing to leave.
+    /// </summary>
+    internal bool AnyoneKnownAway(ChatRoom room)
+    {
+        var since = DateTimeOffset.UtcNow - MailboxKnownFor;
+        return GetRoomPeople(room).Any(p => !p.Online && p.LastSeen >= since && !IsBannedIn(room, p.Account) && !IsBlocked(p.Account));
+    }
+
+    private bool ShouldLeave(QueuedMailboxPost q) =>
+        q.Room != null ? AnyoneKnownAway(q.Room) : q.Direct is not { } other || !HasDevicesOf(other);
+
+    /// <summary>
+    /// Takes up to <paramref name="max"/> sealed messages to leave in mailboxes, oldest first: those whose wait is over and for whom someone is still away. A message that
+    /// reached everyone known peer to peer in the meantime is dropped, not left. Give back (<see cref="ReturnMailboxPosts"/>) any that could not be sent.
+    /// </summary>
     public IReadOnlyList<MailboxPost> TakeMailboxPosts(int max)
     {
         var list = new List<MailboxPost>();
-        while (list.Count < max && _mailboxQueue.TryDequeue(out var post)) list.Add(post);
+        long now = Environment.TickCount64;
+        while (list.Count < max && _mailboxQueue.TryPeek(out var next) && next.Due <= now)
+        {
+            if (!_mailboxQueue.TryDequeue(out var q)) break;
+            if (q.Decided || ShouldLeave(q)) list.Add(q.Post);
+            else _options.Log?.Invoke("not left in a mailbox: everyone known had it");
+        }
         return list;
     }
 
@@ -118,7 +165,7 @@ public sealed partial class ChatNode
     {
         // Behind what was queued since, which is fine: the order in a mailbox does not matter, messages carry their own time.
         foreach (var post in posts)
-            if (_mailboxQueue.Count < MaxMailboxQueue) _mailboxQueue.Enqueue(post);
+            if (_mailboxQueue.Count < MaxMailboxQueue) _mailboxQueue.Enqueue(new QueuedMailboxPost(post, 0, null, null, Decided: true));
     }
 
     /// <summary>The mailbox ids of the rooms this device is in now (a room whose secret was replaced has a new one), and of the direct conversations that have a secret.</summary>

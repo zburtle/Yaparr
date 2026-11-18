@@ -105,11 +105,11 @@ public sealed partial class ChatNode
         if (!MailboxEnabled) return;
         var secret = EnsureDmSecret(recipient);
         foreach (var device in devices) SendDmKey(device, secret);
-        if (_mailboxQueue.Count >= MaxMailboxQueue) return;
+        // Left on the server only if the other person has no device connected when the wait is over (see ShouldLeave).
+        if (!MailboxLeaving || _mailboxQueue.Count >= MaxMailboxQueue) return;
         var (id, key) = DmMailbox(secret, recipient);
         var plain = JsonSerializer.SerializeToUtf8Bytes(new StoredDirect(wire.Id!, wire.Ts, wire.Text!, proof.Pub, proof.Acct, proof.Cert, proof.Sig, DisplayName));
-        _mailboxQueue.Enqueue(new MailboxPost(id, wire.Id!, MailboxSeal.SealBytes(key, id, plain)));
-        MailboxQueued?.Invoke();
+        EnqueueForMailbox(new MailboxPost(id, wire.Id!, MailboxSeal.SealBytes(key, id, plain)), null, recipient);
     }
 
     private int ReceiveDirectFromMailbox(string mailboxId, IReadOnlyList<string> bodies)

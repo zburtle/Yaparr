@@ -1,10 +1,20 @@
-# Mailbox: messages and pictures for people who are offline
+# Mailbox: messages and pictures for people who are away
+
+## What Yaparr Cloud is, and is not
+
+Yaparr is a peer-to-peer app. Yaparr Cloud is an optional extra that adds things the peers cannot do alone, and it follows these rules:
+
+- **Peer to peer first.** Messages, pictures, voice and screens go straight between devices. The cloud never carries live traffic.
+- **The cloud is a last resort.** A locked copy of a message or picture is left on the server only when someone you know is away and cannot have got it peer to peer, and only after a minute in which it could still have reached them. When everyone known is connected, nothing is left.
+- **Short and sealed.** What is left stays for 7 days (about as long as the history that devices hand each other), is locked with a key the server never has, and goes when the account is deleted.
+- **You choose.** "Leave messages for people who are away" (Settings > Yaparr Cloud) is on by default for people signed in to a server; off, nothing of yours is left there. The app works fully with no account at all.
+- **Anyone can run it.** The server is open source and self-hostable; the apps work with any Yaparr Cloud server.
 
 **Status.** Built, in the server (Yaparr.Cloud, "Mailboxes" and "Blobs" in its README) and in the apps (`MailboxSync` and `BlobRelayClient` in `Yaparr.AppCore`; `ChatNode.Mailbox.cs`, `BlobRelay.cs` and `ChatNode.DirectMailbox.cs` in `Yaparr`): room messages, pictures in rooms and direct chats, and direct messages. Not tried on real devices yet.
 
 [Documentation](README.md)
 
-Today a message reaches someone only when one of their devices is online together with one that has the message (see [Rooms and messages](rooms-and-messages.md), "Catch-up"). The **mailbox** closes that gap with Yaparr Cloud: while a friend is away, their friends' apps leave the message, locked, on the server, and the friend's devices fetch it when they come back. The same goes for pictures.
+Today a message reaches someone only when one of their devices is online together with one that has the message (see [Rooms and messages](rooms-and-messages.md), "Catch-up"). The **mailbox** closes that gap with Yaparr Cloud: while a friend is away, a friend's app leaves the message, locked, on the server, and the friend's devices fetch it when they come back. The same goes for pictures.
 
 **The promise, and why it can be kept.** Nobody at Yaparr, and nobody who runs the server, can read what is in the mailbox. That is not a policy: the server is never given the means. Everything it stores is locked on a device with a key made from something only the members of the room have (the room's secret), and the server does not have that secret. It keeps the same promise as the backup and the synced settings ([Backup server](backup-server.md), [Synced state](sync.md)).
 
@@ -33,31 +43,32 @@ The reader opens it, checks the author's signature and hands it to the room as a
 
 ### When a message is posted
 
-Every message a person writes in a room is sealed and queued (`ChatNode.MailboxEnabled`, on while the device is signed in to Yaparr Cloud), and left in the mailbox a few seconds later in the background, with the device's own sign-in. It does not change what the sender sees. Each member leaves only what they wrote themselves, so one copy of each message is stored.
+Not for every message. A message a person writes in a room is sealed and queued, and a minute later (`ChatNode.MailboxWait`) it is left in the mailbox **if someone is still known to be away**: anyone this device has seen in the room in the last 7 days who is not connected now, and who is not blocked or banned there. If everyone known is connected, the message is dropped from the queue and never reaches the server. A direct message is left only if the other person has no device connected when the minute is over. The person can turn leaving off altogether (`ChatNode.MailboxLeaving`, `AppSettings.LeaveForAbsent`).
 
-It is not left only for messages that someone is known to have missed, because a device cannot know who is away: it sees only the members that are connected to it at that moment, and nobody keeps a list of everyone who ever joined. The cost is a small item for each message, for 30 days.
-
-The queue is held in memory (at most 500). If the app is closed before a message is sent, or the server cannot be reached for a long time, that message is not left in the mailbox; it still reaches members the usual way when they are online together.
+- **Who counts as known.** The list a room keeps of who has been in it (the same list the owner uses to hand out a new secret). It exists for rooms that have an owner, which is every room made by the apps; a room made by a very old version has no such list, so nothing is left for it and its messages travel peer to peer only.
+- **Not exact on purpose.** Someone who received the message live and then went away within the minute still counts as away, so a copy may be left that was not needed. A member the device has never seen in the room (they joined while it was offline) is not known, and gets what the others hand over when they next meet, as before.
+- **Background.** The post is made with the device's own Yaparr Cloud sign-in and does not change what the sender sees.
+- **In memory.** The queue is held in memory (at most 500). If the app is closed before a message is left, it is not left; it still reaches people the usual way when they are online together.
 
 ### When a mailbox is read
 
-Soon after the app opens, every five minutes while it runs, a few seconds after the person writes something (the same run leaves it), and the moment a push wakes the phone, without waiting for a connection. The device remembers the last cursor it read for each mailbox in a sealed file; without it (a new install) it reads what is kept again and the room skips what it holds.
+Soon after the app opens, every five minutes while it runs, a few seconds after something is due to be left (see above), and the moment a push wakes the phone, without waiting for a connection. The device remembers the last cursor it read for each mailbox in a sealed file; without it (a new install) it reads what is kept again and the room skips what it holds.
 
 ### Server
 
-`GET` and `POST` `/v1/mailbox/{id}` for signed-in devices. Items are kept in the order they arrived, with a cursor for each (like the synced records). Limits, all configurable: an item is at most 32 KB; a mailbox holds at most 2000 items; an account may post a limited number per minute and per day; items are removed after **30 days** (`MailboxKeepDays`), whether read or not. Items older than that are removed on every post and by a sweep at start. The account that posted an item is kept with it, to count the quota and so that deleting an account can delete what it posted (see below); it is never sent to a reader.
+`GET` and `POST` `/v1/mailbox/{id}` for signed-in devices. Items are kept in the order they arrived, with a cursor for each (like the synced records). Limits, all configurable: an item is at most 32 KB; a mailbox holds at most 2000 items; an account may post a limited number per minute and per day; items are removed after **7 days** (`MailboxKeepDays`), whether read or not. Items older than that are removed on every post and by a sweep at start. The account that posted an item is kept with it, to count the quota and so that deleting an account can delete what it posted (see below); it is never sent to a reader.
 
 ## Pictures and GIFs
 
 A picture today goes straight from the sender to whoever asks, and is addressed by its hash. For people who are offline it also waits on the server, locked:
 
-1. Before it is sent (`ChatNode.RelayAttachmentAsync`, called by both apps after `PrepareAttachment`) the sender's app encrypts the file (AES-256-GCM under a fresh random key, the picture's hash as associated data) and uploads the locked bytes with `PUT /v1/blob/{id}`, where the id is the SHA-256 of the locked bytes; the server checks that, so nobody picks an id.
+1. Before it is sent, **if someone is away** (`ChatNode.RelayAttachmentAsync`, called by both apps after `PrepareAttachment`, with the room or the other person; the same rule as for messages, and not at all if the person turned leaving off), the sender's app encrypts the file (AES-256-GCM under a fresh random key, the picture's hash as associated data) and uploads the locked bytes with `PUT /v1/blob/{id}`, where the id is the SHA-256 of the locked bytes; the server checks that, so nobody picks an id.
 2. The message's picture description gains the blob's id, the key and the server's address (`B`, `K`, `V` in `Attachment`). They travel **inside the message**, which is sealed in the mailbox and signed like any other, so the server sees neither the key nor which message a blob belongs to. The 128-pixel thumbnail is made by the sender, as before: the server cannot make one.
 3. A reader that has no connected member holding the picture fetches the locked bytes with `GET /v1/blob/{id}`, checks they hash to the id, opens them, checks that the result hashes to the picture's own hash, and stores it like any picture. Size limits and the wait-for-a-click rules for big files and for strangers are the ones that already apply.
 
 - **Only the reader's own server.** A reader fetches only from the server it is signed in to, and only when the message names that same server. A message cannot make the app contact a server the sender chose (that would show the reader's address to it), so a picture left on someone else's server is fetched between members as before.
 - **No sign-in to fetch.** The id is as unguessable as the file is secret, a fetch carries no account, and so the server cannot tie a read to a person.
-- **Limits.** A file is at most 9 MB locked (`BlobMaxBytes`; a picture is at most 8 MB); an account may hold 256 MB of pictures that have not expired (`BlobQuotaBytes`); a blob is removed after 30 days (`BlobKeepDays`) and when its account is deleted; uploads are rate limited. There is no deduplication: every upload has its own key.
+- **Limits.** A file is at most 9 MB locked (`BlobMaxBytes`; a picture is at most 8 MB); an account may hold 256 MB of pictures that have not expired (`BlobQuotaBytes`); a blob is removed after 7 days (`BlobKeepDays`) and when its account is deleted; uploads are rate limited. There is no deduplication: every upload has its own key.
 - **Not covered yet.** Custom emoji, avatars, sounds and the room shelves keep working between members as before.
 - **Where the files are.** Locked pictures are files in the server's data folder (`blobs`), also when the server keeps its records in PostgreSQL; a bucket (S3) is not used for them yet.
 
@@ -82,7 +93,7 @@ What the server cannot do: read an item, change one without the reader noticing,
 ## Deleting
 
 - **An account's own data:** deleting the account removes its blobs, and the items it posted to mailboxes (rooms and conversations). What other people had already fetched stays with them.
-- **Everything else** expires after 30 days.
+- **Everything else** expires after 7 days.
 - **Turning it off:** nothing is posted if the device is signed out. A later setting can let a person keep the mailbox from being used for their messages; that is not decided here.
 
 ## Abuse

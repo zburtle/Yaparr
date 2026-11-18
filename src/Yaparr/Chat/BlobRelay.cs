@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Yaparr.Identity;
 
 namespace Yaparr.Chat;
 
@@ -78,11 +79,14 @@ public sealed partial class ChatNode
     /// <summary>
     /// Locks a picture made with <see cref="PrepareAttachment"/> and leaves it on the server, so a member who is offline when it is sent can still fetch it. Returns the attachment
     /// with where to fetch it from and the key; when there is no server, or it does not take the file, the attachment is returned as it was and travels between members as before.
-    /// Call it before <see cref="Attachment.ToText"/>.
+    /// Call it before <see cref="Attachment.ToText"/>. Only when someone it is going to is away: with <paramref name="room"/>, if anyone known in the room is not connected;
+    /// with <paramref name="direct"/>, if that person has no device connected; and not at all if the person turned off leaving messages (<see cref="MailboxLeaving"/>).
+    /// A picture that everyone has is only ever sent peer to peer.
     /// </summary>
-    public async Task<Attachment> RelayAttachmentAsync(Attachment attachment, CancellationToken ct = default)
+    public async Task<Attachment> RelayAttachmentAsync(Attachment attachment, ChatRoom? room = null, PeerId? direct = null, CancellationToken ct = default)
     {
-        if (BlobRelay is not { } relay || attachment.Relay != null) return attachment;
+        if (BlobRelay is not { } relay || attachment.Relay != null || !MailboxLeaving) return attachment;
+        if (room != null ? !AnyoneKnownAway(room) : direct is { } other && HasDevicesOf(AccountOf(other))) return attachment;
         var plain = _blobs.Read(attachment.Hash);
         if (plain == null || plain.Length != attachment.Size) return attachment;
         var (locked, key) = BlobSeal.Lock(plain, attachment.Hash);
