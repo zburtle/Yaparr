@@ -386,7 +386,12 @@ public sealed record PeerVm(string Id, string Name, bool Online, DateTimeOffset 
 
     public string StateText => BannedHere ? "banned from this room" : Blocked ? "blocked" : PeerStatus.Text(Link, Online, IsRelayed, UsesCloud);
 
-    public string Tip => (Blocked ? "Blocked. You see nothing from them. Right-click to unblock." : PeerStatus.Tip(Link, Online, IsRelayed, UsesCloud, IUseCloud?.Invoke() == true, LastSeen)) + "\n" + Id;
+    // The tooltip: a title, what it means, when they were last seen (when away), and the id.
+    public string TipTitle => BannedHere ? "Banned from this room" : Blocked ? "Blocked" : PeerStatus.Title(Link, Online, IsRelayed, UsesCloud);
+    public string TipDetail => BannedHere ? "They can't take part in this room." : Blocked ? "You see nothing from them. Right-click to unblock." : PeerStatus.Detail(Link, Online, IsRelayed, UsesCloud, IUseCloud?.Invoke() == true);
+    public bool HasTipSeen => !Blocked && !BannedHere && PeerStatus.HasSeen(Link, Online);
+    public string TipSeen => PeerStatus.Seen(LastSeen);
+    public string IdLines => PeerStatus.IdLines(Id);
 }
 
 /// <summary>One emoji under a message: the emoji, how many put it there, whether you did, and who (for the tooltip). The last chip, <see cref="IsMore"/>, counts the ones that did not fit in the row ("+4") and opens the rest.</summary>
