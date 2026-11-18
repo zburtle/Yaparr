@@ -130,6 +130,9 @@ public sealed class AppSettings
 
     /// <summary>The phone app: the rooms (by id) that notify for every message, not only for mentions, replies and direct messages.</summary>
     public List<string> NotifyAllRooms { get; set; } = new();
+
+    /// <summary>The phone app: the rooms (by id) that never notify, not even for a mention or a reply (their messages still count as unread).</summary>
+    public List<string> MutedRooms { get; set; } = new();
     /// <summary>Which sound a new message makes: one of the names in <c>UiSounds.MessageStyles</c>.</summary>
     public string MessageSound { get; set; } = "Chime";
 

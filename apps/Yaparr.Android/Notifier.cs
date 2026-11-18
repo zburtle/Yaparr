@@ -18,6 +18,10 @@ internal static class Notifier
     private const string ChannelId = "messages";
     private const int MaxLines = 5;
 
+    /// <summary>The key of the text typed into a notification's Reply box, in the intent the receiver gets.</summary>
+    internal const string ReplyKey = "reply";
+    internal const string ExtraTitle = "yaparr.title", ExtraChannel = "yaparr.channel";
+
     private static readonly Dictionary<string, List<string>> s_lines = new();
     private static readonly HashSet<int> s_shown = new();
 
@@ -46,7 +50,7 @@ internal static class Notifier
     }
 
     /// <summary>Shows (or updates) the notification of a chat for a new message.</summary>
-    public static void Message(Context context, string chatKey, string chatTitle, string sender, string body, bool isDirect)
+    public static void Message(Context context, string chatKey, string chatTitle, string sender, string body, bool isDirect, string? channel = null)
     {
         if (!Allowed(context) || Manager(context) is not { } manager) return;
         int id = IdOf(chatKey);
@@ -85,8 +89,65 @@ internal static class Notifier
             .SetContentIntent(open)
             .SetOnlyAlertOnce(false)
             .SetVisibility(NotificationVisibility.Private)
-            .SetPublicVersion(publicVersion);
+            .SetPublicVersion(publicVersion)
+            .AddAction(ReplyAction(context, id, chatKey, chatTitle, channel));
         manager.Notify(id, builder.Build()!);
+    }
+
+    // A box to type a reply into, in the notification itself. Android asks for the phone to be unlocked first when it is locked. The receiver gets which chat, its title (to say
+    // what happened) and the channel the message came in (a reply answers there).
+    private static Notification.Action ReplyAction(Context context, int id, string chatKey, string chatTitle, string? channel)
+    {
+        var intent = new Intent(context, typeof(NotificationReplyReceiver))
+            .PutExtra(ChatInbox.ExtraChat, chatKey).PutExtra(ExtraTitle, chatTitle).PutExtra(ExtraChannel, channel ?? "");
+        // Mutable, because Android fills in what was typed (before Android 12 a pending intent is mutable unless it says otherwise); explicit (a receiver of ours), as a mutable one has to be.
+        var pending = PendingIntent.GetBroadcast(context, id, intent, (OperatingSystem.IsAndroidVersionAtLeast(31) ? PendingIntentFlags.Mutable : 0) | PendingIntentFlags.UpdateCurrent)!;
+        var input = new RemoteInput.Builder(ReplyKey).SetLabel("Reply").Build()!;
+        return new Notification.Action.Builder(Icon.CreateWithResource(context, context.ApplicationInfo!.Icon)!, "Reply", pending)
+            .AddRemoteInput(input).SetAllowGeneratedReplies(false).Build()!;
+    }
+
+    /// <summary>A reply typed into the notification was sent: it is added to what the notification shows, and the box stops waiting.</summary>
+    public static void Replied(Context context, string chatKey, string chatTitle, string text)
+    {
+        if (Manager(context) is not { } manager) return;
+        int id = IdOf(chatKey);
+        lock (s_lines)
+        {
+            if (!s_lines.TryGetValue(chatKey, out var lines)) s_lines[chatKey] = lines = new List<string>();
+            lines.Add("You: " + NotificationPolicy.Body(text, false, false));
+            while (lines.Count > MaxLines) lines.RemoveAt(0);
+        }
+        Update(context, manager, id, chatKey, chatTitle, "Sent");
+    }
+
+    /// <summary>A reply could not be sent (Yaparr is not connected, say): the notification says so, and the box stops waiting.</summary>
+    public static void ReplyFailed(Context context, string chatKey, string chatTitle, string reason)
+    {
+        if (Manager(context) is not { } manager) return;
+        Update(context, manager, IdOf(chatKey), chatKey, chatTitle, reason);
+    }
+
+    // The same notification again, quietly, with a line of what happened to the reply.
+    private static void Update(Context context, NotificationManager manager, int id, string chatKey, string chatTitle, string note)
+    {
+        string[] latest;
+        lock (s_lines) latest = s_lines.TryGetValue(chatKey, out var lines) ? lines.ToArray() : Array.Empty<string>();
+        var open = PendingIntent.GetActivity(context, id, OpenChat(context, chatKey), PendingIntentFlags.Immutable | PendingIntentFlags.UpdateCurrent)!;
+        var icon = Icon.CreateWithResource(context, context.ApplicationInfo!.Icon)!;
+        var publicVersion = new Notification.Builder(context, ChannelId).SetSmallIcon(icon).SetContentTitle("Yaparr").SetContentText(note).Build()!;
+        manager.Notify(id, new Notification.Builder(context, ChannelId)
+            .SetSmallIcon(icon)
+            .SetContentTitle(chatTitle)
+            .SetContentText(note)
+            .SetStyle(new Notification.BigTextStyle().BigText(string.Join("\n", latest.Append(note)))!)
+            .SetCategory(Notification.CategoryMessage)
+            .SetAutoCancel(true)
+            .SetContentIntent(open)
+            .SetOnlyAlertOnce(true)
+            .SetVisibility(NotificationVisibility.Private)
+            .SetPublicVersion(publicVersion)
+            .Build()!);
     }
 
     private static Intent OpenChat(Context context, string chatKey) =>
