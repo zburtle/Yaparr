@@ -90,7 +90,9 @@ public class RepairWindowTests
 
             var s = views[0].Status;
             output(s);
-            Assert.True(s.GapsNoticed > 150, $"{s.GapsNoticed} gaps; the link should have lost plenty");
+            // About 5% of some 3,600 packets are dropped, but how many separate gaps that makes depends on how the packets bunch up on a busy machine (neighbours lost
+            // together are one gap); a busy build agent saw 118. The check is that the link lost a good deal, not an exact count.
+            Assert.True(s.GapsNoticed > 60, $"{s.GapsNoticed} gaps; the link should have lost plenty");
             Assert.True(s.RepairedAfterAsking >= s.GapsNoticed * 0.6, $"{s.RepairedAfterAsking} of {s.GapsNoticed} gaps were repaired after asking, {s.GaveUp} never, {s.Duplicates} copies thrown away as duplicates");
         }
         finally { foreach (var v in views) v.Dispose(); }
