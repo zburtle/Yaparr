@@ -70,15 +70,25 @@ public partial class MainWindow
         CloseMentionList();
     }
 
+    private Yaparr.Chat.DirectChat? DirectChatFor(ConversationVm conv)
+    {
+        if (conv.IsRoom || _node is not { } node) return null;
+        var direct = _directConversations.FirstOrDefault(kv => kv.Value == conv);
+        return direct.Value == conv ? node.GetDirectChat(direct.Key) : null;
+    }
+
     // A click on the quote in a reply goes to the message it answers: in another channel if need be, and when this computer no
     // longer has it, after asking the members who are connected for it.
     private async void Quote_PointerReleased(object? sender, PointerReleasedEventArgs e)
     {
         if ((sender as Control)?.DataContext is not MessageVm { ReplyKey: { } key } || _selected is not { } conv) return;
         var original = conv.FindByKey(key);
-        if (original == null && RoomFor(conv) is { } asking)
+        // A room asks its members; a direct chat asks your other devices and the person's.
+        Func<IEnumerable<string>, int>? ask = RoomFor(conv) is { } asking ? asking.RequestMessages : DirectChatFor(conv) is { } direct ? direct.RequestMessages : null;
+        if (original == null && ask != null)
         {
-            if (asking.RequestMessages(new[] { key }) == 0) { StatusText.Text = "Nobody is connected who could have that message."; return; }
+            if (ask(new[] { key }) == 0) { StatusText.Text = "Nobody is connected who could have that message."; return; }
+            original = conv.FindByKey(key);
             StatusText.Text = "Looking for that message…";
             for (int waited = 0; original == null && waited < 6000; waited += 200)
             {

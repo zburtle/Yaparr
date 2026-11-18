@@ -1214,11 +1214,24 @@ public partial class MainView : UserControl
     }
 
     // A tap on the quote in a reply goes to the message it answers, in its channel.
-    private void QuoteTapped(object? sender, TappedEventArgs e)
+    private async void QuoteTapped(object? sender, TappedEventArgs e)
     {
         if (sender is not Control { DataContext: Line { ReplyKey: { } key } } || _current is not { } chat || _session == null) return;
         e.Handled = true;
-        if (chat.FindByKey(key) is not { } original) { chat.Status = "That message is not on this phone"; return; }
+        var original = chat.FindByKey(key);
+        if (original == null)
+        {
+            // Not on the screen: it is brought from what this phone holds, or asked for from the others, and arrives like any message.
+            if (_session.RequestOriginal(chat, key) == 0) { chat.Status = "Nobody is connected who could have that message"; return; }
+            chat.Status = "Looking for that message…";
+            for (int waited = 0; original == null && waited < 6000; waited += 200)
+            {
+                await Task.Delay(200);
+                original = chat.FindByKey(key);
+            }
+            chat.Status = original == null ? "That message is no longer held by anyone connected" : "";
+            if (original == null || _current != chat) return;
+        }
         if (original.Channel is { } channel && channel != chat.CurrentChannel) _session.SelectChannel(chat, channel);
         if (chat.Shown.Contains(original)) Messages.ScrollIntoView(original);
     }

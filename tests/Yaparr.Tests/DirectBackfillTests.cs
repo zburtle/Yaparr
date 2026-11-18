@@ -162,4 +162,50 @@ public class DirectBackfillTests
         Assert.Equal(0, chat.RequestEarlierHistory("nothing"));
         await Task.CompletedTask;
     }
+
+    // A reply names its original by a key; a quote whose original this device lacks is asked for by that key (a room does the same with `want`).
+    [Fact]
+    public async Task A_message_a_reply_names_is_asked_for_by_its_key_and_shown_when_it_arrives()
+    {
+        var hub = new InMemoryDiscoveryHub();
+        using var aliceId = PeerIdentity.Generate();
+        using var bobId = PeerIdentity.Generate();
+        long old = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - (long)TimeSpan.FromDays(30).TotalMilliseconds;
+
+        var aliceStore = new MemoryHistoryStore();
+        using var alice = Node(hub, "alice", aliceId, aliceStore);
+        for (int i = 0; i < 40; i++)
+        {
+            var record = Held(aliceId, bobId, i % 2 == 0 ? aliceId : bobId, $"d{i:000}", old + i * 1000, $"line {i:000}");
+            Assert.True(aliceStore.AddDirect(DirectHistory.Key(record), record, null));
+        }
+        using var bob = Node(hub, "bob", bobId, new MemoryHistoryStore());
+        var rooms = await Task.WhenAll(alice.JoinRoomAsync("lobby"), bob.JoinRoomAsync("lobby"));
+        await TestUtil.WaitFor(() => rooms.All(r => r.Members.Count == 1), 30_000);
+        var aliceChat = await alice.OpenDirectChatAsync(bob.AccountId);
+        await aliceChat.SendAsync("hello bob");
+        await TestUtil.WaitFor(() => bob.GetDirectChat(alice.AccountId).History.Count == 1, 30_000);
+
+        var chat = bob.GetDirectChat(alice.AccountId);
+        var shown = new List<ChatMessage>();
+        chat.MessageReceived += m => { lock (shown) shown.Add(m); };
+
+        // One Alice wrote (Bob names it by her account), one Bob wrote (by Bob's device), and one that nobody has.
+        string byAlice = ChatMessage.KeyOf(aliceId.AccountId, "d010");
+        string byBob = ChatMessage.KeyOf(bob.Id, "d011");
+        Assert.True(chat.RequestMessages(new[] { byAlice, byBob, ChatMessage.KeyOf(aliceId.AccountId, "nothing-like-it") }) >= 1);
+        await TestUtil.WaitFor(() => { lock (shown) return shown.Count >= 2; }, 30_000);
+        lock (shown)
+        {
+            Assert.Equal(new[] { "line 010", "line 011" }, shown.Select(m => m.Text).OrderBy(t => t).ToArray());
+            Assert.Equal(aliceId.AccountId, shown.Single(m => m.Text == "line 010").From.Id);
+            Assert.Equal(bob.Id, shown.Single(m => m.Text == "line 011").From.Id);
+        }
+
+        // Asked again, it is held here now: shown again at once for a screen that does not have it, and nobody is asked.
+        int before;
+        lock (shown) before = shown.Count;
+        Assert.Equal(-1, chat.RequestMessages(new[] { byAlice }));
+        lock (shown) Assert.Equal(before + 1, shown.Count);
+    }
 }

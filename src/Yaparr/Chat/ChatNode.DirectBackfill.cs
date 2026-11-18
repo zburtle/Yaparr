@@ -17,7 +17,8 @@ public sealed partial class ChatNode
     private const long DirectBackWindowMs = 15_000;
 
     // Whom we asked and about whom: only answers from those, about that conversation, in that time are taken.
-    private readonly ConcurrentDictionary<PeerId, (string Partner, long Until)> _directBackAsked = new();
+    // (Wanted: for particular messages, which are shown when they arrive, and not for a page of earlier ones, which is read by scrolling.)
+    private readonly ConcurrentDictionary<PeerId, (string Partner, long Until, bool Wanted)> _directBackAsked = new();
 
     internal int RequestEarlierDirectHistory(PeerId person, string beforeId)
     {
@@ -30,7 +31,7 @@ public sealed partial class ChatNode
         long now = Environment.TickCount64;
         foreach (var peer in asked)
         {
-            _directBackAsked[peer.Id] = (person.Value, now + DirectBackWindowMs);
+            _directBackAsked[peer.Id] = (person.Value, now + DirectBackWindowMs, false);
             Send(peer.Connection, new Wire { Type = Wire.DirectBack, Text = person.Value, Ts = at.Ts + DirectBackMarginMs, N = BackfillMax });
         }
         return asked.Count;
@@ -39,6 +40,7 @@ public sealed partial class ChatNode
     private void OnDirectBack(PeerState peer, Wire wire)
     {
         if (wire.Dm != null) OnDirectBackData(peer, wire.Dm);
+        else if (wire.Text != null && wire.Have != null) OnDirectWantRequest(peer, wire.Text, wire.Have);
         else if (wire.Text != null) OnDirectBackRequest(peer, wire.Text, wire.Ts, wire.N);
     }
 
@@ -52,18 +54,18 @@ public sealed partial class ChatNode
         if (!sibling && IsBlocked(peer.AccountId)) return;
         var records = _directHistory.Before(key, ts + 1, "", Math.Clamp(count, 1, BackfillMax)).Where(r => r.Sig.Length > 0).ToList();
         if (records.Count == 0) return;
+        SendDirectRecords(peer, key, records, sibling);
+    }
+
+    // Sends messages of a conversation to a device that asked for them, with the reactions on them.
+    private void SendDirectRecords(PeerState peer, string key, List<DirectRecord> records, bool sibling)
+    {
         // The reactions on those messages go with them. A reaction names the message by the key its writer knew it by, which differs from one device to another
         // (a message of your own is keyed by the device you are on, one of someone else's by their account), so each message is looked for under every key it can have.
         var targets = new HashSet<string>();
         var person = new PeerId(key);
         foreach (var r in records)
-        {
-            targets.Add(ChatMessage.KeyOf(Id, r.Id));
-            targets.Add(ChatMessage.KeyOf(AccountId, r.Id));
-            targets.Add(ChatMessage.KeyOf(person, r.Id));
-            try { if (r.Pub.Length > 0) targets.Add(ChatMessage.KeyOf(PeerId.FromPublicKey(Convert.FromBase64String(r.Pub)), r.Id)); }
-            catch (FormatException) { }
-        }
+            foreach (var k in MessageKeysOf(r, person)) targets.Add(k);
         records.AddRange(_directHistory.ReactionsTo(key, targets).Where(r => r.Sig.Length > 0));
         records = records.OrderByDescending(r => r.Ts).ToList();
         // To the other person the conversation is the other way round: what we sent they received, and it is with us.
@@ -87,7 +89,8 @@ public sealed partial class ChatNode
             r = r with { Ts = Math.Min(r.Ts, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()) };
             if (!_directHistory.TryAdd(r)) continue;
             added++;
-            if (!MessageEnvelope.IsReactionText(r.Text)) AutoFetch(ToDirectMessage(r, person), trustedOnly: !r.Mine && !IsAcquaintanceAccount(person));
+            if (asked.Wanted && !MessageEnvelope.IsReactionText(r.Text) && IsShownDirect(r, person)) ShowDirect(r, catchUp: true);   // shows it, and fetches its picture
+            else if (!MessageEnvelope.IsReactionText(r.Text)) AutoFetch(ToDirectMessage(r, person), trustedOnly: !r.Mine && !IsAcquaintanceAccount(person));
         }
         if (added > 0) GetDirectChat(person).RaiseEarlierHistory();
     }
