@@ -62,6 +62,7 @@ public partial class MainWindow
     {
         if (_node is not { } node) return;
         node.MailboxEnabled = _data.LoadBackupServer().SignedIn;
+        node.MailboxLeaving = _settings.LeaveForAbsent;
         // A small cloud next to the names of people who use Yaparr Cloud (what they say about themselves, see ChatNode.UsesCloud).
         MessageVm.CloudCheck = account => account.Length == 64 && account.All(Uri.IsHexDigit) && _node?.UsesCloud(new PeerId(account)) == true;
         VoiceMemberVm.CloudCheck = device => device.All(Uri.IsHexDigit) && _node?.UsesCloudDevice(new PeerId(device)) == true;
@@ -152,6 +153,7 @@ public partial class MainWindow
     {
         ServerSignedOutPanel.IsVisible = !_server.SignedIn;
         ServerSignedInPanel.IsVisible = _server.SignedIn;
+        LeaveForAbsentCheck.IsChecked = _settings.LeaveForAbsent;
         if (!_server.SignedIn) return;
         var host = Uri.TryCreate(_server.Url, UriKind.Absolute, out var uri) ? uri.Authority : _server.Url;
         ServerSignedInText.Text = $"Signed in to {host} as {_server.Username}." +
@@ -307,6 +309,13 @@ public partial class MainWindow
     {
         if (Uri.TryCreate(_server.Url, UriKind.Absolute, out var server))
             await GetTopLevel(this)!.Launcher.LaunchUriAsync(BackupServerClient.PasswordPage(server));
+    }
+
+    private void LeaveForAbsent_Click(object? sender, RoutedEventArgs e)
+    {
+        _settings.LeaveForAbsent = LeaveForAbsentCheck.IsChecked == true;
+        _data.SaveSettings(_settings);
+        if (_node != null) _node.MailboxLeaving = _settings.LeaveForAbsent;
     }
 
     private async void ServerDeleteAccount_Click(object? sender, RoutedEventArgs e)

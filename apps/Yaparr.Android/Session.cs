@@ -912,7 +912,7 @@ public sealed partial class Session : IDisposable
     {
         if (_node is not { } node) return;
         var prepared = await Task.Run(() => ImageTools.Prepare(original, fileName));
-        var attachment = await node.RelayAttachmentAsync(node.PrepareAttachment(prepared.Bytes, prepared.FileName, prepared.Thumbnail));
+        var attachment = await node.RelayAttachmentAsync(node.PrepareAttachment(prepared.Bytes, prepared.FileName, prepared.Thumbnail), chat.Room, chat.Direct?.PeerId);
         var text = attachment.ToText(caption, replyKey);
         string id;
         string? channel = null;
@@ -1117,6 +1117,7 @@ public sealed partial class Session : IDisposable
     private void StartMailbox(ChatNode node)
     {
         node.MailboxEnabled = _data.LoadBackupServer().SignedIn;
+        node.MailboxLeaving = _settings.LeaveForAbsent;
         // A small cloud next to the names of people who use Yaparr Cloud (what they say about themselves, see ChatNode.UsesCloud).
         Line.CloudCheck = account => account.Length == 64 && account.All(Uri.IsHexDigit) && _node?.UsesCloud(new PeerId(account)) == true;
         node.CloudUsersChanged += () => UI(() => { foreach (var chat in Chats) foreach (var line in chat.AllLines) line.RaiseCloud(); });
@@ -1125,6 +1126,13 @@ public sealed partial class Session : IDisposable
         _mailboxSoon.Tick += (_, _) => { _mailboxSoon.Stop(); _ = RunMailboxAsync(); };
         node.MailboxQueued += () => UI(() => { _mailboxSoon.Stop(); _mailboxSoon.Start(); });
         DispatcherTimer.RunOnce(() => _ = RunMailboxAsync(), TimeSpan.FromSeconds(3));
+    }
+
+    /// <summary>The person turned leaving messages for people who are away on or off (Settings > Yaparr Cloud).</summary>
+    public void SetLeaveForAbsent(bool on)
+    {
+        _settings.LeaveForAbsent = on;
+        if (_node != null) _node.MailboxLeaving = on;
     }
 
     /// <summary>Leaves what was written here in the mailboxes and reads them for what was left: now (after a push, or a sign-in).</summary>

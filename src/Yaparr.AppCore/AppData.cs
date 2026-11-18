@@ -21,6 +21,9 @@ public sealed class KnownPeer
 public sealed class AppSettings
 {
     public List<KnownPeer> KnownPeers { get; set; } = new();
+
+    /// <summary>Leave messages (and pictures) on Yaparr Cloud for people who are away, when signed in to a server. On by default; peer to peer is how messages travel either way.</summary>
+    public bool LeaveForAbsent { get; set; } = true;
     public string? DisplayName { get; set; }
     public bool VpnEnabled { get; set; }
 

@@ -1046,7 +1046,10 @@ public partial class MainWindow : Window
         try
         {
             var prepared = await Task.Run(() => ImageTools.Prepare(original, fileName));
-            var attachment = await _node.RelayAttachmentAsync(_node.PrepareAttachment(prepared.Bytes, prepared.FileName, prepared.Thumbnail));
+            var pictureRoom = _roomConversations.FirstOrDefault(kv => kv.Value == conv).Key;
+            var pictureDirect = _directConversations.FirstOrDefault(kv => kv.Value == conv);
+            var attachment = await _node.RelayAttachmentAsync(_node.PrepareAttachment(prepared.Bytes, prepared.FileName, prepared.Thumbnail),
+                pictureRoom, pictureRoom == null && pictureDirect.Value == conv ? pictureDirect.Key : null);
             var caption = InputBox.Text?.Trim() ?? "";
             var reply = _replyTo;
             var id = await conv.Send(attachment.ToText(caption, reply?.Key));

@@ -33,6 +33,13 @@ public partial class MainView
         AppHost.Auto.Changed += _autoChanged;
     }
 
+    private void LeaveForAbsentClicked(object? sender, RoutedEventArgs e)
+    {
+        _settings.LeaveForAbsent = LeaveForAbsentCheck.IsChecked == true;
+        _data.SaveSettings(_settings);
+        if (_session != null) _session.SetLeaveForAbsent(_settings.LeaveForAbsent);
+    }
+
     private static string Ago(DateTimeOffset when)
     {
         var span = DateTimeOffset.UtcNow - when;
@@ -46,6 +53,7 @@ public partial class MainView
     {
         ServerSignedOutPanel.IsVisible = !_server.SignedIn;
         ServerSignedInPanel.IsVisible = _server.SignedIn;
+        LeaveForAbsentCheck.IsChecked = _settings.LeaveForAbsent;
         if (!_server.SignedIn) return;
         var host = Uri.TryCreate(_server.Url, UriKind.Absolute, out var uri) ? uri.Authority : _server.Url;
         ServerSignedInText.Text = $"Signed in to {host} as {_server.Username}." +

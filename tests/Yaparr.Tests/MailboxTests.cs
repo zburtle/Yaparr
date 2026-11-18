@@ -35,16 +35,23 @@ public sealed class MailboxTests
         }
     }
 
-    // Two people in one room who are never online together (each on a hub of their own), so only the mailbox can carry anything between them.
-    private static async Task<(ChatNode Alice, ChatRoom AliceRoom, ChatNode Bob, ChatRoom BobRoom, RoomKey Key)> ApartInARoom()
+    // Alice has seen Bob in the room and he has gone away, so she knows someone is away. The Bob that is returned is another person's device that joined the same room
+    // on a hub of its own, so only the mailbox can carry anything between it and Alice.
+    internal static async Task<(ChatNode Alice, ChatRoom AliceRoom, ChatNode Bob, ChatRoom BobRoom, RoomKey Key)> ApartInARoom()
     {
-        var alice = TestUtil.NewNode(new InMemoryDiscoveryHub(), "alice");
-        var bob = TestUtil.NewNode(new InMemoryDiscoveryHub(), "bob");
-        var key = RoomKey.Generate();
+        var hub = new InMemoryDiscoveryHub();
+        var alice = TestUtil.NewNode(hub, "alice");
+        var first = TestUtil.NewNode(hub, "bob");
+        var key = RoomKey.Generate(alice.AccountId);   // a room with an owner keeps a list of who has been in it, which is how a device knows someone is away
         var aliceRoom = await alice.JoinRoomAsync(key, "book club");
+        await first.JoinRoomAsync(key, "book club");
+        await TestUtil.WaitFor(() => aliceRoom.Members.Count == 1, 20_000);
+        first.Dispose();
+        await TestUtil.WaitFor(() => aliceRoom.Members.Count == 0, 30_000);   // seen, and now away
+        var bob = TestUtil.NewNode(new InMemoryDiscoveryHub(), "bob");
         var bobRoom = await bob.JoinRoomAsync(key, "book club");
-        alice.MailboxEnabled = true;
-        bob.MailboxEnabled = true;
+        alice.MailboxEnabled = bob.MailboxEnabled = true;
+        alice.MailboxWait = bob.MailboxWait = TimeSpan.Zero;
         return (alice, aliceRoom, bob, bobRoom, key);
     }
 
@@ -248,12 +255,7 @@ public sealed class MailboxPictureTests
 
     private static async Task<(ChatNode Alice, ChatRoom AliceRoom, ChatNode Bob, ChatRoom BobRoom)> Apart()
     {
-        var alice = TestUtil.NewNode(new InMemoryDiscoveryHub(), "alice");
-        var bob = TestUtil.NewNode(new InMemoryDiscoveryHub(), "bob");
-        var key = RoomKey.Generate();
-        var aliceRoom = await alice.JoinRoomAsync(key, "book club");
-        var bobRoom = await bob.JoinRoomAsync(key, "book club");
-        alice.MailboxEnabled = bob.MailboxEnabled = true;
+        var (alice, aliceRoom, bob, bobRoom, _) = await MailboxTests.ApartInARoom();
         return (alice, aliceRoom, bob, bobRoom);
     }
 
@@ -263,7 +265,7 @@ public sealed class MailboxPictureTests
         var held = new FakeBlobRelay(Server);
         alice.BlobRelay = held;
         var original = Png();
-        var attachment = await alice.RelayAttachmentAsync(alice.PrepareAttachment(original, "cat.png"));
+        var attachment = await alice.RelayAttachmentAsync(alice.PrepareAttachment(original, "cat.png"), aliceRoom);
         Assert.NotNull(attachment.Relay);
         var got = new List<ChatMessage>();
         bobRoom.MessageReceived += got.Add;
@@ -398,10 +400,13 @@ public sealed class MailboxDirectTests : IDisposable
         var alice = Keep(TestUtil.NewNode(_hub, "alice", identity: _aliceId));
         var bob = Keep(TestUtil.NewNode(_hub, "bob", identity: _bobId));
         alice.MailboxEnabled = bob.MailboxEnabled = true;
+        alice.MailboxWait = bob.MailboxWait = TimeSpan.Zero;
         alice.Start(); bob.Start();
         var chat = await alice.OpenDirectChatAsync(bob.AccountId).WaitAsync(TimeSpan.FromSeconds(10));
         await chat.SendAsync("hello bob");
         await TestUtil.WaitFor(() => bob.GetDirectChat(alice.AccountId).History.Any(m => m.Text == "hello bob"), 20_000);
+        // Bob is connected and has it, so nothing is left on the server for it.
+        Assert.Empty(alice.TakeMailboxPosts(10));
         // Both hold the same secret now, so both compute the same mailbox.
         await TestUtil.WaitFor(() => alice.MailboxIds().Intersect(bob.MailboxIds()).Any(), 10_000);
         var entries = bob.AccountEntries;
@@ -417,8 +422,8 @@ public sealed class MailboxDirectTests : IDisposable
         var (alice, chat, bobEntries) = await TalkedAndBobLeft();
         var server = new Server();
         await chat.SendAsync("while you were away");
-        // Every message goes to the mailbox, the first one too (written while Bob was there).
-        Assert.Equal(2, (await new MailboxSync(alice, server, new MailboxCursors()).SyncAsync()).Posted);
+        // The first message went while Bob was connected and is not left; this one is, because he is away.
+        Assert.Equal(1, (await new MailboxSync(alice, server, new MailboxCursors()).SyncAsync()).Posted);
 
         // Bob comes back on a device that never met Alice's: it has Bob's account settings (so the secret) and nothing else.
         var bob2 = Keep(TestUtil.NewNode(new InMemoryDiscoveryHub(), "bob", identity: _bobId, accountEntries: bobEntries));
@@ -427,7 +432,7 @@ public sealed class MailboxDirectTests : IDisposable
         bob2.GetDirectChat(alice.AccountId).MessageReceived += got.Add;
         var read = await new MailboxSync(bob2, server, new MailboxCursors()).SyncAsync();
 
-        Assert.Equal(2, read.Received);
+        Assert.Equal(1, read.Received);
         var message = Assert.Single(got, m => m.Text == "while you were away");
         Assert.False(message.IsCatchUp);
         Assert.Contains(bob2.GetDirectChat(alice.AccountId).History, m => m.Text == "while you were away");
@@ -445,7 +450,7 @@ public sealed class MailboxDirectTests : IDisposable
         await chat.SendAsync("the code is 4417");
         await new MailboxSync(alice, server, new MailboxCursors()).SyncAsync();
 
-        Assert.Equal(2, server.Items.Count);
+        Assert.Single(server.Items);
         var (box, item) = server.Items[^1];
         Assert.DoesNotContain("4417", System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(item.Body)));
 
@@ -468,5 +473,111 @@ public sealed class MailboxDirectTests : IDisposable
         await chat.SendAsync("hello");
         Assert.Empty(alice.TakeMailboxPosts(10));
         Assert.Empty(alice.MailboxIds());
+    }
+}
+
+// The server only holds what someone known to be away has not received: nothing is left when everyone is connected, or when the person turned it off.
+public sealed class MailboxWhenAwayTests
+{
+    private sealed class Relay(string server) : IBlobRelay
+    {
+        public int Uploads;
+        public string Server { get; } = server;
+        public Task<bool> UploadAsync(string id, byte[] lockedBytes, CancellationToken cancel = default) { Uploads++; return Task.FromResult(true); }
+        public Task<byte[]?> DownloadAsync(string id, CancellationToken cancel = default) => Task.FromResult<byte[]?>(null);
+    }
+
+    private static byte[] Png()
+    {
+        var b = new byte[640];
+        new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 13, (byte)'I', (byte)'H', (byte)'D', (byte)'R' }.CopyTo(b, 0);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(b.AsSpan(16), 64);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(b.AsSpan(20), 64);
+        System.Security.Cryptography.RandomNumberGenerator.Fill(b.AsSpan(40));
+        return b;
+    }
+
+    // Alice and Bob are both here, in one room.
+    private static async Task<(ChatNode Alice, ChatRoom AliceRoom, ChatNode Bob)> BothConnected()
+    {
+        var hub = new InMemoryDiscoveryHub();
+        var alice = TestUtil.NewNode(hub, "alice");
+        var bob = TestUtil.NewNode(hub, "bob");
+        var key = RoomKey.Generate(alice.AccountId);
+        var aliceRoom = await alice.JoinRoomAsync(key, "book club");
+        await bob.JoinRoomAsync(key, "book club");
+        await TestUtil.WaitFor(() => aliceRoom.Members.Count == 1, 20_000);
+        alice.MailboxEnabled = true;
+        alice.MailboxWait = TimeSpan.Zero;
+        return (alice, aliceRoom, bob);
+    }
+
+    [Fact]
+    public async Task Nothing_is_left_on_the_server_when_everyone_known_is_connected()
+    {
+        var (alice, room, bob) = await BothConnected();
+        using var _1 = alice;
+        using var _2 = bob;
+        await room.SendAsync("everyone is here");
+        Assert.Empty(alice.TakeMailboxPosts(10));
+    }
+
+    [Fact]
+    public async Task A_message_is_left_when_the_wait_is_over_and_someone_who_was_here_has_gone()
+    {
+        var (alice, room, bob) = await BothConnected();
+        using var _1 = alice;
+        await room.SendAsync("one more thing");
+        bob.Dispose();
+        await TestUtil.WaitFor(() => room.Members.Count == 0, 30_000);
+        Assert.Single(alice.TakeMailboxPosts(10));   // the wait is over, and now someone known is away
+    }
+
+    [Fact]
+    public async Task A_message_waits_its_turn_before_it_is_left()
+    {
+        var (alice, room, bob) = await BothConnected();
+        using var _1 = alice;
+        bob.Dispose();
+        await TestUtil.WaitFor(() => room.Members.Count == 0, 30_000);
+        alice.MailboxWait = TimeSpan.FromMinutes(5);
+        await room.SendAsync("not yet");
+        Assert.Empty(alice.TakeMailboxPosts(10));    // still inside the wait: it may yet reach him another way
+    }
+
+    [Fact]
+    public async Task Nothing_is_left_when_the_person_turned_leaving_off()
+    {
+        var (alice, room, bob) = await BothConnected();
+        using var _1 = alice;
+        bob.Dispose();
+        await TestUtil.WaitFor(() => room.Members.Count == 0, 30_000);
+        alice.MailboxLeaving = false;
+        await room.SendAsync("keep this between us");
+        Assert.Empty(alice.TakeMailboxPosts(10));
+    }
+
+    [Fact]
+    public async Task A_picture_is_only_uploaded_when_someone_is_away_and_leaving_is_on()
+    {
+        var (alice, room, bob) = await BothConnected();
+        using var _1 = alice;
+        var relay = new Relay("https://cloud.example.org");
+        alice.BlobRelay = relay;
+
+        var everyoneHere = await alice.RelayAttachmentAsync(alice.PrepareAttachment(Png(), "a.png"), room);
+        Assert.Null(everyoneHere.Relay);
+        Assert.Equal(0, relay.Uploads);
+
+        bob.Dispose();
+        await TestUtil.WaitFor(() => room.Members.Count == 0, 30_000);
+        alice.MailboxLeaving = false;
+        Assert.Null((await alice.RelayAttachmentAsync(alice.PrepareAttachment(Png(), "b.png"), room)).Relay);
+        Assert.Equal(0, relay.Uploads);
+
+        alice.MailboxLeaving = true;
+        var away = await alice.RelayAttachmentAsync(alice.PrepareAttachment(Png(), "c.png"), room);
+        Assert.NotNull(away.Relay);
+        Assert.Equal(1, relay.Uploads);
     }
 }
