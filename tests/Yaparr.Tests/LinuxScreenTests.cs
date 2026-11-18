@@ -322,6 +322,23 @@ public class LinuxScreenTests(Xunit.Abstractions.ITestOutputHelper output)
         if (OperatingSystem.IsLinux()) Assert.Contains("Session: XDG_SESSION_TYPE=", text);
     }
 
+    // The Flatpak builds its own FFmpeg from a list of parts. Without the H.265 ones it can neither share nor watch H.265 (a viewer gets no picture from such a share),
+    // although the app and the Yaparr.FFmpeg builds have them: so the list is checked to name them.
+    [Fact]
+    public void The_flatpaks_ffmpeg_has_the_h265_parts_the_app_expects()
+    {
+        var dir = AppContext.BaseDirectory;
+        while (dir != null && !File.Exists(Path.Combine(dir, "installer", "flatpak", "com.yaparr.Yaparr.yml"))) dir = Path.GetDirectoryName(dir);
+        var recipe = File.ReadAllText(Path.Combine(dir!, "installer", "flatpak", "com.yaparr.Yaparr.yml"));
+        string Option(string name) => System.Text.RegularExpressions.Regex.Match(recipe, @"--enable-" + name + @"=(\S+)").Groups[1].Value;
+        Assert.Contains("hevc_nvenc", Option("encoder").Split(','));
+        Assert.Contains("hevc_vaapi", Option("encoder").Split(','));
+        Assert.Contains("hevc", Option("decoder").Split(','));
+        Assert.Contains("hevc", Option("parser").Split(','));
+        Assert.Contains("hevc_nvdec", Option("hwaccel").Split(','));
+        Assert.Contains("hevc_vaapi", Option("hwaccel").Split(','));
+    }
+
     // A Flatpak is not given XDG_SESSION_TYPE, and WAYLAND_DISPLAY only exists in the sandbox with the Wayland socket. Without that socket
     // a Wayland desktop looks like X11 to the app, which then copies the picture from XWayland: a viewer sees the first picture and no more.
     [Fact]
