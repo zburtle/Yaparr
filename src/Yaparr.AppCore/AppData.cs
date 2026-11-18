@@ -16,6 +16,9 @@ public sealed class KnownPeer
     public string Id { get; set; } = "";
     public string Name { get; set; } = "";
     public DateTimeOffset LastSeen { get; set; }
+
+    /// <summary>Whether this person was last heard to use Yaparr Cloud (said when they were connected), so the list can say so when they are away.</summary>
+    public bool Cloud { get; set; }
 }
 
 public sealed class AppSettings
