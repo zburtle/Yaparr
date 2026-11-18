@@ -9,10 +9,12 @@ namespace Yaparr.Chat;
 /// <param name="Target">The <see cref="ChatMessage.Key"/> of the message it is on.</param>
 /// <param name="Account">From a linked device: the account key it belongs to.</param>
 /// <param name="Certificate">From a linked device: the account's certificate for it, which proves that.</param>
-public sealed record ReactionEvent(string Target, string Emoji, bool On, string? Account = null, string? Certificate = null);
+/// <param name="Emoji">The emoji; for a custom one (<paramref name="Custom"/>) its key, <see cref="MessageEnvelope.CustomKey"/>: its name and the hash of its picture, so two pictures with one name are two reactions.</param>
+/// <param name="Custom">A custom emoji (a room's or the person's own) used as the reaction: its description, as a message that uses one carries it, so everyone can fetch and show the picture.</param>
+public sealed record ReactionEvent(string Target, string Emoji, bool On, string? Account = null, string? Certificate = null, CustomEmoji? Custom = null);
 
 /// <summary>One emoji on a message, and who put it there (accounts: a person with several devices counts once).</summary>
-public sealed record ReactionSummary(string Emoji, IReadOnlyList<PeerId> Accounts)
+public sealed record ReactionSummary(string Emoji, IReadOnlyList<PeerId> Accounts, CustomEmoji? Custom = null)
 {
     public int Count => Accounts.Count;
 }
@@ -51,6 +53,7 @@ internal static class ReactionTally
     {
         var latest = new Dictionary<(string Target, PeerId Account, string Emoji), (long Ts, string Key, bool On)>();
         var firstOn = new Dictionary<(string Target, string Emoji), long>();
+        var customOf = new Dictionary<(string Target, string Emoji), CustomEmoji>();
         foreach (var (key, from, ts, text) in messages)
         {
             if (!MessageEnvelope.TryReadReaction(text, out var reaction)) continue;
@@ -60,6 +63,7 @@ internal static class ReactionTally
             // The later event wins; at the same moment the key decides, so every device comes to the same answer.
             if (latest.TryGetValue(id, out var old) && !(ts > old.Ts || ts == old.Ts && string.CompareOrdinal(key, old.Key) > 0)) continue;
             latest[id] = (ts, key, reaction.On);
+            if (reaction.Custom != null) customOf.TryAdd((reaction.Target, reaction.Emoji), reaction.Custom);
             if (reaction.On && (!firstOn.TryGetValue((reaction.Target, reaction.Emoji), out var seen) || ts < seen)) firstOn[(reaction.Target, reaction.Emoji)] = ts;
         }
 
@@ -69,7 +73,7 @@ internal static class ReactionTally
             var summaries = target.GroupBy(kv => kv.Key.Emoji)
                 .OrderBy(g => firstOn.GetValueOrDefault((target.Key, g.Key)))
                 .ThenBy(g => g.Key, StringComparer.Ordinal)
-                .Select(g => new ReactionSummary(g.Key, g.Select(kv => kv.Key.Account).OrderBy(a => a.Value, StringComparer.Ordinal).ToList()))
+                .Select(g => new ReactionSummary(g.Key, g.Select(kv => kv.Key.Account).OrderBy(a => a.Value, StringComparer.Ordinal).ToList(), customOf.GetValueOrDefault((target.Key, g.Key))))
                 .ToList();
             byTarget[target.Key] = summaries;
         }

@@ -484,7 +484,8 @@
                                         <Border Background="{Binding Fill}" BorderBrush="{Binding Edge}" BorderThickness="1" CornerRadius="12" Margin="2" Tapped="ReactionChipTapped">
                                             <Panel>
                                                 <StackPanel Orientation="Horizontal" Spacing="4" Margin="8,3" IsVisible="{Binding ShowEmoji}">
-                                                    <TextBlock Text="{Binding Emoji}" FontSize="15" FontFamily="Roboto" VerticalAlignment="Center" />
+                                                    <TextBlock Text="{Binding EmojiText}" IsVisible="{Binding ShowEmojiText}" FontSize="15" FontFamily="Roboto" VerticalAlignment="Center" />
+                                                    <Image Source="{Binding Picture}" IsVisible="{Binding ShowPicture}" Width="20" Height="20" Stretch="Uniform" VerticalAlignment="Center" />
                                                     <TextBlock Text="{Binding CountText}" IsVisible="{Binding ShowCount}" FontSize="12" VerticalAlignment="Center" Foreground="{Binding Ink}" />
                                                 </StackPanel>
                                                 <Border Width="22" Height="22" Margin="0,3" CornerRadius="11" Background="#99C8C8C8" IsVisible="{Binding IsAdd}">

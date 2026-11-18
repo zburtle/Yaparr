@@ -721,7 +721,8 @@ public partial class MainWindow : Window
 
         room.MessageReceived += m => UI(() => OnMessage(conv, ToVm(m), announce: !m.IsCatchUp));
         room.ReactionsChanged += _ => UI(() => ScheduleReactions(conv));
-        WireReactions(conv, room.GetReactions, (key, emoji, on, channel) => room.SendReactionAsync(key, emoji, on, channel));
+        WireReactions(conv, room.GetReactions, (key, emoji, on, channel) => room.SendReactionAsync(key, emoji, on, channel),
+            (key, custom, on, channel) => room.SendReactionAsync(key, custom, on, channel));
         room.VoiceChanged += () => UI(() => RefreshVoice(conv, room));
         room.VoiceTakenOver += _ => UI(() =>
         {
@@ -920,7 +921,8 @@ public partial class MainWindow : Window
         var kept = chat.History;
         chat.MessageReceived += m => UI(() => OnMessage(conv, ToVm(m), announce: !m.IsCatchUp));
         chat.ReactionsChanged += _ => UI(() => ScheduleReactions(conv));
-        WireReactions(conv, chat.GetReactions, (key, emoji, on, _) => chat.SendReactionAsync(key, emoji, on));
+        WireReactions(conv, chat.GetReactions, (key, emoji, on, _) => chat.SendReactionAsync(key, emoji, on),
+            (key, custom, on, _) => chat.SendReactionAsync(key, custom, on));
         conv.EarlierSource = async (_, _, beforeId) =>
         {
             var page = await Task.Run(() => chat.GetEarlierHistory(beforeId, 100));
@@ -1005,8 +1007,13 @@ public partial class MainWindow : Window
     {
         // The picture of a custom emoji a message uses has arrived: the words are drawn again with it.
         if (update.State == AttachmentState.Ready)
+        {
             foreach (var vm in _conversations.SelectMany(c => c.AllMessages).Where(m => m.Emoji != null && m.Emoji.Any(e => e.Hash == update.Hash)).ToList())
                 vm.RaiseEmoji();
+            // ...and the same for a custom emoji someone put on a message as a reaction.
+            foreach (var vm in _conversations.SelectMany(c => c.AllMessages).Where(m => m.Reactions.Any(c => c.Custom?.Hash == update.Hash)).ToList())
+                vm.RaiseReactionPictures(update.Hash);
+        }
         if (!_attachmentVms.TryGetValue(update.Hash, out var list)) return;
         foreach (var vm in list.ToList())
         {

@@ -432,6 +432,17 @@ public sealed class ChatRoom
         return Task.FromResult(id);
     }
 
+    /// <summary>
+    /// Puts a custom emoji (a room's or your own, see <see cref="ChatNode.PrepareEmoji"/>) on the message with the key <paramref name="messageKey"/>, or takes it off again.
+    /// The reaction carries the emoji's description, so everyone can fetch its picture from you or from whoever has it.
+    /// </summary>
+    public Task<string> SendReactionAsync(string messageKey, CustomEmoji custom, bool on, string? channelId = null)
+    {
+        var id = _node.SendRoomMessage(this, MessageEnvelope.WrapReaction(messageKey, "", on, _node.LinkedDeviceKey, _node.LinkedDeviceCertificate, custom), channelId);
+        ReactionsChanged?.Invoke(messageKey);
+        return Task.FromResult(id);
+    }
+
     /// <summary>Who a message you sent has reached, while it is still being tracked.</summary>
     public IReadOnlyList<DeliveryRecipient> GetDeliveryDetails(string messageId) => _node.GetDeliveryDetails(messageId);
 
@@ -532,6 +543,14 @@ public sealed class DirectChat
     public Task<string> SendReactionAsync(string messageKey, string emoji, bool on)
     {
         var id = _node.SendDirectMessage(PeerId, MessageEnvelope.WrapReaction(messageKey, emoji, on));
+        ReactionsChanged?.Invoke(messageKey);
+        return Task.FromResult(id);
+    }
+
+    /// <summary>Puts a custom emoji (see <see cref="ChatNode.PrepareEmoji"/>) on the message with the key <paramref name="messageKey"/>, or takes it off again.</summary>
+    public Task<string> SendReactionAsync(string messageKey, CustomEmoji custom, bool on)
+    {
+        var id = _node.SendDirectMessage(PeerId, MessageEnvelope.WrapReaction(messageKey, "", on, custom: custom));
         ReactionsChanged?.Invoke(messageKey);
         return Task.FromResult(id);
     }

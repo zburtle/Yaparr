@@ -78,11 +78,12 @@ public partial class MainWindow
 
     private void UpdateCustomTabs()
     {
-        CustomTabs.IsVisible = _pickingForComposer;
+        // The tabs of yours and the room's are there when reacting too (to react with one); adding and removing is for the message box's picker.
+        CustomTabs.IsVisible = _pickingForComposer || _reactingTo != null;
         RoomEmojiTab.IsVisible = SelectedRoom != null;
         MyEmojiTab.Classes.Set("primary", _customTab == CustomTab.Mine);
         RoomEmojiTab.Classes.Set("primary", _customTab == CustomTab.Room);
-        AddEmojiButton.IsVisible = _customTab != CustomTab.None;
+        AddEmojiButton.IsVisible = _customTab != CustomTab.None && _pickingForComposer;
     }
 
     private void MyEmoji_Click(object? sender, RoutedEventArgs e) { _customTab = CustomTab.Mine; ShowCustom(); }
@@ -139,7 +140,7 @@ public partial class MainWindow
             }
         }
         EmojiTitle.Text = count > 0
-            ? (_customTab == CustomTab.Mine ? "My emoji" : "This room's emoji") + " · type :name: to use one"
+            ? (_customTab == CustomTab.Mine ? "My emoji" : "This room's emoji") + (_reactingTo != null ? " · click one to react" : " · type :name: to use one")
             : _customTab == CustomTab.Mine ? "Nothing here yet. Add a small picture and give it a name." : "No emoji in this room yet. Anyone here can add one.";
     }
 
@@ -158,7 +159,7 @@ public partial class MainWindow
         };
         ToolTip.SetTip(button, ":" + name + ":" + (sharedBy != null ? "\nadded by " + sharedBy.OwnerName : ""));
         button.Click += EmojiPicked_Click;
-        if (removeLabel != null && remove != null)
+        if (removeLabel != null && remove != null && _pickingForComposer)
         {
             var item = new MenuItem { Header = removeLabel };
             item.Click += (_, _) => remove();

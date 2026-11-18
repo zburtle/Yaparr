@@ -677,7 +677,8 @@
                                                 <Button Classes="chip" FlowDirection="LeftToRight" Classes.mine="{Binding Mine}" ToolTip.Tip="{Binding Tooltip}" Click="ReactionChip_Click">
                                                     <Panel>
                                                         <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding ShowEmoji}">
-                                                            <TextBlock Text="{Binding Emoji}" FontFamily="Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji, Twemoji Mozilla" VerticalAlignment="Center" />
+                                                            <TextBlock Text="{Binding EmojiText}" IsVisible="{Binding ShowEmojiText}" FontFamily="Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji, Twemoji Mozilla" VerticalAlignment="Center" />
+                                                            <Image Source="{Binding Picture}" IsVisible="{Binding ShowPicture}" Width="18" Height="18" Stretch="Uniform" VerticalAlignment="Center" />
                                                             <TextBlock Text="{Binding CountText}" IsVisible="{Binding ShowCount}" FontSize="12" VerticalAlignment="Center" />
                                                         </StackPanel>
                                                         <TextBlock Text="{Binding MoreText}" IsVisible="{Binding IsMore}" FontSize="12" VerticalAlignment="Center" />
