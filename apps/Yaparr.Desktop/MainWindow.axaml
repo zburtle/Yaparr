@@ -874,7 +874,15 @@
                         </ListBox.ContextMenu>
                         <ListBox.ItemTemplate>
                             <DataTemplate x:DataType="local:PeerVm">
-                                <Grid ColumnDefinitions="Auto,*" ToolTip.Tip="{Binding Tip}">
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <ToolTip.Tip>
+                                        <StackPanel MaxWidth="280" Spacing="3">
+                                            <TextBlock Text="{Binding TipTitle}" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding TipDetail}" TextWrapping="Wrap" />
+                                            <TextBlock Text="{Binding TipSeen}" IsVisible="{Binding HasTipSeen}" Opacity="0.7" />
+                                            <TextBlock Text="{Binding IdLines}" FontFamily="Consolas,Menlo,monospace" FontSize="11" Opacity="0.6" Margin="0,5,0,0" />
+                                        </StackPanel>
+                                    </ToolTip.Tip>
                                     <Grid Width="36" Height="36">
                                         <Border Classes="avatar" Classes.offline="{Binding !Online}" Background="{Binding Avatar}">
                                             <TextBlock Text="{Binding Initial}" FontSize="14" />
