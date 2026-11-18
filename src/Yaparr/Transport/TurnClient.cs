@@ -218,7 +218,8 @@ public sealed class TurnClient : IPacketRoute, IDisposable
 
     public RouteMode Choose(IPEndPoint to, ReadOnlySpan<byte> packet)
     {
-        if (!IsActive || to.Equals(_server) || packet.Length < 2 || packet[0] != PeerConnection.Magic) return RouteMode.Direct;
+        // The relay only carries IPv4 peers; IPv6 traffic always goes directly.
+        if (!IsActive || to.AddressFamily != AddressFamily.InterNetwork || to.Equals(_server) || packet.Length < 2 || packet[0] != PeerConnection.Magic) return RouteMode.Direct;
         if (!RelayLocalAddresses && IsLocal(to.Address)) return RouteMode.Direct;
         if (packet[1] == 1) return RouteMode.Both;
 
@@ -231,7 +232,7 @@ public sealed class TurnClient : IPacketRoute, IDisposable
 
     public void SendRelayed(ReadOnlySpan<byte> packet, IPEndPoint to)
     {
-        if (!IsActive || _server == null) return;
+        if (!IsActive || _server == null || to.AddressFamily != AddressFamily.InterNetwork) return;
         if (!HasPermission(to.Address))
         {
             RequestPermissionInBackground(to.Address);
@@ -257,6 +258,7 @@ public sealed class TurnClient : IPacketRoute, IDisposable
     {
         if (IPAddress.IsLoopback(address)) return true;
         var b = address.GetAddressBytes();
+        if (b.Length == 16) return (b[0] & 0xFE) == 0xFC || (b[0] == 0xFE && (b[1] & 0xC0) == 0x80); // unique local fc00::/7, link-local fe80::/10
         return b.Length == 4 && (b[0] == 10 || (b[0] == 172 && b[1] is >= 16 and <= 31) || (b[0] == 192 && b[1] == 168) || (b[0] == 169 && b[1] == 254));
     }
 

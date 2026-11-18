@@ -801,7 +801,13 @@ public partial class MainWindow : Window
         bool changed = false;
         foreach (var known in _settings.KnownPeers)
         {
-            if (live.ContainsKey(known.Id)) { known.LastSeen = now; }
+            if (live.ContainsKey(known.Id))
+            {
+                known.LastSeen = now;
+                // What they say about themselves while connected is kept, so the list can say it when they are away.
+                bool cloud = _node.UsesCloud(new PeerId(known.Id));
+                if (known.Cloud != cloud) { known.Cloud = cloud; changed = true; }
+            }
         }
         if (gone is { } left && _settings.KnownPeers.FirstOrDefault(k => k.Id == left.Value) is { } k2)
         {
@@ -840,7 +846,8 @@ public partial class MainWindow : Window
         // Someone who has not been on for two weeks is no longer listed (see PeopleListRules); the owner and the admins stay.
         var offline = seenHere
             .Where(k => !here.ContainsKey(k.Account.Value) && !blocked.Contains(k.Account.Value) && PeopleListRules.ShowsInList(false, k.LastSeen, now, RoleOf(k.Account.Value)))
-            .Select(k => new PeerVm(k.Account.Value, string.IsNullOrWhiteSpace(k.Name) ? k.Account.Value[..8] : k.Name, false, k.LastSeen, false, _node.GetLink(k.Account), Role: RoleOf(k.Account.Value), BannedHere: open.IsBanned(k.Account)));
+            .Select(k => new PeerVm(k.Account.Value, string.IsNullOrWhiteSpace(k.Name) ? k.Account.Value[..8] : k.Name, false, k.LastSeen, false, _node.GetLink(k.Account), Role: RoleOf(k.Account.Value), BannedHere: open.IsBanned(k.Account),
+                KnownCloud: _settings.KnownPeers.FirstOrDefault(x => x.Id == k.Account.Value)?.Cloud == true));
         // Someone you blocked stays in the list of the rooms you met them in, marked as blocked, so that they can be unblocked.
         var metHere = seenHere.Select(k => k.Account.Value).ToHashSet();
         var shut = _settings.BlockedPeers.Where(b => metHere.Contains(b.Id))
