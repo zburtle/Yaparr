@@ -281,7 +281,6 @@ public partial class MainView : UserControl
             {
                 if (link.Kind == DeepLinkKind.Join) HandleJoinLink(session, link.Value);
                 else if (link.Kind == DeepLinkKind.BackupSignIn) HandleBackupSignInLink(link);
-                else if (link.Kind == DeepLinkKind.SignedIn) { if (link.TryGetSignedIn(out var signedCode, out var signedState)) BrowserSignIn.Deliver(signedCode, signedState); }
                 else HandleChatLink(session, link.Value);
             }
         }

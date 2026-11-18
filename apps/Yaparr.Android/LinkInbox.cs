@@ -20,6 +20,13 @@ internal static class LinkInbox
     public static void Offer(string? uri)
     {
         if (DeepLink.Parse(uri) is not { } link) return;
+        // The browser coming back after a sign-in is handed to the sign-in that waits for it at once, not queued: the first screens (restoring an account) have no session
+        // yet, and the queue is only taken from once there is one, so the sign-in would wait for ever.
+        if (link.Kind == DeepLinkKind.SignedIn)
+        {
+            if (link.TryGetSignedIn(out var code, out var state)) BrowserSignIn.Deliver(code, state);
+            return;
+        }
         lock (s_waiting)
         {
             if (s_waiting.Count < MaxWaiting) s_waiting.Enqueue(link);
