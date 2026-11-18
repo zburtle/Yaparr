@@ -515,6 +515,13 @@ public sealed class DirectChat
     /// </summary>
     public int RequestEarlierHistory(string beforeId) => _node.RequestEarlierDirectHistory(PeerId, beforeId);
 
+    /// <summary>
+    /// Brings the messages with these keys (<see cref="ChatMessage.Key"/>, what a reply names its original by) to the screen: the ones this device holds but has not shown
+    /// are shown at once, and the rest are asked for from your other devices and the person's, and arrive through <see cref="MessageReceived"/>. Returns how many devices
+    /// were asked, 0 if none could be, or -1 when everything was held here.
+    /// </summary>
+    public int RequestMessages(IEnumerable<string> keys) => _node.RequestDirectMessages(PeerId, keys);
+
     /// <summary>The messages before the one with the id <paramref name="beforeId"/> (<see cref="ChatMessage.Id"/>), oldest first, up to <paramref name="count"/> of them.</summary>
     public HistoryPage GetEarlierHistory(string beforeId, int count = 100) => _node.GetEarlierDirectHistory(PeerId, beforeId, Math.Clamp(count, 1, 500));
 

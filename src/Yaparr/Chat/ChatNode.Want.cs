@@ -11,13 +11,21 @@ public sealed partial class ChatNode
 
     private const long WantWindowMs = 10_000;
 
-    /// <summary>Asks up to three connected members of <paramref name="room"/> for the messages with these keys.</summary>
+    /// <summary>
+    /// Brings the messages with these keys to the screen: those held here but not shown are shown at once, and up to three connected members of
+    /// <paramref name="room"/> are asked for the rest. Returns how many were asked, 0 if none could be, or -1 when everything was held here.
+    /// </summary>
     internal int RequestMessages(ChatRoom room, IEnumerable<string> keys)
     {
         var asked = keys.Where(MessageEnvelope.IsKey).Select(k => k.ToLowerInvariant()).Distinct().ToList();
         var held = room.History.Held(asked);
+        // What is held here but is not on a screen (older than what was read) is shown now, as a caught-up message is.
+        bool shownHeld = false;
+        foreach (var m in room.History.Find(held.Take(MaxWanted).ToList()))
+            if (IsShown(room, m)) { room.RaiseMessage(Fetching(ToChatMessage(room, m, catchUp: true))); shownHeld = true; }
         var wanted = asked.Where(k => !held.Contains(k)).Take(MaxWanted).ToArray();
-        if (wanted.Length == 0 || !_options.SyncHistory) return 0;
+        if (wanted.Length == 0) return shownHeld ? -1 : 0;
+        if (!_options.SyncHistory) return 0;
         // Those we reach directly first: asking through a relay would make a member pay for a request that may find nothing.
         var askedPeers = room.MemberStates.Values.Where(m => m.Connection.State == ConnectionState.Established)
             .OrderBy(m => m.Connection.IsRelayed).Take(3).ToList();
