@@ -9,6 +9,26 @@ namespace Yaparr.Tests;
 public sealed class BackupSignInLinkTests
 {
     private const string Code = "Zm9yLXRlc3RpbmctYS1vbmUtdGltZS1jb2RlLTEyMzQ";   // 43 characters of base64url, as the server makes them
+    [Fact]
+    public void The_browser_coming_back_to_a_phone_after_signing_in_is_read_for_its_code_and_state()
+    {
+        var link = DeepLink.Parse("yaparr://signed-in?code=abcdefghijklmnopqrstuvwxyz0123456789-_ABCDEF&state=state-0123456789");
+        Assert.NotNull(link);
+        Assert.Equal(DeepLinkKind.SignedIn, link!.Kind);
+        Assert.True(link.TryGetSignedIn(out var code, out var state));
+        Assert.Equal("abcdefghijklmnopqrstuvwxyz0123456789-_ABCDEF", code);
+        Assert.Equal("state-0123456789", state);
+        Assert.Equal("yaparr://signed-in?code=abcdefghijklmnopqrstuvwxyz0123456789-_ABCDEF&state=state-0123456789", link.ToAppUri());
+    }
+
+    [Theory]
+    [InlineData("yaparr://signed-in")]
+    [InlineData("yaparr://signed-in?code=short&state=state-0123456789")]
+    [InlineData("yaparr://signed-in?code=abcdefghijklmnopqrstuvwxyz0123456789&state=x")]
+    [InlineData("yaparr://signed-in?code=abcdefghijklmnopqrstuvwxyz0123456789<script>&state=state-0123456789")]
+    [InlineData("https://yaparr.com/signed-in#abcdefghijklmnopqrstuvwxyz0123456789")]
+    public void A_signed_in_link_that_is_not_well_formed_is_not_one(string text) => Assert.Null(DeepLink.Parse(text));
+
     private static readonly string Link = "yaparr://backup-signin/" + Code + "/" + Uri.EscapeDataString("https://cloud.yaparr.com");
 
     // ---- the link ----

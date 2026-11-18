@@ -2,7 +2,7 @@ using Yaparr.Chat;
 
 namespace Yaparr.AppCore;
 
-internal enum DeepLinkKind { Join, Chat, BackupSignIn }
+internal enum DeepLinkKind { Join, Chat, BackupSignIn, SignedIn }
 
 /// <summary>
 /// A link to a room or a person, in either of two forms that mean the same:
@@ -27,6 +27,18 @@ internal sealed record DeepLink(DeepLinkKind Kind, string Value)
     {
         text = text?.Trim();
         if (string.IsNullOrEmpty(text) || text.Length > MaxLength) return null;
+
+        // yaparr://signed-in?code=...&state=...: the browser coming back to a phone after the person signed in to a backup server (see BrowserSignIn). It is handed to the
+        // sign-in that is waiting; it asks nothing, as there is nothing in it to agree to (the code works only with a secret that sign-in holds).
+        if (text.StartsWith(Scheme + "signed-in?", StringComparison.OrdinalIgnoreCase))
+        {
+            var query = text[(Scheme.Length + "signed-in?".Length)..].Split('&', StringSplitOptions.RemoveEmptyEntries)
+                .Select(p => p.Split('=', 2)).Where(p => p.Length == 2).GroupBy(p => p[0]).ToDictionary(g => g.Key, g => g.First()[1]);
+            if (!query.TryGetValue("code", out var signedCode) || !query.TryGetValue("state", out var signedState)) return null;
+            if (signedCode.Length is < 20 or > 100 || !signedCode.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_')) return null;
+            if (signedState.Length is < 8 or > 128 || !signedState.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_')) return null;
+            return new DeepLink(DeepLinkKind.SignedIn, $"{signedCode}/{signedState}");
+        }
 
         string rest;
         char separator;
@@ -75,9 +87,23 @@ internal sealed record DeepLink(DeepLinkKind Kind, string Value)
     /// <summary>The form that is handed from one running copy of the app to another.</summary>
     public string ToAppUri()
     {
+        if (Kind == DeepLinkKind.SignedIn && TryGetSignedIn(out var signedCode, out var signedState))
+            return $"{Scheme}signed-in?code={signedCode}&state={signedState}";
         if (Kind == DeepLinkKind.BackupSignIn && TryGetBackupSignIn(out var code, out var server))
             return $"{Scheme}backup-signin/{code}/{Uri.EscapeDataString(server.ToString().TrimEnd('/'))}";
         return $"{Scheme}{(Kind == DeepLinkKind.Join ? "join" : "chat")}/{Value}";
+    }
+
+    /// <summary>For a signed-in link: the one-time code and the state the sign-in made.</summary>
+    public bool TryGetSignedIn(out string code, out string state)
+    {
+        code = state = "";
+        if (Kind != DeepLinkKind.SignedIn) return false;
+        int slash = Value.IndexOf('/');
+        if (slash <= 0) return false;
+        code = Value[..slash];
+        state = Value[(slash + 1)..];
+        return true;
     }
 
     /// <summary>For a backup-signin link: the one-time code and the server to trade it with.</summary>

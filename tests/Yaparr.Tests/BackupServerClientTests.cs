@@ -226,6 +226,36 @@ public sealed class BackupServerClientTests : IDisposable
         Assert.Empty(await client.VersionsAsync());
     }
 
+    // A phone cannot listen on a port while the browser is in front (Android stops an app that is not shown, and the browser's request hangs): the browser comes back through
+    // the app's own link, and the app hands the code in.
+    [Fact]
+    public async Task On_a_phone_the_browser_comes_back_through_the_apps_link_and_not_a_port()
+    {
+        var server = new FakeServer();
+        using var signIn = new BrowserSignIn(Server, "Pixel", throughAppLink: true);
+        var asked = QueryOf(signIn.LoginUrl);
+        Assert.Equal("yaparr://signed-in", asked["redirect_uri"]);
+
+        var waiting = signIn.WaitAsync(new HttpClient(server));
+        server.Codes["the-code-the-server-made-0123"] = ("sam", asked["code_challenge"]);
+
+        // a link that is not for this sign-in does nothing; the right state is taken
+        Assert.False(BrowserSignIn.Deliver("the-code-the-server-made-0123", "someone-elses-state"));
+        Assert.False(waiting.IsCompleted);
+        Assert.True(BrowserSignIn.Deliver("the-code-the-server-made-0123", asked["state"]));
+
+        var (token, username) = await waiting;
+        Assert.Equal("sam", username);
+        Assert.Equal("sam", server.Tokens[token]);
+        Assert.False(BrowserSignIn.Deliver("the-code-the-server-made-0123", asked["state"]));   // nothing is waiting now
+    }
+
+    [Fact]
+    public void A_link_that_arrives_when_no_sign_in_is_waiting_is_ignored()
+    {
+        Assert.False(BrowserSignIn.Deliver("a-code-from-an-old-sign-in-0123", "an-old-state-value"));
+    }
+
     [Fact]
     public async Task A_code_the_server_refuses_fails_the_sign_in_with_the_servers_words()
     {

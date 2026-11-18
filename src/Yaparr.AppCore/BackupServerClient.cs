@@ -107,7 +107,9 @@ public static class RecoveryCode
 public sealed class BrowserSignIn : IDisposable
 {
     private readonly Uri _server;
-    private readonly TcpListener _listener;
+    private readonly TcpListener? _listener;
+    private readonly TaskCompletionSource<string>? _arrived;
+    private static BrowserSignIn? _waitingForLink;
     private readonly string _verifier = Base64Url.EncodeToString(RandomNumberGenerator.GetBytes(32));
     private readonly string _state = Base64Url.EncodeToString(RandomNumberGenerator.GetBytes(16));
 
@@ -117,19 +119,52 @@ public sealed class BrowserSignIn : IDisposable
     /// <summary>Where the browser comes back to, on this computer.</summary>
     public Uri CallbackUrl { get; }
 
-    public BrowserSignIn(Uri server, string deviceName)
+    /// <summary>
+    /// <paramref name="throughAppLink"/> is for a phone, which cannot listen on a port while the browser is in front (Android stops an app that is not shown, and the
+    /// browser's request to it then hangs until it times out): the browser is sent back through the app's own link, <c>yaparr://signed-in?code=…&amp;state=…</c>, which
+    /// opens the app again, and the app hands it to <see cref="Deliver"/>.
+    /// </summary>
+    public BrowserSignIn(Uri server, string deviceName, bool throughAppLink = false)
     {
         _server = server;
-        _listener = new TcpListener(IPAddress.Loopback, 0);
-        _listener.Start();
-        CallbackUrl = new Uri($"http://127.0.0.1:{((IPEndPoint)_listener.LocalEndpoint).Port}/callback");
+        if (throughAppLink)
+        {
+            _arrived = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            CallbackUrl = new Uri(AppLink);
+            _waitingForLink = this;   // one sign-in at a time: starting another replaces it
+        }
+        else
+        {
+            _listener = new TcpListener(IPAddress.Loopback, 0);
+            _listener.Start();
+            CallbackUrl = new Uri($"http://127.0.0.1:{((IPEndPoint)_listener.LocalEndpoint).Port}/callback");
+        }
         var challenge = Challenge(_verifier);
-        LoginUrl = new Uri(server, $"/login?redirect_uri={Uri.EscapeDataString(CallbackUrl.ToString())}&code_challenge={challenge}&state={_state}&device={Uri.EscapeDataString(deviceName)}");
+        LoginUrl = new Uri(server, $"/login?redirect_uri={Uri.EscapeDataString(_arrived != null ? AppLink : CallbackUrl.ToString())}&code_challenge={challenge}&state={_state}&device={Uri.EscapeDataString(deviceName)}");
     }
 
     internal static string Challenge(string verifier) => Base64Url.EncodeToString(SHA256.HashData(Encoding.ASCII.GetBytes(verifier)));
 
-    public void Dispose() => _listener.Stop();
+    /// <summary>Where the server sends the browser back to on a phone: the app's own link.</summary>
+    public const string AppLink = "yaparr://signed-in";
+
+    public void Dispose()
+    {
+        _listener?.Stop();
+        if (ReferenceEquals(_waitingForLink, this)) _waitingForLink = null;
+    }
+
+    /// <summary>
+    /// The browser came back through the app's link with a code. It is for the sign-in that is waiting if the state is the one it made (anything else is ignored),
+    /// and the code is useless without the verifier only that sign-in knows. Returns whether a sign-in was waiting for it.
+    /// </summary>
+    public static bool Deliver(string code, string state)
+    {
+        var waiting = _waitingForLink;
+        if (waiting?._arrived == null || code.Length is 0 or >= 200
+            || !CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(state), Encoding.ASCII.GetBytes(waiting._state))) return false;
+        return waiting._arrived.TrySetResult(code);
+    }
 
     /// <summary>
     /// Waits for the browser to come back, then trades the code for a token. Throws <see cref="OperationCanceledException"/> if cancelled and
@@ -142,17 +177,23 @@ public sealed class BrowserSignIn : IDisposable
         string? code = null;
         try
         {
-            while (code == null)
-            {
-                using var browser = await _listener.AcceptTcpClientAsync(timer.Token);
-                code = await AnswerAsync(browser, timer.Token);
-            }
+            if (_arrived != null) code = await _arrived.Task.WaitAsync(timer.Token);
+            else
+                while (code == null)
+                {
+                    using var browser = await _listener!.AcceptTcpClientAsync(timer.Token);
+                    code = await AnswerAsync(browser, timer.Token);
+                }
         }
         catch (OperationCanceledException) when (!cancel.IsCancellationRequested)
         {
             throw new BackupServerException("Nobody signed in within five minutes. Try again.");
         }
-        finally { _listener.Stop(); }
+        finally
+        {
+            _listener?.Stop();
+            if (ReferenceEquals(_waitingForLink, this)) _waitingForLink = null;
+        }
 
         var owned = http == null;
         http ??= new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
