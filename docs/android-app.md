@@ -39,6 +39,8 @@ Not there yet: taking a picture with the camera from the app (the chooser can st
 
 ## Replies, mentions and message actions
 
+A chat opens with its newest messages (100 for each channel of a room). The button **Load earlier messages** over the top of the list reads the next 100 older ones from the history the phone keeps (the one on show: a room's channel), and the list stays on the message that was at the top. When the phone has no more, the same button asks the others for the next page (the members of a room; in a direct chat your other devices and the person's), says so while it waits, and shows what comes. It gives up after twenty seconds and says so; tapping it again tries again (`Session.LoadEarlier`, `Chat.EarlierText`).
+
 A long press on a message opens a small window with what can be done with it: **Reply**, **Copy text**, and, for the owner or an admin of the room, **Delete for everyone** (after a question). A reply shows a bar above the message box ("Replying to ...", with a cross to drop it), and the sent message carries a quote of the one it answers, in the chat and for everyone else; a tap on the quote goes to that message, in its channel. A quote whose message is not on the phone says "An earlier message". A picture can be a reply too.
 
 Typing an **@** and the start of a name in a room offers the people there, as buttons above the keyboard; choosing one puts their name in the text and names them in the message, so they are told. A message that names you has a yellow bubble.

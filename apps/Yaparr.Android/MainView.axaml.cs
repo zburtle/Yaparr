@@ -193,6 +193,7 @@ public partial class MainView : UserControl
         On<Action<string>>(h => session.Notice += h, h => session.Notice -= h, text => ListStatus.Text = text);
         On<Action<PeerId>>(h => session.AvatarChanged += h, h => session.AvatarChanged -= h, _ => ShowMyPicture());
         On<Action<Chat>>(h => session.SoundsChanged += h, h => session.SoundsChanged -= h, c => { if (SoundPanel.IsVisible && c == _current) ShowSounds(); });
+        On<Action<Chat, Line>>(h => session.EarlierLoaded += h, h => session.EarlierLoaded -= h, KeepPlaceAfterEarlier);
         On<Action<Chat>>(h => session.GifsChanged += h, h => session.GifsChanged -= h, async c => { if (ShelfPanel.IsVisible && _shelfShowsRoom && c == _current) await FillShelfAsync(); });
         On<Action<string>>(h => session.ConnectionChanged += h, h => session.ConnectionChanged -= h, text => ListStatus.Text = text);
         On<Action<string?, double?>>(h => session.SyncChanged += h, h => session.SyncChanged -= h, (text, progress) =>
@@ -825,7 +826,7 @@ public partial class MainView : UserControl
         // New messages scroll the list down, once for each chat.
         if (!_watched.ContainsKey(chat))
         {
-            System.Collections.Specialized.NotifyCollectionChangedEventHandler handler = (_, _) => { if (_current == chat) ScrollToEnd(); };
+            System.Collections.Specialized.NotifyCollectionChangedEventHandler handler = (_, _) => { if (_current == chat && !chat.AddingEarlier) ScrollToEnd(); };
             _watched[chat] = handler;
             chat.Shown.CollectionChanged += handler;
         }
@@ -1212,6 +1213,18 @@ public partial class MainView : UserControl
         item.Click += (_, _) => { ActionPanel.IsVisible = false; action(); };
         ActionList.Children.Add(item);
     }
+
+    // The button over the top of the messages: the next page of older ones, from this phone's history or, when it has no more, from the others.
+    private void EarlierClicked(object? sender, RoutedEventArgs e)
+    {
+        if (_current is { } chat) _session?.LoadEarlier(chat);
+    }
+
+    // Older messages were put above the ones on show: the one that was at the top stays where it was, so the list does not jump.
+    private void KeepPlaceAfterEarlier(Chat chat, Line anchor) => Dispatcher.UIThread.Post(() =>
+    {
+        if (_current == chat && chat.Shown.Contains(anchor)) Messages.ScrollIntoView(anchor);
+    });
 
     // A tap on the quote in a reply goes to the message it answers, in its channel.
     private void QuoteTapped(object? sender, TappedEventArgs e)
