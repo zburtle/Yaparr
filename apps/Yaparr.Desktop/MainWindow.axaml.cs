@@ -951,20 +951,19 @@ public partial class MainWindow : Window
         foreach (var conv in _conversations)
             foreach (var vm in conv.AllMessages)
                 if (!vm.IsMine && vm.Source is { } m && _node.IsMyDevice(m.From.Id))
-                    vm.ClaimAsMine(_node.Id != m.From.Id ? "from your other device " + m.From.Id.Short : "");
+                    vm.ClaimAsMine();
     }
 
     private MessageVm ToVm(ChatMessage m)
     {
         Remember(m.From);
         bool mine = _node != null && _node.IsMyDevice(m.From.Id);
-        // A message you sent from another of your devices says which one.
         var parts = m.Parts;
         var vm = new MessageVm(m.Timestamp, m.From.DisplayName, parts.Body, m.IsCatchUp, isMine: mine, id: m.Id, attachment: m.Attachment)
         {
             Source = m, Account = m.From.Account.Value, Key = m.Key, ReplyKey = parts.ReplyTo, Mentions = parts.Mentions, Card = parts.Preview, Emoji = parts.Emoji,
             MentionsMe = _node != null && NamesMe(m),
-            Channel = m.Channel, DeviceNote = mine && _node!.Id != m.From.Id ? "from your other device " + m.From.Id.Short : "",
+            Channel = m.Channel,
         };
         if (m.Attachment != null) TrackAttachment(vm);
         return vm;
