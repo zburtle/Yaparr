@@ -216,6 +216,27 @@ public sealed class GatewayFallbackTests : IDisposable
     }
 
     [Fact]
+    public async Task The_connection_check_and_the_note_say_when_yaparr_cloud_is_acting_as_the_gateway()
+    {
+        Assert.Null(ChatNode.GatewayNote(VpnState.Disconnected));
+        Assert.Contains("messages", ChatNode.GatewayNote(VpnState.Connected));
+        Assert.Contains("Connecting", ChatNode.GatewayNote(VpnState.Connecting));
+
+        var node = BlockedNode();
+        _disposables.Add(node);
+        var link = new FakeGatewayLink { Reply = StunAnswer };
+        _ = new GatewayFallback(node, () => (new Uri("https://cloud.test"), "token"), () => true, null, links: (_, _) => link);
+        node.Start();
+        for (int i = 0; i < 600 && node.GatewayState != VpnState.Connected; i++) await Task.Delay(50);
+        Assert.Equal(VpnState.Connected, node.GatewayState);
+
+        var report = await node.CheckNetworkAsync();
+        var item = Assert.Single(report.Items, i => i.Title == "Yaparr Cloud is acting as your gateway");
+        Assert.Equal(CheckLevel.Ok, item.Level);
+        Assert.Equal(ChatNode.GatewayNote(VpnState.Connected), item.Detail);
+    }
+
+    [Fact]
     public async Task A_gateway_that_gives_nothing_back_is_let_go_and_not_tried_again_for_a_while()
     {
         var node = BlockedNode();

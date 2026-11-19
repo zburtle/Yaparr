@@ -165,6 +165,9 @@ public partial class MainView : UserControl
         // The session may already be there (the screen was closed and opened again while it stayed connected).
         var session = _session = AppHost.GetOrCreateSession();
         HookSession(session);
+        session.GatewayChanged -= ShowGateway;
+        session.GatewayChanged += ShowGateway;
+        ShowGateway();
         ChatList.ItemsSource = session.Chats;
         ListStatus.Text = session.Started && session.ConnectionText.Length > 0 ? session.ConnectionText : "Connecting...";
         try
@@ -690,6 +693,17 @@ public partial class MainView : UserControl
     {
         NetworkPanel.IsVisible = true;
         await RunNetworkCheckAsync();
+    }
+
+    // Yaparr Cloud acting as the gateway (this network blocks UDP): said under the Network heading in the settings, and live.
+    private void ShowGateway()
+    {
+        var state = _session?.GatewayState ?? Yaparr.Vpn.VpnState.Disconnected;
+        var note = Yaparr.Chat.ChatNode.GatewayNote(state);
+        GatewayBanner.IsVisible = note != null;
+        GatewayBannerTitle.Text = state == Yaparr.Vpn.VpnState.Connected ? "Yaparr Cloud is acting as your gateway" : "Connecting to Yaparr Cloud\u2026";
+        GatewayBannerText.Text = note ?? "";
+        GatewayBanner.BorderBrush = state == Yaparr.Vpn.VpnState.Connected ? Avalonia.Media.Brushes.SeaGreen : Avalonia.Media.Brushes.DarkOrange;
     }
 
     private async void NetworkAgainClicked(object? sender, RoutedEventArgs e) => await RunNetworkCheckAsync();

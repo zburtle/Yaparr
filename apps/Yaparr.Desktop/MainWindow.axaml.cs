@@ -479,6 +479,7 @@ public partial class MainWindow : Window
             Log = _log.Write,
         });
         _node.NetworkStatusChanged += _ => UI(UpdateStatus);
+        _node.GatewayStateChanged += _ => UI(UpdateStatus);
         // A network that does not let UDP out: signed in to Yaparr Cloud, messages go through its gateway (if the person allows it).
         _ = new GatewayFallback(_node, () => GatewayFallback.AccountOf(_data.LoadBackupServer()), () => _settings.GatewayWhenUdpBlocked, _log.Write);
         _node.AttachmentChanged += update => UI(() => OnAttachmentChanged(update));
@@ -561,6 +562,14 @@ public partial class MainWindow : Window
         var vpn = _node.VpnState;
         var network = _node.NetworkStatus != NetworkStatus.Unknown ? _node.NetworkStatus.Describe() : null;
 
+        // Yaparr Cloud acting as the gateway (the network blocks UDP): said at the top of Settings > Network, and in the tooltip of the network icon.
+        var gateway = _node.GatewayState;
+        var gatewayNote = ChatNode.GatewayNote(gateway);
+        GatewayBanner.IsVisible = gatewayNote != null;
+        GatewayBannerTitle.Text = gateway == Yaparr.Vpn.VpnState.Connected ? "Yaparr Cloud is acting as your gateway" : "Connecting to Yaparr Cloud\u2026";
+        GatewayBannerText.Text = gatewayNote ?? "";
+        GatewayBanner.BorderBrush = StatusBrush(gateway == Yaparr.Vpn.VpnState.Connected ? "Good" : "Warn");
+
         // Green when it is working, orange when it is not yet or only partly, grey when there is nothing to say.
         PeersIcon.Text = $"\U0001F465 {peers}";
         PeersIcon.Foreground = StatusBrush(peers > 0 ? "Good" : "Warn");
@@ -570,7 +579,8 @@ public partial class MainWindow : Window
 
         NetworkIcon.Foreground = StatusBrush(network == null ? "Muted" : _node.NetworkStatus.Reachable ? "Good" : "Warn");
         ToolTip.SetTip(NetworkIcon, $"UDP port {_node.LocalPort}\n" + (network ?? "Checking the network…")
-            + (network != null && !_node.NetworkStatus.Reachable ? "\nOther people may not be able to connect to you directly." : ""));
+            + (network != null && !_node.NetworkStatus.Reachable ? "\nOther people may not be able to connect to you directly." : "")
+            + (gatewayNote != null ? "\n" + gatewayNote : ""));
 
         VpnIcon.Foreground = StatusBrush(vpn switch
         {
