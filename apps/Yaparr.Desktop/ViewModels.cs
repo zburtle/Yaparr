@@ -690,7 +690,7 @@ public sealed class ConversationVm : Observable
     public string? PeerId { get; init; }
     public bool HasPeerId => PeerId != null && !IsNotes;
 
-    /// <summary>The chat with yourself ("Notes to self"): always there, first by default, pinnable and movable like any chat, but never removed.</summary>
+    /// <summary>The chat with yourself ("Notes to self"): always there, listed by its newest message like any chat (pinnable and movable too), but never removed.</summary>
     public bool IsNotes { get; init; }
 
     /// <summary>The room's id (<c>ChatRoom.RoomId</c>), for a room.</summary>

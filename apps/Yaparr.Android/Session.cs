@@ -1004,15 +1004,8 @@ public sealed partial class Session : IDisposable
     }
 
     // The chat with the newest message goes first, below the pinned ones.
-    private void Resort(Chat chat)
-    {
-        int from = Chats.IndexOf(chat);
-        if (from < 0) return;
-        int to = from;
-        while (to > 0 && !Chats[to - 1].IsPinned && !Chats[to - 1].IsNotes && Chats[to - 1].LastActivity < chat.LastActivity) to--;
-        if (to != from) Chats.Move(from, to);
-        ArrangePins();
-    }
+    // The whole list is put in order each time (not just the one chat moved up), so no chat is left where an earlier order put it. Notes to self is like any other chat.
+    private void Resort(Chat chat) => ArrangePins();
 
     // ---- pins ----
 
@@ -1030,7 +1023,7 @@ public sealed partial class Session : IDisposable
     private void ArrangePins()
     {
         foreach (var chat in Chats) chat.IsPinned = _pins.IsPinned(chat.IsRoom, chat.PinId);
-        PinnedFirst.Apply(Chats, c => _pins.RankOf(c.IsRoom, c.PinId));
+        PinnedFirst.Apply(Chats, c => _pins.RankOf(c.IsRoom, c.PinId), c => c.LastActivity);
     }
 
     /// <summary>Pins the chat (after the ones pinned already), or takes it off the pinned ones.</summary>
