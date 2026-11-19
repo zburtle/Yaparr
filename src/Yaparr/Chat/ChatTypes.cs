@@ -48,7 +48,8 @@ public sealed record DeviceInfo(PeerId Id, bool IsThisDevice, PeerLink Link);
 public sealed record DeliveryRecipient(PeerId Id, string Name, bool Delivered);
 
 /// <summary>A page of earlier history, oldest first, and whether there is more before it.</summary>
-public sealed record HistoryPage(IReadOnlyList<ChatMessage> Messages, bool HasMore);
+/// <param name="AtStart">There is nothing earlier here and the room's start record is held, so this is the beginning for sure (not only as far as people who are connected can say). Only a room made with a start record (see <see cref="ChatRoom.RecordStart"/>) can say so.</param>
+public sealed record HistoryPage(IReadOnlyList<ChatMessage> Messages, bool HasMore, bool AtStart = false);
 
 /// <param name="Channel">The text channel of a room message (<see cref="RoomChannels.DefaultText"/> for the first one and for messages from earlier versions); null for direct messages.</param>
 public sealed record ChatMessage(PeerInfo From, string? Room, string Id, string Text, DateTimeOffset Timestamp, bool IsCatchUp = false, Attachment? Attachment = null, string? Channel = null)

@@ -37,6 +37,7 @@ switch (args[1])
         var key = args.Length > 2 ? RoomKey.Parse(args[2]) : RoomKey.Generate(node.AccountId);
         Console.WriteLine($"Room invite (share it only with people you want in): {key}");
         var room = await node.JoinRoomAsync(key, ct: cts.Token);
+        if (args.Length <= 2) room.RecordStart();
         room.MessageReceived += Print;
         room.MemberJoined += p => Console.WriteLine($"* {p.DisplayName} joined");
         room.MemberLeft += p => Console.WriteLine($"* {p.DisplayName} left");

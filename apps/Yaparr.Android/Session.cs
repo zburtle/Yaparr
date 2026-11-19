@@ -260,8 +260,12 @@ public sealed partial class Session : IDisposable
     public Chat? FindDirect(PeerId person) => _directs.GetValueOrDefault(person.Value);
 
     /// <summary>Makes a new room that you own and opens it.</summary>
-    public Task<Chat> NewRoomAsync(string label) =>
-        JoinKeyedRoomAsync(label, RoomKey.Generate(_node!.AccountId), persist: true);
+    public async Task<Chat> NewRoomAsync(string label)
+    {
+        var chat = await JoinKeyedRoomAsync(label, RoomKey.Generate(_node!.AccountId), persist: true);
+        chat.Room?.RecordStart();   // the room's start: what makes the end of its history known for sure
+        return chat;
+    }
 
     /// <summary>Joins the room an invite is for, or opens it if you are in it already.</summary>
     public async Task<Chat> JoinWithInviteAsync(string label, string invite)

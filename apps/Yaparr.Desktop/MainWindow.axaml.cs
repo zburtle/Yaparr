@@ -604,7 +604,7 @@ public partial class MainWindow : Window
         if (string.IsNullOrWhiteSpace(label)) return;
         // The invite names you as the owner, which is how everyone in the room knows who may appoint admins.
         if (_node == null) return;
-        await JoinKeyedRoomAsync(label, RoomKey.Generate(_node.AccountId), persist: true);
+        await JoinKeyedRoomAsync(label, RoomKey.Generate(_node.AccountId), persist: true, created: true);
     }
 
     private async void JoinRoom_Click(object? sender, RoutedEventArgs e)
@@ -693,10 +693,12 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task JoinKeyedRoomAsync(string label, RoomKey key, bool persist)
+    // created: the room was just made here, so its owner writes its start record (what makes the end of its history known for sure).
+    private async Task JoinKeyedRoomAsync(string label, RoomKey key, bool persist, bool created = false)
     {
         if (_node == null) return;
         var room = await _node.JoinRoomAsync(key, label);
+        if (created) room.RecordStart();
         if (persist)
         {
             _settings.PrivateRooms.Add(new PrivateRoomSetting { Label = label, Key = key.ToString() });
@@ -747,6 +749,7 @@ public partial class MainWindow : Window
         room.SecretChanged += (before, after) => UI(() => OnSecretChanged(conv, before, after));
         conv.EarlierSource = (channel, beforeKey, _) => ReadEarlierAsync(room, channel, beforeKey);
         conv.AskOthersForEarlier = (channel, key, _) => room.RequestEarlierHistory(channel, key);
+        conv.StartIsHeld = () => room.StartedAt != null;
         // What the others sent is kept: it is read the same way, the next time the list is at its top (or now, if it is).
         room.EarlierHistoryReceived += () => UI(() => { conv.NoteEarlierArrived(); RefreshReactions(conv); if (_selected == conv) MaybeLoadEarlier(); });
         room.ModerationChanged += () => UI(() => { conv.Reload(room.GetHistory().Select(ToVm).ToList(), room.WhichAreShown); RefreshReactions(conv); RefreshPeers(); RefreshMembers(); });

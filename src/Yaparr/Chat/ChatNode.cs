@@ -800,7 +800,7 @@ public sealed partial class ChatNode : IDisposable
     internal string SendRoomMessage(ChatRoom room, string text, string? channel)
     {
         channel = RoomChannels.Normalize(channel);
-        if (channel != RoomChannels.DefaultText && FindChannel(room, channel) is not { Kind: ChannelKind.Text })
+        if (channel != RoomChannels.DefaultText && channel != RoomChannels.StartMarker && FindChannel(room, channel) is not { Kind: ChannelKind.Text })
             throw new InvalidOperationException("There is no such text channel in this room.");
         var message = SignedMessage.Create(_identity, room.Key, DisplayName, text, NextTimestamp(), channel);
         room.History.TryAdd(message);
@@ -1144,7 +1144,7 @@ public sealed partial class ChatNode : IDisposable
     public const int InitialHistoryPerChannel = 100;
 
     private bool IsShown(ChatRoom room, StoredMessage m) =>
-        !IsBlocked(new PeerId(m.From)) && !IsBannedIn(room, new PeerId(m.From)) && !IsMessageDeleted(room, m);
+        m.Chan != RoomChannels.StartMarker && !IsBlocked(new PeerId(m.From)) && !IsBannedIn(room, new PeerId(m.From)) && !IsMessageDeleted(room, m);
 
     internal ISet<string> WhichAreShown(ChatRoom room, IReadOnlyCollection<string> keys) =>
         room.History.Find(keys).Where(m => IsShown(room, m)).Select(SignedMessage.Key).ToHashSet();
@@ -1177,7 +1177,7 @@ public sealed partial class ChatNode : IDisposable
             var raw = room.History.Before(chan, ts, key, count);
             foreach (var m in raw)
                 if (IsShown(room, m)) shown.Add(Fetching(ToChatMessage(room, m, catchUp: false)));
-            if (raw.Count < count) { shown.Reverse(); return new HistoryPage(shown, false); }
+            if (raw.Count < count) { shown.Reverse(); return new HistoryPage(shown, false, AtStart: RoomStartOf(room) != null); }
             var last = raw[^1];
             ts = last.Ts;
             key = SignedMessage.Key(last);
@@ -1262,6 +1262,12 @@ public sealed partial class ChatNode : IDisposable
             {
                 earlier++;
                 if (!IsBlocked(new PeerId(m.From)) && !MessageEnvelope.IsReactionText(m.Text)) AutoFetch(ToChatMessage(room, m, catchUp: true));
+                continue;
+            }
+            // A room's start record is kept (and passed on) but is no message: it is not shown, announced or counted.
+            if (m.Chan == RoomChannels.StartMarker)
+            {
+                if (fresh && live && peer != null) ForwardToMembers(peer, room, m);
                 continue;
             }
             // A blocked author's message is kept (so it is not asked for again) but never shown or downloaded.

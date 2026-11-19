@@ -17,6 +17,12 @@ public static class RoomChannels
     /// <summary>The voice channel every room has.</summary>
     public const string DefaultVoice = "0000000000000001";
 
+    /// <summary>
+    /// The place a room's start record is kept (see <see cref="ChatRoom.RecordStart"/>), a channel id that no channel can have: it keeps that message out of every channel's
+    /// messages, so it is never shown, counted or announced.
+    /// </summary>
+    public const string StartMarker = "ffffffffffffffff";
+
     /// <summary>How many channels a room can have, the two it starts with included.</summary>
     public const int MaxChannels = 32;
 
@@ -37,7 +43,14 @@ internal static class SignedChannel
     private const int MaxName = 64;
     private static readonly TimeSpan MaxFutureSkew = TimeSpan.FromMinutes(5);
 
-    public static string NewId() => Convert.ToHexString(RandomNumberGenerator.GetBytes(8)).ToLowerInvariant();
+    public static string NewId()
+    {
+        while (true)
+        {
+            var id = Convert.ToHexString(RandomNumberGenerator.GetBytes(8)).ToLowerInvariant();
+            if (id != RoomChannels.StartMarker) return id;   // that one is kept for the room's start record
+        }
+    }
 
     public static string KindText(ChannelKind kind) => kind == ChannelKind.Voice ? "voice" : "text";
 

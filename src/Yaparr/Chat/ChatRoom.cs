@@ -45,6 +45,16 @@ public sealed class ChatRoom
     public int RequestEarlierHistory(string? channel, string beforeKey) => _node.RequestEarlierHistory(this, channel, beforeKey);
 
     /// <summary>
+    /// When the room began, if its owner's signed start record is held here (a room made with a version that writes one; the record travels with the history like any
+    /// message, but is never shown). Null for any other room, or until the record has come: then the end of the history can only be a guess. Once this is set and nothing
+    /// earlier is held, the history is at its beginning (<see cref="HistoryPage.AtStart"/>).
+    /// </summary>
+    public DateTimeOffset? StartedAt => _node.RoomStartOf(this);
+
+    /// <summary>The owner writes the room's start record, once, right after making the room. Nothing happens for a room you do not own, one with no owner, or one that has a record already.</summary>
+    public void RecordStart() => _node.WriteRoomStart(this);
+
+    /// <summary>
     /// Where the room is in getting going on this device, for showing that something is happening. A room that has been looked for for a
     /// minute with no one found is <see cref="RoomSyncState.NoOneOnline"/>, which is not a problem: it is just quiet.
     /// </summary>

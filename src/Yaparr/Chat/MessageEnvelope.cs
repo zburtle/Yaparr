@@ -131,6 +131,45 @@ public static class MessageEnvelope
         return true;
     }
 
+    /// <summary>
+    /// The text of a room's start record: the owner's statement, in a message of its own that is not shown as one, that the room began when the message was written (see
+    /// <see cref="ChatRoom.RecordStart"/>). Like a reaction from a linked device it carries the proof of whose it is (the account key and the device's certificate), so that
+    /// anyone can tell it is the owner's without having met that device. The words are only for versions that do not know it.
+    /// </summary>
+    public static string WrapStart(PeerIdentity identity)
+    {
+        bool linked = identity.DeviceCertificate != null;
+        var header = JsonSerializer.Serialize(new Header { S = new HeaderStart
+        {
+            A = linked ? Convert.ToBase64String(identity.AccountPublicKey) : null,
+            C = linked ? Convert.ToBase64String(identity.DeviceCertificate!) : null,
+        } }, Json);
+        return Marker + header + End + "started this room";
+    }
+
+    private static readonly string StartHeader = Marker + "{\"s\":";
+
+    /// <summary>Whether a message text is a room's start record (see <see cref="WrapStart"/>), told cheaply. It is not checked to be a good one.</summary>
+    public static bool IsStartText(string text) => text.StartsWith(StartHeader, StringComparison.Ordinal);
+
+    /// <summary>Reads the proof out of a start record: the account key and certificate of a linked device (both null for the account's own key). False when it is not a start record.</summary>
+    public static bool TryReadStart(string text, out string? account, out string? certificate)
+    {
+        account = certificate = null;
+        if (!IsStartText(text)) return false;
+        int end = text.IndexOf(End, Marker.Length);
+        if (end < 0) return false;
+        try
+        {
+            var start = JsonSerializer.Deserialize<Header>(text.AsSpan(Marker.Length, end - Marker.Length), Json)?.S;
+            if (start == null) return false;
+            account = start.A is { Length: <= 200 } ? start.A : null;
+            certificate = start.C is { Length: <= 400 } ? start.C : null;
+            return true;
+        }
+        catch (JsonException) { return false; }
+    }
+
     /// <summary>Reads a message text. Anything that is not a well formed envelope is just words.</summary>
     public static MessageParts Parse(string text)
     {
@@ -212,9 +251,16 @@ public static class MessageEnvelope
         return clean.Length <= MaxMentionName ? clean : clean[..MaxMentionName];
     }
 
+    private sealed class HeaderStart
+    {
+        public string? A { get; set; }   // the account's public key (a linked device's start record)
+        public string? C { get; set; }   // the device's certificate
+    }
+
     private sealed class Header
     {
         public HeaderReaction? X { get; set; }   // first, see ReactionStart
+        public HeaderStart? S { get; set; }      // second, see StartHeader (a start record has nothing else)
         public string? R { get; set; }
         public HeaderMention[]? M { get; set; }
         public HeaderPreview? P { get; set; }
