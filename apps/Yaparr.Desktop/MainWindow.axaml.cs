@@ -95,6 +95,7 @@ public partial class MainWindow : Window
         Closing += (_, e) =>
         {
             if (KeepRunningOnClose(e)) { e.Cancel = true; HideToTray(); return; }
+            WindowsPopups.Clear();   // a toast left in the notification centre would start the program again just to find nothing to answer
             Shutdown();
         };
     }

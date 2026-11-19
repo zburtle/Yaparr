@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Windows toasts with a box to type a reply into. A Windows-only target, kept in a project of its own so that the desktop app stays one program for every system: it is
+       built beside the desktop app on Windows and loaded by it at run time (see WindowsPopups in the desktop app). It builds anywhere (the next line) but is only used on Windows. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Yaparr.WindowsToast</RootNamespace>
+    <AssemblyName>Yaparr.WindowsToast</AssemblyName>
+    <!-- The libraries it needs (the toolkit and the Windows projection) go next to it, to be copied together. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Yaparr.AppCore\Yaparr.AppCore.csproj" />
+    <PackageReference Include="CommunityToolkit.WinUI.Notifications" Version="7.1.2" />
+  </ItemGroup>
+
+</Project>

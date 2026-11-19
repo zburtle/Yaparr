@@ -55,6 +55,26 @@
     <ProjectReference Include="..\..\src\Yaparr.Screen\Yaparr.Screen.csproj" />
   </ItemGroup>
 
+  <!-- Windows toasts with a box to type a reply into (see WindowsPopups): a Windows-only library, built beside the program on Windows and copied next to it (and into the
+       published folder, which is what the installer takes), then loaded when the first pop-up is shown. Not referenced as a library, so this program stays one for every
+       system; on another system none of this is built or copied, and the plain pop-up is used. -->
+  <PropertyGroup>
+    <WindowsToastProject>$(MSBuildThisFileDirectory)..\..\src\Yaparr.WindowsToast\Yaparr.WindowsToast.csproj</WindowsToastProject>
+  </PropertyGroup>
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+    <ProjectReference Include="..\..\src\Yaparr.WindowsToast\Yaparr.WindowsToast.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" Private="false" />
+  </ItemGroup>
+  <Target Name="IncludeWindowsToast" AfterTargets="ResolveProjectReferences" BeforeTargets="GetCopyToOutputDirectoryItems;ComputeResolvedFilesToPublishList" Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+    <PropertyGroup>
+      <WindowsToastOutput>$(MSBuildThisFileDirectory)..\..\src\Yaparr.WindowsToast\bin\$(Configuration)\net10.0-windows10.0.19041.0\</WindowsToastOutput>
+    </PropertyGroup>
+    <ItemGroup>
+      <!-- Only what is its own: the library, the toolkit, and the Windows projection with its runtime (the rest it shares with this program). -->
+      <WindowsToastFile Include="$(WindowsToastOutput)Yaparr.WindowsToast.dll;$(WindowsToastOutput)CommunityToolkit.WinUI.Notifications.dll;$(WindowsToastOutput)Microsoft.Windows.SDK.NET.dll;$(WindowsToastOutput)WinRT.Runtime.dll" />
+      <None Include="@(WindowsToastFile)" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
+
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="12.1.6" />
     <PackageReference Include="Avalonia.Desktop" Version="12.1.6" />
