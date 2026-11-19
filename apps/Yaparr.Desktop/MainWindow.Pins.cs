@@ -35,7 +35,7 @@ public partial class MainWindow
         }
     }
 
-    // Marks which conversations are pinned and puts the lists in order: the pinned ones first, the others as they were.
+    // Marks which conversations are pinned and puts the lists in order: the pinned ones first, the others newest message first.
     private void RefreshPins()
     {
         if (_node is not { } node) return;
@@ -45,8 +45,8 @@ public partial class MainWindow
         _selecting = true;
         try
         {
-            PinnedFirst.Apply(_roomItems, c => pins.RankOf(true, c.PinId));
-            PinnedFirst.Apply(_chatItems, c => pins.RankOf(false, c.PinId));
+            PinnedFirst.Apply(_roomItems, c => pins.RankOf(true, c.PinId), c => c.LastActivity);
+            PinnedFirst.Apply(_chatItems, c => pins.RankOf(false, c.PinId), c => c.LastActivity);
             // Moving rows about can make a list let go of the one that is selected: it is put back, without opening anything again.
             if (keep != null && (keep.IsRoom ? RoomList : ChatList) is { } list && !ReferenceEquals(list.SelectedItem, keep)) list.SelectedItem = keep;
         }

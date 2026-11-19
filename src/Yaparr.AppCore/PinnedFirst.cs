@@ -24,13 +24,17 @@ public sealed class PinnedFirst
     public bool IsPinned(bool isRoom, string? id) => RankOf(isRoom, id) != null;
 
     /// <summary>The items in the order they should be shown: the pinned ones first, by their place, and then the rest in the order they were given.</summary>
-    public static List<T> Arrange<T>(IReadOnlyList<T> items, Func<T, int?> rankOf) =>
-        items.Where(i => rankOf(i) != null).OrderBy(i => rankOf(i)).Concat(items.Where(i => rankOf(i) == null)).ToList();
-
-    /// <summary>Puts the items of the list in that order, by moving them, so that what is shown (and which one is selected) is not rebuilt.</summary>
-    public static void Apply<T>(ObservableCollection<T> list, Func<T, int?> rankOf)
+    public static List<T> Arrange<T>(IReadOnlyList<T> items, Func<T, int?> rankOf, Func<T, DateTimeOffset>? activity = null)
     {
-        var want = Arrange(list.ToList(), rankOf);
+        var rest = items.Where(i => rankOf(i) == null);
+        if (activity != null) rest = rest.OrderByDescending(activity);   // newest message first; a stable sort, so ties keep their order
+        return items.Where(i => rankOf(i) != null).OrderBy(i => rankOf(i)).Concat(rest).ToList();
+    }
+
+    /// <summary>Puts the items of the list in that order, by moving them, so that what is shown (and which one is selected) is not rebuilt. With <paramref name="activity"/> the unpinned ones go newest message first.</summary>
+    public static void Apply<T>(ObservableCollection<T> list, Func<T, int?> rankOf, Func<T, DateTimeOffset>? activity = null)
+    {
+        var want = Arrange(list.ToList(), rankOf, activity);
         for (int i = 0; i < want.Count; i++)
         {
             int at = list.IndexOf(want[i]);

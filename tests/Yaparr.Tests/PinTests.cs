@@ -98,6 +98,15 @@ public class PinOrderTests
 
 public class PinnedFirstTests
 {
+    [Fact]
+    public void UnpinnedGoNewestFirstBelowThePinned()
+    {
+        var pins = new PinnedFirst(new[] { RoomPin("b", "a") });
+        var at = new Dictionary<string, int> { ["a"] = 1, ["b"] = 0, ["c"] = 5, ["d"] = 3 };
+        var arranged = PinnedFirst.Arrange(new[] { "a", "b", "c", "d" }, id => pins.RankOf(true, id), id => DateTimeOffset.FromUnixTimeSeconds(at[id]));
+        Assert.Equal(new[] { "b", "c", "d", "a" }, arranged);
+    }
+
     private static PinnedConversation RoomPin(string id, string order) => new(true, id, order);
     private static PinnedConversation ChatPin(string id, string order) => new(false, id, order);
 

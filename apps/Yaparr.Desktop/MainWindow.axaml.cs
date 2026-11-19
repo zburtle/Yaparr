@@ -765,6 +765,7 @@ public partial class MainWindow : Window
         }
         RefreshReactions(conv);
         _conversations.Add(conv);
+        RefreshPins();
         SelectConversation(conv);
         RefreshPeers();
         return conv;
@@ -940,6 +941,7 @@ public partial class MainWindow : Window
             RefreshReactions(conv);
             if (chat.Peer != null && !chat.IsNotes) Remember(chat.Peer);
             _conversations.Add(conv);
+            RefreshPins();
             RefreshPeers();
             if (_selected == null) SelectConversation(conv);
             tcs.SetResult();
@@ -1093,6 +1095,7 @@ public partial class MainWindow : Window
     private void OnMessage(ConversationVm conv, MessageVm message, bool announce)
     {
         conv.Add(message);
+        RefreshPins();   // the conversation with the newest message goes first, below the pinned ones
         // A message in another channel of the open room waits like one in another room.
         bool viewing = conv == _selected && (message.Channel == null || message.Channel == conv.CurrentChannel);
         if (viewing)
