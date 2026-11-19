@@ -343,7 +343,7 @@ public partial class MainView : UserControl
     // A long press on a room or chat in the list: pin it or unpin it, and move a pinned one up or down among the pinned ones.
     private void ChatHeld(object? sender, HoldingRoutedEventArgs e)
     {
-        if (e.HoldingState != HoldingState.Started || sender is not Control { DataContext: Chat chat } || _session is not { } session) return;
+        if (e.HoldingState != HoldingState.Started || sender is not Control { DataContext: Chat { IsNotes: false } chat } || _session is not { } session) return;
         e.Handled = true;
         _chatHeld = true;
         ActionTitle.Text = chat.Title;
@@ -822,6 +822,8 @@ public partial class MainView : UserControl
         _current = chat;
         _session.Open(chat);
         ChatPanel.DataContext = chat;
+        // Notes to self has nothing to copy, block or leave.
+        MenuButton.IsVisible = !chat.IsNotes;
         MenuButton.Flyout = BuildMenu(chat);
         // New messages scroll the list down, once for each chat.
         if (!_watched.ContainsKey(chat))

@@ -86,9 +86,9 @@ public sealed partial class ChatNode
         _pinned.ContainsKey(account.Value) || DevicesOf(account).Any(IsAcquaintance)
         || _rooms.Values.Any(r => r.MemberStates.Keys.Any(k => AccountOf(k) == account));
 
-    /// <summary>The conversations that have messages kept, so an app can show them again after a restart.</summary>
+    /// <summary>The conversations that have messages kept, so an app can show them again after a restart. The chat with yourself (<see cref="NotesChat"/>) is always the first.</summary>
     public IReadOnlyList<DirectChat> StoredDirectChats =>
-        _directHistory.Peers().Select(p => GetDirectChat(new PeerId(p))).ToList();
+        _directHistory.Peers().Where(p => p != AccountId.Value).Select(p => GetDirectChat(new PeerId(p))).Prepend(NotesChat).ToList();
 
     /// <summary>
     /// The reactions on the messages with these keys in a direct chat: yours and the other person's. Without keys, those on the messages

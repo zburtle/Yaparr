@@ -48,7 +48,7 @@ public partial class MainWindow
     private void OnPeerRenamed(Yaparr.Chat.PeerInfo peer)
     {
         Remember(peer);
-        if (_directConversations.TryGetValue(peer.Account, out var direct)) direct.Title = peer.DisplayName + " (direct)";
+        if (_node?.IsMyDevice(peer.Id) != true && _directConversations.TryGetValue(peer.Account, out var direct)) direct.Title = peer.DisplayName + " (direct)";
         RefreshPeers();
     }
 }

@@ -1463,6 +1463,7 @@ public sealed partial class ChatNode : IDisposable
 
     public async Task<DirectChat> OpenDirectChatAsync(PeerId peer, CancellationToken ct = default)
     {
+        if (IsNotesChat(peer)) return NotesChat;
         Start();
         _pinned[peer.Value] = 0;
         var topic = Topics.ForPeer(peer);
@@ -1513,6 +1514,7 @@ public sealed partial class ChatNode : IDisposable
     // Goes to every device of the person that is connected; "delivered" means all of those confirmed it.
     internal string SendDirectMessage(PeerId peer, string text)
     {
+        if (IsNotesChat(peer)) return SendNote(text);
         var devices = DevicesOf(peer);
         var recipient = AccountOf(peer);
         // Nobody of theirs is connected: a conversation that exists keeps the message until one is; a first message has to wait for a connection.

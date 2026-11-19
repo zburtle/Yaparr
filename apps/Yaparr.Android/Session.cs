@@ -708,7 +708,7 @@ public sealed partial class Session : IDisposable
             if (chat.Add(line) && !line.Mine && (readUpTo == null || m.Timestamp > readUpTo)) chat.NoteUnread(null);
         }
         RefreshReactions(chat);
-        chat.Status = "Direct chat";
+        chat.Status = direct.IsNotes ? "Only you: kept on all your devices" : "Direct chat";
         Chats.Add(chat);
         Resort(chat);
         return chat;
@@ -1005,7 +1005,7 @@ public sealed partial class Session : IDisposable
         int from = Chats.IndexOf(chat);
         if (from < 0) return;
         int to = from;
-        while (to > 0 && !Chats[to - 1].IsPinned && Chats[to - 1].LastActivity < chat.LastActivity) to--;
+        while (to > 0 && !Chats[to - 1].IsPinned && !Chats[to - 1].IsNotes && Chats[to - 1].LastActivity < chat.LastActivity) to--;
         if (to != from) Chats.Move(from, to);
         ArrangePins();
     }
@@ -1026,7 +1026,7 @@ public sealed partial class Session : IDisposable
     private void ArrangePins()
     {
         foreach (var chat in Chats) chat.IsPinned = _pins.IsPinned(chat.IsRoom, chat.PinId);
-        PinnedFirst.Apply(Chats, c => _pins.RankOf(c.IsRoom, c.PinId));
+        PinnedFirst.Apply(Chats, c => PinnedFirst.WithNotes(c.IsNotes, _pins.RankOf(c.IsRoom, c.PinId)));
     }
 
     /// <summary>Pins the chat (after the ones pinned already), or takes it off the pinned ones.</summary>

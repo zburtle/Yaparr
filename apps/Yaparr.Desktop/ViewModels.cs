@@ -579,7 +579,7 @@ public sealed class ConversationVm : Observable
             return name;
         }
     }
-    public string Subtitle => IsRoom ? "Room" : "Direct chat";
+    public string Subtitle => IsRoom ? "Room" : IsNotes ? "Only you: kept on all your devices" : "Direct chat";
 
     private string _syncText = "";
     private bool _syncing;
@@ -614,13 +614,16 @@ public sealed class ConversationVm : Observable
 
     /// <summary>Full peer ID of the other person in a direct chat.</summary>
     public string? PeerId { get; init; }
-    public bool HasPeerId => PeerId != null;
+    public bool HasPeerId => PeerId != null && !IsNotes;
+
+    /// <summary>The chat with yourself ("Notes to self"): always there, always first, and not something to pin, mute or remove.</summary>
+    public bool IsNotes { get; init; }
 
     /// <summary>The room's id (<c>ChatRoom.RoomId</c>), for a room.</summary>
     public string? RoomId { get; init; }
 
     /// <summary>What a pin of this conversation is kept under: the room's id, or the other person's id in a direct chat.</summary>
-    public string? PinId => IsRoom ? RoomId : PeerId;
+    public string? PinId => IsRoom ? RoomId : IsNotes ? null : PeerId;
 
     private bool _isPinned;
 

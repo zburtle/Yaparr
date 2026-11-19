@@ -41,6 +41,8 @@ A room made by this version lists its channels under it, text and voice. Click a
 
 Right-click a room or a direct chat and choose **Pin to top**: it moves to the top of its list (the rooms and the direct chats each have one) and shows a small pin by its name. The others stay as they were. Right-click a pinned one for **Unpin**, **Move up** and **Move down**, or drag it to a new place among the pinned ones: dropped on a row it takes that row's place, and dropped below the pinned ones it goes last of them. A pinned room or chat cannot be dragged into the other list, and the others cannot be dragged at all. A new pin goes after the ones pinned already, and leaving a room unpins it.
 
+**Notes to self** is a direct chat with yourself, always the first one under **Direct chats**, above any pinned chat. Write quick notes there and they appear on your other devices (the computer app and the phone) as your own messages, without a sound or an unread count. It cannot be removed, pinned, moved or blocked, and has no menu; it shows no peer ID or chat link. See [Devices and accounts](devices-and-accounts.md).
+
 Pins belong to your account, so a room you pin here is pinned, in the same place, on your other devices and on your phone, including ones that were off when you pinned it (they are kept as account entries, see [Synced state](sync.md#pins)).
 
 To install it, see [Installer and updates](installer-and-updates.md).

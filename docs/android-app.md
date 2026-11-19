@@ -6,6 +6,8 @@ It connects while the app is open, and keeps connected with the screen closed wh
 
 **Pinning.** A long press on a room or direct chat in the list opens a small window: **Pin** puts it at the top of the list, above the chats ordered by their newest message, with a small pin by its name; **Unpin** takes it off. For a pinned one, **Move up** and **Move down** change its place among the pinned ones (there is no dragging on the phone). Pins belong to your account, so they are the same on the computer app and on your other phones (see [Synced state](sync.md#pins)).
 
+**Notes to self.** The first chat in the list is always **Notes to self**, a chat with yourself for quick notes between your own devices: what you write there shows up on the computer app and your other phones as your own messages, with no notification or unread count. It stays first whatever is pinned or new, cannot be pinned, left, blocked or muted, and has no ⋮ menu or long-press window. See [Devices and accounts](devices-and-accounts.md).
+
 **Settings** are a list of sections (You & appearance, Voice, Network, Notifications & links, Yaparr Cloud, Backup, About). On a phone the list and a section's page take turns, and back goes from the page to the list; when the window is at least 640 dp wide (a tablet, a phone on its side) they sit side by side, as on the computer.
 
 ## Build and run

@@ -911,8 +911,8 @@ public partial class MainWindow : Window
                 UI(() => { SelectConversation(existing); tcs.SetResult(); });
                 return tcs.Task;
             }
-            var title = chat.DisplayName + " (direct)";
-            conv = new ConversationVm(title, isRoom: false, chat.SendAsync, chat.Retry) { PeerId = chat.PeerId.Value };
+            var title = chat.IsNotes ? chat.DisplayName : chat.DisplayName + " (direct)";
+            conv = new ConversationVm(title, isRoom: false, chat.SendAsync, chat.Retry) { PeerId = chat.PeerId.Value, IsNotes = chat.IsNotes };
             chat.DeliveryChanged += s => UI(() => conv.ApplyDelivery(s, chat.GetDeliveryDetails(s.MessageId)));
             // Another of your devices read it: nothing here is new any more.
             chat.ReadChanged += () => UI(() => conv.Unread = 0);
@@ -935,7 +935,7 @@ public partial class MainWindow : Window
         {
             foreach (var m in kept) conv.Add(ToVm(m));
             RefreshReactions(conv);
-            if (chat.Peer != null) Remember(chat.Peer);
+            if (chat.Peer != null && !chat.IsNotes) Remember(chat.Peer);
             _conversations.Add(conv);
             RefreshPeers();
             if (_selected == null) SelectConversation(conv);

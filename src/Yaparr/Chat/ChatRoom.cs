@@ -493,11 +493,17 @@ public sealed class DirectChat
     }
 
     public PeerId PeerId { get; }
-    public PeerInfo? Peer => _node.GetPeerInfo(PeerId);
-    public bool IsConnected => Peer != null;
+    /// <summary>Whether this is the chat with yourself (<see cref="ChatNode.NotesChat"/>), where you write notes for your own devices. It cannot be removed.</summary>
+    public bool IsNotes => _node.IsNotesChat(PeerId);
 
-    /// <summary>The name to show: the connected person's, or else the last one they used in this conversation.</summary>
-    public string DisplayName => Peer?.DisplayName ?? _node.DirectNameOf(PeerId) ?? PeerId.Short;
+    /// <summary>The other person's connected device; none for the chat with yourself, which is not another person.</summary>
+    public PeerInfo? Peer => IsNotes ? null : _node.GetPeerInfo(PeerId);
+
+    /// <summary>Whether a message can be handed over now. The chat with yourself always can: a note is kept here and reaches your other devices when they are reachable.</summary>
+    public bool IsConnected => IsNotes || Peer != null;
+
+    /// <summary>The name to show: the connected person's, or else the last one they used in this conversation; "Notes to self" for the chat with yourself.</summary>
+    public string DisplayName => IsNotes ? ChatNode.NotesName : Peer?.DisplayName ?? _node.DirectNameOf(PeerId) ?? PeerId.Short;
 
     /// <summary>The newest messages of this conversation (<see cref="ChatNode.InitialHistoryPerChannel"/> of them; those sent and received on any of your devices), oldest first. Everything is kept; earlier ones are read with <see cref="GetEarlierHistory"/>.</summary>
     public IReadOnlyList<ChatMessage> History => _node.GetDirectHistory(PeerId);
