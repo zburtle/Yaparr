@@ -209,6 +209,7 @@ public partial class MainWindow
                 StatusText.Text = $"\"{conv.Title}\" is muted: nothing from it makes a sound or a pop-up, not even a mention. Its messages still count as unread.";
             }));
         if (LinuxDesktop.Available) LinuxDesktop.Notify(who, text, actions, t => _log.Write(t));
+        else if (WindowsPopups.TryShow(room?.RoomId ?? conv.PeerId ?? conv.Title, who, text, actions, t => _log.Write(t))) { }
         else if (WindowsToast.Available && TryGetPlatformHandle()?.Handle is { } window)
             WindowsToast.Show(window, who, text, () => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
