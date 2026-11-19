@@ -20,11 +20,11 @@ public partial class MainWindow
             "Do you already have a Yaparr account?\n\n" +
             "Link this device: join the account of a device you still use. Your name, rooms and blocks carry over, and people see you as one person.\n\n" +
             "Restore a backup: bring back an account from a backup file, for a new or reinstalled computer. It joins your account as another device, so the old computer can stay in use.\n\n" +
-            "Restore from a server: the same, from a backup you saved on Yaparr Cloud (you need its address, your account there and your recovery code).\n\n" +
+            "Restore from Yaparr Cloud: the same, from the account you keep in sync on Yaparr Cloud (you need its address, your account there and your Sync key).\n\n" +
             "Start fresh: make a new account.",
-            "Link this device", "Restore a backup", "Restore from a server", "Start fresh");
+            "Link this device", "Restore a backup", "Restore from Yaparr Cloud", "Start fresh");
         if (start == "Restore a backup") { await RestoreBackupAsync(); return; }
-        if (start == "Restore from a server") { await RestoreFromServerAsync(); return; }
+        if (start == "Restore from Yaparr Cloud") { await RestoreFromServerAsync(); return; }
         if (start != "Link this device") return;
 
         var clipboard = await Dialogs.ClipboardTextAsync(this);

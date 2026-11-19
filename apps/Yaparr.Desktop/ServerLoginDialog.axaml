@@ -5,10 +5,10 @@
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
     <StackPanel Margin="16" Spacing="4">
         <TextBlock TextWrapping="Wrap" Margin="0,0,0,8"
-                   Text="Bring your account back from a backup you saved on Yaparr Cloud. You sign in in your browser, and the backup is unlocked here with your recovery code, which is never sent to the server." />
+                   Text="Bring your account back from Yaparr Cloud. You sign in in your browser, and your account is unlocked here with your Sync key, which is never sent to the server." />
         <TextBlock Text="Server address" Classes="muted" />
         <TextBox x:Name="UrlBox" PlaceholderText="https://backup.example.org" />
-        <TextBlock Text="Recovery code" Classes="muted" Margin="0,8,0,0" />
+        <TextBlock Text="Sync key" Classes="muted" Margin="0,8,0,0" />
         <TextBox x:Name="CodeBox" PlaceholderText="K7QD-M3XF-9PLR-2WTE-HV8N-C4YB" FontFamily="Consolas,Menlo,monospace" />
         <TextBlock x:Name="Status" TextWrapping="Wrap" Margin="0,8,0,0" IsVisible="False" />
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,12,0,0">

@@ -81,9 +81,8 @@ public sealed class AutoBackupTests : IDisposable
     }
 
     [Fact]
-    public void It_waits_while_paused_or_backing_off()
+    public void It_waits_while_backing_off()
     {
-        Assert.Equal(AutoBackupWhy.Nothing, Decide(Ready(s => s.AutoPaused = true), keys: "changed", since: T0.AddHours(-1), history: true));
         Assert.Equal(AutoBackupWhy.Nothing, Decide(Ready(s => s.RetryAfter = T0.AddMinutes(1)), keys: "changed", since: T0.AddHours(-1)));
         Assert.Equal(AutoBackupWhy.KeysChanged, Decide(Ready(s => s.RetryAfter = T0.AddMinutes(-1)), keys: "changed", since: T0.AddHours(-1)));
     }
@@ -263,8 +262,8 @@ public sealed class AutoBackupTests : IDisposable
         Assert.Equal(2, state.Version);
         Assert.Equal(T0.AddMinutes(2.5), state.LastBackup);
         Assert.Equal(data.KeysFingerprint(), state.KeysFingerprint);
-        Assert.Contains("version 2", state.AutoNote);
-        Assert.Contains("rooms or keys changed", state.AutoNote);
+        Assert.Equal("", state.AutoNote);                                        // nothing to read: it just happened
+        Assert.Equal(2, state.Version);
 
         Assert.Equal(AutoBackupResult.Nothing, await auto.CheckAsync());          // and it is not sent again
         Assert.Equal(1, server.Puts);
@@ -314,8 +313,8 @@ public sealed class AutoBackupTests : IDisposable
 
         advance(TimeSpan.FromHours(5));
         Assert.Equal(AutoBackupResult.BackedUp, await auto.CheckAsync());         // a day, and there are new messages
-        Assert.Contains("version 2)", data.LoadBackupServer().AutoNote);
-        Assert.DoesNotContain("rooms or keys", data.LoadBackupServer().AutoNote);
+        Assert.Equal("", data.LoadBackupServer().AutoNote);
+        Assert.Equal(2, data.LoadBackupServer().Version);
 
         advance(TimeSpan.FromHours(30));
         Assert.Equal(AutoBackupResult.Nothing, await auto.CheckAsync());          // another day, but no new messages
@@ -323,7 +322,7 @@ public sealed class AutoBackupTests : IDisposable
     }
 
     [Fact]
-    public async Task Another_device_having_saved_pauses_it_without_sending_anything_and_a_backup_by_hand_carries_on()
+    public async Task Another_device_having_saved_does_not_stop_it_the_next_one_goes_on_top()
     {
         var (data, server, auto, _, advance) = Setup();
         server.Versions.Add(new byte[] { 2 });                                   // another device saved version 2
@@ -331,26 +330,15 @@ public sealed class AutoBackupTests : IDisposable
         await auto.CheckAsync();
         advance(TimeSpan.FromMinutes(3));
 
-        Assert.Equal(AutoBackupResult.Paused, await auto.CheckAsync());
-        Assert.Equal(0, server.Puts);
-        var state = data.LoadBackupServer();
-        Assert.True(state.AutoPaused);
-        Assert.Contains("another device saved a newer backup (version 2)", state.AutoNote);
-
-        // Waiting does not ask the server again every few minutes.
-        var asked = server.Gets;
-        advance(TimeSpan.FromHours(30));
-        Assert.Equal(AutoBackupResult.Nothing, await auto.CheckAsync());
-        Assert.Equal(asked, server.Gets);
-
-        // The person backed up by hand, which asked them first, and recorded it.
-        state.RecordBackup(3, data.KeysFingerprint(), T0.AddHours(40));
-        data.SaveBackupServer(state);
-        Assert.False(data.LoadBackupServer().AutoPaused);
+        Assert.Equal(AutoBackupResult.BackedUp, await auto.CheckAsync());
+        Assert.Equal(1, server.Puts);
+        Assert.Equal(3, server.Versions.Count);                                  // on top of the other device's, which is kept
+        Assert.Equal(3, data.LoadBackupServer().Version);
+        Assert.Equal("", data.LoadBackupServer().AutoNote);                      // nothing for the person to read or do
     }
 
     [Fact]
-    public async Task A_backup_that_loses_a_race_to_another_device_pauses_too()
+    public async Task A_backup_that_loses_a_race_to_another_device_goes_on_top_of_that_one()
     {
         var (data, server, auto, _, advance) = Setup();
         ChangeARoom(data);
@@ -362,15 +350,18 @@ public sealed class AutoBackupTests : IDisposable
         var raced = new AutoBackup(data, () => now, new HttpClient(racing));
         await raced.CheckAsync();                                                // seen; the quiet time starts
         now += TimeSpan.FromMinutes(3);
-        Assert.Equal(AutoBackupResult.Paused, await raced.CheckAsync());
-        Assert.True(data.LoadBackupServer().AutoPaused);
+        Assert.Equal(AutoBackupResult.BackedUp, await raced.CheckAsync());
+        Assert.Equal(3, server.Versions.Count);                                  // theirs (2) and then this one (3)
+        Assert.Equal(3, data.LoadBackupServer().Version);
     }
 
     private sealed class RacingServer(FakeServer inner) : HttpMessageHandler
     {
+        private bool _raced;
+
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancel)
         {
-            if (request.Method == HttpMethod.Put) inner.Versions.Add(new byte[] { 9 });    // someone else got in first
+            if (request.Method == HttpMethod.Put && !_raced) { _raced = true; inner.Versions.Add(new byte[] { 9 }); }    // someone else got in first, once
             return await new HttpMessageInvoker(inner).SendAsync(request, cancel);
         }
     }

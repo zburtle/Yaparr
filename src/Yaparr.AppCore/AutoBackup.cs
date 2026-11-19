@@ -22,8 +22,6 @@ public enum AutoBackupResult
     Busy,
     /// <summary>A backup was made and sent.</summary>
     BackedUp,
-    /// <summary>The server has a newer backup than this device knows of, so nothing was sent and automatic backups wait for the person.</summary>
-    Paused,
     /// <summary>The server does not know this device any more (signed out, password changed, account removed).</summary>
     SignedOut,
     /// <summary>It could not be done (no network, the server is down); it tries again later.</summary>
@@ -49,8 +47,7 @@ public static class AutoBackupPlan
     {
         // Off, signed out, or never backed up by hand (which is when the recovery code is made, and the person is shown it): nothing is sent on its own.
         if (!state.SignedIn || state.RecoveryCode.Length == 0 || state.Version <= 0) return AutoBackupWhy.Nothing;
-        // Waiting for the person after another device saved a newer backup, or backing off after a failure.
-        if (state.AutoPaused) return AutoBackupWhy.Nothing;
+        // Backing off after a failure.
         if (state.RetryAfter is { } retry && now < retry) return AutoBackupWhy.Nothing;
 
         if (currentKeys != state.KeysFingerprint)
@@ -68,8 +65,8 @@ public static class AutoBackupPlan
 
 /// <summary>
 /// Backs up to the backup server by itself, when <see cref="AutoBackupPlan"/> says it is due. Call <see cref="CheckAsync"/> every few minutes while the app
-/// runs; it does nothing unless automatic backups are on, and never asks anything: when it cannot go on without the person (another device saved a newer
-/// backup, or the sign-in is gone) it stops and leaves a note for the Backup page. A backup the person asks for and a check never run at once (<see cref="Gate"/>).
+/// runs; it never asks anything. Another device having saved first is not a reason to wait (what is saved goes on top, and the server keeps the older copies);
+/// only a sign-in that is gone stops it, with a note for the settings page. A backup the person asks for and a check never run at once (<see cref="Gate"/>).
 /// </summary>
 public sealed class AutoBackup
 {
@@ -125,20 +122,15 @@ public sealed class AutoBackup
             var versions = await client.VersionsAsync(cancel);
             var newest = versions.Count == 0 ? 0 : versions[0].Version;
 
-            // Another device saved since this one last did: adding to that is for the person to decide (the Backup page asks), not for a timer.
-            if (newest != state.Version)
-                return Paused(state, newest);
-
+            // Another device may have saved since this one last did: this goes on top of it, whoever's it was (the server keeps the older copies).
             var recoveryCode = state.RecoveryCode;
             await Task.Run(() => _data.ExportProfile(temp, recoveryCode), cancel);
             int version;
             try { version = await client.UploadAsync(temp, newest, cancel); }
-            catch (BackupServerConflictException conflict) { return Paused(state, conflict.NewestVersion); }
+            catch (BackupServerConflictException conflict) { version = await client.UploadAsync(temp, conflict.NewestVersion, cancel); }   // another device saved in between: on top of that
 
             state.RecordBackup(version, keys, now);
-            state.AutoNote = why == AutoBackupWhy.KeysChanged
-                ? $"Backed up automatically (version {version}), after your rooms or keys changed."
-                : $"Backed up automatically (version {version}).";
+            state.AutoNote = "";
             _data.SaveBackupServer(state);
             _log?.Invoke($"backed up automatically to a server (version {version}, {why})");
             return AutoBackupResult.BackedUp;
@@ -146,7 +138,7 @@ public sealed class AutoBackup
         catch (BackupServerException ex) when (ex.SignedOut)
         {
             state.Token = "";
-            state.AutoNote = "Automatic backups stopped: this device is no longer signed in to Yaparr Cloud. Sign in again.";
+            state.AutoNote = "Sync stopped: this device is no longer signed in to Yaparr Cloud. Sign in again.";
             _data.SaveBackupServer(state);
             _log?.Invoke("automatic backup: no longer signed in");
             return AutoBackupResult.SignedOut;
@@ -158,7 +150,7 @@ public sealed class AutoBackup
             state.FirstFailure ??= now;
             state.RetryAfter = now + AutoBackupPlan.Backoff(state.Failures);
             var days = (now - state.FirstFailure.Value).TotalDays;
-            state.AutoNote = $"Couldn't back up automatically: {ex.Message} Trying again later." +
+            state.AutoNote = $"Couldn't sync: {ex.Message} Trying again later." +
                 (days >= 3 ? $" It has been failing for {(int)days} days." : "");
             _data.SaveBackupServer(state);
             _log?.Invoke("automatic backup failed: " + ex.Message);
@@ -169,14 +161,5 @@ public sealed class AutoBackup
             try { File.Delete(temp); } catch (IOException) { }
             Changed?.Invoke();
         }
-    }
-
-    private AutoBackupResult Paused(BackupServerState state, int newest)
-    {
-        state.AutoPaused = true;
-        state.AutoNote = $"Automatic backups are waiting: another device saved a newer backup (version {newest}). Press Back up now to carry on.";
-        _data.SaveBackupServer(state);
-        _log?.Invoke($"automatic backup paused: the server has version {newest}");
-        return AutoBackupResult.Paused;
     }
 }

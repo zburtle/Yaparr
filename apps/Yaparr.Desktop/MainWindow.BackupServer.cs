@@ -10,7 +10,7 @@ using Yaparr.Identity;
 namespace Yaparr.Desktop;
 
 // Keeping a locked backup on a backup server (BackupServerClient), so it can be fetched from any computer. The person is given the server's
-// address and an account by whoever runs it; they sign in in their browser, and the backup is locked here with a recovery code the app makes.
+// address and an account by whoever runs it; they sign in in their browser, and the backup is locked here with a Sync key the app makes.
 // The app works the same without any of it. The form is on the Backup page of the settings.
 public partial class MainWindow
 {
@@ -92,7 +92,7 @@ public partial class MainWindow
     }
 
     // Signed in and never backed up (it was signed in before this, or the first backup after sign-in did not happen): the first backup starts, which shows the
-    // recovery code. It cannot be closed before the code is copied, so it comes back at the next start only if the app was closed in between.
+    // Sync key. It cannot be closed before the code is copied, so it comes back at the next start only if the app was closed in between.
     private async Task FirstBackupAtLaunchAsync()
     {
         var state = _data.LoadBackupServer();
@@ -157,15 +157,14 @@ public partial class MainWindow
         LeaveForAbsentCheck.IsChecked = _settings.LeaveForAbsent;
         if (!_server.SignedIn) return;
         var host = Uri.TryCreate(_server.Url, UriKind.Absolute, out var uri) ? uri.Authority : _server.Url;
-        ServerSignedInText.Text = $"Signed in to {host} as {_server.Username}." +
-            (_server.Version > 0 ? $" The last backup from this computer is version {_server.Version}." : " No backup has been saved from this computer yet.");
+        ServerSignedInText.Text = $"Signed in to {host} as {_server.Username}.";
         ShowRecoveryCodeButton.IsVisible = _server.RecoveryCode.Length > 0;
 
-        var trouble = _server.AutoPaused || _server.Failures > 0 || _server.AutoNote.StartsWith("Automatic backups stopped", StringComparison.Ordinal);
+        var trouble = _server.Failures > 0 || _server.AutoNote.StartsWith("Sync stopped", StringComparison.Ordinal);
         AutoBackupStatus.Text = trouble ? _server.AutoNote
-            : _server.RecoveryCode.Length == 0 || _server.Version <= 0 ? "Automatic backups start after your first backup, which makes your recovery code."
-            : _server.LastBackup is { } last ? $"Backs up automatically. {(_server.AutoNote.Length > 0 ? _server.AutoNote + " " : "")}Last backup: version {_server.Version}, {Ago(last)}."
-            : "Backs up automatically.";
+            : _server.RecoveryCode.Length == 0 || _server.Version <= 0 ? "Syncing starts once your Sync key has been made. Press Sync now."
+            : _server.LastBackup is { } last ? $"Up to date. Last synced {Ago(last)}."
+            : "Syncing by itself.";
         AutoBackupStatus.IsVisible = AutoBackupStatus.Text.Length > 0;
     }
 
@@ -228,7 +227,7 @@ public partial class MainWindow
         }
     }
 
-    // Keeps a sign-in this computer has just been given. Another server or another account than before: its backups have a recovery code of their own.
+    // Keeps a sign-in this computer has just been given. Another server or another account than before: its backups have a Sync key of their own.
     private void AdoptSignIn(Uri server, string token, string username)
     {
         var url = server.ToString().TrimEnd('/');
@@ -255,7 +254,7 @@ public partial class MainWindow
             ? $"\n\nThis computer is signed in to {(Uri.TryCreate(current.Url, UriKind.Absolute, out var now) ? now.Authority : current.Url)} as {current.Username}; this replaces that."
             : "";
         if (!await Dialogs.ConfirmAsync(this, title,
-                $"A link from the sign-up page of Yaparr Cloud on {host} asks to sign this computer in to it, so you can keep a locked backup of your profile there." +
+                $"A link from the sign-up page of Yaparr Cloud on {host} asks to sign this computer in to it, so your account stays in step there." +
                 "\n\nOnly continue if you have just signed up there and pressed \"Open Yaparr and sign in\"." + replaces,
                 "Sign in", "Cancel")) return;
 
@@ -266,13 +265,13 @@ public partial class MainWindow
             ShowSettings("cloud");
             ServerUrlBox.Text = ReleaseConfig.Current.BackupServerToOffer(_server.Url);
             ShowServerState();
-            ServerStatusIs($"Signed in to {host} as {username}. Press Back up now to save your first backup; Yaparr then makes a recovery code for you to keep, and backs up automatically after that.");
+            ServerStatusIs($"Signed in to {host} as {username}. Yaparr makes your Sync key for you to keep, and syncs by itself after that.");
             await StartFirstBackupAsync();
         }
         catch (BackupServerException ex) { await Dialogs.MessageAsync(this, title, ex.Message); }
     }
 
-    // Right after signing in to an account that has no backup yet, the first one starts by itself: it makes the recovery code (shown for the person to keep),
+    // Right after signing in to an account that has no backup yet, the first one starts by itself: it makes the Sync key (shown for the person to keep),
     // which automatic backups and the sync of name, rooms and blocks both need, so nothing waits for the sync first. If the server already has a backup, which
     // another device made, nothing is saved without the person choosing (Back up now asks which code opens it).
     private async Task StartFirstBackupAsync()
@@ -303,7 +302,7 @@ public partial class MainWindow
         _data.SaveBackupServer(_server);
         ServerUrlBox.Text = ReleaseConfig.Current.BackupServerToOffer(_server.Url);
         ShowServerState();
-        ServerStatusIs("Signed out. Your backups stay on the server.");
+        ServerStatusIs("Signed out. What Yaparr Cloud holds stays there.");
     }
 
     private async void ServerChangePassword_Click(object? sender, RoutedEventArgs e)
@@ -330,7 +329,7 @@ public partial class MainWindow
         if (_server.RecoveryCode.Length > 0) await ShowRecoveryCodeAsync(_server.RecoveryCode, isNew: false);
     }
 
-    // Shows the recovery code with a button to copy it. A new code cannot be dismissed before it has been copied (or copying failed, and it has to be written
+    // Shows the Sync key with a button to copy it. A new code cannot be dismissed before it has been copied (or copying failed, and it has to be written
     // down): there is no Cancel, the window's close button does nothing, and "I have saved it" waits for the copy. Only then does the backup go on.
     private async Task<bool> ShowRecoveryCodeAsync(string code, bool isNew)
     {
@@ -338,7 +337,7 @@ public partial class MainWindow
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 8 };
         var dialog = new Window
         {
-            Title = "Recovery code",
+            Title = "Sync key",
             Width = 480,
             SizeToContent = SizeToContent.Height,
             CanResize = false,
@@ -379,9 +378,9 @@ public partial class MainWindow
                 {
                     TextWrapping = TextWrapping.Wrap,
                     Text = isNew
-                        ? "This is your recovery code. It locks your backups on this computer, so the server cannot read them. You need it to bring a backup back on a computer that has nothing, " +
+                        ? "This is your Sync key. It locks everything Yaparr Cloud holds for you, so the server cannot read it. You need it to set up a computer that has nothing, " +
                           "and nobody can recover it for you: not the server, and not your password.\n\nSave it now, in a password manager or on paper."
-                        : "Your recovery code. It opens your backups, and you need it to restore on a computer that has nothing. Keep it somewhere safe and private.",
+                        : "Your Sync key. It locks what Yaparr Cloud holds for you, and you need it to set up a computer that has nothing. Keep it somewhere safe and private.",
                 },
                 new TextBox { Text = code, IsReadOnly = true, FontFamily = new FontFamily("Consolas,Menlo,monospace"), FontSize = 16, HorizontalContentAlignment = HorizontalAlignment.Center },
                 buttons,
@@ -396,33 +395,33 @@ public partial class MainWindow
     // slip cannot lead to backups locked with a code nobody has. Null if they back out.
     private async Task<string?> ChooseRecoveryCodeAsync(BackupServerClient client, int newest)
     {
-        const string title = "Back up to a server";
+        const string title = "Sync with Yaparr Cloud";
         if (newest > 0)
         {
             var choice = await Dialogs.ChoiceAsync(this, title,
-                "This account already has a backup on the server, made on another device. Type that device's recovery code so one code opens all your backups " +
-                "(Settings > Yaparr Cloud > Show recovery code on that device).\n\nOr make a new code for this computer; the older backups will still need the old one.",
-                "Type the code", "Make a new code", "Cancel");
-            if (choice == "Type the code")
+                "This account already has data on Yaparr Cloud, from another device. Type that device's Sync key (Settings > Yaparr Cloud > Show Sync key there) so all your devices use the same one." +
+                "\n\nIf you have lost it, you can start a new one here, but what is already stored cannot be opened with it.",
+                "Type the Sync key", "I have lost it", "Cancel");
+            if (choice == "Type the Sync key")
             {
                 var temp = Path.Combine(Path.GetTempPath(), "Yaparr-server-check-" + Guid.NewGuid().ToString("N") + ".yapbak");
                 try
                 {
-                    ServerStatusIs("Fetching the backup to check the code against…");
+                    ServerStatusIs("Checking the key against what the server holds…");
                     await client.DownloadAsync(temp);
                     ServerStatusIs("");
                     while (true)
                     {
-                        var typed = await PromptDialog.AskAsync(this, "The recovery code of your other device:");
+                        var typed = await PromptDialog.AskAsync(this, "The Sync key of your other device:");
                         if (typed == null) return null;
                         var code = RecoveryCode.Normalize(typed);
                         if (code != null && await Task.Run(() => BackupServerClient.CodeOpens(temp, code))) return code;
-                        await Dialogs.MessageAsync(this, title, "That code does not open the backup on the server. Check it and try again.");
+                        await Dialogs.MessageAsync(this, title, "That key does not open what the server holds. Check it and try again.");
                     }
                 }
                 finally { try { File.Delete(temp); } catch (IOException) { } }
             }
-            if (choice != "Make a new code") return null;
+            if (choice != "I have lost it") return null;
         }
         var made = RecoveryCode.Generate();
         return await ShowRecoveryCodeAsync(made, isNew: true) ? made : null;
@@ -436,7 +435,7 @@ public partial class MainWindow
         BackupToServerButton.IsEnabled = ServerSignOutButton.IsEnabled = false;
         var temp = Path.Combine(Path.GetTempPath(), "Yaparr-server-backup-" + Guid.NewGuid().ToString("N") + ".yapbak");
         // An automatic backup may be under way: wait for it, then read what it left (so what is saved below does not undo it).
-        ServerStatusIs("Waiting for a backup that is running…");
+        ServerStatusIs("Waiting for a sync that is running…");
         await Auto.Gate.WaitAsync();
         try
         {
@@ -449,33 +448,29 @@ public partial class MainWindow
 
             if (_server.RecoveryCode.Length == 0)
             {
-                if (await ChooseRecoveryCodeAsync(client, newest) is not { } code) { ServerStatusIs("Backup not saved."); return; }
+                if (await ChooseRecoveryCodeAsync(client, newest) is not { } code) { ServerStatusIs("Not synced."); return; }
                 _server.RecoveryCode = code;
                 _data.SaveBackupServer(_server);
                 ShowServerState();
             }
-            // A newer backup than the one this computer last saved or restored came from another device; do not add to it without being told.
-            else if (newest > 0 && newest != _server.Version
-                && !await Dialogs.ConfirmAsync(this, "Back up to a server",
-                    $"The server has a backup (version {newest}, {versions[0].At.LocalDateTime:g}) that this computer did not make or has not seen. Saving now adds a newer one; the older ones are kept for a while.",
-                    "Save anyway", "Cancel")) { ServerStatusIs("Backup not saved."); return; }
+            // Another device may have saved since this one did: this goes on top of it (the server keeps the older copies), so nothing is asked.
 
-            ServerStatusIs("Making the backup…");
+            ServerStatusIs("Making the copy…");
             var recoveryCode = _server.RecoveryCode;
             // Taken before the backup is made: what changes while it is being made is then seen as changed, and saved next time.
             var keys = _data.KeysFingerprint();
             await Task.Run(() => _data.ExportProfile(temp, recoveryCode));
-            ServerStatusIs("Sending the backup…");
+            ServerStatusIs("Sending it…");
             var version = await client.UploadAsync(temp, newest);
-            _server.RecordBackup(version, keys, DateTimeOffset.UtcNow);     // also lifts a pause: the person has seen what the server has and chosen
+            _server.RecordBackup(version, keys, DateTimeOffset.UtcNow);
             _server.AutoNote = "";
             _data.SaveBackupServer(_server);
             _log.Write($"backed up to a server (version {_server.Version})");
             ShowServerState();
-            ServerStatusIs($"Backed up (version {_server.Version}). It is locked with your recovery code, so the server cannot read it.");
+            ServerStatusIs("Synced. It is locked with your Sync key, so the server cannot read it.");
         }
         catch (BackupServerException ex) { ServerFailed(ex); }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { ServerStatusIs("Backup failed: " + ex.Message, problem: true); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { ServerStatusIs("Sync failed: " + ex.Message, problem: true); }
         finally
         {
             try { File.Delete(temp); } catch (IOException) { }
@@ -484,11 +479,10 @@ public partial class MainWindow
         }
     }
 
-    // On the first-start screen of a computer with no account (there is no settings page yet): sign in, choose which saved copy to bring back (the newest
-    // is selected; with only one there is nothing to choose) and bring it back.
+    // On the first-start screen of a computer with no account (there is no settings page yet): sign in and bring the account back from the newest copy.
     private async Task RestoreFromServerAsync()
     {
-        const string title = "Restore from a server";
+        const string title = "Restore from Yaparr Cloud";
         if (await ServerLoginDialog.AskAsync(this) is not { } login) return;
         string? staging = null;
         int newest;
@@ -497,43 +491,33 @@ public partial class MainWindow
             IReadOnlyList<ServerBackupVersion> versions;
             try { versions = await client.VersionsAsync(); }
             catch (BackupServerException ex) { await Dialogs.MessageAsync(this, title, ex.Message); return; }
-            if (versions.Count == 0) { await Dialogs.MessageAsync(this, title, "There is no backup on this server yet."); return; }
+            if (versions.Count == 0) { await Dialogs.MessageAsync(this, title, "Yaparr Cloud holds nothing for this account yet."); return; }
             newest = versions[0].Version;
 
-            int? failed = null;
-            string? problem = null;
-            while (staging == null)
+            // The newest copy is brought back; if it cannot be opened (damaged), the next older one is tried, so nothing is asked.
+            bool opened = true;
+            foreach (var version in versions)
             {
-                var pick = newest;
-                if (versions.Count > 1)
-                {
-                    if (await VersionPickerDialog.AskAsync(this, versions, ServerRestoreChoices.Preselect(versions, failed), problem) is not { } chosen) return;
-                    pick = chosen;
-                }
                 var temp = Path.Combine(Path.GetTempPath(), "Yaparr-server-restore-" + Guid.NewGuid().ToString("N") + ".yapbak");
                 try
                 {
-                    await client.DownloadAsync(temp, pick);
+                    await client.DownloadAsync(temp, version.Version);
                     staging = await Task.Run(() => _data.StageProfile(temp, login.RecoveryCode));
+                    break;
                 }
                 catch (BackupServerException ex) { await Dialogs.MessageAsync(this, title, ex.Message); return; }
-                // With other copies to try, the person is asked again (the next older one is selected) instead of being left with an error.
-                catch (Exception ex) when (versions.Count > 1 && ex is CryptographicException or InvalidDataException)
-                {
-                    failed = pick;
-                    problem = $"Version {pick} could not be opened: the recovery code does not open it, or that copy is damaged. Choose another version, or cancel to check the code.";
-                }
-                catch (CryptographicException)
-                {
-                    await Dialogs.MessageAsync(this, title, "That recovery code does not open the backup on the server. Check the code; if a newer backup was made with another code, use that one.");
-                    return;
-                }
-                catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+                catch (Exception ex) when (ex is CryptographicException or InvalidDataException) { opened = false; }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
                     await Dialogs.MessageAsync(this, title, ex.Message);
                     return;
                 }
                 finally { try { File.Delete(temp); } catch (IOException) { } }
+            }
+            if (staging == null)
+            {
+                await Dialogs.MessageAsync(this, title, opened ? "Nothing could be restored." : "That Sync key does not open what Yaparr Cloud holds. Check the code; if a newer copy was made with another code, use that one.");
+                return;
             }
         }
 
@@ -546,8 +530,6 @@ public partial class MainWindow
         // This computer stays signed in and keeps the code, so its next backup needs nothing typed.
         _data.SaveBackupServer(new BackupServerState
         {
-            // The newest on the server, even when an older copy was chosen: the person has seen what the server holds and chosen, so the next backup
-            // (which becomes a newer version than all of them) is not held back as one that might overwrite something unseen.
             Url = login.Server.ToString().TrimEnd('/'), Username = login.Username, Token = login.Token, RecoveryCode = login.RecoveryCode, Version = newest,
         });
         _log.Write("restored a backup from a server");

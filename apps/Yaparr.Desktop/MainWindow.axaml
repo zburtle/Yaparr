@@ -1150,7 +1150,7 @@
                         <StackPanel x:Name="SectionCloud" Spacing="10" IsVisible="False">
                             <TextBlock Text="Yaparr Cloud" FontSize="15" FontWeight="SemiBold" />
                             <TextBlock Classes="muted" TextWrapping="Wrap"
-                                       Text="An optional account on a Yaparr Cloud server, such as cloud.yaparr.com, whose address someone gives you. It keeps a locked backup of your account that you can bring back on any computer or phone, and on a phone it can wake Yaparr when someone writes to you. You sign in in your browser. The server cannot read your backup (it is locked here with a recovery code), and nothing is sent anywhere unless you use this." />
+                                       Text="An optional account on a Yaparr Cloud server, such as cloud.yaparr.com, whose address someone gives you. It keeps your account in step on your computers and phones (your rooms, name, pins and message history), so a new device can pick up where you left off, and on a phone it can wake Yaparr when someone writes to you. You sign in in your browser. The server cannot read what it holds (it is locked here with your Sync key), and nothing is sent anywhere unless you use this." />
                                                         <StackPanel x:Name="ServerSignedOutPanel" Spacing="4" MaxWidth="420" HorizontalAlignment="Left">
                                 <TextBlock Text="Server address" Classes="muted" />
                                 <TextBox x:Name="ServerUrlBox" MinWidth="320" PlaceholderText="https://backup.example.org" />
@@ -1162,8 +1162,8 @@
                             <StackPanel x:Name="ServerSignedInPanel" Spacing="8" IsVisible="False">
                                 <TextBlock x:Name="ServerSignedInText" TextWrapping="Wrap" />
                                 <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="8">
-                                    <Button x:Name="BackupToServerButton" Content="Back up now" Classes="primary" Click="BackupToServer_Click" />
-                                    <Button x:Name="ShowRecoveryCodeButton" Content="Show recovery code" Click="ShowRecoveryCode_Click" />
+                                    <Button x:Name="BackupToServerButton" Content="Sync now" Classes="primary" Click="BackupToServer_Click" />
+                                    <Button x:Name="ShowRecoveryCodeButton" Content="Show Sync key" Click="ShowRecoveryCode_Click" />
                                     <Button Content="Change password" Click="ServerChangePassword_Click" ToolTip.Tip="Opens the server's page in your browser" />
                                     <Button Content="Delete my account" Click="ServerDeleteAccount_Click" ToolTip.Tip="Opens the server's page in your browser, where the account and everything it holds is deleted" />
                                     <Button x:Name="ServerSignOutButton" Content="Sign out" Click="ServerSignOut_Click" />
@@ -1172,7 +1172,7 @@
                                 <TextBlock Classes="muted" TextWrapping="Wrap" FontSize="12"
                                            Text="Messages and pictures go straight to the people who are online. Only when someone you know is away is a locked copy left on the server, for up to 7 days, so they get it when they are back. The server cannot read it. Turn this off and nothing is left there (you still receive what others leave for you)." />
                                 <TextBlock Classes="muted" TextWrapping="Wrap" FontSize="12"
-                                           Text="Yaparr backs up soon after your rooms, keys or name change, and once a day for your message history. It never asks anything: if another device has saved a newer backup, or you are signed out, it stops and says so here. It starts once your first backup has made your recovery code." />
+                                           Text="Yaparr syncs by itself: soon after your rooms, keys or name change, and once a day for your message history. It never asks anything; if you are signed out it stops and says so here. It starts once your Sync key has been made." />
                                 <TextBlock x:Name="AutoBackupStatus" Classes="muted" TextWrapping="Wrap" FontSize="12" />
                             </StackPanel>
                             <TextBlock x:Name="ServerStatus" Classes="muted" TextWrapping="Wrap" IsVisible="False" />
@@ -1183,7 +1183,7 @@
                                        Text="Saves a zip of everything Yaparr keeps for you: your identity key, rooms, message history, pictures and settings. Keep it somewhere safe; it holds your account key." />
                             <Button Content="Back up profile…" HorizontalAlignment="Left" Click="BackupProfile_Click" />
                             <TextBlock Classes="muted" TextWrapping="Wrap"
-                                       Text="To keep a locked backup on Yaparr Cloud, and bring it back on any computer, see Yaparr Cloud." />
+                                       Text="To keep your account in step on Yaparr Cloud, and set up another device from it, see Yaparr Cloud." />
                         </StackPanel>
                         <StackPanel x:Name="SectionAbout" Spacing="10" IsVisible="False">
                             <TextBlock Text="About" FontSize="15" FontWeight="SemiBold" />
