@@ -116,7 +116,7 @@ public sealed class Chat : Observable
     /// <summary>What a pin of this chat is kept under: the room's id, or the other person's id in a direct chat.</summary>
     public string? PinId => Room?.RoomId ?? Direct?.PeerId.Value;
 
-    /// <summary>The chat with yourself ("Notes to self"): first in the list by default, pinnable and movable like any chat, but never left or blocked.</summary>
+    /// <summary>The chat with yourself ("Notes to self"): listed by its newest message like any chat (pinnable and movable too), but never left or blocked.</summary>
     public bool IsNotes => Direct?.IsNotes == true;
 
     private bool _isPinned;
@@ -355,9 +355,11 @@ public sealed class Chat : Observable
             while (shown > 0 && Shown[shown - 1].When > line.When) shown--;
             Shown.Insert(shown, line);
         }
-        if (line.When >= LastActivity)
+        // A message stamped in the future (a clock that is ahead) counts as now, so it cannot keep its chat at the top.
+        var when = line.When > DateTimeOffset.Now ? DateTimeOffset.Now : line.When;
+        if (when >= LastActivity)
         {
-            LastActivity = line.When;
+            LastActivity = when;
             Preview = (line.Mine ? "You: " : IsRoom ? line.Who + ": " : "") + line.PreviewText;
         }
         return true;
