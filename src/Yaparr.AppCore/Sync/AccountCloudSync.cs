@@ -43,7 +43,7 @@ public sealed class AccountCloudSync
     private sealed record Value(string? V, long Ts, bool D);
 
     public AccountCloudSync(Func<IReadOnlyList<AccountEntry>> entries, Action<IReadOnlyList<AccountEntry>> apply, ISyncState state, ISyncTransport transport,
-        SyncSealer sealer, string deviceId, Action<string>? log = null, Func<DateTimeOffset>? now = null, IKeepTransport? keep = null, IPieceSource? pieces = null)
+        SyncSealer sealer, string deviceId, Action<string>? log = null, Func<DateTimeOffset>? now = null, IKeepTransport? keep = null, IPieceSource? pieces = null, string? knownFile = null)
     {
         _entries = entries;
         _apply = apply;
@@ -54,7 +54,7 @@ public sealed class AccountCloudSync
         foreach (var held in state.All()) clock.Receive(held.Clock);
         _engine = new SyncEngine(state, transport, sealer, clock, deviceId);
         _engine.Remote += OnRemote;
-        if (keep != null && pieces != null) _pieces = new PieceSync(_engine, keep, sealer, pieces, log);
+        if (keep != null && pieces != null) _pieces = new PieceSync(_engine, keep, sealer, pieces, log, knownFile);
     }
 
     /// <summary>Whether an entry is on the cloud copy: its id says what it is, and the name has to be one the server takes.</summary>
@@ -136,6 +136,20 @@ public sealed class AccountCloudSync
         finally { _running.Release(); }
     }
 
+    /// <summary>What this app keeps as pieces: the history of its node's store (h-, d-) and the person's own emoji and GIF shelves (e-, g-).</summary>
+    private static IPieceSource PiecesOf(AppData data, ChatNode node)
+    {
+        var shelves = new ShelfPieceSource(new EmojiShelf(data.EmojiDirectory), new GifShelf(data.ShelfDirectory));
+        var sources = new List<(string, IPieceSource)> { ("e-", shelves), ("g-", shelves) };
+        if (node.KeptHistory is { } store)
+        {
+            var history = new HistoryPieceSource(store);
+            sources.Add(("h-", history));
+            sources.Add(("d-", history));
+        }
+        return new PieceSources(sources.ToArray());
+    }
+
     /// <summary>
     /// One sync of this app's account with the server it is signed in to (nothing when it is not, or has no recovery code yet). Never throws for what can go wrong with the
     /// server: that comes back as the result, and a sign-in the server no longer knows is cleared from the saved state so that it is not tried again.
@@ -155,7 +169,7 @@ public sealed class AccountCloudSync
             using var transport = new SyncClient(new Uri(server.Url), server.Token, http);
             using var keep = new KeepClient(new Uri(server.Url), server.Token, http);
             var sync = new AccountCloudSync(() => node.AccountEntries, node.ApplyCloudEntries, state, transport, sealer, node.Id.Value, log,
-                keep: keep, pieces: node.KeptHistory is { } store ? new HistoryPieceSource(store) : null);
+                keep: keep, pieces: PiecesOf(data, node), knownFile: Path.Combine(data.Directory, $"sync-{which}.known"));
             return (await sync.SyncAsync(cancel)).Result;
         }
         catch (BackupServerException ex) when (ex.SignedOut)

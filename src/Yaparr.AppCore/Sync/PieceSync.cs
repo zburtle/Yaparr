@@ -1,3 +1,4 @@
+using Yaparr.Identity;
 using System.Security.Cryptography;
 using System.Text.Json;
 
@@ -14,6 +15,12 @@ public interface IPieceSource
 
     /// <summary>Takes in a piece that came from another device. Returns false when it is not a good piece.</summary>
     bool Take(string name, byte[] content);
+
+    /// <summary>Whether taking a piece away here (it is no longer in <see cref="Local"/>) means it was removed on purpose, so the account should lose it too. History never is.</summary>
+    bool Removable(string name) => false;
+
+    /// <summary>Another device removed this piece: remove it here.</summary>
+    void Drop(string name) { }
 }
 
 /// <summary>What one <see cref="PieceSync.RunAsync"/> did.</summary>
@@ -43,9 +50,14 @@ public sealed class PieceSync
     private readonly Action<string>? _log;
     private readonly Dictionary<string, Index> _incoming = new(StringComparer.Ordinal);
     private readonly HashSet<string> _done = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _drops = new(StringComparer.Ordinal);
+    private readonly string? _knownFile;
+    private HashSet<string>? _known;
 
-    public PieceSync(SyncEngine engine, IKeepTransport keep, SyncSealer sealer, IPieceSource source, Action<string>? log = null)
+    /// <param name="knownFile">Where the names this device had at its last run are kept (a sealed file), to tell a piece removed here from one never taken in; null keeps them in memory only.</param>
+    public PieceSync(SyncEngine engine, IKeepTransport keep, SyncSealer sealer, IPieceSource source, Action<string>? log = null, string? knownFile = null)
     {
+        _knownFile = knownFile;
         _engine = engine;
         _keep = keep;
         _sealer = sealer;
@@ -62,11 +74,33 @@ public sealed class PieceSync
 
     private void OnRemote(SyncEntry entry)
     {
-        if (entry.Kind != Kind || entry.Deleted || Parse(entry.Value) is not { } index) return;
-        lock (_incoming) _incoming[entry.Id] = index;
+        if (entry.Kind != Kind) return;
+        if (entry.Deleted) { lock (_incoming) { _incoming.Remove(entry.Id); _drops.Add(entry.Id); } return; }
+        if (Parse(entry.Value) is not { } index) return;
+        lock (_incoming) { _incoming[entry.Id] = index; _drops.Remove(entry.Id); }
     }
 
     private Index? Held(string name) => _engine.Get(Kind, name) is { Deleted: false } held ? Parse(held.Value) : null;
+
+    private HashSet<string> LoadKnown()
+    {
+        if (_known != null) return _known;
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        if (_knownFile != null && File.Exists(_knownFile))
+        {
+            try { foreach (var name in JsonSerializer.Deserialize<string[]>(SecretStore.ReadAllBytes(_knownFile)) ?? []) names.Add(name); }
+            catch (Exception ex) when (ex is IOException or JsonException or CryptographicException or UnauthorizedAccessException) { }
+        }
+        return _known = names;
+    }
+
+    private void SaveKnown(HashSet<string> names)
+    {
+        _known = names;
+        if (_knownFile == null) return;
+        try { SecretStore.WriteAllBytes(_knownFile, JsonSerializer.SerializeToUtf8Bytes(names.Order(StringComparer.Ordinal).ToArray())); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { _log?.Invoke("could not save the names of kept pieces: " + ex.Message); }
+    }
 
     /// <summary>How many pieces the account has that this device has not taken in yet.</summary>
     public int Waiting { get { lock (_incoming) return _incoming.Count; } }
@@ -104,7 +138,25 @@ public sealed class PieceSync
             lock (_incoming) if (_incoming.TryGetValue(name, out var now) && now == index) _incoming.Remove(name);
         }
 
-        foreach (var (name, tag) in _source.Local())
+        string[] drops;
+        lock (_incoming) { drops = _drops.ToArray(); _drops.Clear(); }
+        foreach (var name in drops)
+            if (_source.Removable(name) && _engine.Get(Kind, name) is { Deleted: true }) _source.Drop(name);
+
+        var local = _source.Local();
+        // A piece this device had at its last run and has not now, which the account still holds, was removed here: the account loses it too.
+        var known = LoadKnown();
+        int dropped = 0;
+        foreach (var name in known)
+            if (!local.ContainsKey(name) && _source.Removable(name) && Held(name) is { } gone)
+            {
+                _engine.Remove(Kind, name);
+                replaced.Add(gone.P);
+                dropped++;
+            }
+        SaveKnown(local.Keys.Where(_source.Removable).ToHashSet(StringComparer.Ordinal));
+
+        foreach (var (name, tag) in local)
         {
             cancel.ThrowIfCancellationRequested();
             var held = Held(name);
@@ -125,7 +177,7 @@ public sealed class PieceSync
 
         // The records go out before what they replaced is removed, so no device is ever pointed at a piece that is gone.
         int removed = 0;
-        if (uploaded > 0)
+        if (uploaded > 0 || dropped > 0)
         {
             var report = await _engine.SyncAsync(cancel);
             if (report.Complete)

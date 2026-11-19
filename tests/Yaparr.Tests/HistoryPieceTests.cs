@@ -242,3 +242,106 @@ public sealed class SqliteHistoryPieceTests : IDisposable
         Assert.Equal(1, HistoryPieces.Take(other, HistoryPieces.DirectName(Peer, HistoryMonths.Of(ago(5))), dpiece));
     }
 }
+
+public sealed class ShelfPieceTests : IDisposable
+{
+    private const string Code = "K7QD-M3XF-9PLR-2WTE-HV8N-C4YB";
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "yaparr-shelfpieces-" + Guid.NewGuid().ToString("N"));
+    private readonly FakeSyncServer _records = new();
+    private readonly FakeKeepServer _keep = new();
+    private long _now = 1_800_000_000_000;
+
+    public void Dispose() { try { Directory.Delete(_root, true); } catch (IOException) { } }
+
+    private static byte[] Png(int w, int h, SkiaSharp.SKColor color)
+    {
+        using var bitmap = new SkiaSharp.SKBitmap(w, h);
+        bitmap.Erase(color);
+        using var image = SkiaSharp.SKImage.FromBitmap(bitmap);
+        return image.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100).ToArray();
+    }
+
+    private sealed record Device(EmojiShelf Emoji, GifShelf Gifs, SyncEngine Engine, PieceSync Pieces);
+
+    private Device NewDevice(string id)
+    {
+        var emoji = new EmojiShelf(Path.Combine(_root, id, "emoji"));
+        var gifs = new GifShelf(Path.Combine(_root, id, "gifs"));
+        var sealer = SyncSealer.FromRecoveryCode(Code);
+        var engine = new SyncEngine(new MemorySyncState(), _records, sealer, new SyncClock(id, () => DateTimeOffset.FromUnixTimeMilliseconds(_now)), id);
+        var pieces = new PieceSync(engine, _keep, sealer, new PieceSources(("e-", new ShelfPieceSource(emoji, gifs)), ("g-", new ShelfPieceSource(emoji, gifs))));
+        return new Device(emoji, gifs, engine, pieces);
+    }
+
+    private static async Task<PieceReport> Run(Device d)
+    {
+        await d.Engine.SyncAsync();
+        return await d.Pieces.RunAsync();
+    }
+
+    [Fact]
+    public async Task Emoji_and_gifs_added_on_one_device_appear_on_the_other_and_a_replaced_emoji_follows()
+    {
+        var phone = NewDevice("phone");
+        var laptop = NewDevice("laptop");
+        phone.Emoji.Add("party", Png(32, 32, SkiaSharp.SKColors.Red));
+        var gif = phone.Gifs.Add(Png(60, 40, SkiaSharp.SKColors.Blue));
+        await Run(phone);
+        await Run(laptop);
+        Assert.NotNull(laptop.Emoji.Read("party"));
+        Assert.NotNull(laptop.Gifs.Read(gif.Id));
+        Assert.Equal(0, (await Run(laptop)).Uploaded);
+
+        phone.Emoji.Add("party", Png(32, 32, SkiaSharp.SKColors.Green));      // the same name, another picture
+        await Run(phone);
+        await Run(laptop);
+        Assert.Equal(phone.Emoji.Read("party"), laptop.Emoji.Read("party"));
+    }
+
+    [Fact]
+    public async Task Taking_one_off_a_shelf_takes_it_off_the_other_devices_and_the_server()
+    {
+        var phone = NewDevice("phone");
+        var laptop = NewDevice("laptop");
+        phone.Emoji.Add("party", Png(32, 32, SkiaSharp.SKColors.Red));
+        var gif = phone.Gifs.Add(Png(60, 40, SkiaSharp.SKColors.Blue));
+        await Run(phone);
+        await Run(laptop);
+        await Run(phone);                       // each has seen the shelf once, so a later absence is a removal
+        Assert.Equal(2, _keep.Pieces.Count);
+
+        phone.Emoji.Remove("party");
+        phone.Gifs.Remove(gif.Id);
+        var report = await Run(phone);
+        Assert.Equal(2, report.Removed);
+        Assert.Empty(_keep.Pieces);
+
+        await Run(laptop);
+        Assert.Null(laptop.Emoji.Read("party"));
+        Assert.Null(laptop.Gifs.Read(gif.Id));
+        await Run(phone);
+        Assert.Null(phone.Emoji.Read("party"));
+    }
+
+    [Fact]
+    public async Task A_device_that_has_not_taken_a_piece_in_yet_does_not_remove_it_from_the_account()
+    {
+        var phone = NewDevice("phone");
+        phone.Emoji.Add("party", Png(32, 32, SkiaSharp.SKColors.Red));
+        await Run(phone);
+        var laptop = NewDevice("laptop");       // an empty shelf that never held it
+        await Run(laptop);
+        Assert.NotNull(laptop.Emoji.Read("party"));
+        Assert.Single(_keep.Pieces);
+    }
+
+    [Fact]
+    public void A_gif_piece_that_is_not_what_its_name_says_is_not_taken()
+    {
+        var device = NewDevice("tablet");
+        var source = new ShelfPieceSource(device.Emoji, device.Gifs);
+        Assert.False(source.Take("g-" + new string('a', 32), Png(10, 10, SkiaSharp.SKColors.Red)));
+        Assert.False(source.Take("e-party", new byte[] { 1, 2, 3 }));
+        Assert.Empty(source.Local());
+    }
+}

@@ -1,6 +1,6 @@
 # Synced state (in progress)
 
-The goal: one account on all of a person's devices, with the same rooms, name, blocks and shelves everywhere, and a room left on one device left on all. This page is about the part that exists so far, the **library** (`src/Yaparr.AppCore/Sync`) and the **server API** (Yaparr.Cloud, README, "Synced state"), and, in the computer app, the **name, rooms and blocks**, which now go through them. The settings that are the same on every device are entries too (below); message **history** is kept as pieces (below); the shelves (emoji, sounds, GIFs) are media and still to come. The screens already say "synced" instead of "backup".
+The goal: one account on all of a person's devices, with the same rooms, name, blocks and shelves everywhere, and a room left on one device left on all. This page is about the part that exists so far, the **library** (`src/Yaparr.AppCore/Sync`) and the **server API** (Yaparr.Cloud, README, "Synced state"), and, in the computer app, the **name, rooms and blocks**, which now go through them. The settings that are the same on every device are entries too (below); message **history** and the **shelves** (own emoji and GIFs) are kept as pieces (below). The screens already say "synced" instead of "backup".
 
 ## How it works
 
@@ -45,6 +45,14 @@ Message history is far too big for a synced record and has to last, so it is kep
 Limits: a message removed on one device (a moderator's removal, say) is still in the other devices' pieces and comes back the next time one is read; a month so busy that its piece goes over about 15 MiB is left out (it is logged); a window open in a chat does not show rows that were taken in until it is opened again.
 
 Tests: `tests/Yaparr.Tests/HistoryPieceTests.cs`.
+
+## The shelves
+
+A person's own **custom emoji** (`e-<name>`) and the pictures on their **GIF shelf** (`g-<hash of the picture>`) are pieces too, one for each, holding the picture itself (`ShelfPieceSource`). An emoji's tag is a hash of its picture, so putting another picture under the same name is a change that goes out; a GIF's name is already a hash of its picture, so it never changes. A piece that is not what its name says (a GIF whose hash is not its name, an emoji that is not a picture) is not taken. The order of the GIF shelf (what was sent last) and the rooms' own emoji and sounds are not part of this: the first stays on the device, the others belong to the room.
+
+Unlike history, **removing** one is a removal for the account: the device writes the piece's record as deleted and removes the piece from the server, and another device that reads the removal takes it off its shelf. To tell a piece taken off a shelf from one this device never had, each device keeps the names its shelves had at its last run (a sealed file `sync-<server and account>.known`), so a device that has only just joined, or never took a piece in, never removes anything from the account.
+
+Tests: `ShelfPieceTests` in `tests/Yaparr.Tests/HistoryPieceTests.cs`.
 
 ## Pins
 
