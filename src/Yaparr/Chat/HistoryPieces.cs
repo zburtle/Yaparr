@@ -9,6 +9,11 @@ namespace Yaparr.Chat;
 /// taking is safe in any order and any number of times). A piece's <em>tag</em> is how many rows it has: a device whose month has a different count than what the account holds has
 /// something to write. Nothing is trusted because of where it came from: a room's message has to carry a good signature for that room, and a direct message has to be one that
 /// belongs to that conversation and month.
+/// <para>
+/// What was <b>removed</b> travels as well, so it stays removed: a room has one more piece, <c>x-&lt;room&gt;</c>, with the keys of its removed messages (<see cref="IChatHistoryStore.ApplyRemoved"/>).
+/// Taking it in deletes those messages here, and the store never keeps a removed message again, so a month written by a device that had not heard of the removal cannot bring it back,
+/// in whatever order the pieces are taken in.
+/// </para>
 /// </summary>
 public static class HistoryPieces
 {
@@ -18,6 +23,39 @@ public static class HistoryPieces
     private sealed record RoomRow(string K, StoredMessage M, string? T);
     private sealed record DirectRow(string K, DirectRecord R, string? T);
     private sealed record Piece(int V, List<RoomRow>? Rooms, List<DirectRow>? Direct);
+    private sealed record RemovedPiece(int V, List<string> Keys);
+
+    private const string RemovedPrefix = "x-";
+
+    public static string RemovedName(string room) => RemovedPrefix + room;
+
+    private static bool IsMessageKey(string key) => key.Length == 32 && key.All(c => c is (>= '0' and <= '9') or (>= 'a' and <= 'f'));
+
+    private static byte[] Pack<T>(T value)
+    {
+        using var output = new MemoryStream();
+        using (var gzip = new GZipStream(output, CompressionLevel.Optimal, leaveOpen: true))
+            JsonSerializer.Serialize(gzip, value, Json);
+        return output.ToArray();
+    }
+
+    private static T? Unpack<T>(byte[] content) where T : class
+    {
+        try
+        {
+            using var gzip = new GZipStream(new MemoryStream(content), CompressionMode.Decompress);
+            using var raw = new MemoryStream();
+            var buffer = new byte[81920];
+            int read;
+            while ((read = gzip.Read(buffer)) > 0)
+            {
+                if (raw.Length + read > MaxRaw) return null;
+                raw.Write(buffer, 0, read);
+            }
+            return JsonSerializer.Deserialize<T>(raw.ToArray(), Json);
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidDataException) { return null; }
+    }
 
     private static bool Safe(string id) => id.Length is > 0 and <= 100 && id.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '_' or ':' or '@' or '+' or '=');
 
@@ -35,6 +73,13 @@ public static class HistoryPieces
         return Safe(who) && HistoryMonths.IsMonth(month);
     }
 
+    /// <summary>Whether a piece is about a person's conversation (true) or a room (false), and which.</summary>
+    public static (bool Direct, string Who)? WhoOf(string name)
+    {
+        if (name.StartsWith(RemovedPrefix, StringComparison.Ordinal)) return Safe(name[RemovedPrefix.Length..]) ? (false, name[RemovedPrefix.Length..]) : null;
+        return TryParse(name, out var direct, out var who, out _) ? (direct, who) : null;
+    }
+
     /// <summary>The pieces this store has, by name, each with its tag.</summary>
     public static Dictionary<string, string> Local(IChatHistoryStore store)
     {
@@ -42,6 +87,8 @@ public static class HistoryPieces
         foreach (var room in store.Rooms())
             if (Safe(room))
                 foreach (var (month, count) in store.MonthCounts(room)) all[RoomName(room, month)] = count.ToString();
+        foreach (var room in store.RoomsWithRemoved())
+            if (Safe(room)) all[RemovedName(room)] = store.RemovedKeys(room).Count.ToString();
         if (store is IDirectHistoryStore direct)
             foreach (var peer in direct.DirectPeers())
                 if (Safe(peer))
@@ -52,6 +99,11 @@ public static class HistoryPieces
     /// <summary>The piece with this name, or null when the store has nothing of it.</summary>
     public static byte[]? Build(IChatHistoryStore store, string name)
     {
+        if (name.StartsWith(RemovedPrefix, StringComparison.Ordinal))
+        {
+            var keys = Safe(name[RemovedPrefix.Length..]) ? store.RemovedKeys(name[RemovedPrefix.Length..]) : new List<string>();
+            return keys.Count == 0 ? null : Pack(new RemovedPiece(1, keys.ToList()));
+        }
         if (!TryParse(name, out var direct, out var who, out var month)) return null;
         Piece piece;
         if (direct)
@@ -67,32 +119,20 @@ public static class HistoryPieces
             if (rows.Count == 0) return null;
             piece = new Piece(1, rows.Select(r => new RoomRow(r.Key, r.Message, r.Target)).ToList(), null);
         }
-        using var output = new MemoryStream();
-        using (var gzip = new GZipStream(output, CompressionLevel.Optimal, leaveOpen: true))
-            JsonSerializer.Serialize(gzip, piece, Json);
-        return output.ToArray();
+        return Pack(piece);
     }
 
     /// <summary>Takes a piece into the store. Returns how many rows were new, or -1 if it is not a good piece of that name.</summary>
     public static int Take(IChatHistoryStore store, string name, byte[] content)
     {
-        if (!TryParse(name, out var direct, out var who, out var month)) return -1;
-        Piece? piece;
-        try
+        if (name.StartsWith(RemovedPrefix, StringComparison.Ordinal))
         {
-            using var gzip = new GZipStream(new MemoryStream(content), CompressionMode.Decompress);
-            using var raw = new MemoryStream();
-            var buffer = new byte[81920];
-            int read;
-            while ((read = gzip.Read(buffer)) > 0)
-            {
-                if (raw.Length + read > MaxRaw) return -1;
-                raw.Write(buffer, 0, read);
-            }
-            piece = JsonSerializer.Deserialize<Piece>(raw.ToArray(), Json);
+            var room = name[RemovedPrefix.Length..];
+            if (!Safe(room) || Unpack<RemovedPiece>(content) is not { V: 1, Keys: { } removed }) return -1;
+            return store.ApplyRemoved(room, removed.Where(IsMessageKey).Distinct().ToList());
         }
-        catch (Exception ex) when (ex is JsonException or InvalidDataException) { return -1; }
-        if (piece is not { V: 1 }) return -1;
+        if (!TryParse(name, out var direct, out var who, out var month)) return -1;
+        if (Unpack<Piece>(content) is not { V: 1 } piece) return -1;
 
         var (from, to) = HistoryMonths.Range(month);
         if (direct)

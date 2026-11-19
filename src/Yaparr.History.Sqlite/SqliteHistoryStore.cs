@@ -10,7 +10,7 @@ namespace Yaparr.History.Sqlite;
 /// </summary>
 public sealed class SqliteHistoryStore : IChatHistoryStore, IDirectHistoryStore, IDisposable
 {
-    private const int Version = 2, Chunk = 400;
+    private const int Version = 3, Chunk = 400;
 
     static SqliteHistoryStore() => SQLitePCL.Batteries_V2.Init();
 
@@ -78,6 +78,7 @@ public sealed class SqliteHistoryStore : IChatHistoryStore, IDirectHistoryStore,
             CREATE INDEX IF NOT EXISTS messages_by_target ON messages(room, target) WHERE target IS NOT NULL;
             CREATE INDEX IF NOT EXISTS messages_by_author ON messages(room, author);
             CREATE INDEX IF NOT EXISTS messages_by_ts ON messages(room, ts);
+            CREATE TABLE IF NOT EXISTS removed(room TEXT NOT NULL, key TEXT NOT NULL, PRIMARY KEY(room, key)) WITHOUT ROWID;
             """);
         Exec($"PRAGMA user_version = {Version}");
     }
@@ -102,12 +103,17 @@ public sealed class SqliteHistoryStore : IChatHistoryStore, IDirectHistoryStore,
         new(r.GetString(at), r.GetString(at + 1), r.GetString(at + 2), r.GetString(at + 3), r.GetInt64(at + 4), r.GetString(at + 5), r.GetString(at + 6),
             r.GetString(at + 7) is { Length: > 0 } chan ? chan : null);
 
+    // A message that was removed is not kept again: the insert is skipped for a key the room has a record of removing.
+    private const string InsertMessage =
+        "INSERT OR IGNORE INTO messages(room, key, author, pub, name, id, ts, body, sig, chan, target) " +
+        "SELECT $r, $k, $a, $p, $n, $i, $t, $b, $s, $c, $g WHERE NOT EXISTS (SELECT 1 FROM removed WHERE room = $r AND key = $k)";
+
     public bool Add(string roomKey, string key, StoredMessage m, string? reactionTarget)
     {
         lock (_gate)
         {
             using var cmd = _db.CreateCommand();
-            cmd.CommandText = "INSERT OR IGNORE INTO messages(room, key, author, pub, name, id, ts, body, sig, chan, target) VALUES($r, $k, $a, $p, $n, $i, $t, $b, $s, $c, $g)";
+            cmd.CommandText = InsertMessage;
             cmd.Parameters.AddWithValue("$r", roomKey);
             cmd.Parameters.AddWithValue("$k", key);
             cmd.Parameters.AddWithValue("$a", m.From);
@@ -132,7 +138,7 @@ public sealed class SqliteHistoryStore : IChatHistoryStore, IDirectHistoryStore,
             using var tx = _db.BeginTransaction();
             using var cmd = _db.CreateCommand();
             cmd.Transaction = tx;
-            cmd.CommandText = "INSERT OR IGNORE INTO messages(room, key, author, pub, name, id, ts, body, sig, chan, target) VALUES($r, $k, $a, $p, $n, $i, $t, $b, $s, $c, $g)";
+            cmd.CommandText = InsertMessage;
             var names = new[] { "$r", "$k", "$a", "$p", "$n", "$i", "$t", "$b", "$s", "$c", "$g" };
             foreach (var n in names) cmd.Parameters.Add(new SqliteParameter(n, null));
             foreach (var (key, m, target) in messages)
@@ -166,6 +172,62 @@ public sealed class SqliteHistoryStore : IChatHistoryStore, IDirectHistoryStore,
                 for (int i = 0; i < part.Length; i++) cmd.Parameters.AddWithValue("$" + i, part[i]);
                 cmd.ExecuteNonQuery();
             }
+    }
+
+    public int ApplyRemoved(string roomKey, IReadOnlyCollection<string> keys)
+    {
+        lock (_gate)
+        {
+            int added = 0;
+            using var tx = _db.BeginTransaction();
+            foreach (var part in keys.Distinct().Chunk(Chunk))
+            {
+                using (var cmd = _db.CreateCommand())
+                {
+                    cmd.Transaction = tx;
+                    cmd.CommandText = $"DELETE FROM messages WHERE room = $r AND key IN ({Marks(part.Length)})";
+                    cmd.Parameters.AddWithValue("$r", roomKey);
+                    for (int i = 0; i < part.Length; i++) cmd.Parameters.AddWithValue("$" + i, part[i]);
+                    cmd.ExecuteNonQuery();
+                }
+                using var note = _db.CreateCommand();
+                note.Transaction = tx;
+                note.CommandText = "INSERT OR IGNORE INTO removed(room, key) VALUES($r, $k)";
+                note.Parameters.AddWithValue("$r", roomKey);
+                var key = new SqliteParameter("$k", null);
+                note.Parameters.Add(key);
+                foreach (var k in part) { key.Value = k; added += note.ExecuteNonQuery(); }
+            }
+            tx.Commit();
+            return added;
+        }
+    }
+
+    public IReadOnlyList<string> RemovedKeys(string roomKey)
+    {
+        lock (_gate)
+        {
+            using var cmd = _db.CreateCommand();
+            cmd.CommandText = "SELECT key FROM removed WHERE room = $r ORDER BY key";
+            cmd.Parameters.AddWithValue("$r", roomKey);
+            using var r = cmd.ExecuteReader();
+            var list = new List<string>();
+            while (r.Read()) list.Add(r.GetString(0));
+            return list;
+        }
+    }
+
+    public IReadOnlyList<string> RoomsWithRemoved()
+    {
+        lock (_gate)
+        {
+            using var cmd = _db.CreateCommand();
+            cmd.CommandText = "SELECT DISTINCT room FROM removed";
+            using var r = cmd.ExecuteReader();
+            var list = new List<string>();
+            while (r.Read()) list.Add(r.GetString(0));
+            return list;
+        }
     }
 
     private static string Marks(int count) => string.Join(",", Enumerable.Range(0, count).Select(i => "$" + i));

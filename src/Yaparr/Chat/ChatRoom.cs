@@ -37,6 +37,10 @@ public sealed class ChatRoom
     public event Action? EarlierHistoryReceived;
     internal void RaiseEarlierHistory() => EarlierHistoryReceived?.Invoke();
 
+    /// <summary>History was taken into the store from the account's kept copy (sync) or messages were removed by it: what is shown should be read again.</summary>
+    public event Action? HistoryChanged;
+    internal void RaiseHistoryChanged() => HistoryChanged?.Invoke();
+
     /// <summary>
     /// Asks the connected members of the room (up to three) for the messages before the one with the key <paramref name="beforeKey"/> (<see cref="ChatMessage.Key"/>),
     /// in a text channel, when this device has nothing earlier. They answer with what they hold; it is kept and <see cref="EarlierHistoryReceived"/> is raised.
@@ -524,6 +528,10 @@ public sealed class DirectChat
     /// </summary>
     public event Action? EarlierHistoryReceived;
     internal void RaiseEarlierHistory() => EarlierHistoryReceived?.Invoke();
+
+    /// <summary>History was taken into the store from the account's kept copy (sync): what is shown should be read again.</summary>
+    public event Action? HistoryChanged;
+    internal void RaiseHistoryChanged() => HistoryChanged?.Invoke();
 
     /// <summary>
     /// Asks your other devices and the other person's (those connected, up to four) for the messages before the one with the id <paramref name="beforeId"/>, when this
