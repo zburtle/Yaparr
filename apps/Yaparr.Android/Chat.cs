@@ -55,13 +55,16 @@ public sealed class Chat : Observable
         Room = room;
         Direct = direct;
         Invite = invite;
-        Shown.CollectionChanged += (_, _) => Raise(nameof(CanLoadEarlier));
     }
 
     // ---- scrolling back ----
 
-    private string _earlierText = "Load earlier messages";
-    private bool _earlierGaveUp;
+    private Line? _marker;
+
+    /// <summary>Where going back through the history is: nothing under way, earlier messages being got (a spinner is the first row of the list), or there are no more (the first row says so).</summary>
+    public enum EarlierState { Idle, Loading, End }
+
+    public EarlierState Earlier { get; private set; }
 
     /// <summary>True while older messages are being put at the top of the list, so the list is not scrolled down to the newest as it is for a new message.</summary>
     public bool AddingEarlier { get; set; }
@@ -69,18 +72,37 @@ public sealed class Chat : Observable
     /// <summary>Earlier messages were asked for from the others and the answer is awaited, to be read when it comes.</summary>
     public bool WaitingForEarlier { get; set; }
 
-    /// <summary>What the button above the messages says: to load earlier ones, or what is happening about them.</summary>
-    public string EarlierText => _earlierText;
+    /// <summary>The messages shown, not counting the marker at the top.</summary>
+    public int ShownMessages => Shown.Count(l => !l.IsMarker);
 
-    /// <summary>The button above the messages is shown whenever there is a message to go back from.</summary>
-    public bool CanLoadEarlier => Shown.Count > 0 && !_earlierGaveUp;
+    /// <summary>The oldest message shown, which earlier ones are read before; null when there is none.</summary>
+    public Line? OldestShown => Shown.FirstOrDefault(l => !l.IsMarker);
 
-    public void SetEarlier(string text, bool gaveUp = false)
+    /// <summary>Shows where going back is as the first row of the list (nothing for <see cref="EarlierState.Idle"/>).</summary>
+    public void SetEarlier(EarlierState state)
     {
-        _earlierText = text;
-        _earlierGaveUp = gaveUp;
-        Raise(nameof(EarlierText));
-        Raise(nameof(CanLoadEarlier));
+        bool wanted = state != EarlierState.Idle && ShownMessages > 0;
+        if (state == Earlier && wanted == (_marker != null)) return;
+        Earlier = state;
+        AddingEarlier = true;   // the list is not scrolled to the end for this
+        try
+        {
+            if (_marker != null) { Shown.Remove(_marker); _marker = null; }
+            if (wanted)
+            {
+                _marker = Line.Marker(state == EarlierState.Loading ? Line.MarkerKind.Loading : Line.MarkerKind.End);
+                Shown.Insert(0, _marker);
+            }
+        }
+        finally { AddingEarlier = false; }
+        Raise(nameof(Earlier));
+    }
+
+    /// <summary>The chat was opened or another channel chosen: going back starts again (the marker is gone with the list).</summary>
+    public void ResetEarlier()
+    {
+        WaitingForEarlier = false;
+        SetEarlier(EarlierState.Idle);
     }
 
     public ChatRoom? Room { get; }
@@ -303,8 +325,7 @@ public sealed class Chat : Observable
     public void SelectChannel(string id)
     {
         _channel = id;
-        WaitingForEarlier = false;
-        SetEarlier("Load earlier messages");
+        ResetEarlier();
         foreach (var chip in Channels) chip.Selected = chip.Id == id;
         Shown.Clear();
         foreach (var line in _all.Where(Belongs)) Shown.Add(line);
@@ -345,6 +366,8 @@ public sealed class Chat : Observable
         _all.Clear();
         _ids.Clear();
         _byKey.Clear();
+        _marker = null;
+        Earlier = EarlierState.Idle;
         Shown.Clear();
     }
 

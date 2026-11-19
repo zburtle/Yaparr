@@ -84,6 +84,17 @@ public sealed class MessageVm : Observable
     public Attachment? Attachment { get; }
     public ChatMessage? Source { get; init; }
 
+    /// <summary>What a marker row at the top of the list shows (see <see cref="MarkerRow"/>).</summary>
+    public enum MarkerKind { None, Loading, End }
+
+    /// <summary>Not a message: a spinner while earlier messages are being got, or the words "End Of Messages", as the first row of the list.</summary>
+    public static MessageVm MarkerRow(MarkerKind kind) => new(DateTimeOffset.FromUnixTimeSeconds(0), "", "") { Marked = kind };
+
+    public MarkerKind Marked { get; private init; }
+    public bool IsMarker => Marked != MarkerKind.None;
+    public bool IsLoadingMarker => Marked == MarkerKind.Loading;
+    public bool IsEndMarker => Marked == MarkerKind.End;
+
     // ---- reactions ----
 
     private string _reactionSignature = "";
@@ -469,8 +480,44 @@ public sealed class ConversationVm : Observable
     /// </summary>
     public Func<string?, string, string, int>? AskOthersForEarlier { get; set; }
 
+    /// <summary>Whether the room's start record is held (see <c>ChatRoom.StartedAt</c>), so that nothing earlier being held means the beginning, for sure. Null where there can be no such record (a direct chat).</summary>
+    public Func<bool>? StartIsHeld { get; set; }
+
     private bool _loadingEarlier;
+    private readonly HashSet<string> _atStart = new();
+    private MessageVm? _marker;
+    private int _waitToken;
     private readonly HashSet<string> _nothingEarlier = new();
+
+    /// <summary>Where going back through the history is: nothing under way, earlier messages being got (a spinner is the first row of the list), or there are no more (the first row says so).</summary>
+    public enum EarlierState { Idle, Loading, End }
+
+    public EarlierState Earlier { get; private set; }
+
+    /// <summary>How long the others are waited for after being asked for earlier messages before the list says there are no more (what comes later is still read).</summary>
+    public static int WaitForOthersMs { get; set; } = 8_000;
+
+    /// <summary>Runs something on the interface's thread (a test with no interface runs it where it is).</summary>
+    internal static Action<Action> PostToInterface { get; set; } = action => Avalonia.Threading.Dispatcher.UIThread.Post(action);
+
+    /// <summary>The messages shown, not counting the marker row at the top.</summary>
+    public int ShownMessages => Messages.Count(m => !m.IsMarker);
+
+    // Shows where going back is as the first row of the list (nothing for Idle, or when there is no message to go back from).
+    private void SetEarlier(EarlierState state)
+    {
+        bool wanted = state != EarlierState.Idle && ShownMessages > 0;
+        if (state == Earlier && wanted == (_marker != null)) return;
+        Earlier = state;
+        if (_marker != null) { Messages.Remove(_marker); _marker = null; }
+        if (wanted)
+        {
+            _marker = MessageVm.MarkerRow(state == EarlierState.Loading ? MessageVm.MarkerKind.Loading : MessageVm.MarkerKind.End);
+            Messages.Insert(0, _marker);
+            MarkDays(0);
+        }
+        Raise(nameof(Earlier));
+    }
     private readonly Dictionary<string, long> _askedAt = new();
 
     /// <summary>How long after asking the others for earlier messages they are asked again (when the list is scrolled to the top again).</summary>
@@ -486,6 +533,7 @@ public sealed class ConversationVm : Observable
         {
             if (EarlierSource == null) return false;
             string channel = IsRoom ? CurrentChannel : "";
+            if (_atStart.Contains(channel)) return false;   // the beginning, for sure: there is nothing to ask for, now or later
             return !_nothingEarlier.Contains(channel)
                    || AskOthersForEarlier != null && Environment.TickCount64 - _askedAt.GetValueOrDefault(channel, long.MinValue / 2) >= AskAgainAfterMs;
         }
@@ -501,6 +549,8 @@ public sealed class ConversationVm : Observable
     {
         _nothingEarlier.Clear();
         _askedAt.Clear();
+        _waitToken++;
+        if (Earlier != EarlierState.Idle && !_loadingEarlier) SetEarlier(EarlierState.Idle);   // reading goes on from what came
     }
 
     /// <summary>
@@ -514,17 +564,23 @@ public sealed class ConversationVm : Observable
         if (oldest == null) return 0;
         string channel = IsRoom ? CurrentChannel : "";
         _loadingEarlier = true;
+        SetEarlier(EarlierState.Loading);   // a spinner at the top while the page is read
+        bool asked = false;
+        var messages = (IReadOnlyList<MessageVm>)Array.Empty<MessageVm>();
         try
         {
-            var (messages, more) = await EarlierSource!(IsRoom ? CurrentChannel : null, oldest.Key!, oldest.Id ?? "");
+            bool more;
+            (messages, more) = await EarlierSource!(IsRoom ? CurrentChannel : null, oldest.Key!, oldest.Id ?? "");
             // The room may have been switched to another channel while the page was being read: it still belongs to the channel it was read for.
             foreach (var m in messages) Add(m);
             if (!more)
             {
                 // This device has nothing earlier: the others may have, and are asked (not again for a minute, whatever the list does).
                 _nothingEarlier.Add(channel);
+                // The room's start record is held: this is its beginning, so nobody is asked, and the end is shown at once.
+                if (StartIsHeld?.Invoke() == true) _atStart.Add(channel);
                 var first = Messages.FirstOrDefault(m => m.Key != null);
-                if (first != null && AskOthersForEarlier is { } ask && Environment.TickCount64 - _askedAt.GetValueOrDefault(channel, long.MinValue / 2) >= AskAgainAfterMs)
+                if (!_atStart.Contains(channel) && first != null && AskOthersForEarlier is { } ask && Environment.TickCount64 - _askedAt.GetValueOrDefault(channel, long.MinValue / 2) >= AskAgainAfterMs)
                 {
                     long now = Environment.TickCount64;
                     _askedAt[channel] = now;
@@ -532,13 +588,35 @@ public sealed class ConversationVm : Observable
                     string key = first.Key!, id = first.Id ?? "";
                     long wait = Math.Max(0, MinGapBetweenAsksMs - (now - _lastAskTick));
                     _lastAskTick = now + wait;
-                    if (wait == 0) ask(askChannel, key, id);
-                    else _ = Task.Delay((int)wait).ContinueWith(_ => ask(askChannel, key, id), TaskScheduler.Default);
+                    if (wait == 0) asked = ask(askChannel, key, id) > 0;
+                    else
+                    {
+                        asked = true;   // asked a moment later: whether anyone answers is not known yet
+                        _ = Task.Delay((int)wait).ContinueWith(_ => ask(askChannel, key, id), TaskScheduler.Default);
+                    }
                 }
             }
             return messages.Count;
         }
-        finally { _loadingEarlier = false; }
+        finally
+        {
+            _loadingEarlier = false;
+            if (_atStart.Contains(channel)) SetEarlier(EarlierState.End);   // the beginning for sure, whether or not this last page held something
+            else if (messages.Count > 0) SetEarlier(EarlierState.Idle);
+            else if (_nothingEarlier.Contains(channel) && asked) WaitForOthers();   // the spinner stays while the others answer
+            else if (_nothingEarlier.Contains(channel)) SetEarlier(EarlierState.End);
+            else SetEarlier(EarlierState.Idle);
+        }
+    }
+
+    // The others were asked: what they send is read when it arrives (NoteEarlierArrived); if nothing has by then, the list says there is no more.
+    private void WaitForOthers()
+    {
+        int token = ++_waitToken;
+        _ = Task.Delay(WaitForOthersMs).ContinueWith(_ => PostToInterface(() =>
+        {
+            if (token == _waitToken && Earlier == EarlierState.Loading && !_loadingEarlier) SetEarlier(EarlierState.End);
+        }), TaskScheduler.Default);
     }
 
     /// <summary>Puts an emoji on a message or takes it off: the message's key, the emoji, whether to put it on, and the message's channel.</summary>
@@ -883,6 +961,9 @@ public sealed class ConversationVm : Observable
         if (!IsRoom) return;
         CurrentChannel = id;
         Messages.Clear();
+        _marker = null;   // gone with the list: going back starts again in the channel
+        Earlier = EarlierState.Idle;
+        _waitToken++;
         if (_stored.TryGetValue(id, out var list)) foreach (var m in list) Messages.Add(m);
         for (int i = 0; i < Messages.Count; i++) MarkDays(i);
         foreach (var c in Channels) c.Selected = c.IsText && c.Id == id;

@@ -30,6 +30,7 @@ public partial class MainView : UserControl
     public MainView()
     {
         InitializeComponent();
+        Messages.TemplateApplied += MessagesTemplateApplied;
         // The box takes several lines (a pasted report, say); Enter still sends, so it is caught before the box turns it into a new line.
         InputBox.AddHandler(KeyDownEvent, InputKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         _screens = new Control[] { WelcomePanel, NamePanel, ExistingPanel, LinkPanel, ServerRestorePanel, ListPanel, ChatPanel, SettingsPanel };
@@ -820,6 +821,7 @@ public partial class MainView : UserControl
     {
         if (_session == null) return;
         _current = chat;
+        chat.ResetEarlier();   // going back starts again each time a chat is opened
         _session.Open(chat);
         ChatPanel.DataContext = chat;
         MenuButton.Flyout = BuildMenu(chat);
@@ -832,6 +834,8 @@ public partial class MainView : UserControl
         }
         ShowOnly(ChatPanel);
         ScrollToEnd();
+        // A chat that fits on the screen has no scrolling to do: once it has settled its top counts as reached.
+        Avalonia.Threading.DispatcherTimer.RunOnce(() => CheckTopReached(chat), TimeSpan.FromMilliseconds(700));
     }
 
     private Action? _syncKeyboard, _keyboardUndo;
@@ -1222,10 +1226,30 @@ public partial class MainView : UserControl
         ActionList.Children.Add(item);
     }
 
-    // The button over the top of the messages: the next page of older ones, from this phone's history or, when it has no more, from the others.
-    private void EarlierClicked(object? sender, RoutedEventArgs e)
+    // Going back is automatic: when the person scrolls up to the top of the messages the next page of older ones is read (from this phone's history or, when it has no
+    // more, from the others), with a spinner as the first row of the list meanwhile and "End Of Messages" when there is nothing more. A chat whose messages fit on the
+    // screen has no scrolling to do, so its top counts as reached shortly after it opens.
+    private const double TopReachedWithin = 48;
+    private ScrollViewer? _messagesScroll;
+
+    private void MessagesTemplateApplied(object? sender, Avalonia.Controls.Primitives.TemplateAppliedEventArgs e)
     {
-        if (_current is { } chat) _session?.LoadEarlier(chat);
+        if (_messagesScroll != null) _messagesScroll.ScrollChanged -= MessagesScrolled;
+        _messagesScroll = e.NameScope.Find<ScrollViewer>("PART_ScrollViewer");
+        if (_messagesScroll != null) _messagesScroll.ScrollChanged += MessagesScrolled;
+    }
+
+    private void MessagesScrolled(object? sender, ScrollChangedEventArgs e)
+    {
+        // Scrolled up to the top (not a list that was only laid out).
+        if (_current is { } chat && _session != null && e.OffsetDelta.Y < 0 && _messagesScroll is { } scroll && scroll.Offset.Y <= TopReachedWithin)
+            _session.LoadEarlier(chat);
+    }
+
+    private void CheckTopReached(Chat chat)
+    {
+        if (_current == chat && _session != null && _messagesScroll is { } scroll && scroll.Extent.Height <= scroll.Viewport.Height + 1)
+            _session.LoadEarlier(chat);
     }
 
     // Older messages were put above the ones on show: the one that was at the top stays where it was, so the list does not jump.

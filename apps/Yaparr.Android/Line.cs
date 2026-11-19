@@ -24,6 +24,17 @@ public sealed partial class Line : Observable
         Attachment = source?.Attachment;
     }
 
+    /// <summary>What a marker at the top of the list shows (see <see cref="Marker"/>).</summary>
+    public enum MarkerKind { None, Loading, End }
+
+    /// <summary>Not a message: a spinner while earlier messages are being got (<see cref="MarkerKind.Loading"/>), or the words "End Of Messages" (<see cref="MarkerKind.End"/>), as the first row of the list.</summary>
+    public static Line Marker(MarkerKind kind) => new("marker:" + kind, "", "", DateTimeOffset.FromUnixTimeSeconds(0), false) { Kind = kind };
+
+    public MarkerKind Kind { get; private init; }
+    public bool IsMarker => Kind != MarkerKind.None;
+    public bool IsLoadingMarker => Kind == MarkerKind.Loading;
+    public bool IsEndMarker => Kind == MarkerKind.End;
+
     /// <summary>The account that wrote the message (its picture is looked up by it).</summary>
     public string? Account => Source?.From.Account.Value;
 
