@@ -1,6 +1,6 @@
 # Synced state (in progress)
 
-The goal: one account on all of a person's devices, with the same rooms, name, blocks and shelves everywhere, and a room left on one device left on all. This page is about the part that exists so far, the **library** (`src/Yaparr.AppCore/Sync`) and the **server API** (Yaparr.Cloud, README, "Synced state"), and, in the computer app, the **name, rooms and blocks**, which now go through them. The next steps move the shelves and settings, and then the screens say "synced" instead of "backup".
+The goal: one account on all of a person's devices, with the same rooms, name, blocks and shelves everywhere, and a room left on one device left on all. This page is about the part that exists so far, the **library** (`src/Yaparr.AppCore/Sync`) and the **server API** (Yaparr.Cloud, README, "Synced state"), and, in the computer app, the **name, rooms and blocks**, which now go through them. The settings that are the same on every device are entries too (below); the shelves (emoji, sounds, GIFs) are media and still to come. The screens already say "synced" instead of "backup".
 
 What is not here: message history. That is already shared between devices by the peers themselves, and a copy for when no other device is online stays a backup (`docs/backup-server.md`).
 
@@ -22,6 +22,16 @@ These were already the same on a person's devices while they were online togethe
 - What is read in a chat stays between the devices and is not sent to the server.
 - Runs about 20 seconds after the app opens, every five minutes, and a few seconds after a change (`ChatNode.AccountChanged`). It needs the device to be signed in to a server and to have a Sync key (made at the first backup by hand); until then it does nothing.
 - The state (cursor, entries, what is waiting to be sent) is a sealed file `sync-<server and account>.json` (`FileSyncState`), not part of a backup.
+
+## Settings
+
+The preferences a person wants the same everywhere are `setting:<name>` account entries, one for each thing, so changing one never touches the others and the newer write wins by the usual rule. Which ones is decided in one place, `SettingsSync` (AppCore): the **muted rooms** (`muted:<room id>`), the **rooms that notify for every message** (`notify-all:<room id>`), **a room's sound** (`room-sound:<room id>`), the **message sound** (`message-sound`), **mentions only** (`only-mentions`), **notifications on or off** (`notify-messages`), **link previews** (`link-previews`) and **leaving messages for people who are away** (`leave-for-absent`). The look of the app, the audio devices and voice settings, push-to-talk, the codecs, what the window does when closed, updates and the VPN belong to a device and are never synced.
+
+- A list is one entry for each item, and a value that is the default has no entry: putting a setting back to its default is the entry marked deleted. A name this version does not know is kept in the account and ignored, so a newer version can add settings without older ones breaking.
+- `ChatNode.SetAccountSetting`, `AccountSettings` and `SettingChanged` carry them (`ChatNode.Settings.cs`); they go to the cloud copy with the other entries (`IsCloudEntry`), so a device that was off, or never online with the others, gets them too.
+- `SettingsPush` (AppCore) is what the apps use: **`Seed`** when the app starts takes what the account holds into the settings (the account's value wins where it has one) and gives the account what this device has and it lacks, once; **`Remote`** applies a change from another device; **`Local`** runs after the settings are saved here (`AppData.SettingsSaved`) and sends only what changed since it last looked, so a change that came from another device is not sent back.
+
+Tests: `tests/Yaparr.Tests/SettingsSyncTests.cs`.
 
 ## Pins
 
