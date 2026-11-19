@@ -33,6 +33,15 @@ public class SettingsSyncMappingTests
     }
 
     [Fact]
+    public void That_the_phone_was_asked_about_notifications_belongs_to_the_phone_and_is_never_synced()
+    {
+        Assert.False(new AppSettings().NotificationsOffered);
+        Assert.Empty(SettingsSync.Snapshot(new AppSettings { NotificationsOffered = true }));
+        var json = System.Text.Json.JsonSerializer.Serialize(new AppSettings { NotificationsOffered = true });
+        Assert.True(System.Text.Json.JsonSerializer.Deserialize<AppSettings>(json)!.NotificationsOffered);
+    }
+
+    [Fact]
     public void A_change_from_another_device_is_applied_and_a_removal_puts_it_back_to_the_default()
     {
         var s = new AppSettings();

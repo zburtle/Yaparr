@@ -126,6 +126,7 @@ public partial class MainView
             AdoptSignIn(server, token, username);
             ShowServerState();
             ServerNote("");
+            await OfferNotificationsAsync();      // as soon as the phone is signed in: notifications and push, once
             await StartFirstBackupAsync();
         }
         catch (OperationCanceledException) { ServerNote(""); }

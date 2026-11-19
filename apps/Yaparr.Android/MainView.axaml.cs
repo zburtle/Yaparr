@@ -175,6 +175,7 @@ public partial class MainView : UserControl
             OpenFromNotification();
             await HandleLinksAsync();
             await Task.Delay(5000);
+            await OfferNotificationsAsync();      // a phone restored from Yaparr Cloud is signed in at its first start: asked then, once
             await FirstBackupAtLaunchAsync();
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)

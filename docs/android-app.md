@@ -100,6 +100,8 @@ A call goes on when you leave the screen: while you are in one, Yaparr runs a fo
 
 ## Push notifications
 
+**Right after signing in** to Yaparr Cloud (and at the first start of a phone restored from it), Yaparr asks once, in its own words, whether to turn on notifications and push; on **Turn on** it asks Android for the notification permission (Android 13 and newer) and then registers push with the push app on the phone (the first one, if there are several) or, with none, through Firebase. Whatever the answer, it is not asked again (`NotificationsOffered`, which belongs to the phone and is not synced), and everything stays in the settings. The computer app needs no such step: its notifications are Windows toasts and popups in its own window, which need no permission, and it has no push (it is online while it is open).
+
 **Push notifications** (Settings) wake the phone when someone writes while Yaparr is closed, without **Stay connected in the background**. Messages in Yaparr go from phone to phone and never through a server, so a server cannot know that one is waiting; this is how it works instead:
 
 1. The phone turns push on with a **UnifiedPush** app (a "distributor" such as ntfy, which the person installs once) and registers the address it gives with their **Yaparr Cloud** account. The server answers with a **wake address**, which is long, random and secret.
