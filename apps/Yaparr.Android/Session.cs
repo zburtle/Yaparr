@@ -38,6 +38,8 @@ public sealed partial class Session : IDisposable
     private string? _banner;
     private double? _bannerProgress;
     private ChatNode? _node;
+
+    internal ChatNode? Node => _node;
     private Yaparr.History.Sqlite.SqliteHistoryStore? _historyStore;
     private Chat? _open;
     private bool _channelChoiceDirty;

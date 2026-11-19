@@ -66,6 +66,9 @@ public sealed class PieceSync
         engine.Remote += OnRemote;
     }
 
+    /// <summary>The id of the piece a piece record points at, or null if it is not a good record.</summary>
+    internal static string? PieceIdOf(byte[] value) => Parse(value)?.P;
+
     private static Index? Parse(byte[] value)
     {
         try { return JsonSerializer.Deserialize<Index>(value) is { P.Length: 64 } index ? index : null; }

@@ -294,6 +294,7 @@
                         <TextBlock Text="Messages and pictures go straight to people who are online. Only when someone you know is away is a locked copy left on the server, for up to 7 days. The server cannot read it. Turn this off and nothing is left there; you still receive what others leave for you." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
                         <TextBlock x:Name="AutoBackupStatus" IsVisible="False" TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />
                         <Button x:Name="ShowRecoveryCodeButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Show Sync key" Click="ShowRecoveryCodeClicked" />
+                        <Button x:Name="ReplaceSyncKeyButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Replace Sync key…" Click="ReplaceSyncKeyClicked" />
                         <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Change password" Click="ServerChangePasswordClicked" />
                         <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Delete my account" Click="ServerDeleteAccountClicked" />
                         <Button x:Name="ServerSignOutButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Sign out" Click="ServerSignOutClicked" />

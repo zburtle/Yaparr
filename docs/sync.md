@@ -64,6 +64,21 @@ Tests: `SyncRestoreTests` in `tests/Yaparr.Tests/HistoryPieceTests.cs`.
 
 The whole-profile backup is still written alongside, for now, so an account can be restored by an older version and by the fallback; it is removed in a later release, once the apps in use all write the identity piece.
 
+## Replacing the Sync key
+
+For a key that was lost, or that someone else has seen: **Replace Sync key…** on the sync page of either app (`SyncKeyReplacement`). It goes in an order that leaves nothing half done:
+
+1. The device syncs with the old key, so it holds all of what the account has.
+2. It keeps what the old state held (which records, which pieces), saves the new key and drops the sync state (`sync-<server and account>.json` and its `.known` file), so the next run writes **everything** again under the new key. The automatic backup is made due, so a whole-profile backup is made with the new key too.
+3. The sync runs with the new key. If it stops half way, the next ordinary sync finishes it: nothing is held as written. The old records come back as unreadable and are skipped.
+4. What the old key locked is removed from the server: the old records the new state does not hold (written as deleted, which needs no key), the pieces they pointed at, and the whole-profile backups.
+
+**Other devices** keep the old key until they are given the new one. A device that pulls records it cannot open (`SyncEngine.HaltOnUnreadable`, on for the ordinary sync) **stops**: it sends nothing, so it does not write over the new records with the old key, and it leaves its cursor where it was so the records are read again later. The sync page says *Your Sync key was replaced on another device. Enter the new key to keep syncing*, and the automatic backup waits too (a backup locked with the old key would be one nobody could open). **Replace Sync key… > I have the new key** takes the key (`SyncKeyReplacement.AdoptAsync` checks that it opens a record the server holds, so a slip cannot lock a device out), and the sync carries on from where it was: the state holds only what the device has already read.
+
+Limits: a device that is off when the key is replaced and is later given the **old** key only (a restore from an old note) sees records it cannot open and halts, with the message above, until it has the new one; and another device making a *second* replacement at the same moment is a race the later of them wins, the other halting.
+
+Tests: `tests/Yaparr.Tests/SyncKeyReplacementTests.cs`.
+
 ## Pins
 
 Pinned rooms and chats (see [The desktop app](desktop-app.md#pinning-rooms-and-chats)) are account entries too, one for each pinned room or chat: `pin:r:<room id>` and `pin:d:<person id>`. The value is the pin's **position** among the pinned ones, a short text of lowercase digits and letters that sorts into the order they are shown in (`PinOrder`); an unpin is the entry marked deleted. `PinOrder.Between(before, after)` always makes a position strictly between two others, so moving one pinned room changes only its own entry: two devices that each move a different one never overwrite each other, and the newer write of the same pin wins by the rule above. Pinning one more goes after the last, and moving to the top goes before the first, in steps of a digit, so a position grows by a character only about every 17th time that is done over and over.
