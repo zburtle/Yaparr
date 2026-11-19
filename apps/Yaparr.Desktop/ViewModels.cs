@@ -862,6 +862,9 @@ public sealed class ConversationVm : Observable
     public ObservableCollection<MessageVm> Messages { get; } = new();
 
     /// <summary>Every message of the conversation, including those of channels that are not on screen.</summary>
+    /// <summary>When the newest message of this room or chat was sent; the sidebar lists the most recent first, below the pinned ones.</summary>
+    public DateTimeOffset LastActivity { get; private set; } = DateTimeOffset.MinValue;
+
     public IEnumerable<MessageVm> AllMessages => Messages.Concat(_stored.Values.SelectMany(l => l));
 
     public int Unread
@@ -1059,6 +1062,7 @@ public sealed class ConversationVm : Observable
     public void Add(MessageVm message)
     {
         if (message.Id != null && !_ids.Add(message.Id)) return;
+        if (message.Time > LastActivity) LastActivity = message.Time;
         IndexForReplies(message);
         if (message.Id != null && _delivery.TryGetValue(message.Id, out var status))
         {

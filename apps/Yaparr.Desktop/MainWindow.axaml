@@ -638,8 +638,8 @@
                             <DataTemplate x:DataType="local:MessageVm">
                                 <Panel>
                                 <!-- Not a message: the loader, or the end, as the first row of the list. -->
-                                <Path IsVisible="{Binding IsLoadingMarker}" Classes="spinner" RenderTransform="rotate(0deg)" Data="M 12,2 A 10,10 0 1 1 2,12" Stroke="{DynamicResource Accent}"
-                                      StrokeThickness="2.5" StrokeLineCap="Round" Width="24" Height="24" Margin="0,14" HorizontalAlignment="Center" />
+                                <Path IsVisible="{Binding IsLoadingMarker}" Classes="spinner" Data="M 12,2 A 10,10 0 1 1 2,12" Stroke="{DynamicResource Accent}"
+                                      StrokeThickness="2.5" StrokeLineCap="Round" Width="24" Height="24" Margin="0,14" HorizontalAlignment="Center"><Path.RenderTransform><RotateTransform /></Path.RenderTransform></Path>
                                 <TextBlock Classes="sys" IsVisible="{Binding IsEndMarker}" Text="End Of Messages" HorizontalAlignment="Center" Margin="0,14" />
                                 <StackPanel Spacing="2" IsVisible="{Binding !IsMarker}">
                                     <TextBlock Classes="sys" IsVisible="{Binding ShowDay}" Text="{Binding DayLabel}"
@@ -932,7 +932,7 @@
     <Border x:Name="SyncIcon" HorizontalAlignment="Right" VerticalAlignment="Top" Width="28" Height="32" Margin="0,0,12,0" Background="Transparent" IsVisible="False"
             ToolTip.Tip="Syncing">
         <Path Classes="spinner" Data="M8,1 A7,7 0 1 1 1,8" Stroke="{DynamicResource Accent}" StrokeThickness="2" StrokeLineCap="Round" Width="16" Height="16"
-              HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransform="rotate(0deg)" />
+              HorizontalAlignment="Center" VerticalAlignment="Center"><Path.RenderTransform><RotateTransform /></Path.RenderTransform></Path>
     </Border>
 
     <!-- The settings: sections on the left, the section's controls on the right, over the window. Escape, the cross or a click outside closes it. -->
