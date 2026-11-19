@@ -125,6 +125,12 @@ public sealed class AppSettings
     /// <summary>The phone app: show a notification for a direct message, a mention or a reply to you, and for every message of the rooms in <see cref="NotifyAllRooms"/>, while the app is not open.</summary>
     public bool NotifyMessages { get; set; } = true;
 
+    /// <summary>
+    /// The phone app: this phone has been asked, once, whether to turn on notifications and push (right after signing in to Yaparr Cloud), whatever the answer was, so it is not asked again.
+    /// Belongs to the phone: it is not one of the settings kept the same on every device.
+    /// </summary>
+    public bool NotificationsOffered { get; set; }
+
     /// <summary>The phone app: stay connected when the app is not on the screen, so that messages and calls keep coming (shows a notification while it is on). Off until the person turns it on.</summary>
     public bool BackgroundConnection { get; set; }
 
