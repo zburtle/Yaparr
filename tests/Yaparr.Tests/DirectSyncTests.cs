@@ -144,7 +144,7 @@ public class DirectSyncTests : IDisposable
 
         var toBob = await first.OpenDirectChatAsync(bob.AccountId);
         await toBob.SendAsync("hello bob");
-        await TestUtil.WaitFor(() => first.StoredDirectChats.Count == 1);
+        await TestUtil.WaitFor(() => first.StoredDirectChats.Count(c => !c.IsNotes) == 1);
         var toAlice = await bob.OpenDirectChatAsync(first.AccountId);
         await toAlice.SendAsync("hello alice");
         await TestUtil.WaitFor(() => first.GetDirectChat(bob.AccountId).History.Count == 2);
@@ -178,7 +178,7 @@ public class DirectSyncTests : IDisposable
         }
 
         using var again = TestUtil.NewNode(new InMemoryDiscoveryHub(), "alice", identity: _firstId, directHistoryDirectory: _dir);
-        var stored = Assert.Single(again.StoredDirectChats);
+        var stored = Assert.Single(again.StoredDirectChats, c => !c.IsNotes);
         var message = Assert.Single(stored.History);
         Assert.Equal("remember me", message.Text);
         Assert.True(again.IsMyDevice(message.From.Id));
@@ -199,7 +199,7 @@ public class DirectSyncTests : IDisposable
         }
 
         using var again = TestUtil.NewNode(new InMemoryDiscoveryHub(), "alice", identity: _firstId, directHistoryDirectory: _dir);
-        var stored = Assert.Single(again.StoredDirectChats);
+        var stored = Assert.Single(again.StoredDirectChats, c => !c.IsNotes);
         var opened = stored.History;
         Assert.Equal(100, opened.Count);
         Assert.Equal("line 130", opened[0].Text);

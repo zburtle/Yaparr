@@ -157,8 +157,12 @@ public sealed partial class ChatNode
 
         bool conversationExisted = HasDirectConversation(peerAccount);
         if (!RecordDirect(record, mirror: !mine)) return true;
-        // What this account wrote on another device is in the history now; the chat shows it when it is next opened.
-        if (mine) return true;
+        // What this account wrote on another device is in the history now; the chat shows it when it is next opened. A note to yourself is shown now.
+        if (mine)
+        {
+            if (peerAccount == AccountId) ShowDirect(record, catchUp: false);
+            return true;
+        }
 
         bool fresh = item.T >= DateTimeOffset.UtcNow.Subtract(MailboxFreshWindow).ToUnixTimeMilliseconds();
         var info = GetPeerInfo(peerAccount) ?? new PeerInfo(device, name, null, false, peerAccount);

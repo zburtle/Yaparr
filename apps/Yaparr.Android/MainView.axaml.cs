@@ -822,6 +822,8 @@ public partial class MainView : UserControl
         _current = chat;
         _session.Open(chat);
         ChatPanel.DataContext = chat;
+        // Notes to self has nothing to copy, block or leave.
+        MenuButton.IsVisible = !chat.IsNotes;
         MenuButton.Flyout = BuildMenu(chat);
         // New messages scroll the list down, once for each chat.
         if (!_watched.ContainsKey(chat))

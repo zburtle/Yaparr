@@ -575,7 +575,7 @@ public sealed class ConversationVm : Observable
             return name;
         }
     }
-    public string Subtitle => IsRoom ? "Room" : "Direct chat";
+    public string Subtitle => IsRoom ? "Room" : IsNotes ? "Only you: kept on all your devices" : "Direct chat";
 
     private string _syncText = "";
     private bool _syncing;
@@ -610,7 +610,10 @@ public sealed class ConversationVm : Observable
 
     /// <summary>Full peer ID of the other person in a direct chat.</summary>
     public string? PeerId { get; init; }
-    public bool HasPeerId => PeerId != null;
+    public bool HasPeerId => PeerId != null && !IsNotes;
+
+    /// <summary>The chat with yourself ("Notes to self"): always there, first by default, pinnable and movable like any chat, but never removed.</summary>
+    public bool IsNotes { get; init; }
 
     /// <summary>The room's id (<c>ChatRoom.RoomId</c>), for a room.</summary>
     public string? RoomId { get; init; }

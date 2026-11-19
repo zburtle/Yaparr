@@ -94,6 +94,9 @@ public sealed class Chat : Observable
     /// <summary>What a pin of this chat is kept under: the room's id, or the other person's id in a direct chat.</summary>
     public string? PinId => Room?.RoomId ?? Direct?.PeerId.Value;
 
+    /// <summary>The chat with yourself ("Notes to self"): first in the list by default, pinnable and movable like any chat, but never left or blocked.</summary>
+    public bool IsNotes => Direct?.IsNotes == true;
+
     private bool _isPinned;
 
     /// <summary>Pinned chats stay at the top of the list, in an order the person sets.</summary>
