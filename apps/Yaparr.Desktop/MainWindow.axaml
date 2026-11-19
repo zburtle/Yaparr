@@ -1115,6 +1115,12 @@
                         <StackPanel x:Name="SectionNetwork" Spacing="10" IsVisible="False">
                             <TextBlock Text="Network" FontSize="15" FontWeight="SemiBold" />
                             <TextBlock Classes="muted" TextWrapping="Wrap" Text="If people cannot reach you, this shows why. A VPN or a TURN relay, under Network in the list, can help." />
+                            <Border x:Name="GatewayBanner" IsVisible="False" CornerRadius="6" Padding="10,8" BorderThickness="1" BorderBrush="{DynamicResource Good}">
+                                <StackPanel Spacing="2">
+                                    <TextBlock x:Name="GatewayBannerTitle" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                    <TextBlock x:Name="GatewayBannerText" Classes="muted" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
                             <local:NetworkCheckView x:Name="NetworkView" />
                             <TextBlock Text="Link previews" FontWeight="SemiBold" Margin="0,10,0,0" />
                             <CheckBox x:Name="LinkPreviewItem" Content="Show a preview under the links I send" />

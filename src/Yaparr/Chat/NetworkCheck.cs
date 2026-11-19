@@ -81,6 +81,17 @@ public sealed partial class ChatNode
             "No reply from the STUN servers. Check that you are online and that your firewall allows Yaparr to use UDP.");
     }
 
+    /// <summary>
+    /// What to tell the person while the Yaparr Cloud gateway is in use (see <see cref="ConnectGatewayAsync"/>), or null when it is not: said the same on the network screens of
+    /// both apps and in the connection check.
+    /// </summary>
+    public static string? GatewayNote(VpnState state) => state switch
+    {
+        VpnState.Connected => "This network does not let UDP out, so Yaparr Cloud is carrying this device's traffic through your account. That is enough for messages, but not for voice or screen sharing.",
+        VpnState.Connecting => "This network does not let UDP out. Connecting to Yaparr Cloud so that messages still work\u2026",
+        _ => null,
+    };
+
     /// <summary>How Yaparr currently reaches one person.</summary>
     public PeerLink GetLink(PeerId peer)
     {
@@ -163,9 +174,9 @@ public sealed partial class ChatNode
         }
 
         if (GatewayState == VpnState.Connected)
-            items.Add(new(CheckLevel.Info, "Using Yaparr Cloud for messages", "This network does not let UDP out, so Yaparr sends its traffic through your Yaparr Cloud account. That is enough for messages, but not for voice or screen sharing."));
+            items.Add(new(CheckLevel.Ok, "Yaparr Cloud is acting as your gateway", GatewayNote(VpnState.Connected)!));
         else if (GatewayState == VpnState.Connecting)
-            items.Add(new(CheckLevel.Warning, "Connecting to Yaparr Cloud", "This network does not let UDP out, and Yaparr is trying to use your Yaparr Cloud account instead."));
+            items.Add(new(CheckLevel.Warning, "Connecting to Yaparr Cloud", GatewayNote(VpnState.Connecting)!));
 
         if (VpnState == VpnState.Connecting)
             items.Add(new(CheckLevel.Warning, "VPN is connecting", "No reply from the VPN server yet. Check the server address and keys."));

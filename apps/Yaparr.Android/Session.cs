@@ -87,6 +87,11 @@ public sealed partial class Session : IDisposable
     /// <summary>The last sentence <see cref="ConnectionChanged"/> said (empty before the first).</summary>
     public string ConnectionText { get; private set; } = "";
 
+    /// <summary>Whether Yaparr Cloud is acting as the gateway for this phone's UDP traffic (the network blocks UDP), and said again whenever that changes.</summary>
+    public Yaparr.Vpn.VpnState GatewayState => _node?.GatewayState ?? Yaparr.Vpn.VpnState.Disconnected;
+
+    public event Action? GatewayChanged;
+
     /// <summary>The phone joined or left a voice call (what <see cref="VoiceChat"/> says changed).</summary>
     public event Action? CallChanged;
 
@@ -208,6 +213,7 @@ public sealed partial class Session : IDisposable
         _ = new GatewayFallback(node, () => GatewayFallback.AccountOf(_data.LoadBackupServer()), () => _settings.GatewayWhenUdpBlocked, Log);
         node.DisplayNameChanged += OnDisplayNameChanged;
         node.IncomingDirectChat += chat => UI(() => AddDirect(chat));
+        node.GatewayStateChanged += _ => UI(() => GatewayChanged?.Invoke());
         node.PeerConnected += _ => UI(SayConnection);
         node.PeerDisconnected += _ => UI(SayConnection);
         ReconcileFromAccount();
