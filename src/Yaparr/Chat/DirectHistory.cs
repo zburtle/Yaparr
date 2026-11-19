@@ -64,6 +64,12 @@ public interface IDirectHistoryStore
     /// of the newest and <paramref name="reactions"/> of the newest reactions; the newest <paramref name="cap"/> of those altogether, newest first.
     /// </summary>
     IReadOnlyList<(string Key, DirectRecord Record)> DirectWindow(long sinceTs, int perChat, int reactions, int cap);
+
+    /// <summary>For each month (<see cref="HistoryMonths"/>) a conversation has anything from: how many rows it has (messages and reactions).</summary>
+    IReadOnlyDictionary<string, int> DirectMonthCounts(string peer);
+
+    /// <summary>Every row (message or reaction, with the key of what the reaction is on) of one month of a conversation.</summary>
+    IReadOnlyList<(string Key, DirectRecord Record, string? Target)> DirectInMonth(string peer, string month);
 }
 
 /// <summary>

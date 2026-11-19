@@ -58,6 +58,30 @@ public interface IChatHistoryStore
 
     /// <summary>The keys of <see cref="Window"/>.</summary>
     string[] WindowKeys(string roomKey, long sinceTs, int perChannel, int reactions);
+
+    /// <summary>The rooms there are any messages of.</summary>
+    IReadOnlyList<string> Rooms();
+
+    /// <summary>For each month (<see cref="HistoryMonths"/>, UTC) a room has anything from: how many rows it has (messages and reactions). What is kept in sync works a month at a time.</summary>
+    IReadOnlyDictionary<string, int> MonthCounts(string roomKey);
+
+    /// <summary>Every row (message or reaction, with the key of what the reaction is on) of one month of a room.</summary>
+    IReadOnlyList<(string Key, StoredMessage Message, string? Target)> InMonth(string roomKey, string month);
+}
+
+/// <summary>Months as history is divided for sync: UTC, written <c>yyyyMM</c>, so they sort in time order.</summary>
+public static class HistoryMonths
+{
+    public static string Of(long unixMs) => DateTimeOffset.FromUnixTimeMilliseconds(Math.Clamp(unixMs, 0, 253_402_300_799_999)).UtcDateTime.ToString("yyyyMM");
+
+    public static bool IsMonth(string? month) => month is { Length: 6 } && month.All(char.IsAsciiDigit) && int.Parse(month[4..]) is >= 1 and <= 12 && int.Parse(month[..4]) is >= 1970 and <= 9999;
+
+    /// <summary>The first millisecond of the month, and of the next one.</summary>
+    public static (long From, long To) Range(string month)
+    {
+        var start = new DateTimeOffset(int.Parse(month[..4]), int.Parse(month[4..]), 1, 0, 0, 0, TimeSpan.Zero);
+        return (start.ToUnixTimeMilliseconds(), start.AddMonths(1).ToUnixTimeMilliseconds());
+    }
 }
 
 /// <summary>Keeps messages in memory only: for a node that has no store, and for tests.</summary>
@@ -215,6 +239,33 @@ public sealed class MemoryHistoryStore : IChatHistoryStore, IDirectHistoryStore
 
     public string[] WindowKeys(string roomKey, long sinceTs, int perChannel, int reactions) =>
         Window(roomKey, sinceTs, perChannel, reactions).Select(w => w.Key).ToArray();
+
+    public IReadOnlyList<string> Rooms()
+    {
+        lock (_gate) return _rooms.Where(kv => kv.Value.Count > 0).Select(kv => kv.Key).ToList();
+    }
+
+    public IReadOnlyDictionary<string, int> MonthCounts(string roomKey)
+    {
+        lock (_gate) return Room(roomKey).Values.GroupBy(v => HistoryMonths.Of(v.Message.Ts)).ToDictionary(g => g.Key, g => g.Count());
+    }
+
+    public IReadOnlyList<(string Key, StoredMessage Message, string? Target)> InMonth(string roomKey, string month)
+    {
+        var (from, to) = HistoryMonths.Range(month);
+        lock (_gate) return Room(roomKey).Where(kv => kv.Value.Message.Ts >= from && kv.Value.Message.Ts < to).Select(kv => (kv.Key, kv.Value.Message, kv.Value.Target)).ToList();
+    }
+
+    public IReadOnlyDictionary<string, int> DirectMonthCounts(string peer)
+    {
+        lock (_gate) return Chat(peer).Values.GroupBy(v => HistoryMonths.Of(v.Record.Ts)).ToDictionary(g => g.Key, g => g.Count());
+    }
+
+    public IReadOnlyList<(string Key, DirectRecord Record, string? Target)> DirectInMonth(string peer, string month)
+    {
+        var (from, to) = HistoryMonths.Range(month);
+        lock (_gate) return Chat(peer).Where(kv => kv.Value.Record.Ts >= from && kv.Value.Record.Ts < to).Select(kv => (kv.Key, kv.Value.Record, kv.Value.Target)).ToList();
+    }
 }
 
 /// <summary>The files history was kept in before it moved into a database. They are only read now, to bring them over (see <see cref="Load"/>).</summary>

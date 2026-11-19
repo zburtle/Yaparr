@@ -1,8 +1,6 @@
 # Synced state (in progress)
 
-The goal: one account on all of a person's devices, with the same rooms, name, blocks and shelves everywhere, and a room left on one device left on all. This page is about the part that exists so far, the **library** (`src/Yaparr.AppCore/Sync`) and the **server API** (Yaparr.Cloud, README, "Synced state"), and, in the computer app, the **name, rooms and blocks**, which now go through them. The settings that are the same on every device are entries too (below); the shelves (emoji, sounds, GIFs) are media and still to come. The screens already say "synced" instead of "backup".
-
-What is not here: message history. That is already shared between devices by the peers themselves, and a copy for when no other device is online stays a backup (`docs/backup-server.md`).
+The goal: one account on all of a person's devices, with the same rooms, name, blocks and shelves everywhere, and a room left on one device left on all. This page is about the part that exists so far, the **library** (`src/Yaparr.AppCore/Sync`) and the **server API** (Yaparr.Cloud, README, "Synced state"), and, in the computer app, the **name, rooms and blocks**, which now go through them. The settings that are the same on every device are entries too (below); message **history** is kept as pieces (below); the shelves (emoji, sounds, GIFs) are media and still to come. The screens already say "synced" instead of "backup".
 
 ## How it works
 
@@ -33,6 +31,21 @@ The preferences a person wants the same everywhere are `setting:<name>` account 
 
 Tests: `tests/Yaparr.Tests/SettingsSyncTests.cs`.
 
+## History
+
+Message history is far too big for a synced record and has to last, so it is kept as **pieces** on the server's kept store (Yaparr.Cloud README, "Kept pieces": never expires, a quota of its own, 512 MiB an account by default, read only with a sign-in). One piece is **one month (UTC) of one room or of one direct conversation**: `h-<room id>-<yyyyMM>` or `d-<person id>-<yyyyMM>`, every row of that month (messages and reactions) as the device's history store has them, compressed (`HistoryPieces`, `ChatNode.KeptHistory`). A month rather than a day because the account holds at most 2000 synced records and a record is what says which piece is current, so a year of ten rooms is a hundred and twenty.
+
+- **Locked.** A piece is locked on the device with the Sync key (`SyncSealer`, bound to the piece's name) and put on the server under the SHA-256 of the locked bytes (`KeepClient`). The server sees opaque ids, sizes and times.
+- **Which piece is current.** A synced record of kind `piece`, named like the piece, holds `{p: id, t: tag}`, the id of the piece and its tag (how many rows it had). It goes through the same engine as every other record, so the newest write wins on every device (`PieceSync`).
+- **Writing.** A run compares, for each month, the number of rows the device has with the tag the account holds; where they differ it writes a new piece, sends the record, and only then removes the piece it replaced, so no device is ever pointed at one that is gone. A month with no change costs nothing. Past the quota nothing more is written and the log says so; a refusal for too many calls waits for the next run.
+- **Reading.** A device that sees a new record for a piece downloads it, opens it (a piece locked with another key is skipped and counted) and takes the rows into its store: what it already has is left alone, so taking in is safe in any order and any number of times. Each row is **checked, not trusted**: a room's message has to carry a good signature for that room, and every row has to belong to the piece's room or conversation and month.
+- **Two devices that wrote the same month apart** each take the other's rows in, so both hold the union; the tags then agree and whoever still differs writes it once more.
+- Runs with the rest of the account sync (the same timers). It is also what a new device uses to get its history back without the backup.
+
+Limits: a message removed on one device (a moderator's removal, say) is still in the other devices' pieces and comes back the next time one is read; a month so busy that its piece goes over about 15 MiB is left out (it is logged); a window open in a chat does not show rows that were taken in until it is opened again.
+
+Tests: `tests/Yaparr.Tests/HistoryPieceTests.cs`.
+
 ## Pins
 
 Pinned rooms and chats (see [The desktop app](desktop-app.md#pinning-rooms-and-chats)) are account entries too, one for each pinned room or chat: `pin:r:<room id>` and `pin:d:<person id>`. The value is the pin's **position** among the pinned ones, a short text of lowercase digits and letters that sorts into the order they are shown in (`PinOrder`); an unpin is the entry marked deleted. `PinOrder.Between(before, after)` always makes a position strictly between two others, so moving one pinned room changes only its own entry: two devices that each move a different one never overwrite each other, and the newer write of the same pin wins by the rule above. Pinning one more goes after the last, and moving to the top goes before the first, in steps of a digit, so a position grows by a character only about every 17th time that is done over and over.
@@ -50,6 +63,8 @@ Tests: `tests/Yaparr.Tests/PinTests.cs`.
 | `SyncClient`, `ISyncTransport` | the two calls to the server, `GET` and `PUT /v1/sync` |
 | `SyncEngine`, `ISyncState`, `MemorySyncState`, `FileSyncState` | the writes, the merge and the sync; the state is what a device keeps between syncs (a sealed file in the app, in memory in tests) |
 | `AccountCloudSync` | the name, rooms, blocks and pins of `ChatNode` through the engine |
+| `KeepClient`, `IKeepTransport` | the three calls of the kept store, `PUT`, `GET` and `DELETE /v1/keep/{id}` |
+| `PieceSync`, `IPieceSource`, `HistoryPieceSource` | locking, keeping and taking in pieces; history is a source of them (`HistoryPieces` in the library does the months) |
 | `PinOrder`, `PinnedFirst` | the positions of pinned rooms and chats, and keeping them at the top of a list |
 
 Tests: `tests/Yaparr.Tests/AccountCloudSyncTests.cs` (two real nodes of one account that are never online together), `tests/Yaparr.Tests/SyncTests.cs` (the engine runs against a fake server that keeps records the way the real one does), and Yaparr.Cloud's `SyncStoreTests` and `SyncApiTests`.

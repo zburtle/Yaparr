@@ -479,6 +479,73 @@ public sealed class SqliteHistoryStore : IChatHistoryStore, IDirectHistoryStore,
         }
     }
 
+    private const string MonthOfTs = "strftime('%Y%m', ts / 1000, 'unixepoch')";
+
+    public IReadOnlyList<string> Rooms()
+    {
+        lock (_gate)
+        {
+            using var cmd = _db.CreateCommand();
+            cmd.CommandText = "SELECT DISTINCT room FROM messages";
+            using var r = cmd.ExecuteReader();
+            var list = new List<string>();
+            while (r.Read()) list.Add(r.GetString(0));
+            return list;
+        }
+    }
+
+    private Dictionary<string, int> Counts(string table, string column, string who)
+    {
+        lock (_gate)
+        {
+            using var cmd = _db.CreateCommand();
+            cmd.CommandText = $"SELECT {MonthOfTs}, count(*) FROM {table} WHERE {column} = $w GROUP BY 1";
+            cmd.Parameters.AddWithValue("$w", who);
+            using var r = cmd.ExecuteReader();
+            var counts = new Dictionary<string, int>();
+            while (r.Read()) counts[r.GetString(0)] = r.GetInt32(1);
+            return counts;
+        }
+    }
+
+    public IReadOnlyDictionary<string, int> MonthCounts(string roomKey) => Counts("messages", "room", roomKey);
+
+    public IReadOnlyDictionary<string, int> DirectMonthCounts(string peer) => Counts("direct", "peer", peer);
+
+    public IReadOnlyList<(string Key, StoredMessage Message, string? Target)> InMonth(string roomKey, string month)
+    {
+        var (from, to) = HistoryMonths.Range(month);
+        lock (_gate)
+        {
+            using var cmd = _db.CreateCommand();
+            cmd.CommandText = $"SELECT key, target, {Columns} FROM messages WHERE room = $r AND ts >= $f AND ts < $t ORDER BY ts, key";
+            cmd.Parameters.AddWithValue("$r", roomKey);
+            cmd.Parameters.AddWithValue("$f", from);
+            cmd.Parameters.AddWithValue("$t", to);
+            using var r = cmd.ExecuteReader();
+            var list = new List<(string, StoredMessage, string?)>();
+            while (r.Read()) list.Add((r.GetString(0), Read(r, 2), r.IsDBNull(1) ? null : r.GetString(1)));
+            return list;
+        }
+    }
+
+    public IReadOnlyList<(string Key, DirectRecord Record, string? Target)> DirectInMonth(string peer, string month)
+    {
+        var (from, to) = HistoryMonths.Range(month);
+        lock (_gate)
+        {
+            using var cmd = _db.CreateCommand();
+            cmd.CommandText = $"SELECT key, target, {DirectColumns} FROM direct WHERE peer = $p AND ts >= $f AND ts < $t ORDER BY ts, key";
+            cmd.Parameters.AddWithValue("$p", peer);
+            cmd.Parameters.AddWithValue("$f", from);
+            cmd.Parameters.AddWithValue("$t", to);
+            using var r = cmd.ExecuteReader();
+            var list = new List<(string, DirectRecord, string?)>();
+            while (r.Read()) list.Add((r.GetString(0), ReadDirect(r, 2), r.IsDBNull(1) ? null : r.GetString(1)));
+            return list;
+        }
+    }
+
     public void Dispose()
     {
         lock (_gate) _db.Dispose();
