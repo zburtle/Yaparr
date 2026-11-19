@@ -74,7 +74,6 @@ public sealed class MessageVm : Observable
     private AttachmentState? _state;
     private long _received;
     private bool _isMine;
-    private string _deviceNote = "";
 
     public MessageVm(DateTimeOffset time, string sender, string text, bool isCatchUp = false, bool isSystem = false, bool isMine = false, string? id = null, Attachment? attachment = null)
     {
@@ -231,12 +230,11 @@ public sealed class MessageVm : Observable
     /// A message shows as yours once it is known to come from one of your own devices. That can be learned after the message arrived
     /// (the proof that a device is yours travels with its presence, not with its messages), so it is set later.
     /// </summary>
-    public void ClaimAsMine(string deviceNote)
+    public void ClaimAsMine()
     {
         if (_isMine) return;
         _isMine = true;
-        _deviceNote = deviceNote;
-        foreach (var name in new[] { nameof(IsMine), nameof(ReactionAlign), nameof(BubbleDock), nameof(ReactionFlow), nameof(ShowSender), nameof(IsOther), nameof(Kind), nameof(Status), nameof(HasStatus), nameof(IsFailed), nameof(CanRetry), nameof(DeviceNote), nameof(TimeText), nameof(Display), nameof(Highlight) })
+        foreach (var name in new[] { nameof(IsMine), nameof(ReactionAlign), nameof(BubbleDock), nameof(ReactionFlow), nameof(ShowSender), nameof(IsOther), nameof(Kind), nameof(Status), nameof(HasStatus), nameof(IsFailed), nameof(CanRetry), nameof(TimeText), nameof(Display), nameof(Highlight) })
             Raise(name);
     }
 
@@ -321,10 +319,8 @@ public sealed class MessageVm : Observable
         _ => "",
     };
 
-    public string TimeText => Time.LocalDateTime.ToString("HH:mm") + (DeviceNote.Length > 0 ? "  ·  " + DeviceNote : "");
+    public string TimeText => Time.LocalDateTime.ToString("HH:mm");
 
-    /// <summary>For a message you sent from another of your devices: which one.</summary>
-    public string DeviceNote { get => _deviceNote; init => _deviceNote = value; }
     public string FullTime => Time.LocalDateTime.ToString("dddd, MMMM d, yyyy  HH:mm:ss");
 
     private bool _showDay;
