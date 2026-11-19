@@ -57,9 +57,9 @@ public partial class MainView
         if (!_server.SignedIn) return;
         var host = Uri.TryCreate(_server.Url, UriKind.Absolute, out var uri) ? uri.Authority : _server.Url;
         ServerSignedInText.Text = $"Signed in to {host} as {_server.Username}.";
-        ShowRecoveryCodeButton.IsVisible = _server.RecoveryCode.Length > 0;
+        ShowRecoveryCodeButton.IsVisible = ReplaceSyncKeyButton.IsVisible = _server.RecoveryCode.Length > 0;
 
-        var trouble = _server.Failures > 0 || _server.AutoNote.StartsWith("Sync stopped", StringComparison.Ordinal);
+        var trouble = _server.Failures > 0 || _server.AutoNote.StartsWith("Sync stopped", StringComparison.Ordinal) || _server.AutoNote == AccountCloudSync.KeyChangedNote;
         AutoBackupStatus.Text = trouble ? _server.AutoNote
             : _server.RecoveryCode.Length == 0 || _server.Version <= 0 ? "Syncing starts once your Sync key has been made. Tap Sync now."
             : _server.LastBackup is { } last ? $"Up to date. Last synced {Ago(last)}."
@@ -254,6 +254,52 @@ public partial class MainView
         _codeAnswer?.TrySetResult(false);
     }
 
+    // A new Sync key locks everything the account keeps in sync again and removes what the old one locked; the person's other devices then need the new key.
+    // Or, on a device that was left on the old key, the key made elsewhere is entered.
+    private async void ReplaceSyncKeyClicked(object? sender, RoutedEventArgs e)
+    {
+        if (!_server.SignedIn || _server.RecoveryCode.Length == 0) return;
+        var entering = await ConfirmAsync("Did you make a new Sync key on another device? Then enter it here.\n\nIf not, choose Make a new key on the next screen: everything you keep in sync is locked again with it, what the old key locked is removed from Yaparr Cloud, and your other devices stop syncing until you enter the new key on each.", "Enter it");
+        if (entering)
+        {
+            var typed = await AskTextAsync("The new Sync key:", maxLength: 200);
+            if (typed == null) return;
+            await AppHost.Auto.Gate.WaitAsync();
+            try
+            {
+                var problem = await SyncKeyReplacement.AdoptAsync(_data, typed);
+                _server = _data.LoadBackupServer();
+                ShowServerState();
+                ServerNote(problem.Length == 0 ? "Done. Syncing carries on with the new key." : problem, problem.Length > 0);
+            }
+            finally { AppHost.Auto.Gate.Release(); }
+            return;
+        }
+        if (!await ConfirmAsync("Make a new Sync key for this account?", "Make a new key")) return;
+        var made = RecoveryCode.Generate();
+        if (!await ShowRecoveryCodeAsync(made, isNew: true)) return;
+
+        BackupToServerButton.IsEnabled = ServerSignOutButton.IsEnabled = ReplaceSyncKeyButton.IsEnabled = false;
+        ServerNote("Waiting for a sync that is running…");
+        await AppHost.Auto.Gate.WaitAsync();
+        try
+        {
+            var node = AppHost.Session?.Node;
+            if (node == null) { ServerNote("Yaparr is not running yet.", problem: true); return; }
+            ServerNote("Locking everything with the new key…");
+            var result = await Task.Run(() => SyncKeyReplacement.ReplaceAsync(_data, node, made));
+            _server = _data.LoadBackupServer();
+            ShowServerState();
+            ServerNote(result.Done ? (result.Problem.Length == 0 ? "Done. Enter the new key on your other devices." : result.Problem) : result.Problem, problem: !result.Done || result.Problem.Length > 0);
+        }
+        catch (BackupServerException ex) { ServerNote(ex.Message, problem: true); }
+        finally
+        {
+            AppHost.Auto.Gate.Release();
+            BackupToServerButton.IsEnabled = ServerSignOutButton.IsEnabled = ReplaceSyncKeyButton.IsEnabled = true;
+        }
+    }
+
     private void ShowRecoveryCodeClicked(object? sender, RoutedEventArgs e)
     {
         if (_server.RecoveryCode.Length > 0) _ = ShowRecoveryCodeAsync(_server.RecoveryCode, isNew: false);
@@ -382,10 +428,19 @@ public partial class MainView
             var (token, username) = await signIn.WaitAsync(cancel: _serverRestore.Token);
 
             ServerRestoreStatus.Text = "Fetching your account…";
-            using var client = new BackupServerClient(server, token);
-            var version = await client.DownloadAsync(temp, cancel: _serverRestore.Token);
-            ServerRestoreStatus.Text = "Opening it with your Sync key…";
-            var staging = await Task.Run(() => _data.StageProfile(temp, code));
+            // The account's synced state first (identity and name; the rest comes through the usual sync); an account that holds only whole-profile
+            // backups, or whose pieces cannot be opened, goes on to the newest backup as before.
+            string? staging = null;
+            int version = 0;
+            try { staging = await SyncRestore.StageAsync(_data, server, token, code, cancel: _serverRestore.Token); }
+            catch (Exception ex) when (ex is BackupServerException or CryptographicException or InvalidDataException or IOException or System.Text.Json.JsonException) { }
+            if (staging == null)
+            {
+                using var client = new BackupServerClient(server, token);
+                version = await client.DownloadAsync(temp, cancel: _serverRestore.Token);
+                ServerRestoreStatus.Text = "Opening it with your Sync key…";
+                staging = await Task.Run(() => _data.StageProfile(temp, code));
+            }
             await Task.Run(() => _data.ApplyStagedProfile(staging));
 
             // This phone stays signed in and keeps the code, so its next backup needs nothing typed.

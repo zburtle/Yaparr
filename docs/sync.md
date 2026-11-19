@@ -1,8 +1,6 @@
 # Synced state (in progress)
 
-The goal: one account on all of a person's devices, with the same rooms, name, blocks and shelves everywhere, and a room left on one device left on all. This page is about the part that exists so far, the **library** (`src/Yaparr.AppCore/Sync`) and the **server API** (Yaparr.Cloud, README, "Synced state"), and, in the computer app, the **name, rooms and blocks**, which now go through them. The settings that are the same on every device are entries too (below); the shelves (emoji, sounds, GIFs) are media and still to come. The screens already say "synced" instead of "backup".
-
-What is not here: message history. That is already shared between devices by the peers themselves, and a copy for when no other device is online stays a backup (`docs/backup-server.md`).
+The goal: one account on all of a person's devices, with the same rooms, name, blocks and shelves everywhere, and a room left on one device left on all. This page is about the part that exists so far, the **library** (`src/Yaparr.AppCore/Sync`) and the **server API** (Yaparr.Cloud, README, "Synced state"), and, in the computer app, the **name, rooms and blocks**, which now go through them. The settings that are the same on every device are entries too (below); message **history** and the **shelves** (own emoji and GIFs) are kept as pieces (below). The screens already say "synced" instead of "backup".
 
 ## How it works
 
@@ -33,6 +31,54 @@ The preferences a person wants the same everywhere are `setting:<name>` account 
 
 Tests: `tests/Yaparr.Tests/SettingsSyncTests.cs`.
 
+## History
+
+Message history is far too big for a synced record and has to last, so it is kept as **pieces** on the server's kept store (Yaparr.Cloud README, "Kept pieces": never expires, a quota of its own, 512 MiB an account by default, read only with a sign-in). One piece is **one month (UTC) of one room or of one direct conversation**: `h-<room id>-<yyyyMM>` or `d-<person id>-<yyyyMM>`, every row of that month (messages and reactions) as the device's history store has them, compressed (`HistoryPieces`, `ChatNode.KeptHistory`). A month rather than a day because the account holds at most 2000 synced records and a record is what says which piece is current, so a year of ten rooms is a hundred and twenty.
+
+- **Locked.** A piece is locked on the device with the Sync key (`SyncSealer`, bound to the piece's name) and put on the server under the SHA-256 of the locked bytes (`KeepClient`). The server sees opaque ids, sizes and times.
+- **Which piece is current.** A synced record of kind `piece`, named like the piece, holds `{p: id, t: tag}`, the id of the piece and its tag (how many rows it had). It goes through the same engine as every other record, so the newest write wins on every device (`PieceSync`).
+- **Writing.** A run compares, for each month, the number of rows the device has with the tag the account holds; where they differ it writes a new piece, sends the record, and only then removes the piece it replaced, so no device is ever pointed at one that is gone. A month with no change costs nothing. Past the quota nothing more is written and the log says so; a refusal for too many calls waits for the next run.
+- **Reading.** A device that sees a new record for a piece downloads it, opens it (a piece locked with another key is skipped and counted) and takes the rows into its store: what it already has is left alone, so taking in is safe in any order and any number of times. Each row is **checked, not trusted**: a room's message has to carry a good signature for that room, and every row has to belong to the piece's room or conversation and month.
+- **Two devices that wrote the same month apart** each take the other's rows in, so both hold the union; the tags then agree and whoever still differs writes it once more.
+- Runs with the rest of the account sync (the same timers). It is also what a new device uses to get its history back without the backup.
+
+Limits: a message removed on one device (a moderator's removal, say) is still in the other devices' pieces and comes back the next time one is read; a month so busy that its piece goes over about 15 MiB is left out (it is logged); a window open in a chat does not show rows that were taken in until it is opened again.
+
+Tests: `tests/Yaparr.Tests/HistoryPieceTests.cs`.
+
+## The shelves
+
+A person's own **custom emoji** (`e-<name>`) and the pictures on their **GIF shelf** (`g-<hash of the picture>`) are pieces too, one for each, holding the picture itself (`ShelfPieceSource`). An emoji's tag is a hash of its picture, so putting another picture under the same name is a change that goes out; a GIF's name is already a hash of its picture, so it never changes. A piece that is not what its name says (a GIF whose hash is not its name, an emoji that is not a picture) is not taken. The order of the GIF shelf (what was sent last) and the rooms' own emoji and sounds are not part of this: the first stays on the device, the others belong to the room.
+
+Unlike history, **removing** one is a removal for the account: the device writes the piece's record as deleted and removes the piece from the server, and another device that reads the removal takes it off its shelf. To tell a piece taken off a shelf from one this device never had, each device keeps the names its shelves had at its last run (a sealed file `sync-<server and account>.known`), so a device that has only just joined, or never took a piece in, never removes anything from the account.
+
+Tests: `ShelfPieceTests` in `tests/Yaparr.Tests/HistoryPieceTests.cs`.
+
+## Bringing an account back
+
+A new device (or a reinstalled one) can be set up from the synced state alone, without a whole-profile backup. The account's **identity** is a piece too (`k-identity`, `IdentityPieceSource`): the identity file of any linked device (every one holds the account key), locked with the Sync key like every other piece. It is written once, by whichever device gets there first (its tag is fixed, so devices do not rewrite it for each other), and a running device never takes it in, so a sync can never replace the identity a device has.
+
+**Restore from Yaparr Cloud** (first-start screen, both apps) signs in, then `SyncRestore` reads the account's records, finds the identity piece and the account's name, and opens them with the Sync key. The new device gets a device key of its own, vouched for by the account key, exactly as when a device is linked or a backup is restored, so the old devices can stay in use. Nothing else is fetched there: once the app runs, the usual sync brings the rooms, blocks, pins, settings, history and shelves. A wrong Sync key is said so; an account that holds only whole-profile backups (made before this) falls back to the newest of them, as before.
+
+Tests: `SyncRestoreTests` in `tests/Yaparr.Tests/HistoryPieceTests.cs`.
+
+The whole-profile backup is still written alongside, for now, so an account can be restored by an older version and by the fallback; it is removed in a later release, once the apps in use all write the identity piece.
+
+## Replacing the Sync key
+
+For a key that was lost, or that someone else has seen: **Replace Sync key…** on the sync page of either app (`SyncKeyReplacement`). It goes in an order that leaves nothing half done:
+
+1. The device syncs with the old key, so it holds all of what the account has.
+2. It keeps what the old state held (which records, which pieces), saves the new key and drops the sync state (`sync-<server and account>.json` and its `.known` file), so the next run writes **everything** again under the new key. The automatic backup is made due, so a whole-profile backup is made with the new key too.
+3. The sync runs with the new key. If it stops half way, the next ordinary sync finishes it: nothing is held as written. The old records come back as unreadable and are skipped.
+4. What the old key locked is removed from the server: the old records the new state does not hold (written as deleted, which needs no key), the pieces they pointed at, and the whole-profile backups.
+
+**Other devices** keep the old key until they are given the new one. A device that pulls records it cannot open (`SyncEngine.HaltOnUnreadable`, on for the ordinary sync) **stops**: it sends nothing, so it does not write over the new records with the old key, and it leaves its cursor where it was so the records are read again later. The sync page says *Your Sync key was replaced on another device. Enter the new key to keep syncing*, and the automatic backup waits too (a backup locked with the old key would be one nobody could open). **Replace Sync key… > I have the new key** takes the key (`SyncKeyReplacement.AdoptAsync` checks that it opens a record the server holds, so a slip cannot lock a device out), and the sync carries on from where it was: the state holds only what the device has already read.
+
+Limits: a device that is off when the key is replaced and is later given the **old** key only (a restore from an old note) sees records it cannot open and halts, with the message above, until it has the new one; and another device making a *second* replacement at the same moment is a race the later of them wins, the other halting.
+
+Tests: `tests/Yaparr.Tests/SyncKeyReplacementTests.cs`.
+
 ## Pins
 
 Pinned rooms and chats (see [The desktop app](desktop-app.md#pinning-rooms-and-chats)) are account entries too, one for each pinned room or chat: `pin:r:<room id>` and `pin:d:<person id>`. The value is the pin's **position** among the pinned ones, a short text of lowercase digits and letters that sorts into the order they are shown in (`PinOrder`); an unpin is the entry marked deleted. `PinOrder.Between(before, after)` always makes a position strictly between two others, so moving one pinned room changes only its own entry: two devices that each move a different one never overwrite each other, and the newer write of the same pin wins by the rule above. Pinning one more goes after the last, and moving to the top goes before the first, in steps of a digit, so a position grows by a character only about every 17th time that is done over and over.
@@ -50,6 +96,8 @@ Tests: `tests/Yaparr.Tests/PinTests.cs`.
 | `SyncClient`, `ISyncTransport` | the two calls to the server, `GET` and `PUT /v1/sync` |
 | `SyncEngine`, `ISyncState`, `MemorySyncState`, `FileSyncState` | the writes, the merge and the sync; the state is what a device keeps between syncs (a sealed file in the app, in memory in tests) |
 | `AccountCloudSync` | the name, rooms, blocks and pins of `ChatNode` through the engine |
+| `KeepClient`, `IKeepTransport` | the three calls of the kept store, `PUT`, `GET` and `DELETE /v1/keep/{id}` |
+| `PieceSync`, `IPieceSource`, `HistoryPieceSource` | locking, keeping and taking in pieces; history is a source of them (`HistoryPieces` in the library does the months) |
 | `PinOrder`, `PinnedFirst` | the positions of pinned rooms and chats, and keeping them at the top of a list |
 
 Tests: `tests/Yaparr.Tests/AccountCloudSyncTests.cs` (two real nodes of one account that are never online together), `tests/Yaparr.Tests/SyncTests.cs` (the engine runs against a fake server that keeps records the way the real one does), and Yaparr.Cloud's `SyncStoreTests` and `SyncApiTests`.

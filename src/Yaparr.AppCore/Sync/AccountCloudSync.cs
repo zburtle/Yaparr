@@ -16,6 +16,8 @@ public enum AccountSyncResult
     Synced,
     /// <summary>The server does not know this device any more.</summary>
     SignedOut,
+    /// <summary>The server holds records this device's Sync key cannot open: the key was replaced on another device. Nothing was sent; the device needs the new key.</summary>
+    KeyChanged,
     /// <summary>It could not be done (no network, the server is down); it tries again later.</summary>
     Failed,
 }
@@ -31,6 +33,9 @@ public sealed class AccountCloudSync
 {
     private const string Kind = "account";
 
+    /// <summary>What the sync page says when the Sync key was replaced on another device.</summary>
+    public const string KeyChangedNote = "Your Sync key was replaced on another device. Enter the new key to keep syncing.";
+
     private readonly Func<IReadOnlyList<AccountEntry>> _entries;
     private readonly Action<IReadOnlyList<AccountEntry>> _apply;
     private readonly SyncEngine _engine;
@@ -38,11 +43,12 @@ public sealed class AccountCloudSync
     private readonly Action<string>? _log;
     private readonly SemaphoreSlim _running = new(1, 1);
     private readonly List<AccountEntry> _incoming = new();
+    private readonly PieceSync? _pieces;
 
     private sealed record Value(string? V, long Ts, bool D);
 
     public AccountCloudSync(Func<IReadOnlyList<AccountEntry>> entries, Action<IReadOnlyList<AccountEntry>> apply, ISyncState state, ISyncTransport transport,
-        SyncSealer sealer, string deviceId, Action<string>? log = null, Func<DateTimeOffset>? now = null)
+        SyncSealer sealer, string deviceId, Action<string>? log = null, Func<DateTimeOffset>? now = null, IKeepTransport? keep = null, IPieceSource? pieces = null, string? knownFile = null, bool haltOnUnreadable = false)
     {
         _entries = entries;
         _apply = apply;
@@ -53,6 +59,8 @@ public sealed class AccountCloudSync
         foreach (var held in state.All()) clock.Receive(held.Clock);
         _engine = new SyncEngine(state, transport, sealer, clock, deviceId);
         _engine.Remote += OnRemote;
+        _engine.HaltOnUnreadable = haltOnUnreadable;
+        if (keep != null && pieces != null) _pieces = new PieceSync(_engine, keep, sealer, pieces, log, knownFile);
     }
 
     /// <summary>Whether an entry is on the cloud copy: its id says what it is, and the name has to be one the server takes.</summary>
@@ -109,6 +117,11 @@ public sealed class AccountCloudSync
                 written += writes;
 
                 report = await _engine.SyncAsync(cancel);
+                if (report.Halted)
+                {
+                    _log?.Invoke("sync halted: the server holds records this Sync key cannot open");
+                    return (AccountSyncResult.KeyChanged, report);
+                }
                 sent += report.Sent;
                 received += report.Received;
                 unreadable += report.Unreadable;
@@ -121,16 +134,38 @@ public sealed class AccountCloudSync
 
             if (written > 0 || received > 0 || unreadable > 0)
                 _log?.Invoke($"synced the account: sent {sent}, received {received}{(unreadable > 0 ? $", {unreadable} could not be opened" : "")}");
+
+            // What is kept as pieces (history): taken in, and written where this device differs from the account.
+            if (_pieces != null && report.Complete)
+            {
+                var kept = await _pieces.RunAsync(cancel);
+                if (kept.Uploaded > 0 || kept.Downloaded > 0 || kept.Unreadable > 0)
+                    _log?.Invoke($"synced pieces: kept {kept.Uploaded}, took in {kept.Downloaded}, removed {kept.Removed}{(kept.Unreadable > 0 ? $", {kept.Unreadable} could not be used" : "")}{(kept.Full ? ", the account is full" : "")}");
+            }
             return (report.Complete ? AccountSyncResult.Synced : AccountSyncResult.Failed, report);
         }
         finally { _running.Release(); }
+    }
+
+    /// <summary>What this app keeps as pieces: the history of its node's store (h-, d-) and the person's own emoji and GIF shelves (e-, g-).</summary>
+    private static IPieceSource PiecesOf(AppData data, ChatNode node)
+    {
+        var shelves = new ShelfPieceSource(new EmojiShelf(data.EmojiDirectory), new GifShelf(data.ShelfDirectory));
+        var sources = new List<(string, IPieceSource)> { ("e-", shelves), ("g-", shelves), ("k-", new IdentityPieceSource(data.ReadIdentityFile)) };
+        if (node.KeptHistory is { } store)
+        {
+            var history = new HistoryPieceSource(store);
+            sources.Add(("h-", history));
+            sources.Add(("d-", history));
+        }
+        return new PieceSources(sources.ToArray());
     }
 
     /// <summary>
     /// One sync of this app's account with the server it is signed in to (nothing when it is not, or has no recovery code yet). Never throws for what can go wrong with the
     /// server: that comes back as the result, and a sign-in the server no longer knows is cleared from the saved state so that it is not tried again.
     /// </summary>
-    public static async Task<AccountSyncResult> RunAsync(AppData data, ChatNode node, HttpClient? http = null, Action<string>? log = null, CancellationToken cancel = default)
+    public static async Task<AccountSyncResult> RunAsync(AppData data, ChatNode node, HttpClient? http = null, Action<string>? log = null, CancellationToken cancel = default, bool haltOnUnreadable = true)
     {
         var server = data.LoadBackupServer();
         if (!server.SignedIn || server.RecoveryCode.Length == 0) return AccountSyncResult.NotSetUp;
@@ -143,8 +178,16 @@ public sealed class AccountCloudSync
         try
         {
             using var transport = new SyncClient(new Uri(server.Url), server.Token, http);
-            var sync = new AccountCloudSync(() => node.AccountEntries, node.ApplyCloudEntries, state, transport, sealer, node.Id.Value, log);
-            return (await sync.SyncAsync(cancel)).Result;
+            using var keep = new KeepClient(new Uri(server.Url), server.Token, http);
+            var sync = new AccountCloudSync(() => node.AccountEntries, node.ApplyCloudEntries, state, transport, sealer, node.Id.Value, log,
+                keep: keep, pieces: PiecesOf(data, node), knownFile: Path.Combine(data.Directory, $"sync-{which}.known"), haltOnUnreadable: haltOnUnreadable);
+            var result = (await sync.SyncAsync(cancel)).Result;
+            if (result == AccountSyncResult.KeyChanged && !server.AutoNote.StartsWith(KeyChangedNote, StringComparison.Ordinal))
+            {
+                server.AutoNote = KeyChangedNote;
+                data.SaveBackupServer(server);
+            }
+            return result;
         }
         catch (BackupServerException ex) when (ex.SignedOut)
         {

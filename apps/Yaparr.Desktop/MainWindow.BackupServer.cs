@@ -184,9 +184,9 @@ public partial class MainWindow
         if (!_server.SignedIn) return;
         var host = Uri.TryCreate(_server.Url, UriKind.Absolute, out var uri) ? uri.Authority : _server.Url;
         ServerSignedInText.Text = $"Signed in to {host} as {_server.Username}.";
-        ShowRecoveryCodeButton.IsVisible = _server.RecoveryCode.Length > 0;
+        ShowRecoveryCodeButton.IsVisible = ReplaceSyncKeyButton.IsVisible = _server.RecoveryCode.Length > 0;
 
-        var trouble = _server.Failures > 0 || _server.AutoNote.StartsWith("Sync stopped", StringComparison.Ordinal);
+        var trouble = _server.Failures > 0 || _server.AutoNote.StartsWith("Sync stopped", StringComparison.Ordinal) || _server.AutoNote == AccountCloudSync.KeyChangedNote;
         AutoBackupStatus.Text = trouble ? _server.AutoNote
             : _server.RecoveryCode.Length == 0 || _server.Version <= 0 ? "Syncing starts once your Sync key has been made. Press Sync now."
             : _server.LastBackup is { } last ? $"Up to date. Last synced {Ago(last)}."
@@ -453,6 +453,57 @@ public partial class MainWindow
         return await ShowRecoveryCodeAsync(made, isNew: true) ? made : null;
     }
 
+    private async void ReplaceSyncKey_Click(object? sender, RoutedEventArgs e) => await ReplaceSyncKeyAsync();
+
+    // A new Sync key locks everything the account keeps in sync again and removes what the old one locked; the person's other devices then need the new key.
+    // Or, on a device that was left on the old key, the key made elsewhere is entered.
+    private async Task ReplaceSyncKeyAsync()
+    {
+        const string title = "Replace Sync key";
+        if (_node == null || !_server.SignedIn || _server.RecoveryCode.Length == 0) return;
+        var choice = await Dialogs.ChoiceAsync(this, title,
+            "Make a new key: use this when the Sync key was lost or someone else has seen it. Everything you keep in sync is locked again with the new key and what the old key locked is removed from Yaparr Cloud. Your other devices stop syncing until you enter the new key on each of them.\n\n" +
+            "I have the new key: use this on a device after you made a new key on another one.",
+            "Make a new key", "I have the new key", "Cancel");
+        if (choice == "I have the new key")
+        {
+            var typed = await PromptDialog.AskAsync(this, "The new Sync key:");
+            if (typed == null) return;
+            await Auto.Gate.WaitAsync();
+            try
+            {
+                var problem = await SyncKeyReplacement.AdoptAsync(_data, typed);
+                _server = _data.LoadBackupServer();
+                ShowServerState();
+                ServerStatusIs(problem.Length == 0 ? "Done. Syncing carries on with the new key." : problem, problem.Length > 0);
+            }
+            finally { Auto.Gate.Release(); }
+            return;
+        }
+        if (choice != "Make a new key") return;
+        var made = RecoveryCode.Generate();
+        if (!await ShowRecoveryCodeAsync(made, isNew: true)) return;
+
+        BackupToServerButton.IsEnabled = ServerSignOutButton.IsEnabled = ReplaceSyncKeyButton.IsEnabled = false;
+        ServerStatusIs("Waiting for a sync that is running…");
+        await Auto.Gate.WaitAsync();
+        try
+        {
+            ServerStatusIs("Locking everything with the new key…");
+            var node = _node;
+            var result = await Task.Run(() => SyncKeyReplacement.ReplaceAsync(_data, node, made, log: _log.Write));
+            _server = _data.LoadBackupServer();
+            ShowServerState();
+            ServerStatusIs(result.Done ? (result.Problem.Length == 0 ? "Done. Enter the new key on your other devices." : result.Problem) : result.Problem, problem: !result.Done || result.Problem.Length > 0);
+        }
+        catch (BackupServerException ex) { ServerFailed(ex); }
+        finally
+        {
+            Auto.Gate.Release();
+            BackupToServerButton.IsEnabled = ServerSignOutButton.IsEnabled = ReplaceSyncKeyButton.IsEnabled = true;
+        }
+    }
+
     private async void BackupToServer_Click(object? sender, RoutedEventArgs e) => await BackupToServerAsync();
 
     private async Task BackupToServerAsync()
@@ -511,39 +562,49 @@ public partial class MainWindow
         const string title = "Restore from Yaparr Cloud";
         if (await ServerLoginDialog.AskAsync(this) is not { } login) return;
         string? staging = null;
-        int newest;
-        using (var client = new BackupServerClient(login.Server, login.Token))
+        int newest = 0;
+        // The account's synced state is tried first: the identity and name are fetched and the rest comes through the usual sync. An account that
+        // holds only whole-profile backups (or whose pieces cannot be opened) goes on to the newest backup, as before.
+        try { staging = await SyncRestore.StageAsync(_data, login.Server, login.Token, login.RecoveryCode); }
+        catch (Exception ex) when (ex is BackupServerException or CryptographicException or InvalidDataException or IOException or System.Text.Json.JsonException)
         {
-            IReadOnlyList<ServerBackupVersion> versions;
-            try { versions = await client.VersionsAsync(); }
-            catch (BackupServerException ex) { await Dialogs.MessageAsync(this, title, ex.Message); return; }
-            if (versions.Count == 0) { await Dialogs.MessageAsync(this, title, "Yaparr Cloud holds nothing for this account yet."); return; }
-            newest = versions[0].Version;
-
-            // The newest copy is brought back; if it cannot be opened (damaged), the next older one is tried, so nothing is asked.
-            bool opened = true;
-            foreach (var version in versions)
+            _log.Write("restoring from the synced state did not work: " + ex.Message);
+        }
+        if (staging == null)
+        {
+            using (var client = new BackupServerClient(login.Server, login.Token))
             {
-                var temp = Path.Combine(Path.GetTempPath(), "Yaparr-server-restore-" + Guid.NewGuid().ToString("N") + ".yapbak");
-                try
-                {
-                    await client.DownloadAsync(temp, version.Version);
-                    staging = await Task.Run(() => _data.StageProfile(temp, login.RecoveryCode));
-                    break;
-                }
+                IReadOnlyList<ServerBackupVersion> versions;
+                try { versions = await client.VersionsAsync(); }
                 catch (BackupServerException ex) { await Dialogs.MessageAsync(this, title, ex.Message); return; }
-                catch (Exception ex) when (ex is CryptographicException or InvalidDataException) { opened = false; }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                if (versions.Count == 0) { await Dialogs.MessageAsync(this, title, "Yaparr Cloud holds nothing for this account yet."); return; }
+                newest = versions[0].Version;
+
+                // The newest copy is brought back; if it cannot be opened (damaged), the next older one is tried, so nothing is asked.
+                bool opened = true;
+                foreach (var version in versions)
                 {
-                    await Dialogs.MessageAsync(this, title, ex.Message);
+                    var temp = Path.Combine(Path.GetTempPath(), "Yaparr-server-restore-" + Guid.NewGuid().ToString("N") + ".yapbak");
+                    try
+                    {
+                        await client.DownloadAsync(temp, version.Version);
+                        staging = await Task.Run(() => _data.StageProfile(temp, login.RecoveryCode));
+                        break;
+                    }
+                    catch (BackupServerException ex) { await Dialogs.MessageAsync(this, title, ex.Message); return; }
+                    catch (Exception ex) when (ex is CryptographicException or InvalidDataException) { opened = false; }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                        await Dialogs.MessageAsync(this, title, ex.Message);
+                        return;
+                    }
+                    finally { try { File.Delete(temp); } catch (IOException) { } }
+                }
+                if (staging == null)
+                {
+                    await Dialogs.MessageAsync(this, title, opened ? "Nothing could be restored." : "That Sync key does not open what Yaparr Cloud holds. Check the code; if a newer copy was made with another code, use that one.");
                     return;
                 }
-                finally { try { File.Delete(temp); } catch (IOException) { } }
-            }
-            if (staging == null)
-            {
-                await Dialogs.MessageAsync(this, title, opened ? "Nothing could be restored." : "That Sync key does not open what Yaparr Cloud holds. Check the code; if a newer copy was made with another code, use that one.");
-                return;
             }
         }
 

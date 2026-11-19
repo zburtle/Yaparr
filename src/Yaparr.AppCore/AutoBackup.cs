@@ -47,6 +47,8 @@ public static class AutoBackupPlan
     {
         // Off, signed out, or never backed up by hand (which is when the recovery code is made, and the person is shown it): nothing is sent on its own.
         if (!state.SignedIn || state.RecoveryCode.Length == 0 || state.Version <= 0) return AutoBackupWhy.Nothing;
+        // The Sync key was replaced on another device: a backup locked with this device's old key would be one nobody can open.
+        if (state.AutoNote == AccountCloudSync.KeyChangedNote) return AutoBackupWhy.Nothing;
         // Backing off after a failure.
         if (state.RetryAfter is { } retry && now < retry) return AutoBackupWhy.Nothing;
 

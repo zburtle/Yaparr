@@ -71,7 +71,8 @@ public sealed class MemorySyncState : ISyncState
 }
 
 /// <summary>What one <see cref="SyncEngine.SyncAsync"/> did.</summary>
-public sealed record SyncReport(int Received, int Sent, int Unreadable, bool Complete);
+/// <param name="Halted">The pull found records this device's key cannot open and, with <see cref="SyncEngine.HaltOnUnreadable"/> on, nothing was sent and the cursor was not moved past them.</param>
+public sealed record SyncReport(int Received, int Sent, int Unreadable, bool Complete, bool Halted = false);
 
 /// <summary>
 /// Keeps the entries of one account the same on its devices, through a Yaparr Cloud server that only stores them. A device makes a write with <see cref="Set"/> or
@@ -99,6 +100,12 @@ public sealed class SyncEngine
         _clock = clock;
         _device = deviceId;
     }
+
+    /// <summary>
+    /// When a pull finds records this device's key cannot open (the account's Sync key was replaced on another device), stop: nothing is sent, so this device does not write over the
+    /// new records with the old key, and the cursor is left where it was, so the records are read again once it has the new key.
+    /// </summary>
+    public bool HaltOnUnreadable { get; set; }
 
     /// <summary>A write from another device won over what this one had (or this device had nothing): the app applies it. A deleted entry has no value.</summary>
     public event Action<SyncEntry>? Remote;
@@ -133,9 +140,15 @@ public sealed class SyncEngine
             int received = 0, sent = 0, unreadable = 0;
             for (int round = 0; round < MaxRounds; round++)
             {
+                var startCursor = _state.Cursor;
                 var (r, u) = await PullAllAsync(cancel);
                 received += r;
                 unreadable += u;
+                if (HaltOnUnreadable && u > 0)
+                {
+                    _state.Cursor = startCursor;
+                    return new SyncReport(received, sent, unreadable, Complete: false, Halted: true);
+                }
                 var (s, refused) = await PushAllAsync(cancel);
                 sent += s;
                 if (!refused) return new SyncReport(received, sent, unreadable, true);

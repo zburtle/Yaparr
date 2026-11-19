@@ -493,6 +493,40 @@ public sealed class AppData
         }
     }
 
+    /// <summary>The identity file as it is on disk (for what is kept in sync), or null if there is none.</summary>
+    internal byte[]? ReadIdentityFile()
+    {
+        try { return File.Exists(IdentityPath) ? SecretStore.ReadAllBytes(IdentityPath) : null; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.Cryptography.CryptographicException) { return null; }
+    }
+
+    /// <summary>
+    /// A staged profile made from the synced account alone: the identity (this computer gets a device key of its own, vouched for by the account key, exactly as when a backup is
+    /// restored) and the name. Everything else comes through the usual sync once the app runs, so no history or settings are staged.
+    /// </summary>
+    public string StageFromAccount(byte[] identityFile, string? name)
+    {
+        var staging = Path.Combine(Path.GetTempPath(), "Yaparr-import-" + Guid.NewGuid().ToString("N"));
+        System.IO.Directory.CreateDirectory(staging);
+        try
+        {
+            try
+            {
+                using var restored = PeerIdentity.Import(identityFile);
+                using var fresh = restored.CanLinkDevices ? restored.CreateDevice() : null;
+                File.WriteAllBytes(Path.Combine(staging, "identity.key"), (fresh ?? restored).Export());
+            }
+            catch (System.Security.Cryptography.CryptographicException) { throw new InvalidDataException("The identity key in the account is not valid."); }
+            File.WriteAllText(Path.Combine(staging, "settings.json"), JsonSerializer.Serialize(new AppSettings { DisplayName = name }, Json));
+            return staging;
+        }
+        catch
+        {
+            System.IO.Directory.Delete(staging, recursive: true);
+            throw;
+        }
+    }
+
     public void ApplyStagedProfile(string staging)
     {
         if (File.Exists(IdentityPath)) File.Delete(IdentityPath);
