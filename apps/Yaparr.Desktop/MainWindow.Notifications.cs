@@ -96,11 +96,101 @@ public partial class MainWindow
     {
         bool watching = conv == _selected && IsActive && (message.Channel == null || message.Channel == conv.CurrentChannel);
         if (watching) return;
+        var room = RoomFor(conv);
+        // A muted room is silent: no sound, no flash, no pop-up, not even for a mention. Its messages still count as unread.
+        if (room != null && IsMuted(room)) return;
+        // Another of your devices is in use (the phone in your hand, say) but not showing this chat: you may read it there, so this one waits a little and tells you only
+        // if it is still unread by then.
+        if (_node is { } node && node.SiblingIsActive() && !(room != null ? node.SiblingIsViewing(room.RoomId, message.Channel, null) : false))
+        {
+            _ = NotifyAfterWaitAsync(conv, message);
+            return;
+        }
+        Announce(conv, message);
+    }
+
+    /// <summary>How long a message waits before this computer tells you about it while another of your devices is in use (and not showing that chat).</summary>
+    internal static readonly TimeSpan ActiveElsewhereWait = TimeSpan.FromSeconds(20);
+
+    private async Task NotifyAfterWaitAsync(ConversationVm conv, MessageVm message)
+    {
+        await Task.Delay(ActiveElsewhereWait);
+        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            var room = RoomFor(conv);
+            // Read in the meantime (here or, for a room, on another device), or this chat is now in front of you or a device of yours.
+            if (conv == _selected && IsActive) return;
+            if (room != null ? !(message.Channel is { } ch && Marks.IsUnread(room.RoomId, ch, message.Time.ToUnixTimeMilliseconds()))
+                             : conv.Unread == 0) return;
+            if (_node is { } node && (room != null ? node.SiblingIsViewing(room.RoomId, message.Channel, null) : false)) return;
+            if (room != null && IsMuted(room)) return;
+            Announce(conv, message);
+        });
+    }
+
+    // The sound, the flashing and the pop-up for a message that is news: the room's own sound if it has one.
+    private void Announce(ConversationVm conv, MessageVm message)
+    {
+        var room = RoomFor(conv);
         if (message.Highlight) _sounds.Mentioned();
         else if (_settings.NotifyOnlyMentions && !conv.IsDirect) return;
-        else _sounds.Message();
+        else _sounds.Message(room != null && _settings.RoomSounds.TryGetValue(room.RoomId, out var style) ? style : null);
         if (_settings.FlashTaskbar && !IsActive) TaskbarFlash.Start(this);
         if (_settings.DesktopPopups && !IsActive) ShowPopup(conv, message);
+    }
+
+    // A reply typed into a pop-up: sent to that chat, in the channel the message came in, and shown in the chat. Nothing is held back if it cannot be sent: the status line says so.
+    private async Task ReplyFromPopupAsync(ConversationVm conv, string text, string? channel)
+    {
+        if (_node == null) return;
+        try
+        {
+            string id;
+            if (RoomFor(conv) is { } room)
+            {
+                channel ??= conv.CurrentChannel;
+                id = await (channel == Yaparr.Chat.RoomChannels.DefaultText ? room.SendAsync(text) : room.SendAsync(text, channel));
+            }
+            else id = await conv.Send(text);
+            conv.Add(new MessageVm(DateTimeOffset.Now, _node.DisplayName, text, isMine: true, id: id)
+            {
+                Channel = conv.IsRoom ? channel : null,
+                Key = Yaparr.Chat.ChatMessage.KeyOf(_node.Id, id),
+            });
+            StatusText.Text = $"Reply sent to {conv.Title}.";
+        }
+        catch (InvalidOperationException ex) { StatusText.Text = "Couldn't send the reply: " + ex.Message; }
+    }
+
+    private bool IsMuted(Yaparr.Chat.ChatRoom room) => _settings.MutedRooms.Contains(room.RoomId);
+
+    private void ToggleMute_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_selected is not { } conv || RoomFor(conv) is not { } room) return;
+        bool muted = !IsMuted(room);
+        if (muted) _settings.MutedRooms.Add(room.RoomId); else _settings.MutedRooms.Remove(room.RoomId);
+        _data.SaveSettings(_settings);
+        StatusText.Text = muted ? $"\"{conv.Title}\" is muted: nothing from it makes a sound or a pop-up, not even a mention. Its messages still count as unread." : $"\"{conv.Title}\" is not muted any more.";
+    }
+
+    // The room's own message sound: "Same as every room", or one of the sounds, each of which plays when it is picked.
+    private void BuildRoomSoundMenu(Avalonia.Controls.MenuItem parent, Yaparr.Chat.ChatRoom room)
+    {
+        parent.Items.Clear();
+        _settings.RoomSounds.TryGetValue(room.RoomId, out var current);
+        Avalonia.Controls.MenuItem Choice(string header, string? style)
+        {
+            var item = new Avalonia.Controls.MenuItem { Header = header, ToggleType = Avalonia.Controls.MenuItemToggleType.Radio, GroupName = "roomsound", IsChecked = style == current };
+            item.Click += (_, _) =>
+            {
+                if (style == null) _settings.RoomSounds.Remove(room.RoomId); else _settings.RoomSounds[room.RoomId] = style;
+                _data.SaveSettings(_settings);
+                if (style != null) _sounds.Preview(style);
+            };
+            return item;
+        }
+        parent.Items.Add(Choice("Same as every room", null));
+        foreach (var style in UiSounds.MessageStyles) parent.Items.Add(Choice(style, style));
     }
 
     private void ShowPopup(ConversationVm conv, MessageVm message)
@@ -108,7 +198,17 @@ public partial class MainWindow
         var who = message.Highlight ? $"{message.Sender} named you in {conv.Title}" : conv.IsDirect ? message.Sender : $"{message.Sender} in {conv.Title}";
         var text = message.HasAttachment && !message.HasText ? "Sent a picture" : message.Text;
         text = text.Length > 140 ? text[..139] + "…" : text;
-        if (LinuxDesktop.Available) LinuxDesktop.Notify(who, text, t => _log.Write(t));
+        var room = RoomFor(conv);
+        // What the pop-up's buttons do (where the desktop shows them): open the chat, send a typed reply (KDE) in the channel the message came in, mute the room.
+        var actions = new PopupActions(
+            Open: () => Avalonia.Threading.Dispatcher.UIThread.Post(() => { ShowFromTray(); SelectConversation(conv); }),
+            Reply: reply => Avalonia.Threading.Dispatcher.UIThread.Post(() => _ = ReplyFromPopupAsync(conv, reply, message.Channel)),
+            Mute: room == null ? null : () => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                if (!IsMuted(room)) { _settings.MutedRooms.Add(room.RoomId); _data.SaveSettings(_settings); }
+                StatusText.Text = $"\"{conv.Title}\" is muted: nothing from it makes a sound or a pop-up, not even a mention. Its messages still count as unread.";
+            }));
+        if (LinuxDesktop.Available) LinuxDesktop.Notify(who, text, actions, t => _log.Write(t));
         else if (WindowsToast.Available && TryGetPlatformHandle()?.Handle is { } window)
             WindowsToast.Show(window, who, text, () => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {

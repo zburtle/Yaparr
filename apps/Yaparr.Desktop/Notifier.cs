@@ -58,7 +58,11 @@ internal sealed class UiSounds
 
     public bool Enabled { get; set; } = true;
 
-    public void Message() => Play(MessageClips.GetValueOrDefault(MessageStyle) ?? MessageClips["Chime"], throttled: true);
+    public void Message() => Message(null);
+
+    /// <summary>A new message makes the sound of <paramref name="style"/> (a room's own choice), or the one chosen for every room when that is null or unknown.</summary>
+    public void Message(string? style) =>
+        Play((style != null ? MessageClips.GetValueOrDefault(style) : null) ?? MessageClips.GetValueOrDefault(MessageStyle) ?? MessageClips["Chime"], throttled: true);
 
     /// <summary>The sound of being named or answered. It is never held back by the gap between message sounds.</summary>
     public void Mentioned() => Play(MentionClip, throttled: false);

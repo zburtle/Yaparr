@@ -12,6 +12,9 @@ namespace Yaparr.Desktop;
 internal static class LinuxDesktop
 {
     private static uint _lastNotification;
+    private static readonly PopupRegistry Popups = new();
+    private static Task<HashSet<string>>? _capabilities;
+    private static Task? _listening;
     private static long _lastCount = -1;
     private static bool _failed;
 
@@ -20,8 +23,11 @@ internal static class LinuxDesktop
     private static string DesktopId => Updater.IsFlatpak ? "com.yaparr.Yaparr.desktop" : "yaparr.desktop";
     private static string IconName => Updater.IsFlatpak ? "com.yaparr.Yaparr" : "yaparr";
 
-    /// <summary>Shows a pop-up. A later one replaces an earlier one that is still showing, so a busy room does not pile them up.</summary>
-    public static void Notify(string title, string body, Action<string>? log = null)
+    /// <summary>
+    /// Shows a pop-up. A later one replaces an earlier one that is still showing, so a busy room does not pile them up. With <paramref name="actions"/> the pop-up has
+    /// buttons where the desktop shows them (Open, Mute, and Reply, which on KDE is a box to type into and elsewhere opens the chat) and what is chosen or typed is passed on.
+    /// </summary>
+    public static void Notify(string title, string body, PopupActions? actions = null, Action<string>? log = null)
     {
         if (!Available) return;
         _ = Task.Run(async () =>
@@ -29,15 +35,60 @@ internal static class LinuxDesktop
             try
             {
                 var connection = DBusConnection.Session;
-                var message = NotifyMessage(connection, title, body, _lastNotification);
+                var capabilities = actions == null ? new HashSet<string>() : await Capabilities(connection).ConfigureAwait(false);
+                if (actions != null && capabilities.Contains("actions")) await ListenAsync(connection).ConfigureAwait(false);
+                var message = NotifyMessage(connection, title, body, _lastNotification, actions != null ? capabilities : null, actions?.Mute != null);
                 _lastNotification = await connection.CallMethodAsync(message, (Message m, object? _) => m.GetBodyReader().ReadUInt32(), null).ConfigureAwait(false);
+                if (actions != null) Popups.Add(_lastNotification, actions);
             }
             catch (Exception ex) { Failed("show a pop-up", ex, log); }
         });
     }
 
-    // The message is built apart from the call because the writer cannot be kept across an await.
-    private static MessageBuffer NotifyMessage(DBusConnection connection, string title, string body, uint replaces)
+    // What the notification service can do ("actions" for buttons, "inline-reply" for KDE's box), asked once.
+    private static Task<HashSet<string>> Capabilities(DBusConnection connection) => _capabilities ??= Task.Run(async () =>
+    {
+        try
+        {
+            var call = CapabilitiesMessage(connection);
+            var list = await connection.CallMethodAsync(call, (Message m, object? _) => m.GetBodyReader().ReadArrayOfString(), null).ConfigureAwait(false);
+            return new HashSet<string>(list);
+        }
+        catch (Exception) { return new HashSet<string>(); }
+    });
+
+    private static MessageBuffer CapabilitiesMessage(DBusConnection connection)
+    {
+        using var writer = connection.GetMessageWriter();
+        writer.WriteMethodCallHeader(destination: "org.freedesktop.Notifications", path: "/org/freedesktop/Notifications",
+            @interface: "org.freedesktop.Notifications", member: "GetCapabilities");
+        return writer.CreateMessage();
+    }
+
+    // The service tells which button was pressed (ActionInvoked), what was typed (NotificationReplied, KDE) and when a pop-up is gone (NotificationClosed).
+    private static Task ListenAsync(DBusConnection connection) => _listening ??= Task.Run(async () =>
+    {
+        const string service = "org.freedesktop.Notifications", iface = "org.freedesktop.Notifications";
+        await connection.AddMatchAsync(
+            new MatchRule { Type = MessageType.Signal, Sender = service, Interface = iface, Member = "ActionInvoked" },
+            static (Message m, object? _) => { var r = m.GetBodyReader(); return (Id: r.ReadUInt32(), Key: r.ReadString()); },
+            (Notification<(uint Id, string Key)> n) => { if (n.HasValue) Popups.Invoke(n.Value.Id, n.Value.Key); },
+            false, ObserverFlags.None, null).ConfigureAwait(false);
+        await connection.AddMatchAsync(
+            new MatchRule { Type = MessageType.Signal, Sender = service, Interface = iface, Member = "NotificationReplied" },
+            static (Message m, object? _) => { var r = m.GetBodyReader(); return (Id: r.ReadUInt32(), Text: r.ReadString()); },
+            (Notification<(uint Id, string Text)> n) => { if (n.HasValue) Popups.Reply(n.Value.Id, n.Value.Text); },
+            false, ObserverFlags.None, null).ConfigureAwait(false);
+        await connection.AddMatchAsync(
+            new MatchRule { Type = MessageType.Signal, Sender = service, Interface = iface, Member = "NotificationClosed" },
+            static (Message m, object? _) => m.GetBodyReader().ReadUInt32(),
+            (Notification<uint> n) => { if (n.HasValue) Popups.Remove(n.Value); },
+            false, ObserverFlags.None, null).ConfigureAwait(false);
+    });
+
+    // The message is built apart from the call because the writer cannot be kept across an await. With capabilities (a pop-up that can be answered) it carries the buttons the
+    // service can show: "default" is a click on the pop-up; KDE's reply box is the action "inline-reply" with a hint for what the box says.
+    private static MessageBuffer NotifyMessage(DBusConnection connection, string title, string body, uint replaces, HashSet<string>? capabilities, bool canMute = false)
     {
         using var writer = connection.GetMessageWriter();
         writer.WriteMethodCallHeader(destination: "org.freedesktop.Notifications", path: "/org/freedesktop/Notifications",
@@ -47,8 +98,17 @@ internal static class LinuxDesktop
         writer.WriteString(IconName);
         writer.WriteString(title);
         writer.WriteString(body);
-        writer.WriteArray(Array.Empty<string>());
-        writer.WriteDictionary(new Dictionary<string, VariantValue> { ["desktop-entry"] = DesktopId[..^".desktop".Length] });
+        var hints = new Dictionary<string, VariantValue> { ["desktop-entry"] = DesktopId[..^".desktop".Length] };
+        if (capabilities != null && capabilities.Contains("actions"))
+        {
+            var buttons = new List<string> { "default", "Open" };
+            if (capabilities.Contains("inline-reply")) { buttons.Add("inline-reply"); buttons.Add("Reply"); hints["x-kde-reply-placeholder-text"] = "Reply…"; }
+            else { buttons.Add("reply"); buttons.Add("Reply"); }
+            if (canMute) { buttons.Add("mute"); buttons.Add("Mute room"); }
+            writer.WriteArray(buttons.ToArray());
+        }
+        else writer.WriteArray(Array.Empty<string>());
+        writer.WriteDictionary(hints);
         writer.WriteInt32(-1);
         return writer.CreateMessage();
     }
