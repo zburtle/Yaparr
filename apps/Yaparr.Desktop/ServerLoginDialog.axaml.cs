@@ -6,10 +6,10 @@ using Yaparr.AppCore;
 
 namespace Yaparr.Desktop;
 
-/// <summary>A device signed in to a backup server, with the recovery code that opens its backup.</summary>
+/// <summary>A device signed in to a backup server, with the Sync key that opens its backup.</summary>
 public sealed record ServerRestoreLogin(Uri Server, string Username, string Token, string RecoveryCode);
 
-// For the first-start screen, where there is no settings page yet: the server's address and the recovery code, then the sign-in in the browser.
+// For the first-start screen, where there is no settings page yet: the server's address and the Sync key, then the sign-in in the browser.
 public partial class ServerLoginDialog : Window
 {
     private CancellationTokenSource? _waiting;
@@ -47,7 +47,7 @@ public partial class ServerLoginDialog : Window
         var server = BackupServerClient.ParseServerAddress(UrlBox.Text);
         if (server == null) { Say("The server address is missing or cannot be used. It has to start with https:// (http:// only works for a server on this computer).", problem: true); return; }
         var code = RecoveryCode.Normalize(CodeBox.Text);
-        if (code == null) { Say("That is not a recovery code. It is six groups of four letters and digits, like K7QD-M3XF-9PLR-2WTE-HV8N-C4YB.", problem: true); return; }
+        if (code == null) { Say("That is not a Sync key. It is six groups of four letters and digits, like K7QD-M3XF-9PLR-2WTE-HV8N-C4YB.", problem: true); return; }
 
         OkButton.IsEnabled = UrlBox.IsEnabled = CodeBox.IsEnabled = false;
         _waiting = new CancellationTokenSource();

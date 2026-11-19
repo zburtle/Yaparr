@@ -61,7 +61,7 @@
                 <Button x:Name="ServerRestoreStartButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="18,14" Click="ServerRestoreStartClicked">
                     <StackPanel Spacing="2">
                         <TextBlock Text="From Yaparr Cloud" FontSize="17" FontWeight="SemiBold" />
-                        <TextBlock Text="Sign in to the server your backup is on, with your recovery code. For a new phone." FontSize="13" Opacity="0.75" TextWrapping="Wrap" />
+                        <TextBlock Text="Sign in to Yaparr Cloud with your Sync key. For a new phone." FontSize="13" Opacity="0.75" TextWrapping="Wrap" />
                     </StackPanel>
                 </Button>
                 <TextBlock x:Name="ExistingStatus" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" />
@@ -69,15 +69,15 @@
             </StackPanel>
         </ScrollViewer>
 
-        <!-- Taking an account over from a backup server: its address, the recovery code that opens the backup, and a sign-in in the browser. -->
+        <!-- Taking an account over from a backup server: its address, the Sync key that opens the backup, and a sign-in in the browser. -->
         <ScrollViewer x:Name="ServerRestorePanel" IsVisible="False">
             <StackPanel Margin="20,56,20,24" Spacing="12" MaxWidth="480">
                 <TextBlock Text="Restore from Yaparr Cloud" FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Ink}" />
-                <TextBlock Text="You sign in in your browser, and the backup is unlocked on this phone with your recovery code. The code is never sent to the server."
+                <TextBlock Text="You sign in in your browser, and your account is unlocked on this phone with your Sync key. The key is never sent to the server."
                            TextWrapping="Wrap" Foreground="{DynamicResource Muted}" />
                 <TextBlock Text="Server address" Margin="0,8,0,0" Foreground="{DynamicResource Muted}" />
                 <TextBox x:Name="RestoreServerBox" PlaceholderText="https://cloud.yaparr.com" />
-                <TextBlock Text="Recovery code" Foreground="{DynamicResource Muted}" />
+                <TextBlock Text="Sync key" Foreground="{DynamicResource Muted}" />
                 <TextBox x:Name="RestoreCodeBox" PlaceholderText="K7QD-M3XF-9PLR-2WTE-HV8N-C4YB" />
                 <Button x:Name="ServerRestoreButton" Classes="primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Sign in and restore" Click="ServerRestoreClicked" />
                 <TextBlock x:Name="ServerRestoreStatus" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" />
@@ -199,7 +199,7 @@
                         <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="16,12" Tag="cloud" Click="SettingsSectionClicked">
                             <StackPanel>
                                 <TextBlock Text="Yaparr Cloud" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Ink}" />
-                                <TextBlock Text="Account, backup and push" FontSize="12" Foreground="{DynamicResource Muted}" />
+                                <TextBlock Text="Account, sync and push" FontSize="12" Foreground="{DynamicResource Muted}" />
                             </StackPanel>
                         </Button>
                         <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="16,12" Tag="backup" Click="SettingsSectionClicked">
@@ -281,7 +281,7 @@
                         </StackPanel>
                         <StackPanel x:Name="Section_cloud" Spacing="10" IsVisible="False">
                     <TextBlock Text="Yaparr Cloud" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource Ink}" />
-                    <TextBlock Text="An optional account on a Yaparr Cloud server, such as cloud.yaparr.com, whose address someone gives you. It keeps a locked backup of your account to bring back on any phone or computer, and it can wake this phone when someone writes to you. You sign in in your browser. The server cannot read your backup (it is locked on this phone with a recovery code), and nothing is sent anywhere unless you use this." TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />
+                    <TextBlock Text="An optional account on a Yaparr Cloud server, such as cloud.yaparr.com, whose address someone gives you. It keeps your account in step on your phones and computers (your rooms, name, pins and message history), so a new device can pick up where you left off, and it can wake this phone when someone writes to you. You sign in in your browser. The server cannot read what it holds (it is locked on this phone with your Sync key), and nothing is sent anywhere unless you use this." TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />
                     <StackPanel x:Name="ServerSignedOutPanel" Spacing="8">
                         <TextBox x:Name="ServerUrlBox" PlaceholderText="https://cloud.yaparr.com" />
                         <Button x:Name="ServerSignInButton" Classes="primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Sign in with your browser" Click="ServerSignInClicked" />
@@ -289,11 +289,11 @@
                     </StackPanel>
                     <StackPanel x:Name="ServerSignedInPanel" Spacing="8" IsVisible="False">
                         <TextBlock x:Name="ServerSignedInText" TextWrapping="Wrap" Foreground="{DynamicResource Ink}" />
-                        <Button x:Name="BackupToServerButton" Classes="primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Back up now" Click="BackupToServerClicked" />
+                        <Button x:Name="BackupToServerButton" Classes="primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Sync now" Click="BackupToServerClicked" />
                         <CheckBox x:Name="LeaveForAbsentCheck" Content="Leave messages for people who are away" Click="LeaveForAbsentClicked" />
                         <TextBlock Text="Messages and pictures go straight to people who are online. Only when someone you know is away is a locked copy left on the server, for up to 7 days. The server cannot read it. Turn this off and nothing is left there; you still receive what others leave for you." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
                         <TextBlock x:Name="AutoBackupStatus" IsVisible="False" TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />
-                        <Button x:Name="ShowRecoveryCodeButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Show recovery code" Click="ShowRecoveryCodeClicked" />
+                        <Button x:Name="ShowRecoveryCodeButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Show Sync key" Click="ShowRecoveryCodeClicked" />
                         <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Change password" Click="ServerChangePasswordClicked" />
                         <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Delete my account" Click="ServerDeleteAccountClicked" />
                         <Button x:Name="ServerSignOutButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Sign out" Click="ServerSignOutClicked" />
@@ -793,7 +793,7 @@
             </Border>
         </Border>
 
-        <!-- A recovery code: shown once when it is made, with a way to copy it, and again on request. -->
+        <!-- A Sync key: shown once when it is made, with a way to copy it, and again on request. -->
         <Border x:Name="CodePanel" IsVisible="False" Background="#99000000">
             <Border Background="{DynamicResource Surface}" CornerRadius="16" Margin="20" Padding="16" MaxWidth="440" VerticalAlignment="Center">
                 <StackPanel Spacing="12">

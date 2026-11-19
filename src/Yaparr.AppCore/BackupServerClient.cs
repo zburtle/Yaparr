@@ -50,7 +50,7 @@ public sealed class BackupServerState
     public DateTimeOffset? LastBackup { get; set; }
     /// <summary>The keys, rooms, name and account as they were at that backup (<see cref="AppData.KeysFingerprint"/>), to tell when they have changed since.</summary>
     public string KeysFingerprint { get; set; } = "";
-    /// <summary>Another device saved a newer backup: automatic backups wait until the person has backed up by hand (which asks).</summary>
+    /// <summary>Old files only: automatic backups used to wait here until the person backed up by hand. Nothing waits now; the value is read and ignored.</summary>
     public bool AutoPaused { get; set; }
     /// <summary>The last thing automatic backups had to say, for the Backup page: what they did, or why they stopped.</summary>
     public string AutoNote { get; set; } = "";
