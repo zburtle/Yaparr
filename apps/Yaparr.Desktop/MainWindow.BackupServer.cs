@@ -76,6 +76,7 @@ public partial class MainWindow
     {
         node.MailboxLeaving = _settings.LeaveForAbsent;
         LeaveForAbsentCheck.IsChecked = _settings.LeaveForAbsent;
+        GatewayCheck.IsChecked = _settings.GatewayWhenUdpBlocked;
     }
 
     // The mailbox of each room on the server (MailboxSync): what was written here is left there, locked, for members who are away, and what others left for this device
@@ -335,6 +336,15 @@ public partial class MainWindow
     {
         if (Uri.TryCreate(_server.Url, UriKind.Absolute, out var server))
             await GetTopLevel(this)!.Launcher.LaunchUriAsync(BackupServerClient.PasswordPage(server));
+    }
+
+    private void Gateway_Click(object? sender, RoutedEventArgs e)
+    {
+        _settings.GatewayWhenUdpBlocked = GatewayCheck.IsChecked == true;
+        _data.SaveSettings(_settings);
+        // Switched off: the gateway is let go now. Switched on: the next look at the network uses it if the network blocks UDP.
+        if (_node != null && !_settings.GatewayWhenUdpBlocked) _ = _node.DisconnectGatewayAsync();
+        else _node?.NotifyNetworkChanged();
     }
 
     private void LeaveForAbsent_Click(object? sender, RoutedEventArgs e)

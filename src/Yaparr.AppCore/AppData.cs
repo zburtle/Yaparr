@@ -131,6 +131,12 @@ public sealed class AppSettings
     /// </summary>
     public bool NotificationsOffered { get; set; }
 
+    /// <summary>
+    /// When the network does not let UDP out and the device is signed in to Yaparr Cloud, send Yaparr's traffic through the server's gateway, which is enough for messages (see
+    /// <c>GatewayFallback</c>). Belongs to the device (its network is its own): not one of the settings kept the same on every device.
+    /// </summary>
+    public bool GatewayWhenUdpBlocked { get; set; } = true;
+
     /// <summary>The phone app: stay connected when the app is not on the screen, so that messages and calls keep coming (shows a notification while it is on). Off until the person turns it on.</summary>
     public bool BackgroundConnection { get; set; }
 

@@ -33,6 +33,13 @@ public partial class MainView
         AppHost.Auto.Changed += _autoChanged;
     }
 
+    private void GatewayClicked(object? sender, RoutedEventArgs e)
+    {
+        _settings.GatewayWhenUdpBlocked = GatewayCheck.IsChecked == true;
+        _data.SaveSettings(_settings);
+        _session?.SetGatewayAllowed(_settings.GatewayWhenUdpBlocked);
+    }
+
     private void LeaveForAbsentClicked(object? sender, RoutedEventArgs e)
     {
         _settings.LeaveForAbsent = LeaveForAbsentCheck.IsChecked == true;
@@ -54,6 +61,7 @@ public partial class MainView
         ServerSignedOutPanel.IsVisible = !_server.SignedIn;
         ServerSignedInPanel.IsVisible = _server.SignedIn;
         LeaveForAbsentCheck.IsChecked = _settings.LeaveForAbsent;
+        GatewayCheck.IsChecked = _settings.GatewayWhenUdpBlocked;
         if (!_server.SignedIn) return;
         var host = Uri.TryCreate(_server.Url, UriKind.Absolute, out var uri) ? uri.Authority : _server.Url;
         ServerSignedInText.Text = $"Signed in to {host} as {_server.Username}.";

@@ -341,6 +341,7 @@ public sealed partial class ChatNode : IDisposable
     private TurnClient? _turn;
     private TurnOptions? _turnOptions;
     private WireGuardTunnel? _tunnel;
+    private GatewayTunnel? _gateway;
     private readonly SemaphoreSlim _networkGate = new(1, 1);
 
     private const int MinDegree = 2;
@@ -531,6 +532,7 @@ public sealed partial class ChatNode : IDisposable
     private async Task<bool> ConnectVpnCoreAsync(WireGuardConfig config, CancellationToken ct)
     {
         DetachTunnel();
+        DetachGateway();      // a VPN carries the traffic itself: it has the say
         var tunnel = new WireGuardTunnel(config, _mux, _options.Log);
         tunnel.StateChanged += state => { if (ReferenceEquals(_tunnel, tunnel)) VpnStateChanged?.Invoke(state); };
         _tunnel = tunnel;
@@ -546,6 +548,61 @@ public sealed partial class ChatNode : IDisposable
             DetachTunnel();
             throw;
         }
+    }
+
+    /// <summary>
+    /// Not one STUN server answered and nothing set up by Yaparr (a VPN, the gateway) is carrying the traffic: the device is offline, or its network blocks UDP. An app that is signed in to a
+    /// Yaparr Cloud server can then connect the gateway (<see cref="ConnectGatewayAsync"/>). Raised from a background thread, after each check of the network.
+    /// </summary>
+    public event Action? UdpBlocked;
+
+    /// <summary>Whether the Yaparr Cloud gateway is carrying this device's UDP traffic (see <see cref="GatewayTunnel"/>).</summary>
+    public VpnState GatewayState => _gateway?.State ?? VpnState.Disconnected;
+
+    public event Action<VpnState>? GatewayStateChanged;
+
+    /// <summary>The service held something back (speed, the day's limit, destination or size: see <see cref="GatewayFrames"/>).</summary>
+    public event Action<byte>? GatewayLimited;
+
+    /// <summary>
+    /// Sends this device's UDP traffic through a Yaparr Cloud gateway (for a network that blocks UDP), then looks at the network again through it. False if it did not connect, or a VPN is
+    /// already carrying the traffic (that has the say). <paramref name="link"/> makes one connection each time it has to (see <see cref="WebSocketGatewayLink"/>).
+    /// </summary>
+    public async Task<bool> ConnectGatewayAsync(Func<IGatewayLink> link, string what = "Yaparr Cloud", CancellationToken ct = default)
+    {
+        Start();
+        if (_tunnel != null) return false;
+        DetachGateway();
+        var gateway = new GatewayTunnel(link, _mux, _options.Log, what);
+        gateway.StateChanged += state => { if (ReferenceEquals(_gateway, gateway)) GatewayStateChanged?.Invoke(state); };
+        gateway.Limited += reason => { if (ReferenceEquals(_gateway, gateway)) GatewayLimited?.Invoke(reason); };
+        _gateway = gateway;
+        _mux.Tunnel = gateway;
+        bool connected;
+        try { connected = await gateway.ConnectAsync(TimeSpan.FromSeconds(15), ct).ConfigureAwait(false); }
+        catch
+        {
+            DetachGateway();
+            throw;
+        }
+        if (!connected) { DetachGateway(); return false; }
+        await RefreshNetworkAsync(ct).ConfigureAwait(false);
+        return true;
+    }
+
+    public async Task DisconnectGatewayAsync(CancellationToken ct = default)
+    {
+        DetachGateway();
+        await RefreshNetworkAsync(ct).ConfigureAwait(false);
+    }
+
+    private void DetachGateway()
+    {
+        var gateway = Interlocked.Exchange(ref _gateway, null);
+        if (gateway == null) return;
+        if (ReferenceEquals(_mux.Tunnel, gateway)) _mux.Tunnel = null;
+        gateway.Dispose();
+        GatewayStateChanged?.Invoke(VpnState.Disconnected);
     }
 
     public TurnOptions? Turn => _turnOptions;
@@ -577,9 +634,10 @@ public sealed partial class ChatNode : IDisposable
             PortMapping? mapping = null;
             _turn?.Dispose();
             _turn = null;
-            string? vpn = _tunnel is { State: VpnState.Connected } ? $"VPN {_tunnel.Describe()}" : null;
+            string? vpn = _tunnel is { State: VpnState.Connected } ? $"VPN {_tunnel.Describe()}"
+                : _gateway is { State: VpnState.Connected } ? _gateway.Describe() : null;
             _networkSetupError = null;
-            if (traversal.PortMapping && _tunnel == null)
+            if (traversal.PortMapping && _tunnel == null && _gateway == null)
             {
                 // The router not being asked (or not answering) must not stop finding out what the network is like.
                 try
@@ -596,6 +654,9 @@ public sealed partial class ChatNode : IDisposable
 
             var nat = await NatProbe.RunAsync(_mux, traversal.StunServers, ct).ConfigureAwait(false);
             PublishNetwork(new NetworkStatus(nat, mapping, null, vpn));
+            // Not one STUN server answered, with nothing in the way of UDP set up by Yaparr: the network is offline or blocks UDP. Told, so an app that can reach a Yaparr Cloud
+            // server over the web can offer the gateway.
+            if (nat.Type == NatType.Unknown && nat.PublicEndPoint == null && mapping == null && _tunnel == null && _gateway == null) UdpBlocked?.Invoke();
 
             bool needRelay = mapping == null && nat.Type is NatType.Symmetric or NatType.Unknown;
             if (turnOptions is { Enabled: true } turn && (needRelay || turn.Always))
@@ -641,6 +702,7 @@ public sealed partial class ChatNode : IDisposable
         _turn?.Dispose();
         _mux.Tunnel = null;
         _tunnel?.Dispose();
+        _gateway?.Dispose();
         if (_mapper != null)
         {
             try { _mapper.UnmapAsync().Wait(TimeSpan.FromSeconds(3)); } catch (AggregateException) { }
@@ -888,6 +950,8 @@ public sealed partial class ChatNode : IDisposable
                 _options.Log?.Invoke("network changed; checking the connection again");
                 // Sessions on the old network are going to fail; make sure they are dialed again as soon as they drop.
                 _backoff.Clear();
+                // The new network may not block UDP: the gateway is let go, and if it does, the check says so (UdpBlocked) and the app offers it again.
+                if (_gateway != null) DetachGateway();
                 await RefreshNetworkAsync(_cts.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) { }

@@ -479,6 +479,8 @@ public partial class MainWindow : Window
             Log = _log.Write,
         });
         _node.NetworkStatusChanged += _ => UI(UpdateStatus);
+        // A network that does not let UDP out: signed in to Yaparr Cloud, messages go through its gateway (if the person allows it).
+        _ = new GatewayFallback(_node, () => GatewayFallback.AccountOf(_data.LoadBackupServer()), () => _settings.GatewayWhenUdpBlocked, _log.Write);
         _node.AttachmentChanged += update => UI(() => OnAttachmentChanged(update));
         var emojiNode = _node;
         EmojiPictures.Reader = hash => emojiNode.ReadAttachment(hash);
