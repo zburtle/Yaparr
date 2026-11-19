@@ -15,11 +15,12 @@ internal static class NotificationPolicy
     /// <param name="ReplyToMe">Answers one of your messages.</param>
     /// <param name="RoomNotifiesAll">The room is set to notify for every message.</param>
     /// <param name="ShownElsewhere">Another of your devices is showing this chat right now, so you are looking at it.</param>
-    public readonly record struct Message(bool IsDirect, bool Mine, bool MentionsMe, bool ReplyToMe, bool RoomNotifiesAll, TimeSpan Age, bool ShownElsewhere = false);
+    /// <param name="Muted">The room is muted: nothing from it notifies, not even a mention or a reply.</param>
+    public readonly record struct Message(bool IsDirect, bool Mine, bool MentionsMe, bool ReplyToMe, bool RoomNotifiesAll, TimeSpan Age, bool ShownElsewhere = false, bool Muted = false);
 
     public static bool ShouldNotify(in Message message, bool appInForeground, bool notificationsOn)
     {
-        if (!notificationsOn || appInForeground || message.Mine || message.ShownElsewhere || message.Age > Fresh) return false;
+        if (!notificationsOn || appInForeground || message.Mine || message.ShownElsewhere || message.Muted || message.Age > Fresh) return false;
         return message.IsDirect || message.MentionsMe || message.ReplyToMe || message.RoomNotifiesAll;
     }
 

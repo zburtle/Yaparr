@@ -22,6 +22,16 @@ public class NotificationPolicyTests
     }
 
     [Fact]
+    public void A_muted_room_notifies_for_nothing_not_even_a_mention_a_reply_or_a_setting_to_notify_for_everything()
+    {
+        var muted = (NotificationPolicy.Message m) => m with { Muted = true };
+        Assert.False(Notify(muted(Room(mentions: true))));
+        Assert.False(Notify(muted(Room(reply: true))));
+        Assert.False(Notify(muted(Room(all: true))));
+        Assert.True(Notify(Room(mentions: true)));   // and unmuted it does
+    }
+
+    [Fact]
     public void A_room_set_to_notify_for_everything_notifies_for_every_message()
     {
         Assert.True(Notify(Room(all: true)));

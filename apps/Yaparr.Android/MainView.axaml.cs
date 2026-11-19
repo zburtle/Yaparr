@@ -877,6 +877,14 @@ public partial class MainView : UserControl
                     ShowChatNote(chat, all ? "You will be notified of every message here" : "You will be notified of mentions and replies here");
                     if (all) _ = EnsureNotificationsAsync();
                 });
+            if (_session != null)
+                Add(_session.IsMuted(chat) ? "Unmute notifications" : "Mute notifications", (_, _) =>
+                {
+                    bool muted = !_session!.IsMuted(chat);
+                    _session.SetMuted(chat, muted);
+                    MenuButton.Flyout = BuildMenu(chat);
+                    ShowChatNote(chat, muted ? "Nothing here will notify you, not even a mention. Messages still count as unread." : "You will be notified here again");
+                });
             Add("Blocked and banned", BlockedClicked);
             Add("Copy invite link", CopyInviteLinkClicked);
             Add("Copy invite", CopyInviteClicked);

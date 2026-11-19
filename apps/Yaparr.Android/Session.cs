@@ -763,6 +763,19 @@ public sealed partial class Session : IDisposable
     /// <summary>Whether a room notifies for every message, not only mentions and replies.</summary>
     public bool NotifiesAll(Chat chat) => chat.Room is { } room && _settings.NotifyAllRooms.Contains(room.RoomId);
 
+    /// <summary>Whether a room is muted: nothing from it notifies, not even a mention or a reply.</summary>
+    public bool IsMuted(Chat chat) => chat.Room is { } room && _settings.MutedRooms.Contains(room.RoomId);
+
+    public void SetMuted(Chat chat, bool muted)
+    {
+        if (chat.Room is not { } room) return;
+        if (muted) { if (!_settings.MutedRooms.Contains(room.RoomId)) _settings.MutedRooms.Add(room.RoomId); }
+        else _settings.MutedRooms.Remove(room.RoomId);
+        try { _data.SaveSettings(_settings); }
+        catch (IOException) { }
+        if (muted && OperatingSystem.IsAndroidVersionAtLeast(26)) Notifier.Clear(Android.App.Application.Context, KeyOf(chat));
+    }
+
     public void SetNotifiesAll(Chat chat, bool all)
     {
         if (chat.Room is not { } room) return;
@@ -778,13 +791,13 @@ public sealed partial class Session : IDisposable
         bool replyToMe = line.ReplyKey is { } key && chat.FindByKey(key) is { Mine: true };
         // A chat that another of your devices (the computer) has open in front of you needs no notification here.
         bool shownElsewhere = _node is { } node && (chat.Room is { } room ? node.SiblingIsViewing(room.RoomId, m.Channel, null) : chat.Direct is { } direct && node.SiblingIsViewing(null, null, direct.PeerId));
-        var facts = new NotificationPolicy.Message(!chat.IsRoom, line.Mine, line.MentionsMe, replyToMe, NotifiesAll(chat), DateTimeOffset.UtcNow - m.Timestamp, shownElsewhere);
+        var facts = new NotificationPolicy.Message(!chat.IsRoom, line.Mine, line.MentionsMe, replyToMe, NotifiesAll(chat), DateTimeOffset.UtcNow - m.Timestamp, shownElsewhere, IsMuted(chat));
         if (!NotificationPolicy.ShouldNotify(facts, AppHost.InForeground, _settings.NotifyMessages)) return;
         if (!OperatingSystem.IsAndroidVersionAtLeast(26)) return;
         bool gif = line.Attachment?.Mime == "image/gif";
         var body = NotificationPolicy.Body(line.Text, line.Attachment != null, gif);
         if (body.Length == 0) body = "New message";
-        Notifier.Message(Android.App.Application.Context, KeyOf(chat), chat.Title, line.Who, body, !chat.IsRoom);
+        Notifier.Message(Android.App.Application.Context, KeyOf(chat), chat.Title, line.Who, body, !chat.IsRoom, m.Channel);
     }
 
     // ---- pictures ----
@@ -946,8 +959,8 @@ public sealed partial class Session : IDisposable
     private ChatMessage OwnMessage(Chat chat, string id, string text, string? channel, Attachment? attachment) =>
         new(new PeerInfo(_node!.Id, _node.DisplayName, null, AccountId: _node.AccountId), chat.Room?.Name, id, text, DateTimeOffset.Now, Attachment: attachment, Channel: channel);
 
-    /// <summary>Sends a message to the chat, in the channel on show.</summary>
-    public async Task SendAsync(Chat chat, string text, string? replyKey = null, IReadOnlyCollection<Mention>? mentions = null)
+    /// <summary>Sends a message to the chat, in the channel on show (or in <paramref name="channelId"/>, for a reply from a notification, which answers in the channel the message came in).</summary>
+    public async Task SendAsync(Chat chat, string text, string? replyKey = null, IReadOnlyCollection<Mention>? mentions = null, string? channelId = null)
     {
         if (_node == null) return;
         string id;
@@ -957,7 +970,7 @@ public sealed partial class Session : IDisposable
         var emoji = CustomEmojiFor(chat, text);
         if (chat.Room is { } room)
         {
-            channel = chat.CurrentChannel;
+            channel = channelId != null && chat.Channels.Any(c => c.Id == channelId) ? channelId : chat.CurrentChannel;
             id = await room.SendAsync(text, channel == RoomChannels.DefaultText ? null : channel, replyKey, mentions, preview, emoji);
         }
         else id = await chat.Direct!.SendAsync(text, replyKey, preview, emoji);
