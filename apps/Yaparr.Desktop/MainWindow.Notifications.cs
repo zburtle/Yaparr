@@ -139,6 +139,29 @@ public partial class MainWindow
         if (_settings.DesktopPopups && !IsActive) ShowPopup(conv, message);
     }
 
+    // A reply typed into a pop-up: sent to that chat, in the channel the message came in, and shown in the chat. Nothing is held back if it cannot be sent: the status line says so.
+    private async Task ReplyFromPopupAsync(ConversationVm conv, string text, string? channel)
+    {
+        if (_node == null) return;
+        try
+        {
+            string id;
+            if (RoomFor(conv) is { } room)
+            {
+                channel ??= conv.CurrentChannel;
+                id = await (channel == Yaparr.Chat.RoomChannels.DefaultText ? room.SendAsync(text) : room.SendAsync(text, channel));
+            }
+            else id = await conv.Send(text);
+            conv.Add(new MessageVm(DateTimeOffset.Now, _node.DisplayName, text, isMine: true, id: id)
+            {
+                Channel = conv.IsRoom ? channel : null,
+                Key = Yaparr.Chat.ChatMessage.KeyOf(_node.Id, id),
+            });
+            StatusText.Text = $"Reply sent to {conv.Title}.";
+        }
+        catch (InvalidOperationException ex) { StatusText.Text = "Couldn't send the reply: " + ex.Message; }
+    }
+
     private bool IsMuted(Yaparr.Chat.ChatRoom room) => _settings.MutedRooms.Contains(room.RoomId);
 
     private void ToggleMute_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -175,7 +198,17 @@ public partial class MainWindow
         var who = message.Highlight ? $"{message.Sender} named you in {conv.Title}" : conv.IsDirect ? message.Sender : $"{message.Sender} in {conv.Title}";
         var text = message.HasAttachment && !message.HasText ? "Sent a picture" : message.Text;
         text = text.Length > 140 ? text[..139] + "…" : text;
-        if (LinuxDesktop.Available) LinuxDesktop.Notify(who, text, t => _log.Write(t));
+        var room = RoomFor(conv);
+        // What the pop-up's buttons do (where the desktop shows them): open the chat, send a typed reply (KDE) in the channel the message came in, mute the room.
+        var actions = new PopupActions(
+            Open: () => Avalonia.Threading.Dispatcher.UIThread.Post(() => { ShowFromTray(); SelectConversation(conv); }),
+            Reply: reply => Avalonia.Threading.Dispatcher.UIThread.Post(() => _ = ReplyFromPopupAsync(conv, reply, message.Channel)),
+            Mute: room == null ? null : () => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                if (!IsMuted(room)) { _settings.MutedRooms.Add(room.RoomId); _data.SaveSettings(_settings); }
+                StatusText.Text = $"\"{conv.Title}\" is muted: nothing from it makes a sound or a pop-up, not even a mention. Its messages still count as unread.";
+            }));
+        if (LinuxDesktop.Available) LinuxDesktop.Notify(who, text, actions, t => _log.Write(t));
         else if (WindowsToast.Available && TryGetPlatformHandle()?.Handle is { } window)
             WindowsToast.Show(window, who, text, () => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
