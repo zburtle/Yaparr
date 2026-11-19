@@ -201,6 +201,7 @@ public sealed partial class Session : IDisposable
         // The pins are read before any chat is added, so each lands in its place; later changes (here, or from another device) follow.
         _pins = new PinnedFirst(node.Pins);
         node.PinsChanged += () => UI(RefreshPins);
+        StartSettingsSync(node);
         node.DisplayNameChanged += OnDisplayNameChanged;
         node.IncomingDirectChat += chat => UI(() => AddDirect(chat));
         node.PeerConnected += _ => UI(SayConnection);
@@ -1146,6 +1147,26 @@ public sealed partial class Session : IDisposable
         _mailboxSoon.Tick += (_, _) => { _mailboxSoon.Stop(); _ = RunMailboxAsync(); };
         node.MailboxQueued += () => UI(() => { _mailboxSoon.Stop(); _mailboxSoon.Start(); });
         DispatcherTimer.RunOnce(() => _ = RunMailboxAsync(), TimeSpan.FromSeconds(3));
+    }
+
+    // The settings that are the same on every device (muted rooms, a room's sound, whether messages notify, see SettingsSync) travel as entries of the account: what the
+    // account holds is taken in when the session starts, what another device changes is applied as it comes, and what is saved here goes to the account.
+    private SettingsPush? _settingsPush;
+    private Action<AppSettings>? _settingsSaved;
+
+    private void StartSettingsSync(ChatNode node)
+    {
+        var push = _settingsPush = new SettingsPush(node);
+        if (push.Seed(_settings)) { _data.SaveSettings(_settings); node.MailboxLeaving = _settings.LeaveForAbsent; }
+        if (_settingsSaved != null) _data.SettingsSaved -= _settingsSaved;
+        _settingsSaved = saved => UI(() => push.Local(saved));
+        _data.SettingsSaved += _settingsSaved;
+        node.SettingChanged += (name, value) => UI(() =>
+        {
+            if (!push.Remote(_settings, name, value)) return;
+            _data.SaveSettings(_settings);
+            node.MailboxLeaving = _settings.LeaveForAbsent;
+        });
     }
 
     /// <summary>The person turned leaving messages for people who are away on or off (Settings > Yaparr Cloud).</summary>

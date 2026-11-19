@@ -52,6 +52,32 @@ public partial class MainWindow
         StartMailbox();
     }
 
+    // The settings that are the same on every device (muted rooms, a room's sound, whether messages notify, see SettingsSync) travel as entries of the account: what the
+    // account holds is taken in when the app starts, what another device changes is applied as it comes, and what is saved here goes to the account.
+    private SettingsPush? _settingsPush;
+    private Action<AppSettings>? _settingsSaved;
+
+    private void StartSettingsSync(Yaparr.Chat.ChatNode node)
+    {
+        var push = _settingsPush = new SettingsPush(node);
+        if (push.Seed(_settings)) { _data.SaveSettings(_settings); AfterSettingsChangedElsewhere(node); }
+        if (_settingsSaved != null) _data.SettingsSaved -= _settingsSaved;
+        _settingsSaved = saved => UI(() => push.Local(saved));
+        _data.SettingsSaved += _settingsSaved;
+        node.SettingChanged += (name, value) => UI(() =>
+        {
+            if (!push.Remote(_settings, name, value)) return;
+            _data.SaveSettings(_settings);
+            AfterSettingsChangedElsewhere(node);
+        });
+    }
+
+    private void AfterSettingsChangedElsewhere(Yaparr.Chat.ChatNode node)
+    {
+        node.MailboxLeaving = _settings.LeaveForAbsent;
+        LeaveForAbsentCheck.IsChecked = _settings.LeaveForAbsent;
+    }
+
     // The mailbox of each room on the server (MailboxSync): what was written here is left there, locked, for members who are away, and what others left for this device
     // is fetched. Soon after the app opens, every five minutes, and a few seconds after something is written here. Nothing happens until this device is signed in.
     private readonly Avalonia.Threading.DispatcherTimer _mailboxTimer = new() { Interval = TimeSpan.FromMinutes(5) };

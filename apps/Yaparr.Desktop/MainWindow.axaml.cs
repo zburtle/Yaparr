@@ -495,6 +495,7 @@ public partial class MainWindow : Window
         _node.AccountLearned += _ => UI(ClaimOwnMessages);
         _node.SyncedRoomChanged += OnSyncedRoomChanged;
         _node.PinsChanged += () => UI(RefreshPins);
+        StartSettingsSync(_node);
         _node.DisplayNameChanged += OnDisplayNameChanged;
         _node.PeerConnected += p => UI(() => { Remember(p); RefreshPeers(); UpdateStatus(); });
         _node.PeerDisconnected += p => UI(() => { Remember(p); RefreshPeers(p.Account); UpdateStatus(); });

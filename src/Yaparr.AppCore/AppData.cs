@@ -252,7 +252,14 @@ public sealed class AppData
         catch (Exception ex) when (ex is IOException or JsonException or System.Security.Cryptography.CryptographicException) { return new(); }
     }
 
-    public void SaveSettings(AppSettings settings) => SecretStore.WriteAllText(SettingsPath, JsonSerializer.Serialize(settings, Json));
+    /// <summary>Raised after the settings were saved, so what is kept the same on all devices (<see cref="SettingsSync"/>) can be given to the account.</summary>
+    public event Action<AppSettings>? SettingsSaved;
+
+    public void SaveSettings(AppSettings settings)
+    {
+        SecretStore.WriteAllText(SettingsPath, JsonSerializer.Serialize(settings, Json));
+        SettingsSaved?.Invoke(settings);
+    }
 
     private string BackupServerPath => Path.Combine(Directory, "backup-server.json");
     private string PushPath => Path.Combine(Directory, "push.json");
