@@ -46,7 +46,7 @@ public partial class MainWindow
         try
         {
             PinnedFirst.Apply(_roomItems, c => pins.RankOf(true, c.PinId));
-            PinnedFirst.Apply(_chatItems, c => PinnedFirst.WithNotes(c.IsNotes, pins.RankOf(false, c.PinId)));
+            PinnedFirst.Apply(_chatItems, c => pins.RankOf(false, c.PinId));
             // Moving rows about can make a list let go of the one that is selected: it is put back, without opening anything again.
             if (keep != null && (keep.IsRoom ? RoomList : ChatList) is { } list && !ReferenceEquals(list.SelectedItem, keep)) list.SelectedItem = keep;
         }
@@ -82,8 +82,7 @@ public partial class MainWindow
     // Shows what fits the conversation that was clicked: pin or unpin, the moves a pinned one can make, and the settings that only a room has.
     private void ConversationMenu_Opening(object? sender, CancelEventArgs e)
     {
-        // Notes to self has no place to choose (it is always first) and nothing to leave or mute.
-        if (_selected is not { IsNotes: false } conv || _node == null || sender is not ContextMenu menu) { e.Cancel = true; return; }
+        if (_selected is not { } conv || _node == null || sender is not ContextMenu menu) { e.Cancel = true; return; }
         var shown = PinsShownIn(conv.IsRoom);
         int at = shown.FindIndex(p => p.Id == conv.PinId);
         foreach (var item in menu.Items.OfType<Control>())

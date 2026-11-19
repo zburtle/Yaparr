@@ -616,14 +616,14 @@ public sealed class ConversationVm : Observable
     public string? PeerId { get; init; }
     public bool HasPeerId => PeerId != null && !IsNotes;
 
-    /// <summary>The chat with yourself ("Notes to self"): always there, always first, and not something to pin, mute or remove.</summary>
+    /// <summary>The chat with yourself ("Notes to self"): always there, first by default, pinnable and movable like any chat, but never removed.</summary>
     public bool IsNotes { get; init; }
 
     /// <summary>The room's id (<c>ChatRoom.RoomId</c>), for a room.</summary>
     public string? RoomId { get; init; }
 
     /// <summary>What a pin of this conversation is kept under: the room's id, or the other person's id in a direct chat.</summary>
-    public string? PinId => IsRoom ? RoomId : IsNotes ? null : PeerId;
+    public string? PinId => IsRoom ? RoomId : PeerId;
 
     private bool _isPinned;
 

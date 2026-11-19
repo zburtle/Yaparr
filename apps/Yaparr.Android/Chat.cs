@@ -92,9 +92,9 @@ public sealed class Chat : Observable
     public bool IsRoom => Room != null;
 
     /// <summary>What a pin of this chat is kept under: the room's id, or the other person's id in a direct chat.</summary>
-    public string? PinId => IsNotes ? null : Room?.RoomId ?? Direct?.PeerId.Value;
+    public string? PinId => Room?.RoomId ?? Direct?.PeerId.Value;
 
-    /// <summary>The chat with yourself ("Notes to self"): always first in the list, and not something to pin, mute, block or leave.</summary>
+    /// <summary>The chat with yourself ("Notes to self"): first in the list by default, pinnable and movable like any chat, but never left or blocked.</summary>
     public bool IsNotes => Direct?.IsNotes == true;
 
     private bool _isPinned;

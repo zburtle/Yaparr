@@ -21,12 +21,6 @@ public sealed class PinnedFirst
     /// <summary>The place of a room or chat among the pinned ones (0 is the first); null if it is not pinned (or has no id).</summary>
     public int? RankOf(bool isRoom, string? id) => id != null && _rank.TryGetValue((isRoom, id), out var rank) ? rank : null;
 
-    /// <summary>Where the chat with yourself ("Notes to self") sits: before every pinned one.</summary>
-    public const int NotesRank = -1;
-
-    /// <summary>The rank to sort by: the chat with yourself is always first, whatever is pinned; any other keeps its place among the pins (null if not pinned).</summary>
-    public static int? WithNotes(bool isNotes, int? pinRank) => isNotes ? NotesRank : pinRank;
-
     public bool IsPinned(bool isRoom, string? id) => RankOf(isRoom, id) != null;
 
     /// <summary>The items in the order they should be shown: the pinned ones first, by their place, and then the rest in the order they were given.</summary>

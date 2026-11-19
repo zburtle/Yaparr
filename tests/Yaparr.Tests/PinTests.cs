@@ -306,15 +306,3 @@ public class PinSyncTests
         finally { try { File.Delete(path); } catch (IOException) { } }
     }
 }
-
-public class NotesRankTests
-{
-    [Fact]
-    public void Notes_to_self_is_first_whatever_is_pinned()
-    {
-        var pins = new Yaparr.AppCore.PinnedFirst(new[] { new PinnedConversation(false, "bob", "i"), new PinnedConversation(true, "room", "j") });
-        var chats = new (bool Notes, bool IsRoom, string Id)[] { (false, true, "plain"), (false, false, "bob"), (true, false, "me"), (false, true, "room") };
-        var arranged = Yaparr.AppCore.PinnedFirst.Arrange(chats, c => Yaparr.AppCore.PinnedFirst.WithNotes(c.Notes, pins.RankOf(c.IsRoom, c.Id)));
-        Assert.Equal(new[] { "me", "bob", "room", "plain" }, arranged.Select(c => c.Id));
-    }
-}

@@ -343,7 +343,7 @@ public partial class MainView : UserControl
     // A long press on a room or chat in the list: pin it or unpin it, and move a pinned one up or down among the pinned ones.
     private void ChatHeld(object? sender, HoldingRoutedEventArgs e)
     {
-        if (e.HoldingState != HoldingState.Started || sender is not Control { DataContext: Chat { IsNotes: false } chat } || _session is not { } session) return;
+        if (e.HoldingState != HoldingState.Started || sender is not Control { DataContext: Chat chat } || _session is not { } session) return;
         e.Handled = true;
         _chatHeld = true;
         ActionTitle.Text = chat.Title;

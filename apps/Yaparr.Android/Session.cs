@@ -1026,7 +1026,7 @@ public sealed partial class Session : IDisposable
     private void ArrangePins()
     {
         foreach (var chat in Chats) chat.IsPinned = _pins.IsPinned(chat.IsRoom, chat.PinId);
-        PinnedFirst.Apply(Chats, c => PinnedFirst.WithNotes(c.IsNotes, _pins.RankOf(c.IsRoom, c.PinId)));
+        PinnedFirst.Apply(Chats, c => _pins.RankOf(c.IsRoom, c.PinId));
     }
 
     /// <summary>Pins the chat (after the ones pinned already), or takes it off the pinned ones.</summary>
