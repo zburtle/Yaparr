@@ -154,9 +154,14 @@ public sealed class AccountCloudSync
         var sources = new List<(string, IPieceSource)> { ("e-", shelves), ("g-", shelves), ("k-", new IdentityPieceSource(data.ReadIdentityFile)) };
         if (node.KeptHistory is { } store)
         {
-            var history = new HistoryPieceSource(store);
+            // What was taken in changes what a conversation that is open shows: it is told, so it reads its window again.
+            var history = new HistoryPieceSource(store, (name, _) =>
+            {
+                if (HistoryPieces.WhoOf(name) is { } who) node.HistoryChangedBySync(new[] { who });
+            });
             sources.Add(("h-", history));
             sources.Add(("d-", history));
+            sources.Add(("x-", history));
         }
         return new PieceSources(sources.ToArray());
     }

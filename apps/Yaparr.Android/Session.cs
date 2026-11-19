@@ -303,6 +303,8 @@ public sealed partial class Session : IDisposable
         room.MemberLeft += _ => UI(() => ShowMembers(chat, room));
         room.MemberRenamed += _ => UI(() => ShowMembers(chat, room));
         room.ModerationChanged += () => UI(() => Reload(chat, room));
+        // History taken in from the account's kept copy (or messages it removed): the window is read again.
+        room.HistoryChanged += () => UI(() => Reload(chat, room));
         room.VoiceChanged += () => UI(() => RefreshVoice(chat));
         room.MediaGroupsChanged += () => UI(() => RefreshShares(chat));
         room.SoundsChanged += () => UI(() => SoundsChanged?.Invoke(chat));
@@ -706,6 +708,8 @@ public sealed partial class Session : IDisposable
         direct.MessageReceived += m => UI(() => OnMessage(chat, m));
         direct.ReactionsChanged += _ => UI(() => ScheduleReactions(chat));
         direct.EarlierHistoryReceived += () => UI(() => OnEarlierArrived(chat));
+        // History taken in from the account's kept copy: what is missing from the window is added (a direct message is never removed by it).
+        direct.HistoryChanged += () => UI(() => { foreach (var m in direct.History) chat.Add(ToLine(m)); RefreshReactions(chat); });
         // Another of your devices read it: nothing here is new any more.
         direct.ReadChanged += () => UI(chat.ClearAllUnread);
         var readUpTo = direct.ReadUpTo;

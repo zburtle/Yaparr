@@ -42,7 +42,11 @@ Message history is far too big for a synced record and has to last, so it is kep
 - **Two devices that wrote the same month apart** each take the other's rows in, so both hold the union; the tags then agree and whoever still differs writes it once more.
 - Runs with the rest of the account sync (the same timers). It is also what a new device uses to get its history back without the backup.
 
-Limits: a message removed on one device (a moderator's removal, say) is still in the other devices' pieces and comes back the next time one is read; a month so busy that its piece goes over about 15 MiB is left out (it is logged); a window open in a chat does not show rows that were taken in until it is opened again.
+**Removed messages stay removed.** A message that a moderator takes down (a ban's purge, a removal) is removed **for good** (`RoomHistory.RemoveForGood`, `IChatHistoryStore.ApplyRemoved`; in SQLite a `removed` table), unlike a plain `Remove`, which only forgets it on this device, and the store never keeps a removed message again, whether another member's device offers it or an old month brings it back. The keys travel as one more piece for each room, `x-<room id>` (`HistoryPieces`): taking it in deletes those messages on the device, and the month pieces written before the removal can be taken in before or after it, in any order, with the same result. A device that still held the message then has a different row count than the account, so it writes the month again without it, and the old copies are replaced. The list is kept for good (a key is a few dozen bytes), because a device that has been off for a year has to honour it too.
+
+**A conversation that is open shows what was taken in.** Taking in a piece that changed anything tells the node (`ChatNode.HistoryChangedBySync`), which raises `ChatRoom.HistoryChanged` or `DirectChat.HistoryChanged`; both apps read the window again for that conversation (a room's, including what was removed; a direct chat's, adding what is missing).
+
+Limits: a month so busy that its piece goes over about 15 MiB is left out (it is logged).
 
 Tests: `tests/Yaparr.Tests/HistoryPieceTests.cs`.
 

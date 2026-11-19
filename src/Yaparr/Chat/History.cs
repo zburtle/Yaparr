@@ -29,8 +29,20 @@ public interface IChatHistoryStore
         return added;
     }
 
-    /// <summary>Forgets the messages with these keys.</summary>
+    /// <summary>Forgets the messages with these keys on this device only (they may be kept again if someone offers them). For what was removed for good, see <see cref="ApplyRemoved"/>.</summary>
     void Remove(string roomKey, IReadOnlyCollection<string> keys);
+
+    /// <summary>
+    /// Removes the messages with these keys <b>for good</b> (a moderator took them down): they are remembered as removed, so they are never kept again, whether another member's device
+    /// offers them or an old copy kept in sync brings them back, and the removal is kept in sync as well. Returns how many of the keys were not remembered as removed before.
+    /// </summary>
+    int ApplyRemoved(string roomKey, IReadOnlyCollection<string> keys);
+
+    /// <summary>The keys of the messages removed in this room.</summary>
+    IReadOnlyList<string> RemovedKeys(string roomKey);
+
+    /// <summary>The rooms that have anything removed.</summary>
+    IReadOnlyList<string> RoomsWithRemoved();
 
     /// <summary>The newest <paramref name="perChannel"/> messages (not reactions) of each channel, in no particular order.</summary>
     IReadOnlyList<StoredMessage> Newest(string roomKey, int perChannel);
@@ -165,18 +177,43 @@ public sealed class MemoryHistoryStore : IChatHistoryStore, IDirectHistoryStore
 
     private readonly object _gate = new();
     private readonly Dictionary<string, Dictionary<string, (StoredMessage Message, string? Target)>> _rooms = new();
+    private readonly Dictionary<string, HashSet<string>> _removed = new();
 
     private Dictionary<string, (StoredMessage Message, string? Target)> Room(string roomKey) =>
         _rooms.TryGetValue(roomKey, out var room) ? room : _rooms[roomKey] = new();
 
     public bool Add(string roomKey, string key, StoredMessage message, string? reactionTarget)
     {
-        lock (_gate) return Room(roomKey).TryAdd(key, (message, reactionTarget));
+        lock (_gate) return !IsRemoved(roomKey, key) && Room(roomKey).TryAdd(key, (message, reactionTarget));
     }
+
+    private bool IsRemoved(string roomKey, string key) => _removed.TryGetValue(roomKey, out var set) && set.Contains(key);
 
     public void Remove(string roomKey, IReadOnlyCollection<string> keys)
     {
         lock (_gate) { var room = Room(roomKey); foreach (var k in keys) room.Remove(k); }
+    }
+
+    public int ApplyRemoved(string roomKey, IReadOnlyCollection<string> keys)
+    {
+        lock (_gate)
+        {
+            var room = Room(roomKey);
+            if (!_removed.TryGetValue(roomKey, out var set)) _removed[roomKey] = set = new HashSet<string>(StringComparer.Ordinal);
+            int added = 0;
+            foreach (var k in keys) { room.Remove(k); if (set.Add(k)) added++; }
+            return added;
+        }
+    }
+
+    public IReadOnlyList<string> RemovedKeys(string roomKey)
+    {
+        lock (_gate) return _removed.TryGetValue(roomKey, out var set) ? set.Order(StringComparer.Ordinal).ToList() : new List<string>();
+    }
+
+    public IReadOnlyList<string> RoomsWithRemoved()
+    {
+        lock (_gate) return _removed.Where(kv => kv.Value.Count > 0).Select(kv => kv.Key).ToList();
     }
 
     public bool Mentions(string text)
@@ -437,6 +474,13 @@ internal sealed class RoomHistory
     {
         string? target = MessageEnvelope.TryReadReaction(m.Text, out var reaction) ? reaction.Target : MessageEnvelope.IsReactionText(m.Text) ? "" : null;
         return _store.Add(_roomKey, SignedMessage.Key(m), m, target);
+    }
+
+    /// <summary>Removes messages (by key) for good: forgotten here, and remembered as removed so they are never kept again, by this device or by any other of the account (see <see cref="IChatHistoryStore.ApplyRemoved"/>).</summary>
+    public void RemoveForGood(IEnumerable<string> keys)
+    {
+        var list = keys as IReadOnlyCollection<string> ?? keys.ToList();
+        _store.ApplyRemoved(_roomKey, list);
     }
 
     /// <summary>Forgets messages (by key), here and in the store, so they are not served to anyone else either.</summary>

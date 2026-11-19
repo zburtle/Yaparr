@@ -374,7 +374,7 @@ public sealed partial class ChatNode
         {
             // The pictures of the messages that go are deleted too, unless another message (in any room or chat) shows the same file, or it is a sound or a GIF.
             var pictures = room.History.Find(view.Messages).Select(m => Attachment.TryParse(m.Text, out var a, out _) ? a.Hash : null).OfType<string>().Distinct().ToList();
-            room.History.Remove(view.Messages);
+            room.History.RemoveForGood(view.Messages);   // taken down by a moderator: removed for good, on every device of the account too
             ReleasePictureFiles(pictures);
         }
 

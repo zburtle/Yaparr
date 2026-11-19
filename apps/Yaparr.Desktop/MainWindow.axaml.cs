@@ -754,6 +754,8 @@ public partial class MainWindow : Window
         // What the others sent is kept: it is read the same way, the next time the list is at its top (or now, if it is).
         room.EarlierHistoryReceived += () => UI(() => { conv.NoteEarlierArrived(); RefreshReactions(conv); if (_selected == conv) MaybeLoadEarlier(); });
         room.ModerationChanged += () => UI(() => { conv.Reload(room.GetHistory().Select(ToVm).ToList(), room.WhichAreShown); RefreshReactions(conv); RefreshPeers(); RefreshMembers(); });
+        // History taken in from the account's kept copy (or messages it removed): the window is read again.
+        room.HistoryChanged += () => UI(() => { conv.Reload(room.GetHistory().Select(ToVm).ToList(), room.WhichAreShown); RefreshReactions(conv); });
 
         if (_settings.RoomChannels.TryGetValue(room.RoomId, out var wantedChannel)) conv.PendingChannel = wantedChannel;
         RefreshChannels(conv, room);
@@ -936,6 +938,8 @@ public partial class MainWindow : Window
         };
         conv.AskOthersForEarlier = (_, _, id) => chat.RequestEarlierHistory(id);
         chat.EarlierHistoryReceived += () => UI(() => { conv.NoteEarlierArrived(); RefreshReactions(conv); if (_selected == conv) MaybeLoadEarlier(); });
+        // History taken in from the account's kept copy: what is missing from the window is added (a direct message is never removed by it).
+        chat.HistoryChanged += () => UI(() => { foreach (var m in chat.History) conv.Add(ToVm(m)); RefreshReactions(conv); });
         UI(() =>
         {
             foreach (var m in kept) conv.Add(ToVm(m));
