@@ -162,6 +162,11 @@ public sealed partial class ChatNode
                 items.Add(new(CheckLevel.Ok, "Peer discovery works", $"{answered} of {queried} DHT nodes answered; {dht.Node.KnownNodes} known."));
         }
 
+        if (GatewayState == VpnState.Connected)
+            items.Add(new(CheckLevel.Info, "Using Yaparr Cloud for messages", "This network does not let UDP out, so Yaparr sends its traffic through your Yaparr Cloud account. That is enough for messages, but not for voice or screen sharing."));
+        else if (GatewayState == VpnState.Connecting)
+            items.Add(new(CheckLevel.Warning, "Connecting to Yaparr Cloud", "This network does not let UDP out, and Yaparr is trying to use your Yaparr Cloud account instead."));
+
         if (VpnState == VpnState.Connecting)
             items.Add(new(CheckLevel.Warning, "VPN is connecting", "No reply from the VPN server yet. Check the server address and keys."));
         else if (vpnUp)

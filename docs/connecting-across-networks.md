@@ -15,6 +15,16 @@ Peers behind home routers have to punch through their NATs. Yaparr does this in 
    switches to the relay only for peers that cannot be reached directly. A TURN server is the one piece of
    infrastructure involved; it forwards encrypted packets and cannot read them.
 
+### Networks that block UDP (Yaparr Cloud gateway)
+
+Everything between devices (finding people, connecting, the chat protocol) is UDP, and some networks (workplaces, schools, hotels) let only web traffic out. Without help, a device there cannot find anyone or be found. If the device is signed in to a Yaparr Cloud server whose operator has the **gateway** on (see the Yaparr.Cloud README, "UDP gateway"), Yaparr sends its UDP traffic to the server inside a WebSocket on port 443, and the server sends it from a UDP socket of its own and hands back what arrives. Only the blocked device needs it; the people it talks to do not know, and see the server's address.
+
+- **When.** After a check of the network in which not one STUN server answered and nothing else carries the traffic (`ChatNode.UdpBlocked`), `GatewayFallback` connects the gateway, then looks at the network again through it. If an address comes back it stays; if the server has the gateway off, the sign-in is no good, or nothing comes back, it is let go and not tried again for ten minutes (so a network that is simply offline is not tried over and over). When the network changes the gateway is let go first, so the new network is checked as it is, and it is offered again only if UDP is blocked there too. A VPN set up in Yaparr always takes the place of the gateway.
+- **Messages only, at first.** The server caps it (a few KB a second, 50 MiB a day for the account, small datagrams, public addresses only), so chat, presence and the lookups that find people fit, and voice and screen sharing do not. What the server holds back is told to the device (`GatewayLimited`) and logged.
+- **Settings.** *Use Yaparr Cloud for messages when this network blocks UDP* in the Yaparr Cloud section of the settings (on by default; belongs to the device, not synced). The network check says when the gateway is in use.
+- **Privacy.** The server sees that the account used the gateway, when and how much, and the IP addresses of the places its datagrams went to and came from. It never sees what is in them: the devices lock that between themselves.
+- **How.** `GatewayTunnel` is an `ITunnel` like the WireGuard VPN (`UdpMux.Tunnel`): public addresses go through it, addresses on this network or machine are sent directly, and it reconnects by itself with a growing wait. `GatewayFrames` is the wire format, `WebSocketGatewayLink` the connection, and the pieces are tested against a link in memory (`GatewayTunnelTests`), including a node that finds an address through it by STUN.
+
 ### IPv6
 
 Yaparr listens on both IPv4 and IPv6 with one socket when the system allows it. If your computer has a public IPv6 address, the node publishes it alongside its IPv4 addresses in the peer record (in separate entries with their own signature, so older versions still read the IPv4 part). IPv6 needs no address translation, so a peer with a public IPv6 address can be reached directly, provided a firewall lets the port through. Addresses that are only local (link-local, unique-local) are not published.

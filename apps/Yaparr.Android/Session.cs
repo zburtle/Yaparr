@@ -204,6 +204,8 @@ public sealed partial class Session : IDisposable
         _pins = new PinnedFirst(node.Pins);
         node.PinsChanged += () => UI(RefreshPins);
         StartSettingsSync(node);
+        // A network that does not let UDP out: signed in to Yaparr Cloud, messages go through its gateway (if the person allows it).
+        _ = new GatewayFallback(node, () => GatewayFallback.AccountOf(_data.LoadBackupServer()), () => _settings.GatewayWhenUdpBlocked, Log);
         node.DisplayNameChanged += OnDisplayNameChanged;
         node.IncomingDirectChat += chat => UI(() => AddDirect(chat));
         node.PeerConnected += _ => UI(SayConnection);
@@ -1176,6 +1178,15 @@ public sealed partial class Session : IDisposable
     }
 
     /// <summary>The person turned leaving messages for people who are away on or off (Settings > Yaparr Cloud).</summary>
+    /// <summary>The person switched "use Yaparr Cloud when UDP is blocked" on or off: off lets the gateway go now; on has the next look at the network use it if it is needed.</summary>
+    public void SetGatewayAllowed(bool on)
+    {
+        _settings.GatewayWhenUdpBlocked = on;
+        if (_node == null) return;
+        if (!on) _ = _node.DisconnectGatewayAsync();
+        else _node.NotifyNetworkChanged();
+    }
+
     public void SetLeaveForAbsent(bool on)
     {
         _settings.LeaveForAbsent = on;

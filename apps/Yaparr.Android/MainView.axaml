@@ -291,6 +291,7 @@
                         <TextBlock x:Name="ServerSignedInText" TextWrapping="Wrap" Foreground="{DynamicResource Ink}" />
                         <Button x:Name="BackupToServerButton" Classes="primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Sync now" Click="BackupToServerClicked" />
                         <CheckBox x:Name="LeaveForAbsentCheck" Content="Leave messages for people who are away" Click="LeaveForAbsentClicked" />
+                        <CheckBox x:Name="GatewayCheck" Content="Use Yaparr Cloud for messages when this network blocks UDP" Click="GatewayClicked" />
                         <TextBlock Text="Messages and pictures go straight to people who are online. Only when someone you know is away is a locked copy left on the server, for up to 7 days. The server cannot read it. Turn this off and nothing is left there; you still receive what others leave for you." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
                         <TextBlock x:Name="AutoBackupStatus" IsVisible="False" TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />
                         <Button x:Name="ShowRecoveryCodeButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Show Sync key" Click="ShowRecoveryCodeClicked" />
