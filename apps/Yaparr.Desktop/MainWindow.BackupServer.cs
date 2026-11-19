@@ -511,39 +511,49 @@ public partial class MainWindow
         const string title = "Restore from Yaparr Cloud";
         if (await ServerLoginDialog.AskAsync(this) is not { } login) return;
         string? staging = null;
-        int newest;
-        using (var client = new BackupServerClient(login.Server, login.Token))
+        int newest = 0;
+        // The account's synced state is tried first: the identity and name are fetched and the rest comes through the usual sync. An account that
+        // holds only whole-profile backups (or whose pieces cannot be opened) goes on to the newest backup, as before.
+        try { staging = await SyncRestore.StageAsync(_data, login.Server, login.Token, login.RecoveryCode); }
+        catch (Exception ex) when (ex is BackupServerException or CryptographicException or InvalidDataException or IOException or System.Text.Json.JsonException)
         {
-            IReadOnlyList<ServerBackupVersion> versions;
-            try { versions = await client.VersionsAsync(); }
-            catch (BackupServerException ex) { await Dialogs.MessageAsync(this, title, ex.Message); return; }
-            if (versions.Count == 0) { await Dialogs.MessageAsync(this, title, "Yaparr Cloud holds nothing for this account yet."); return; }
-            newest = versions[0].Version;
-
-            // The newest copy is brought back; if it cannot be opened (damaged), the next older one is tried, so nothing is asked.
-            bool opened = true;
-            foreach (var version in versions)
+            _log.Write("restoring from the synced state did not work: " + ex.Message);
+        }
+        if (staging == null)
+        {
+            using (var client = new BackupServerClient(login.Server, login.Token))
             {
-                var temp = Path.Combine(Path.GetTempPath(), "Yaparr-server-restore-" + Guid.NewGuid().ToString("N") + ".yapbak");
-                try
-                {
-                    await client.DownloadAsync(temp, version.Version);
-                    staging = await Task.Run(() => _data.StageProfile(temp, login.RecoveryCode));
-                    break;
-                }
+                IReadOnlyList<ServerBackupVersion> versions;
+                try { versions = await client.VersionsAsync(); }
                 catch (BackupServerException ex) { await Dialogs.MessageAsync(this, title, ex.Message); return; }
-                catch (Exception ex) when (ex is CryptographicException or InvalidDataException) { opened = false; }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                if (versions.Count == 0) { await Dialogs.MessageAsync(this, title, "Yaparr Cloud holds nothing for this account yet."); return; }
+                newest = versions[0].Version;
+
+                // The newest copy is brought back; if it cannot be opened (damaged), the next older one is tried, so nothing is asked.
+                bool opened = true;
+                foreach (var version in versions)
                 {
-                    await Dialogs.MessageAsync(this, title, ex.Message);
+                    var temp = Path.Combine(Path.GetTempPath(), "Yaparr-server-restore-" + Guid.NewGuid().ToString("N") + ".yapbak");
+                    try
+                    {
+                        await client.DownloadAsync(temp, version.Version);
+                        staging = await Task.Run(() => _data.StageProfile(temp, login.RecoveryCode));
+                        break;
+                    }
+                    catch (BackupServerException ex) { await Dialogs.MessageAsync(this, title, ex.Message); return; }
+                    catch (Exception ex) when (ex is CryptographicException or InvalidDataException) { opened = false; }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                        await Dialogs.MessageAsync(this, title, ex.Message);
+                        return;
+                    }
+                    finally { try { File.Delete(temp); } catch (IOException) { } }
+                }
+                if (staging == null)
+                {
+                    await Dialogs.MessageAsync(this, title, opened ? "Nothing could be restored." : "That Sync key does not open what Yaparr Cloud holds. Check the code; if a newer copy was made with another code, use that one.");
                     return;
                 }
-                finally { try { File.Delete(temp); } catch (IOException) { } }
-            }
-            if (staging == null)
-            {
-                await Dialogs.MessageAsync(this, title, opened ? "Nothing could be restored." : "That Sync key does not open what Yaparr Cloud holds. Check the code; if a newer copy was made with another code, use that one.");
-                return;
             }
         }
 

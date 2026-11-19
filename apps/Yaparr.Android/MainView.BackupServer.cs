@@ -382,10 +382,19 @@ public partial class MainView
             var (token, username) = await signIn.WaitAsync(cancel: _serverRestore.Token);
 
             ServerRestoreStatus.Text = "Fetching your account…";
-            using var client = new BackupServerClient(server, token);
-            var version = await client.DownloadAsync(temp, cancel: _serverRestore.Token);
-            ServerRestoreStatus.Text = "Opening it with your Sync key…";
-            var staging = await Task.Run(() => _data.StageProfile(temp, code));
+            // The account's synced state first (identity and name; the rest comes through the usual sync); an account that holds only whole-profile
+            // backups, or whose pieces cannot be opened, goes on to the newest backup as before.
+            string? staging = null;
+            int version = 0;
+            try { staging = await SyncRestore.StageAsync(_data, server, token, code, cancel: _serverRestore.Token); }
+            catch (Exception ex) when (ex is BackupServerException or CryptographicException or InvalidDataException or IOException or System.Text.Json.JsonException) { }
+            if (staging == null)
+            {
+                using var client = new BackupServerClient(server, token);
+                version = await client.DownloadAsync(temp, cancel: _serverRestore.Token);
+                ServerRestoreStatus.Text = "Opening it with your Sync key…";
+                staging = await Task.Run(() => _data.StageProfile(temp, code));
+            }
             await Task.Run(() => _data.ApplyStagedProfile(staging));
 
             // This phone stays signed in and keeps the code, so its next backup needs nothing typed.

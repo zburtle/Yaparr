@@ -345,3 +345,80 @@ public sealed class ShelfPieceTests : IDisposable
         Assert.Empty(source.Local());
     }
 }
+
+public sealed class SyncRestoreTests : IDisposable
+{
+    private const string Code = "K7QD-M3XF-9PLR-2WTE-HV8N-C4YB";
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "yaparr-syncrestore-" + Guid.NewGuid().ToString("N"));
+    private readonly FakeSyncServer _records = new();
+    private readonly FakeKeepServer _keep = new();
+    private long _now = 1_800_000_000_000;
+
+    public void Dispose() { try { Directory.Delete(_root, true); } catch (IOException) { } }
+
+    private (SyncEngine Engine, PieceSync Pieces) Publish(PeerIdentity identity, string device = "laptop", string code = Code)
+    {
+        var sealer = SyncSealer.FromRecoveryCode(code);
+        var engine = new SyncEngine(new MemorySyncState(), _records, sealer, new SyncClock(device, () => DateTimeOffset.FromUnixTimeMilliseconds(_now)), device);
+        var pieces = new PieceSync(engine, _keep, sealer, new IdentityPieceSource(() => identity.Export()));
+        return (engine, pieces);
+    }
+
+    [Fact]
+    public async Task An_account_is_brought_back_from_what_is_synced_with_a_device_key_of_its_own()
+    {
+        using var root = PeerIdentity.Generate();
+        var (engine, pieces) = Publish(root);
+        engine.Set("account", "name", System.Text.Encoding.UTF8.GetBytes("{\"V\":\"Zed\",\"Ts\":5,\"D\":false}"));
+        await engine.SyncAsync();
+        await pieces.RunAsync();
+        Assert.All(_keep.Pieces.Values, bytes => Assert.DoesNotContain("PRIVATE", System.Text.Encoding.UTF8.GetString(bytes)));
+
+        var data = new AppData(Path.Combine(_root, "new"));
+        var staging = await SyncRestore.StageAsync(data, _records, _keep, SyncSealer.FromRecoveryCode(Code));
+        Assert.NotNull(staging);
+        data.ApplyStagedProfile(staging!);
+        Assert.True(data.HasIdentity);
+        Assert.Equal("Zed", data.LoadSettings().DisplayName);
+        using var restored = data.LoadOrCreateIdentity();
+        Assert.Equal(root.AccountId, restored.AccountId);        // the same account
+        Assert.NotEqual(root.Id, restored.Id);                   // a device of it, with a key of its own
+        Assert.NotEqual(root.Export(), restored.Export());
+    }
+
+    [Fact]
+    public async Task A_wrong_sync_key_is_said_so_and_an_account_without_an_identity_piece_falls_back()
+    {
+        using var root = PeerIdentity.Generate();
+        var (engine, pieces) = Publish(root);
+        await engine.SyncAsync();
+        await pieces.RunAsync();
+
+        var wrong = SyncSealer.FromRecoveryCode("AAAA-BBBB-CCCC-DDDD-EEEE-FFFF");
+        await Assert.ThrowsAsync<System.Security.Cryptography.CryptographicException>(() => SyncRestore.FetchAsync(_records, _keep, wrong));
+
+        var empty = new FakeSyncServer();
+        Assert.Null(await SyncRestore.FetchAsync(empty, _keep, SyncSealer.FromRecoveryCode(Code)));
+    }
+
+    [Fact]
+    public async Task Every_linked_device_can_publish_it_but_it_is_written_once_and_nothing_is_ever_taken_in()
+    {
+        using var root = PeerIdentity.Generate();
+        using var device = root.CreateDevice();
+        Assert.Single(new IdentityPieceSource(() => root.Export()).Local());
+        Assert.Single(new IdentityPieceSource(() => device.Export()).Local());
+        Assert.Empty(new IdentityPieceSource(() => null).Local());
+        Assert.Empty(new IdentityPieceSource(() => new byte[] { 1, 2, 3 }).Local());
+
+        var first = Publish(root, "laptop");
+        var second = Publish(device, "phone");
+        await first.Engine.SyncAsync();
+        await first.Pieces.RunAsync();
+        await second.Engine.SyncAsync();
+        Assert.Equal(0, (await second.Pieces.RunAsync()).Uploaded);               // the account has it: the other device does not write its own
+        Assert.Single(_keep.Pieces);
+        var source = new IdentityPieceSource(() => device.Export());
+        Assert.True(source.Take(IdentityPieceSource.Name, root.Export()));      // accepted and ignored: a running device keeps its own identity
+    }
+}

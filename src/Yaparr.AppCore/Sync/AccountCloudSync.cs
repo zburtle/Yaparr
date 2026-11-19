@@ -140,7 +140,7 @@ public sealed class AccountCloudSync
     private static IPieceSource PiecesOf(AppData data, ChatNode node)
     {
         var shelves = new ShelfPieceSource(new EmojiShelf(data.EmojiDirectory), new GifShelf(data.ShelfDirectory));
-        var sources = new List<(string, IPieceSource)> { ("e-", shelves), ("g-", shelves) };
+        var sources = new List<(string, IPieceSource)> { ("e-", shelves), ("g-", shelves), ("k-", new IdentityPieceSource(data.ReadIdentityFile)) };
         if (node.KeptHistory is { } store)
         {
             var history = new HistoryPieceSource(store);

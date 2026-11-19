@@ -54,6 +54,16 @@ Unlike history, **removing** one is a removal for the account: the device writes
 
 Tests: `ShelfPieceTests` in `tests/Yaparr.Tests/HistoryPieceTests.cs`.
 
+## Bringing an account back
+
+A new device (or a reinstalled one) can be set up from the synced state alone, without a whole-profile backup. The account's **identity** is a piece too (`k-identity`, `IdentityPieceSource`): the identity file of any linked device (every one holds the account key), locked with the Sync key like every other piece. It is written once, by whichever device gets there first (its tag is fixed, so devices do not rewrite it for each other), and a running device never takes it in, so a sync can never replace the identity a device has.
+
+**Restore from Yaparr Cloud** (first-start screen, both apps) signs in, then `SyncRestore` reads the account's records, finds the identity piece and the account's name, and opens them with the Sync key. The new device gets a device key of its own, vouched for by the account key, exactly as when a device is linked or a backup is restored, so the old devices can stay in use. Nothing else is fetched there: once the app runs, the usual sync brings the rooms, blocks, pins, settings, history and shelves. A wrong Sync key is said so; an account that holds only whole-profile backups (made before this) falls back to the newest of them, as before.
+
+Tests: `SyncRestoreTests` in `tests/Yaparr.Tests/HistoryPieceTests.cs`.
+
+The whole-profile backup is still written alongside, for now, so an account can be restored by an older version and by the fallback; it is removed in a later release, once the apps in use all write the identity piece.
+
 ## Pins
 
 Pinned rooms and chats (see [The desktop app](desktop-app.md#pinning-rooms-and-chats)) are account entries too, one for each pinned room or chat: `pin:r:<room id>` and `pin:d:<person id>`. The value is the pin's **position** among the pinned ones, a short text of lowercase digits and letters that sorts into the order they are shown in (`PinOrder`); an unpin is the entry marked deleted. `PinOrder.Between(before, after)` always makes a position strictly between two others, so moving one pinned room changes only its own entry: two devices that each move a different one never overwrite each other, and the newer write of the same pin wins by the rule above. Pinning one more goes after the last, and moving to the top goes before the first, in steps of a digit, so a position grows by a character only about every 17th time that is done over and over.
