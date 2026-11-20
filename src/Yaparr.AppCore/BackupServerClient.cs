@@ -110,6 +110,7 @@ public sealed class BrowserSignIn : IDisposable
     private readonly TcpListener? _listener;
     private readonly TaskCompletionSource<string>? _arrived;
     private static BrowserSignIn? _waitingForLink;
+    private readonly string? _deviceKey;
     private readonly string _verifier = Base64Url.EncodeToString(RandomNumberGenerator.GetBytes(32));
     private readonly string _state = Base64Url.EncodeToString(RandomNumberGenerator.GetBytes(16));
 
@@ -124,9 +125,11 @@ public sealed class BrowserSignIn : IDisposable
     /// browser's request to it then hangs until it times out): the browser is sent back through the app's own link, <c>yaparr://signed-in?code=…&amp;state=…</c>, which
     /// opens the app again, and the app hands it to <see cref="Deliver"/>.
     /// </summary>
-    public BrowserSignIn(Uri server, string deviceName, bool throughAppLink = false)
+    /// <param name="deviceKey">The id this device keeps for itself (<see cref="AppData.DeviceKey"/>), sent with the code so the server replaces this device's earlier sign-in; null or empty sends none.</param>
+    public BrowserSignIn(Uri server, string deviceName, bool throughAppLink = false, string? deviceKey = null)
     {
         _server = server;
+        _deviceKey = string.IsNullOrEmpty(deviceKey) ? null : deviceKey;
         if (throughAppLink)
         {
             _arrived = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -199,7 +202,7 @@ public sealed class BrowserSignIn : IDisposable
         http ??= new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
         try
         {
-            using var response = await http.PostAsJsonAsync(new Uri(_server, "/v1/token"), new { code, verifier = _verifier }, cancel);
+            using var response = await http.PostAsJsonAsync(new Uri(_server, "/v1/token"), new { code, verifier = _verifier, deviceKey = _deviceKey }, cancel);
             if (!response.IsSuccessStatusCode) throw await BackupServerClient.FailureAsync(response, cancel);
             var answer = await response.Content.ReadFromJsonAsync<TokenJson>(BackupServerClient.Json, cancel);
             if (string.IsNullOrEmpty(answer?.Token)) throw new BackupServerException("Yaparr Cloud did not finish the sign-in.");

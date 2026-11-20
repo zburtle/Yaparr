@@ -86,4 +86,25 @@ public sealed class CloudAccountTests
         var off = CloudUsageText.Lines(calm with { Gateway = new GatewayUse(false, 0, 0, 0) });
         Assert.Contains("Not offered", off[3].Value);
     }
+
+    [Fact]
+    public void A_device_keeps_one_id_for_itself_and_makes_a_new_one_if_the_file_is_not_a_good_id()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "yaparr-devicekey-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var data = new AppData(dir);
+            var key = data.DeviceKey;
+            Assert.Equal(32, key.Length);
+            Assert.All(key, c => Assert.True(char.IsAsciiHexDigitLower(c) || char.IsAsciiDigit(c)));
+            Assert.Equal(key, data.DeviceKey);                                  // the same every time ...
+            Assert.Equal(key, new AppData(dir).DeviceKey);                       // ... and after a restart
+            File.WriteAllText(Path.Combine(dir, "device-key.txt"), "not a good id!");
+            var again = data.DeviceKey;
+            Assert.NotEqual(key, again);
+            Assert.Equal(again, data.DeviceKey);
+            Assert.NotEqual(again, new AppData(Path.Combine(dir, "other")).DeviceKey);   // another profile is another device
+        }
+        finally { try { Directory.Delete(dir, true); } catch (IOException) { } }
+    }
 }

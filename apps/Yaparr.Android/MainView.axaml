@@ -798,6 +798,7 @@
                             <StackPanel x:Name="CloudUsageList" Spacing="10" />
                             <TextBlock Text="Devices signed in" FontWeight="SemiBold" Foreground="{DynamicResource Ink}" Margin="0,8,0,0" />
                             <StackPanel x:Name="CloudDeviceList" Spacing="8" />
+                            <Button x:Name="CloudSignOutOthers" Content="Sign out all the others" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" IsVisible="False" Click="CloudSignOutOthersClicked" />
                         </StackPanel>
                     </ScrollViewer>
                     <TextBlock x:Name="CloudAccountStatus" Grid.Row="2" TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />
