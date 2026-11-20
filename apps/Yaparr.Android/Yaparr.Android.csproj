@@ -43,6 +43,21 @@
     <AndroidSigningKeyPass>android</AndroidSigningKeyPass>
   </PropertyGroup>
 
+  <!--
+    Release builds shrink and obfuscate the Java code (AndroidX, CameraX, Firebase and the glue that calls into .NET) with R8, which Google Play asks for ("DEX code
+    optimization": under 25% obfuscated is flagged). .NET for Android keeps what the app's own Java-callable classes need; proguard.cfg keeps the little that
+    is reached by name. .NET for Android only offers "private-members" obfuscation (the names of Java classes are how .NET finds them), which still renames about
+    half of the members. The mapping R8 writes goes into the bundle (BUNDLE-METADATA/.../proguard.map), so Play turns crash traces back into names by itself.
+  -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <AndroidLinkTool>r8</AndroidLinkTool>
+    <AndroidEnableProguard>true</AndroidEnableProguard>
+    <AndroidR8ObfuscationMode>private-members</AndroidR8ObfuscationMode>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(Configuration)' == 'Release'">
+    <ProguardConfiguration Include="proguard.cfg" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- What this release is offered with (the backup server's address): the file the desktop ships, so there is one place to change it. Read at start-up (ReleaseAsset). -->
     <AndroidAsset Include="..\Yaparr.Desktop\yaparr.release.json" Link="Assets\yaparr.release.json" />

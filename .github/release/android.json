@@ -12,7 +12,7 @@
     [
       "@semantic-release/github",
       {
-        "assets": [{ "path": "installers/*.apk" }],
+        "assets": [{ "path": "installers/*.apk" }, { "path": "installers/*-symbols.zip" }],
         "releaseNameTemplate": "Android ${nextRelease.version}",
         "draftRelease": true
       }
