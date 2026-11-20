@@ -24,6 +24,7 @@ public sealed class BackupServerClientTests : IDisposable
     {
         public readonly Dictionary<string, string> Tokens = new();                          // token -> username
         public readonly Dictionary<string, (string User, string Challenge)> Codes = new();
+        public string? LastDeviceKey, LastMachineKey;
         public readonly List<byte[]> Versions = new();
         public bool Down;
 
@@ -48,6 +49,8 @@ public sealed class BackupServerClientTests : IDisposable
                 var asked = JsonDocument.Parse(body).RootElement;
                 var code = asked.GetProperty("code").GetString()!;
                 var verifier = asked.GetProperty("verifier").GetString()!;
+                LastDeviceKey = asked.TryGetProperty("deviceKey", out var key) && key.ValueKind == JsonValueKind.String ? key.GetString() : null;
+                LastMachineKey = asked.TryGetProperty("machineKey", out var machine) && machine.ValueKind == JsonValueKind.String ? machine.GetString() : null;
                 if (!Codes.Remove(code, out var pending) || Base64Url.EncodeToString(SHA256.HashData(Encoding.ASCII.GetBytes(verifier))) != pending.Challenge)
                     return Json(HttpStatusCode.BadRequest, new { error = "That sign-in has expired or was already used. Sign in again." });
                 return Json(HttpStatusCode.OK, new { token = SignIn(pending.User), username = pending.User });
@@ -189,6 +192,39 @@ public sealed class BackupServerClientTests : IDisposable
 
     private static Dictionary<string, string> QueryOf(Uri uri) =>
         uri.Query.TrimStart('?').Split('&').Select(p => p.Split('=', 2)).ToDictionary(p => p[0], p => Uri.UnescapeDataString(p[1]));
+
+    [Fact]
+    public async Task The_device_sends_the_id_it_keeps_for_itself_when_it_trades_the_code_and_none_when_it_has_none()
+    {
+        foreach (var (key, expected) in new (string?, string?)[] { ("0123456789abcdef0123456789abcdef", "0123456789abcdef0123456789abcdef"), (null, null), ("", null) })
+        {
+            var server = new FakeServer();
+            using var signIn = new BrowserSignIn(Server, "Pixel", throughAppLink: true, deviceKey: key);
+            var asked = QueryOf(signIn.LoginUrl);
+            var waiting = signIn.WaitAsync(new HttpClient(server));
+            server.Codes["the-code-the-server-made-0123"] = ("sam", asked["code_challenge"]);
+            Assert.True(BrowserSignIn.Deliver("the-code-the-server-made-0123", asked["state"]));
+            await waiting;
+            Assert.Equal(expected, server.LastDeviceKey);
+        }
+    }
+
+    [Fact]
+    public async Task The_machines_key_goes_with_the_code_too_and_only_when_there_is_one()
+    {
+        foreach (var (machine, expected) in new (string?, string?)[] { (new string('a', 64), new string('a', 64)), (null, null), ("", null) })
+        {
+            var server = new FakeServer();
+            using var signIn = new BrowserSignIn(Server, "Pixel", throughAppLink: true, deviceKey: "0123456789abcdef0123456789abcdef", machineKey: machine);
+            var asked = QueryOf(signIn.LoginUrl);
+            var waiting = signIn.WaitAsync(new HttpClient(server));
+            server.Codes["the-code-the-server-made-0123"] = ("sam", asked["code_challenge"]);
+            Assert.True(BrowserSignIn.Deliver("the-code-the-server-made-0123", asked["state"]));
+            await waiting;
+            Assert.Equal(expected, server.LastMachineKey);
+            Assert.Equal("0123456789abcdef0123456789abcdef", server.LastDeviceKey);
+        }
+    }
 
     [Fact]
     public async Task Signing_in_opens_the_servers_page_and_trades_the_code_the_browser_brings_back()

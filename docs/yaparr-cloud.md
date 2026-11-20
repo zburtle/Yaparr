@@ -26,6 +26,14 @@ The settings show how full each of these is, and which devices are signed in, wi
 
 It cannot read your messages, pictures, history, shelves, backups or settings, and it cannot change them without it being noticed.
 
+## Devices
+
+Every device that signs in is listed under **Storage and devices**, with a button to sign it out, and **Sign out all the others** when old sign-ins have piled up. Signing in again does not add another entry for the same device:
+
+- A device makes a random id for itself once (`device-key.txt` in its profile folder, not part of a backup) and sends it when it signs in; the server then replaces that device's earlier entry. A profile restored on a new computer is a new device.
+- It also sends a second id derived from the machine itself (Windows' `MachineGuid`, Linux's `/etc/machine-id`, Android's `ANDROID_ID`), so signing in again after the profile was wiped or the app reinstalled, on the same machine, is still one entry. That id is never sent as it is: the server gets a hash of it mixed with the server's address (so two servers cannot tell it is the same machine), and uses it only together with the same device name, because machines cloned from one image share the id.
+- Sign-ins from before this (or from an older app) have no id and stay until they are signed out.
+
 ## The Sync key
 
 Six groups of four letters and digits. It is made on your first device and shown once. **Nobody can recover it**, Yaparr included: if every device is lost and the key with them, what the server holds cannot be opened. Keep it somewhere safe. If it was lost, or someone else has seen it, **Replace Sync key** locks everything again with a new one and removes what the old key locked; your other devices then ask for the new key.

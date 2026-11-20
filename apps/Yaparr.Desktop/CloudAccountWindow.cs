@@ -18,6 +18,8 @@ public sealed class CloudAccountWindow : Window
     private readonly StackPanel _devices = new() { Spacing = 6 };
     private readonly TextBlock _status = new() { TextWrapping = TextWrapping.Wrap, Foreground = Brushes.Gray };
     private readonly Action? _signedOut;
+    private readonly Button _signOutOthers;
+    private IReadOnlyList<CloudDevice> _listed = new List<CloudDevice>();
     private bool _busy;
 
     public CloudAccountWindow(Uri server, string token, Action? signedOut = null)
@@ -32,6 +34,8 @@ public sealed class CloudAccountWindow : Window
         ShowInTaskbar = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
 
+        _signOutOthers = new Button { Content = "Sign out all the others", HorizontalAlignment = HorizontalAlignment.Left, IsVisible = false };
+        _signOutOthers.Click += async (_, _) => await SignOutOthersAsync();
         var refresh = new Button { Content = "Refresh", MinWidth = 80, HorizontalContentAlignment = HorizontalAlignment.Center };
         refresh.Click += async (_, _) => await LoadAsync();
         var close = new Button { Content = "Close", MinWidth = 80, HorizontalContentAlignment = HorizontalAlignment.Center };
@@ -47,6 +51,7 @@ public sealed class CloudAccountWindow : Window
                 _usage,
                 new TextBlock { Text = "Devices signed in", FontSize = 15, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 10, 0, 0) },
                 _devices,
+                _signOutOthers,
                 _status,
             },
         };
@@ -110,6 +115,8 @@ public sealed class CloudAccountWindow : Window
 
     private void ShowDevices(IReadOnlyList<CloudDevice> devices)
     {
+        _listed = devices;
+        _signOutOthers.IsVisible = devices.Count(d => !d.Current) >= 2;
         _devices.Children.Clear();
         if (devices.Count == 0) _devices.Children.Add(new TextBlock { Text = "None.", Foreground = Brushes.Gray });
         foreach (var device in devices)
@@ -130,6 +137,25 @@ public sealed class CloudAccountWindow : Window
             });
             _devices.Children.Add(row);
         }
+    }
+
+    // Old sign-ins pile up (a reinstall, a sign-in again): all of them but this one, at once.
+    private async Task SignOutOthersAsync()
+    {
+        if (_busy) return;
+        var others = _listed.Where(d => !d.Current).ToList();
+        if (others.Count == 0) return;
+        if (!await Dialogs.ConfirmAsync(this, "Sign out the others",
+                $"Sign {others.Count} other devices out of Yaparr Cloud? Each stops syncing until it signs in again. Nothing on them is deleted, and this device stays signed in.", "Sign them out", "Cancel")) return;
+        _busy = true;
+        try
+        {
+            using var client = new CloudAccountClient(_server, _token);
+            foreach (var device in others) await client.RevokeDeviceAsync(device.Id);
+        }
+        catch (BackupServerException ex) { Failed(ex); _busy = false; return; }
+        _busy = false;
+        await LoadAsync();
     }
 
     private async Task SignOutAsync(string id, bool current)

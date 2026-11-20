@@ -227,6 +227,27 @@ public sealed class AppData
     }
 
     public string Directory { get; }
+
+    /// <summary>
+    /// A random id this device made for itself, once, and keeps (<c>device-key.txt</c>). It goes to Yaparr Cloud when the device signs in, so signing in again (after being signed out, say)
+    /// takes the place of the device's earlier sign-in in the server's list of devices instead of adding another one. It is not part of a backup: a profile restored on another computer
+    /// is another device and makes its own.
+    /// </summary>
+    public string DeviceKey
+    {
+        get
+        {
+            var path = Path.Combine(Directory, "device-key.txt");
+            try
+            {
+                if (File.Exists(path) && File.ReadAllText(path).Trim() is { Length: >= 16 and <= 64 } held && held.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_')) return held;
+                var made = Convert.ToHexStringLower(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16));
+                File.WriteAllText(path, made);
+                return made;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return ""; }   // none: the server then treats each sign-in as a device of its own, as before
+        }
+    }
     public string HistoryDirectory => Path.Combine(Directory, "history");
 
     /// <summary>The database every room's messages are kept in (encrypted by SQLCipher with a key made from the history key).</summary>

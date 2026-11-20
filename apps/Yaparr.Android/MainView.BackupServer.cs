@@ -35,7 +35,31 @@ public partial class MainView
 
     // ---- what the account holds against its limits, and the devices signed in ----
 
+    // Android's id for this phone (it stays when the app is reinstalled, and goes with a factory reset); only a hash of it, mixed with the server's address, is ever sent.
+    private static string? AndroidId()
+    {
+        try { return Android.Provider.Settings.Secure.GetString(Android.App.Application.Context.ContentResolver, Android.Provider.Settings.Secure.AndroidId); }
+        catch (Exception ex) when (ex is Java.Lang.Exception or InvalidOperationException) { return null; }
+    }
+
     private bool _loadingCloudAccount;
+    private IReadOnlyList<CloudDevice> _cloudDevices = new List<CloudDevice>();
+
+    // Old sign-ins pile up (a reinstall, a sign-in again): all of them but this one, at once.
+    private async void CloudSignOutOthersClicked(object? sender, RoutedEventArgs e)
+    {
+        if (!Uri.TryCreate(_server.Url, UriKind.Absolute, out var server)) return;
+        var others = _cloudDevices.Where(d => !d.Current).ToList();
+        if (others.Count == 0) return;
+        if (!await ConfirmAsync($"Sign {others.Count} other devices out of Yaparr Cloud? Each stops syncing until it signs in again. Nothing on them is deleted, and this phone stays signed in.", "Sign them out")) return;
+        try
+        {
+            using var client = new CloudAccountClient(server, _server.Token);
+            foreach (var device in others) await client.RevokeDeviceAsync(device.Id);
+        }
+        catch (BackupServerException ex) { CloudAccountFailed(ex); return; }
+        await LoadCloudAccountAsync();
+    }
 
     private async void CloudAccountClicked(object? sender, RoutedEventArgs e)
     {
@@ -69,6 +93,8 @@ public partial class MainView
                 CloudUsageList.Children.Add(panel);
             }
             CloudDeviceList.Children.Clear();
+            _cloudDevices = devices;
+            CloudSignOutOthers.IsVisible = devices.Count(d => !d.Current) >= 2;
             foreach (var device in devices)
             {
                 var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 8 };
@@ -219,7 +245,7 @@ public partial class MainView
         _serverSignIn = new CancellationTokenSource();
         try
         {
-            using var signIn = new BrowserSignIn(server, DeviceName(), throughAppLink: true);
+            using var signIn = new BrowserSignIn(server, DeviceName(), throughAppLink: true, deviceKey: _data.DeviceKey, machineKey: MachineId.KeyFor(server, AndroidId()));
             if (!await OpenInBrowserAsync(signIn.LoginUrl)) { ServerNote("Couldn't open your browser.", problem: true); return; }
             ServerNote("Waiting for you to sign in in your browser. When it says you are signed in, come back to Yaparr.");
             var (token, username) = await signIn.WaitAsync(cancel: _serverSignIn.Token);
@@ -523,7 +549,7 @@ public partial class MainView
         var temp = Path.Combine(Path.GetTempPath(), "yaparr-server-restore-" + Guid.NewGuid().ToString("N") + ".yapbak");
         try
         {
-            using var signIn = new BrowserSignIn(server, DeviceName(), throughAppLink: true);
+            using var signIn = new BrowserSignIn(server, DeviceName(), throughAppLink: true, deviceKey: _data.DeviceKey, machineKey: MachineId.KeyFor(server, AndroidId()));
             if (!await OpenInBrowserAsync(signIn.LoginUrl)) { ServerRestoreStatus.Text = "Couldn't open your browser."; return; }
             ServerRestoreStatus.Text = "Waiting for you to sign in in your browser. When it says you are signed in, come back to Yaparr.";
             var (token, username) = await signIn.WaitAsync(cancel: _serverRestore.Token);
