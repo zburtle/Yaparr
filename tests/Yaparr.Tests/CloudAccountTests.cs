@@ -107,4 +107,30 @@ public sealed class CloudAccountTests
         }
         finally { try { Directory.Delete(dir, true); } catch (IOException) { } }
     }
+
+    [Fact]
+    public void What_the_machine_tells_a_server_is_a_hash_that_differs_for_each_server_and_never_the_id_itself()
+    {
+        const string id = "6f1e2d3c4b5a69788796a5b4c3d2e1f0";
+        var one = new Uri("https://cloud.example.org");
+        var key = MachineId.KeyFor(one, id)!;
+        Assert.Equal(64, key.Length);
+        Assert.All(key, c => Assert.True(char.IsAsciiDigit(c) || char.IsAsciiHexDigitLower(c)));
+        Assert.DoesNotContain(id, key);
+        Assert.Equal(key, MachineId.KeyFor(one, id));                                              // the same every time
+        Assert.Equal(key, MachineId.KeyFor(new Uri("https://CLOUD.example.org:8443/x"), id));      // by the server's name, whatever else is in the address
+        Assert.Equal(key, MachineId.KeyFor(one, "  " + id.ToUpperInvariant() + "\n"));            // however the system writes the id
+        Assert.NotEqual(key, MachineId.KeyFor(new Uri("https://other.example.org"), id));          // another server cannot tell it is the same machine
+        Assert.NotEqual(key, MachineId.KeyFor(one, "0000000000000000000000000000000f"));
+        Assert.Null(MachineId.KeyFor(one, "short"));
+        Assert.Null(MachineId.KeyFor(one, ""));
+    }
+
+    [Fact]
+    public void Looking_for_the_machines_own_id_never_throws_whatever_the_system_is()
+    {
+        var id = MachineId.ReadLocal();                                  // an id on Windows and most Linux, null where the system hides it
+        if (id != null) Assert.True(id.Length >= 16);
+        Assert.Equal(id != null, MachineId.KeyFor(new Uri("https://cloud.example.org")) != null);
+    }
 }

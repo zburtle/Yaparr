@@ -53,7 +53,7 @@ public partial class ServerLoginDialog : Window
         _waiting = new CancellationTokenSource();
         try
         {
-            using var signIn = new BrowserSignIn(server, Environment.MachineName);
+            using var signIn = new BrowserSignIn(server, Environment.MachineName, machineKey: Yaparr.AppCore.MachineId.KeyFor(server));
             if (!await GetTopLevel(this)!.Launcher.LaunchUriAsync(signIn.LoginUrl))
             {
                 Say("Couldn't open your browser.", problem: true);

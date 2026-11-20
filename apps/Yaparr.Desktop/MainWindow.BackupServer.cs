@@ -241,7 +241,7 @@ public partial class MainWindow
         _serverSignIn = new CancellationTokenSource();
         try
         {
-            using var signIn = new BrowserSignIn(server, Environment.MachineName, deviceKey: _data.DeviceKey);
+            using var signIn = new BrowserSignIn(server, Environment.MachineName, deviceKey: _data.DeviceKey, machineKey: MachineId.KeyFor(server));
             if (!await GetTopLevel(this)!.Launcher.LaunchUriAsync(signIn.LoginUrl))
             {
                 ServerStatusIs("Couldn't open your browser.", problem: true);
