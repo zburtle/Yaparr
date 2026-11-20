@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="using:Yaparr.AndroidApp"
+             xmlns:core="using:Yaparr.AppCore"
              x:Class="Yaparr.AndroidApp.MainView"
              x:DataType="local:MainView">
     <Grid x:Name="Root" Background="{DynamicResource AppBg}">
@@ -388,7 +389,8 @@
                         <Button Grid.Column="3" Content="Leave" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="4,8" Foreground="{DynamicResource Bad}" Click="LeaveVoiceClicked" />
                     </Grid>
                     <Button Content="Soundboard" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="4,8" IsVisible="{Binding InVoice}" Click="SoundboardClicked" />
-                    <Button Content="Share my screen" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="4,8" IsVisible="{Binding CanShareScreen}" Click="ShareScreenClicked" />
+                    <Button Content="Share my screen" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="4,8" IsVisible="{Binding CanShareScreen}" IsEnabled="{Binding Allowed, Source={x:Static core:ScreenGate.Instance}}" Click="ShareScreenClicked" />
+                    <TextBlock Text="{Binding Reason, Source={x:Static core:ScreenGate.Instance}}" IsVisible="{Binding Blocked, Source={x:Static core:ScreenGate.Instance}}" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" />
                     <TextBlock Text="{Binding ShareHint}" IsVisible="{Binding ShowShareHint}" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" />
                     <Button Content="Stop sharing my screen" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="4,8" Foreground="{DynamicResource Bad}" IsVisible="{Binding IsSharing}" Click="StopShareClicked" />
                     <ItemsControl ItemsSource="{Binding Shares}" IsVisible="{Binding HasShares}">
@@ -396,7 +398,7 @@
                             <DataTemplate x:DataType="local:ShareItem">
                                 <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,6">
                                     <TextBlock Text="{Binding Name}" FontSize="14" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Foreground="{DynamicResource Ink}" />
-                                    <Button Grid.Column="1" Classes="primary" Content="Watch" Padding="14,6" IsVisible="{Binding !IsMine}" Click="WatchClicked" />
+                                    <Button Grid.Column="1" Classes="primary" Content="Watch" Padding="14,6" IsVisible="{Binding !IsMine}" IsEnabled="{Binding Allowed, Source={x:Static core:ScreenGate.Instance}}" Click="WatchClicked" />
                                     <TextBlock Grid.Column="1" Text="Yours" IsVisible="{Binding IsMine}" FontSize="13" VerticalAlignment="Center" Foreground="{DynamicResource Muted}" />
                                 </Grid>
                             </DataTemplate>

@@ -104,6 +104,7 @@ public partial class MainWindow
     private async void ShareScreen_Click(object? sender, RoutedEventArgs e)
     {
         if (_node == null || _selected is not { IsRoom: true } conv || _sharer != null) return;
+        if (ScreenGate.Instance.Blocked) { StatusText.Text = ScreenGate.Why; return; }
         var room = _roomConversations.FirstOrDefault(kv => kv.Value == conv).Key;
         if (room == null) return;
         // From this device when it is in the call, or when another of your devices is; with none of them in voice there is nothing to share into.
@@ -311,6 +312,7 @@ public partial class MainWindow
     private async void WatchScreen_Click(object? sender, RoutedEventArgs e)
     {
         if (_node == null || _selected is not { IsRoom: true, InVoice: true } conv || (sender as Button)?.DataContext is not ShareVm share) return;
+        if (ScreenGate.Instance.Blocked) { StatusText.Text = ScreenGate.Why; return; }
         var room = _roomConversations.FirstOrDefault(kv => kv.Value == conv).Key;
         if (room == null) return;
 

@@ -87,7 +87,7 @@ public sealed partial class ChatNode
     /// </summary>
     public static string? GatewayNote(VpnState state) => state switch
     {
-        VpnState.Connected => "This network does not let UDP out, so Yaparr Cloud is carrying this device's traffic through your account. That is enough for messages, but not for voice or screen sharing.",
+        VpnState.Connected => "This network does not let UDP out, so Yaparr Cloud is carrying this device's traffic through your account. That is enough for messages and voice, but not for sharing or watching screens.",
         VpnState.Connecting => "This network does not let UDP out. Connecting to Yaparr Cloud so that messages still work\u2026",
         _ => null,
     };

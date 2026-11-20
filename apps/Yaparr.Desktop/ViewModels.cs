@@ -783,7 +783,10 @@ public sealed class ConversationVm : Observable
         set { if (_inVoiceElsewhere == value) return; _inVoiceElsewhere = value; Raise(); Raise(nameof(CanShare)); Raise(nameof(ShareTip)); }
     }
 
-    public string ShareTip => _inVoice ? "Share your screen" : "Share this device's screen in the call you are in on your other device";
+    /// <summary>The tip of the share button changes when screens are turned off or on (see <c>ScreenGate</c>).</summary>
+    public void RefreshShareTip() => Raise(nameof(ShareTip));
+
+    public string ShareTip => Yaparr.AppCore.ScreenGate.Instance.Reason ?? (_inVoice ? "Share your screen" : "Share this device's screen in the call you are in on your other device");
     public bool CanStopSharing => _sharing;
 
     public string MuteGlyph => _muted ? "🔇" : "🎤";

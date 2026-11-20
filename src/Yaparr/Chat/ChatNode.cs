@@ -144,6 +144,12 @@ public sealed class ChatNodeOptions
 
     public bool SyncHistory { get; init; } = true;
 
+    /// <summary>
+    /// How often, while the Yaparr Cloud gateway is carrying the traffic, the node asks whether UDP gets out of the network by itself again (30 s). Two answers in a row let the gateway go,
+    /// so it is off within about a minute of the network allowing UDP (a block lifted, or a move to another network that the system did not report).
+    /// </summary>
+    public TimeSpan GatewayProbeInterval { get; init; } = TimeSpan.FromSeconds(30);
+
     public IChatHistoryStore? HistoryStore { get; init; }
 
     /// <summary>The node disposes <see cref="HistoryStore"/> when it is disposed itself (for a store made for this node alone; an app that keeps one open across nodes leaves this off).</summary>
@@ -342,6 +348,7 @@ public sealed partial class ChatNode : IDisposable
     private TurnOptions? _turnOptions;
     private WireGuardTunnel? _tunnel;
     private GatewayTunnel? _gateway;
+    private CancellationTokenSource? _gatewayWatch;
     private readonly SemaphoreSlim _networkGate = new(1, 1);
 
     private const int MinDegree = 2;
@@ -578,6 +585,8 @@ public sealed partial class ChatNode : IDisposable
         gateway.Limited += reason => { if (ReferenceEquals(_gateway, gateway)) GatewayLimited?.Invoke(reason); };
         _gateway = gateway;
         _mux.Tunnel = gateway;
+        _gatewayWatch = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+        _ = Task.Run(() => WatchGatewayAsync(gateway, _gatewayWatch.Token));
         bool connected;
         try { connected = await gateway.ConnectAsync(TimeSpan.FromSeconds(15), ct).ConfigureAwait(false); }
         catch
@@ -596,10 +605,40 @@ public sealed partial class ChatNode : IDisposable
         await RefreshNetworkAsync(ct).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// While the gateway carries the traffic: from time to time, ask the STUN servers from the socket itself, past the gateway. Two answers in a row mean UDP is not blocked any more, and the
+    /// gateway is let go (and the network looked at again without it), so the traffic is direct again as soon as it can be.
+    /// </summary>
+    private async Task WatchGatewayAsync(GatewayTunnel gateway, CancellationToken ct)
+    {
+        int working = 0;
+        try
+        {
+            while (!ct.IsCancellationRequested && ReferenceEquals(_gateway, gateway))
+            {
+                await Task.Delay(_options.GatewayProbeInterval, ct).ConfigureAwait(false);
+                if (!ReferenceEquals(_gateway, gateway) || gateway.State != VpnState.Connected) { working = 0; continue; }
+                bool direct;
+                try { direct = await NatProbe.DirectUdpWorksAsync(_mux, _options.Traversal.StunServers, ct).ConfigureAwait(false); }
+                catch (Exception ex) when (ex is SocketException or InvalidOperationException) { direct = false; }
+                working = direct ? working + 1 : 0;
+                if (working < 2) continue;
+                _options.Log?.Invoke("UDP gets out of this network again; letting the Yaparr Cloud gateway go");
+                if (!ReferenceEquals(_gateway, gateway)) return;
+                DetachGateway();                                    // this ends the watch (and its token), so the look at the network below has the node's own
+                await RefreshNetworkAsync(_cts.Token).ConfigureAwait(false);
+                return;
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
     private void DetachGateway()
     {
         var gateway = Interlocked.Exchange(ref _gateway, null);
         if (gateway == null) return;
+        var watch = Interlocked.Exchange(ref _gatewayWatch, null);
+        try { watch?.Cancel(); } catch (ObjectDisposedException) { }
         if (ReferenceEquals(_mux.Tunnel, gateway)) _mux.Tunnel = null;
         gateway.Dispose();
         GatewayStateChanged?.Invoke(VpnState.Disconnected);

@@ -218,6 +218,9 @@ internal sealed class StunTransactions : IDisposable
     public TimeSpan InitialRetransmit { get; init; } = TimeSpan.FromMilliseconds(400);
     public int Attempts { get; init; } = 3;
 
+    /// <summary>Send past any tunnel, from the socket itself (see <see cref="UdpMux.SendUntunneled"/>).</summary>
+    public bool Untunneled { get; init; }
+
     public async Task<StunMessage?> RequestAsync(StunMessage request, IPEndPoint to, byte[]? integrityKey, CancellationToken ct)
     {
         var key = Convert.ToHexString(request.TransactionId);
@@ -229,7 +232,7 @@ internal sealed class StunTransactions : IDisposable
             var wait = InitialRetransmit;
             for (int attempt = 0; attempt < Attempts; attempt++)
             {
-                _mux.Send(bytes, to);
+                if (Untunneled) _mux.SendUntunneled(bytes, to); else _mux.Send(bytes, to);
                 var done = await Task.WhenAny(tcs.Task, Task.Delay(wait, ct)).ConfigureAwait(false);
                 if (done == tcs.Task) return await tcs.Task.ConfigureAwait(false);
                 ct.ThrowIfCancellationRequested();
@@ -307,6 +310,29 @@ public static class NatProbe
         })).ConfigureAwait(false);
 
         return Classify(replies.Where(r => r != null).Select(r => r!).ToList(), LocalAddresses());
+    }
+
+    /// <summary>
+    /// Whether UDP gets out of this network <em>by itself</em>: asks the STUN servers from the socket itself, past any tunnel (a VPN, the Yaparr Cloud gateway) that is carrying the rest of the
+    /// traffic. True when any server answers. Short (two tries each), so it can be done again and again while a gateway is in use, to see when it is not needed any more.
+    /// </summary>
+    public static async Task<bool> DirectUdpWorksAsync(UdpMux mux, IEnumerable<string> servers, CancellationToken ct = default)
+    {
+        using var transactions = new StunTransactions(mux) { Attempts = 2, Untunneled = true };
+        var endpoints = new List<IPEndPoint>();
+        foreach (var server in servers)
+        {
+            try
+            {
+                var (host, port) = TurnClient.SplitHostPort(server, 3478);
+                var addrs = await Dns.GetHostAddressesAsync(host, AddressFamily.InterNetwork, ct).ConfigureAwait(false);
+                if (addrs.Length > 0) endpoints.Add(new IPEndPoint(addrs[0], port));
+            }
+            catch (SocketException) { }
+        }
+        var answers = await Task.WhenAll(endpoints.Select(async ep =>
+            await transactions.RequestAsync(new StunMessage(StunType.BindingRequest), ep, null, ct).ConfigureAwait(false) is { Type: StunType.BindingSuccess })).ConfigureAwait(false);
+        return answers.Any(a => a);
     }
 
     internal static NatReport Classify(IReadOnlyList<IPEndPoint> mappings, IReadOnlyCollection<IPAddress> localAddresses)

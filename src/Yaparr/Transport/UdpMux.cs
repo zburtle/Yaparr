@@ -99,6 +99,17 @@ public sealed class UdpMux : IDisposable
 
     public void Inject(ReadOnlyMemory<byte> packet, IPEndPoint from, bool viaRelay = true) => Deliver(packet, from, viaRelay);
 
+    /// <summary>
+    /// Sends from the socket itself, whatever carries the rest of the traffic: past the tunnel (a VPN, the Yaparr Cloud gateway), the route and the filter. For asking whether UDP gets out
+    /// of this network by itself while something is carrying the traffic (<see cref="NatProbe.DirectUdpWorksAsync"/>).
+    /// </summary>
+    internal void SendUntunneled(ReadOnlySpan<byte> packet, IPEndPoint to)
+    {
+        try { _socket.SendTo(packet, SocketFlags.None, to); }
+        catch (SocketException ex) { Log?.Invoke($"direct send to {to} failed: {ex.SocketErrorCode}"); }
+        catch (ObjectDisposedException) { }
+    }
+
     internal void SendDirect(ReadOnlySpan<byte> packet, IPEndPoint to)
     {
         if (Tunnel?.TrySend(packet, to) == true) return;

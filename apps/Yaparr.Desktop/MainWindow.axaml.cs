@@ -564,6 +564,13 @@ public partial class MainWindow : Window
 
         // Yaparr Cloud acting as the gateway (the network blocks UDP): said at the top of Settings > Network, and in the tooltip of the network icon.
         var gateway = _node.GatewayState;
+        // It carries messages and voice, not video: the share and watch buttons are greyed, and a share or watch under way is ended.
+        if (ScreenGate.Instance.Update(gateway) && ScreenGate.Instance.Blocked)
+        {
+            if (_sharer != null) { StatusText.Text = ScreenGate.Why; StopSharingCore(); }
+            StopAllWatches();
+        }
+        foreach (var conversation in _conversations) conversation.RefreshShareTip();
         var gatewayNote = ChatNode.GatewayNote(gateway);
         GatewayBanner.IsVisible = gatewayNote != null;
         GatewayBannerTitle.Text = gateway == Yaparr.Vpn.VpnState.Connected ? "Yaparr Cloud is acting as your gateway" : "Connecting to Yaparr Cloud\u2026";

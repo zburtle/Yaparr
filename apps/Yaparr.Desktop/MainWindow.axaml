@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="using:Yaparr.Desktop"
+        xmlns:core="using:Yaparr.AppCore"
         x:Class="Yaparr.Desktop.MainWindow"
         Title="Yaparr" Icon="avares://Yaparr.Desktop/Assets/yaparr.png" Width="1080" Height="680" MinWidth="800" MinHeight="440"
         Background="{DynamicResource AppBg}">
@@ -547,7 +548,7 @@
                                 <Button Classes="icon" Classes.on="{Binding Deafened}" Content="🎧" ToolTip.Tip="{Binding DeafenTip}"
                                         IsVisible="{Binding CanUseVoiceControls}" Click="DeafenVoice_Click" />
                                 <Button Classes="icon" Content="🎛" ToolTip.Tip="Soundboard" IsVisible="{Binding CanUseVoiceControls}" Click="Soundboard_Click" />
-                                <Button Classes="icon" Content="🖥" ToolTip.Tip="{Binding ShareTip}" IsVisible="{Binding CanShare}" Click="ShareScreen_Click" />
+                                <Button Classes="icon" Content="🖥" ToolTip.Tip="{Binding ShareTip}" IsVisible="{Binding CanShare}" IsEnabled="{Binding Allowed, Source={x:Static core:ScreenGate.Instance}}" Click="ShareScreen_Click" />
                                 <Button Classes="icon on" Content="🖥" ToolTip.Tip="Stop sharing" IsVisible="{Binding CanStopSharing}" Click="StopSharing_Click" />
                                 <Button Content="Leave" Foreground="{DynamicResource Bad}" ToolTip.Tip="Leave voice" IsVisible="{Binding CanUseVoiceControls}" Click="LeaveVoice_Click" />
                                 <Button Classes="icon" Content="⋯" FontWeight="Bold" ToolTip.Tip="More">
@@ -608,7 +609,8 @@
                                                 <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,4">
                                                     <TextBlock Text="🖥" VerticalAlignment="Center" />
                                                     <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
-                                                    <Button Content="{Binding ButtonText}" IsVisible="{Binding CanWatch}" Click="WatchScreen_Click" />
+                                                    <Button Content="{Binding ButtonText}" IsVisible="{Binding CanWatch}" IsEnabled="{Binding Allowed, Source={x:Static core:ScreenGate.Instance}}"
+                                                            ToolTip.Tip="{Binding Reason, Source={x:Static core:ScreenGate.Instance}}" Click="WatchScreen_Click" />
                                                 </StackPanel>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
