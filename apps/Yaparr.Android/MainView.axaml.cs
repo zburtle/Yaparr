@@ -958,7 +958,7 @@ public partial class MainView : UserControl
 
     private void ShareScreenClicked(object? sender, RoutedEventArgs e)
     {
-        if (_current == null || _session == null) return;
+        if (_current == null || _session == null || ScreenGate.Instance.Blocked) return;
         _shareQuality = ShareQuality.BestFor(_session.UploadBytesPerSecond);
         BuildShareQualityList();
         bool canHearApps = OperatingSystem.IsAndroidVersionAtLeast(29);

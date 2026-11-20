@@ -213,7 +213,16 @@ public sealed partial class Session : IDisposable
         _ = new GatewayFallback(node, () => GatewayFallback.AccountOf(_data.LoadBackupServer()), () => _settings.GatewayWhenUdpBlocked, Log);
         node.DisplayNameChanged += OnDisplayNameChanged;
         node.IncomingDirectChat += chat => UI(() => AddDirect(chat));
-        node.GatewayStateChanged += _ => UI(() => GatewayChanged?.Invoke());
+        node.GatewayStateChanged += _ => UI(() =>
+        {
+            // It carries messages and voice, not video: the share and watch buttons are greyed (ScreenGate), and a share or watch under way is ended.
+            if (ScreenGate.Instance.Update(node.GatewayState) && ScreenGate.Instance.Blocked)
+            {
+                StopScreenShare();
+                StopWatching();
+            }
+            GatewayChanged?.Invoke();
+        });
         node.PeerConnected += _ => UI(SayConnection);
         node.PeerDisconnected += _ => UI(SayConnection);
         ReconcileFromAccount();

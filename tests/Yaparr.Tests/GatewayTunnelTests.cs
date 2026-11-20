@@ -164,6 +164,36 @@ public sealed class GatewayTunnelTests
     }
 }
 
+public sealed class ScreenGateTests
+{
+    [Fact]
+    public void Screens_are_off_while_the_gateway_is_in_use_even_while_it_connects_and_on_again_when_it_is_not()
+    {
+        var gate = ScreenGate.Instance;
+        gate.Update(VpnState.Disconnected);
+        var changed = new List<string?>();
+        gate.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+        Assert.True(gate.Allowed);
+        Assert.Null(gate.Reason);
+
+        Assert.True(gate.Update(VpnState.Connecting));
+        Assert.False(gate.Allowed);
+        Assert.True(gate.Blocked);
+        Assert.Equal(ScreenGate.Why, gate.Reason);
+        Assert.Contains(nameof(ScreenGate.Allowed), changed);
+
+        Assert.False(gate.Update(VpnState.Connected));            // still off: nothing changed, nothing raised again
+        Assert.False(gate.Allowed);
+        changed.Clear();
+
+        Assert.True(gate.Update(VpnState.Disconnected));
+        Assert.True(gate.Allowed);
+        Assert.Null(gate.Reason);
+        Assert.Contains(nameof(ScreenGate.Reason), changed);
+        Assert.Contains("voice", ScreenGate.Why);
+    }
+}
+
 public sealed class GatewayFallbackTests : IDisposable
 {
     private readonly List<IDisposable> _disposables = new();
@@ -171,17 +201,18 @@ public sealed class GatewayFallbackTests : IDisposable
     public void Dispose() { foreach (var d in Enumerable.Reverse(_disposables)) d.Dispose(); }
 
     // A node whose STUN servers are public addresses nothing answers (a network that blocks UDP), so nothing comes back until something carries the datagrams.
-    private ChatNode BlockedNode() => new(new ChatNodeOptions
+    private ChatNode BlockedNode(string[]? stun = null, TimeSpan? probe = null) => new(new ChatNodeOptions
     {
         DisplayName = "alice",
         EnableLocalDiscovery = false,
         Dht = new Yaparr.Discovery.Dht.DhtOptions { BootstrapHosts = Array.Empty<string>(), FallbackSeeds = Array.Empty<string>() },
+        GatewayProbeInterval = probe ?? TimeSpan.FromSeconds(30),
         Traversal = new TraversalOptions
         {
             Enabled = true,
             PortMapping = false,
             LocalDiscovery = false,
-            StunServers = new[] { "203.0.113.5:3478", "203.0.113.6:3478" },
+            StunServers = stun ?? new[] { "203.0.113.5:3478", "203.0.113.6:3478" },
         },
     });
 
@@ -216,10 +247,55 @@ public sealed class GatewayFallbackTests : IDisposable
     }
 
     [Fact]
+    public async Task The_gateway_is_let_go_soon_after_udp_gets_out_of_the_network_by_itself_again()
+    {
+        // The network "allows UDP": a STUN server on this machine answers the node's own socket directly, whatever the gateway is doing.
+        using var stun = new FakeStunServer();
+        var node = BlockedNode(new[] { $"127.0.0.1:{stun.EndPoint.Port}" }, probe: TimeSpan.FromMilliseconds(150));
+        _disposables.Add(node);
+        var states = new List<VpnState>();
+        node.GatewayStateChanged += states.Add;
+        node.Start();
+        Assert.True(await node.ConnectGatewayAsync(() => new FakeGatewayLink()));
+        Assert.Equal(VpnState.Connected, node.GatewayState);
+
+        for (int i = 0; i < 200 && node.GatewayState != VpnState.Disconnected; i++) await Task.Delay(50);
+        Assert.Equal(VpnState.Disconnected, node.GatewayState);
+        Assert.Contains(VpnState.Disconnected, states);
+    }
+
+    [Fact]
+    public async Task The_gateway_stays_while_udp_still_does_not_get_out_by_itself()
+    {
+        var node = BlockedNode(probe: TimeSpan.FromMilliseconds(150));       // the STUN servers answer only through the gateway
+        _disposables.Add(node);
+        var link = new FakeGatewayLink { Reply = StunAnswer };
+        _ = new GatewayFallback(node, () => (new Uri("https://cloud.test"), "token"), () => true, null, links: (_, _) => link);
+        node.Start();
+        for (int i = 0; i < 600 && node.GatewayState != VpnState.Connected; i++) await Task.Delay(50);
+        Assert.Equal(VpnState.Connected, node.GatewayState);
+
+        await Task.Delay(5000);                                              // several probes, each of which hears nothing from outside the gateway
+        Assert.Equal(VpnState.Connected, node.GatewayState);
+    }
+
+    [Fact]
+    public async Task A_direct_probe_hears_a_server_only_when_udp_really_gets_there()
+    {
+        using var mux = new UdpMux();
+        mux.Start();
+        using var stun = new FakeStunServer();
+        Assert.True(await NatProbe.DirectUdpWorksAsync(mux, new[] { $"127.0.0.1:{stun.EndPoint.Port}" }));
+        Assert.False(await NatProbe.DirectUdpWorksAsync(mux, new[] { "203.0.113.9:3478" }));
+        Assert.False(await NatProbe.DirectUdpWorksAsync(mux, Array.Empty<string>()));
+    }
+
+    [Fact]
     public async Task The_connection_check_and_the_note_say_when_yaparr_cloud_is_acting_as_the_gateway()
     {
         Assert.Null(ChatNode.GatewayNote(VpnState.Disconnected));
-        Assert.Contains("messages", ChatNode.GatewayNote(VpnState.Connected));
+        Assert.Contains("messages and voice", ChatNode.GatewayNote(VpnState.Connected));
+        Assert.Contains("screens", ChatNode.GatewayNote(VpnState.Connected));
         Assert.Contains("Connecting", ChatNode.GatewayNote(VpnState.Connecting));
 
         var node = BlockedNode();
