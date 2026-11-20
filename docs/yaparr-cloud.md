@@ -9,7 +9,7 @@ Yaparr works without it. Yaparr Cloud is an optional account on a server (cloud.
 | | What it is | How long it is kept | Limit |
 |---|---|---|---|
 | **Sync** | Your name, rooms, blocks, pins and a few settings are the same on all your devices. | Until you change or delete them. | A small record each. |
-| **History and shelves** | Your message history (a piece for each month of each room or chat), and your own emoji and GIFs, so a new device has them. | Until you delete them. | 512 MiB. |
+| **History and shelves** | Your message history (a piece for each month of each room or chat), and your own emoji and GIFs, so a new device has them. | Until you delete them. | 1 GiB. |
 | **Messages for people who are away** | A locked copy of a message or picture is left for someone who is offline, and fetched when they are back. | 7 days. | 256 MiB of pictures. |
 | **Backups** | A locked copy of your whole profile, so a lost computer can be brought back. | The newest few. | A few hundred MB. |
 | **Push** | A wake-up (with nothing in it) so your phone connects when someone writes. | Not kept. | |
