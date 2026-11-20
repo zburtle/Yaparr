@@ -112,6 +112,12 @@ jobs:
             -p:AndroidSigningKeyPass=env:ANDROID_KEY_PASSWORD
           mkdir -p artifacts
           cp apps/Yaparr.Android/bin/Release/net10.0-android/org.yaparr.android-Signed.apk "artifacts/Yaparr-$version.apk"
+          # The debug symbols of this build: R8's mapping (to read an obfuscated crash trace) and the .pdb files (line numbers of the .NET code). They differ
+          # between the two builds (the Play one has other code compiled in), so each package gets its own set. Kept with the package they belong to.
+          symbols() {  # $1: the zip to make
+            (cd apps/Yaparr.Android/bin/Release/net10.0-android && zip -q -j "$OLDPWD/$1" mapping.txt *.pdb)
+          }
+          symbols "artifacts/Yaparr-$version-symbols.zip"
           # The same app as an Android App Bundle for Google Play, without the update from GitHub (see docs/android-app.md, "Google Play"). Signed with the
           # upload key (here the same release key; Play signs what people install with its own). It is kept as a workflow artifact, not in the GitHub release.
           dotnet build apps/Yaparr.Android -c Release --no-incremental -p:PlayStore=true \
@@ -122,6 +128,8 @@ jobs:
             -p:AndroidSigningKeyPass=env:ANDROID_KEY_PASSWORD
           mkdir -p play
           cp apps/Yaparr.Android/bin/Release/net10.0-android/org.yaparr.android-Signed.aab "play/Yaparr-$version.aab"
+          symbols "play/Yaparr-$version-play-symbols.zip"
+          cp apps/Yaparr.Android/bin/Release/net10.0-android/mapping.txt "play/mapping.txt"
           rm -f "$RUNNER_TEMP/yaparr-release.keystore"
 
       # The certificate's fingerprint is what yaparr.com's asset links file names, so that links to the site open in the app.
@@ -136,7 +144,9 @@ jobs:
         if: steps.key.outputs.signed == 'true'
         with:
           name: installer-android
-          path: artifacts/*.apk
+          path: |
+            artifacts/*.apk
+            artifacts/*-symbols.zip
           if-no-files-found: error
 
       # For uploading to the Play Console by hand (or later by a job). Not an installer: nothing downloads it to install.
@@ -144,7 +154,10 @@ jobs:
         if: steps.key.outputs.signed == 'true'
         with:
           name: play-bundle-android
-          path: play/*.aab
+          path: |
+            play/*.aab
+            play/*-symbols.zip
+            play/mapping.txt
           if-no-files-found: error
 
   publish:
@@ -213,6 +226,8 @@ jobs:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: org.yaparr.android
           releaseFiles: play/*.aab
+          # The bundle already carries the mapping; sending the file as well puts it in the Console's list of deobfuscation files for this version.
+          mappingFile: play/mapping.txt
           track: internal
           status: completed
           releaseName: ${{ needs.version.outputs.version }}
