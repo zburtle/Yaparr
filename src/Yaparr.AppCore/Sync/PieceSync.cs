@@ -23,6 +23,9 @@ public interface IPieceSource
     void Drop(string name) { }
 }
 
+/// <summary>How far a <see cref="PieceSync.RunAsync"/> has come: pieces taken in or kept so far, of those it has to do. Told after each one.</summary>
+public sealed record PieceProgress(int Done, int Total);
+
 /// <summary>What one <see cref="PieceSync.RunAsync"/> did.</summary>
 public sealed record PieceReport(int Uploaded, int Downloaded, int Removed, int Unreadable, bool Full);
 
@@ -105,6 +108,9 @@ public sealed class PieceSync
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { _log?.Invoke("could not save the names of kept pieces: " + ex.Message); }
     }
 
+    /// <summary>Told how far a run has come, after each piece it takes in or keeps (a new device has many to take in; a first sync many to keep).</summary>
+    public Action<PieceProgress>? Progress { get; set; }
+
     /// <summary>How many pieces the account has that this device has not taken in yet.</summary>
     public int Waiting { get { lock (_incoming) return _incoming.Count; } }
 
@@ -120,6 +126,10 @@ public sealed class PieceSync
 
         KeyValuePair<string, Index>[] waiting;
         lock (_incoming) waiting = _incoming.ToArray();
+        int total = waiting.Length, done = 0;
+        var plan = _source.Local();
+        total += plan.Count(p => Held(p.Key) is not { } h || h.T != p.Value);
+        void Told() { done++; try { Progress?.Invoke(new PieceProgress(Math.Min(done, total), total)); } catch (Exception ex) when (ex is not OutOfMemoryException) { } }
         foreach (var (name, index) in waiting)
         {
             cancel.ThrowIfCancellationRequested();
@@ -139,6 +149,7 @@ public sealed class PieceSync
                 _done.Add(index.P);
             }
             lock (_incoming) if (_incoming.TryGetValue(name, out var now) && now == index) _incoming.Remove(name);
+            Told();
         }
 
         string[] drops;
@@ -176,6 +187,7 @@ public sealed class PieceSync
             if (held != null && held.P != id) replaced.Add(held.P);
             _engine.Set(Kind, name, JsonSerializer.SerializeToUtf8Bytes(new Index(id, tag)));
             uploaded++;
+            Told();
         }
 
         // The records go out before what they replaced is removed, so no device is ever pointed at a piece that is gone.

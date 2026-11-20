@@ -33,6 +33,97 @@ public partial class MainView
         AppHost.Auto.Changed += _autoChanged;
     }
 
+    // ---- what the account holds against its limits, and the devices signed in ----
+
+    private bool _loadingCloudAccount;
+
+    private async void CloudAccountClicked(object? sender, RoutedEventArgs e)
+    {
+        if (!_server.SignedIn) return;
+        CloudAccountPanel.IsVisible = true;
+        await LoadCloudAccountAsync();
+    }
+
+    private async void CloudAccountRefreshClicked(object? sender, RoutedEventArgs e) => await LoadCloudAccountAsync();
+
+    private void CloudAccountCloseClicked(object? sender, RoutedEventArgs e) => CloudAccountPanel.IsVisible = false;
+
+    private async Task LoadCloudAccountAsync()
+    {
+        if (_loadingCloudAccount || !Uri.TryCreate(_server.Url, UriKind.Absolute, out var server)) return;
+        _loadingCloudAccount = true;
+        CloudAccountStatus.Text = "Asking Yaparr Cloud…";
+        try
+        {
+            using var client = new CloudAccountClient(server, _server.Token);
+            var usage = await client.UsageAsync();
+            var devices = await client.DevicesAsync();
+            CloudUsageList.Children.Clear();
+            foreach (var line in CloudUsageText.Lines(usage))
+            {
+                var panel = new StackPanel { Spacing = 3 };
+                panel.Children.Add(new TextBlock { Text = line.Label, FontWeight = Avalonia.Media.FontWeight.SemiBold, Foreground = Yaparr.AndroidApp.Theme.Brush("Ink") });
+                if (line.Fraction is { } fraction)
+                    panel.Children.Add(new Avalonia.Controls.ProgressBar { Minimum = 0, Maximum = 1, Value = fraction, Height = 6, Foreground = line.Warn ? Avalonia.Media.Brushes.DarkOrange : Avalonia.Media.Brushes.SeaGreen });
+                panel.Children.Add(new TextBlock { Text = line.Value, FontSize = 13, TextWrapping = Avalonia.Media.TextWrapping.Wrap, Foreground = line.Warn ? Avalonia.Media.Brushes.DarkOrange : Yaparr.AndroidApp.Theme.Brush("Muted") });
+                CloudUsageList.Children.Add(panel);
+            }
+            CloudDeviceList.Children.Clear();
+            foreach (var device in devices)
+            {
+                var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 8 };
+                var text = new StackPanel();
+                text.Children.Add(new TextBlock { Text = device.Name + (device.Current ? " (this phone)" : ""), FontWeight = device.Current ? Avalonia.Media.FontWeight.SemiBold : Avalonia.Media.FontWeight.Normal, TextWrapping = Avalonia.Media.TextWrapping.Wrap, Foreground = Yaparr.AndroidApp.Theme.Brush("Ink") });
+                text.Children.Add(new TextBlock { Text = "Signed in " + device.Created.ToLocalTime().ToString("d MMM yyyy"), FontSize = 12, Foreground = Yaparr.AndroidApp.Theme.Brush("Muted") });
+                row.Children.Add(text);
+                var signOut = new Avalonia.Controls.Button { Content = "Sign out", Padding = new Avalonia.Thickness(12, 6) };
+                Grid.SetColumn(signOut, 1);
+                var id = device.Id;
+                var current = device.Current;
+                signOut.Click += async (_, _) => await SignOutDeviceAsync(id, current);
+                row.Children.Add(signOut);
+                CloudDeviceList.Children.Add(row);
+            }
+            CloudAccountStatus.Text = "";
+        }
+        catch (BackupServerException ex) { CloudAccountFailed(ex); }
+        finally { _loadingCloudAccount = false; }
+    }
+
+    private void CloudAccountFailed(BackupServerException ex)
+    {
+        CloudAccountStatus.Text = ex.SignedOut ? "This phone is no longer signed in to Yaparr Cloud. Sign in again from the settings." : ex.Message;
+        if (!ex.SignedOut) return;
+        _server = _data.LoadBackupServer();
+        _server.Token = "";
+        _data.SaveBackupServer(_server);
+        ServerUrlBox.Text = ReleaseConfig.Current.BackupServerToOffer(_server.Url);
+        ShowServerState();
+    }
+
+    private async Task SignOutDeviceAsync(string id, bool current)
+    {
+        if (!Uri.TryCreate(_server.Url, UriKind.Absolute, out var server)) return;
+        if (!await ConfirmAsync(current ? "Sign this phone out of Yaparr Cloud? It stops syncing until you sign in again." : "Sign that device out of Yaparr Cloud? It stops syncing until it signs in again. Nothing on it is deleted.", "Sign out")) return;
+        try
+        {
+            using var client = new CloudAccountClient(server, _server.Token);
+            await client.RevokeDeviceAsync(id);
+        }
+        catch (BackupServerException ex) { CloudAccountFailed(ex); return; }
+        if (current)
+        {
+            CloudAccountPanel.IsVisible = false;
+            _server = _data.LoadBackupServer();
+            _server.Token = "";
+            _data.SaveBackupServer(_server);
+            ServerUrlBox.Text = ReleaseConfig.Current.BackupServerToOffer(_server.Url);
+            ShowServerState();
+            return;
+        }
+        await LoadCloudAccountAsync();
+    }
+
     private void GatewayClicked(object? sender, RoutedEventArgs e)
     {
         _settings.GatewayWhenUdpBlocked = GatewayCheck.IsChecked == true;
@@ -66,6 +157,7 @@ public partial class MainView
         var host = Uri.TryCreate(_server.Url, UriKind.Absolute, out var uri) ? uri.Authority : _server.Url;
         ServerSignedInText.Text = $"Signed in to {host} as {_server.Username}.";
         ShowRecoveryCodeButton.IsVisible = ReplaceSyncKeyButton.IsVisible = _server.RecoveryCode.Length > 0;
+        CloudAccountButton.IsVisible = _server.SignedIn;
 
         var trouble = _server.Failures > 0 || _server.AutoNote.StartsWith("Sync stopped", StringComparison.Ordinal) || _server.AutoNote == AccountCloudSync.KeyChangedNote;
         AutoBackupStatus.Text = trouble ? _server.AutoNote

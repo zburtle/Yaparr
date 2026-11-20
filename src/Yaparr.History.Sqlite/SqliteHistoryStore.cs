@@ -570,6 +570,27 @@ public sealed class SqliteHistoryStore : IChatHistoryStore, IDirectHistoryStore,
         }
     }
 
+    private Dictionary<string, int> DayCountsOf(string table, string column, string who, string month)
+    {
+        var (from, to) = HistoryMonths.Range(month);
+        lock (_gate)
+        {
+            using var cmd = _db.CreateCommand();
+            cmd.CommandText = $"SELECT strftime('%Y%m%d', ts / 1000, 'unixepoch'), count(*) FROM {table} WHERE {column} = $w AND ts >= $f AND ts < $t GROUP BY 1";
+            cmd.Parameters.AddWithValue("$w", who);
+            cmd.Parameters.AddWithValue("$f", from);
+            cmd.Parameters.AddWithValue("$t", to);
+            using var r = cmd.ExecuteReader();
+            var counts = new Dictionary<string, int>();
+            while (r.Read()) counts[r.GetString(0)] = r.GetInt32(1);
+            return counts;
+        }
+    }
+
+    public IReadOnlyDictionary<string, int> DayCounts(string roomKey, string month) => DayCountsOf("messages", "room", roomKey, month);
+
+    public IReadOnlyDictionary<string, int> DirectDayCounts(string peer, string month) => DayCountsOf("direct", "peer", peer, month);
+
     public IReadOnlyDictionary<string, int> MonthCounts(string roomKey) => Counts("messages", "room", roomKey);
 
     public IReadOnlyDictionary<string, int> DirectMonthCounts(string peer) => Counts("direct", "peer", peer);

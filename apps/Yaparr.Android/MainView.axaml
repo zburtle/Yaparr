@@ -303,6 +303,7 @@
                         <TextBlock x:Name="AutoBackupStatus" IsVisible="False" TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />
                         <Button x:Name="ShowRecoveryCodeButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Show Sync key" Click="ShowRecoveryCodeClicked" />
                         <Button x:Name="ReplaceSyncKeyButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Replace Sync key…" Click="ReplaceSyncKeyClicked" />
+                        <Button x:Name="CloudAccountButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Storage and devices…" Click="CloudAccountClicked" />
                         <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Change password" Click="ServerChangePasswordClicked" />
                         <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Delete my account" Click="ServerDeleteAccountClicked" />
                         <Button x:Name="ServerSignOutButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Sign out" Click="ServerSignOutClicked" />
@@ -783,6 +784,27 @@
                     <TextBlock Text="Blocked and banned" FontWeight="Bold" FontSize="20" Foreground="{DynamicResource Ink}" />
                     <ScrollViewer Grid.Row="1"><StackPanel x:Name="BlockedList" Spacing="2" /></ScrollViewer>
                     <Button Grid.Row="2" HorizontalAlignment="Stretch" Content="Close" Click="BlockedCloseClicked" />
+                </Grid>
+            </Border>
+        </Border>
+
+        <!-- What the account holds against its limits, and the devices signed in. -->
+        <Border x:Name="CloudAccountPanel" IsVisible="False" Background="#99000000" PointerPressed="OverlayBackdropPressed">
+            <Border Background="{DynamicResource Surface}" CornerRadius="16" Margin="20" Padding="16" MaxWidth="440" VerticalAlignment="Center" MaxHeight="640">
+                <Grid RowDefinitions="Auto,*,Auto,Auto" RowSpacing="10">
+                    <TextBlock Text="Yaparr Cloud account" FontWeight="Bold" FontSize="20" Foreground="{DynamicResource Ink}" />
+                    <ScrollViewer Grid.Row="1">
+                        <StackPanel Spacing="12">
+                            <StackPanel x:Name="CloudUsageList" Spacing="10" />
+                            <TextBlock Text="Devices signed in" FontWeight="SemiBold" Foreground="{DynamicResource Ink}" Margin="0,8,0,0" />
+                            <StackPanel x:Name="CloudDeviceList" Spacing="8" />
+                        </StackPanel>
+                    </ScrollViewer>
+                    <TextBlock x:Name="CloudAccountStatus" Grid.Row="2" TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />
+                    <Grid Grid.Row="3" ColumnDefinitions="*,*" ColumnSpacing="6">
+                        <Button Content="Refresh" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="CloudAccountRefreshClicked" />
+                        <Button Grid.Column="1" Content="Close" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="CloudAccountCloseClicked" />
+                    </Grid>
                 </Grid>
             </Border>
         </Border>

@@ -104,7 +104,7 @@ public partial class MainView : UserControl
         foreach (var s in _screens) s.IsVisible = s == screen;
     }
 
-    private bool AnyOverlay => AddPanel.IsVisible || PeoplePanel.IsVisible || ConfirmPanel.IsVisible || RoutePanel.IsVisible || PicturePanel.IsVisible || ActionPanel.IsVisible || PromptPanel.IsVisible || BlockedPanel.IsVisible || NetworkPanel.IsVisible || SoundPanel.IsVisible || ShelfPanel.IsVisible || SharePanel.IsVisible || WatchPanel.IsVisible || ReactPanel.IsVisible || CodePanel.IsVisible;
+    private bool AnyOverlay => AddPanel.IsVisible || PeoplePanel.IsVisible || ConfirmPanel.IsVisible || RoutePanel.IsVisible || PicturePanel.IsVisible || ActionPanel.IsVisible || PromptPanel.IsVisible || BlockedPanel.IsVisible || NetworkPanel.IsVisible || SoundPanel.IsVisible || ShelfPanel.IsVisible || SharePanel.IsVisible || WatchPanel.IsVisible || ReactPanel.IsVisible || CodePanel.IsVisible || CloudAccountPanel.IsVisible;
 
     // One step back; false when there is nothing to go back to and the phone may leave the app.
     private bool GoBack()
@@ -119,6 +119,7 @@ public partial class MainView : UserControl
         if (ReactPanel.IsVisible) { ReactPanel.IsVisible = false; return true; }
         if (SoundPanel.IsVisible) { SoundPanel.IsVisible = false; return true; }
         if (NetworkPanel.IsVisible) { NetworkPanel.IsVisible = false; return true; }
+        if (CloudAccountPanel.IsVisible) { CloudAccountPanel.IsVisible = false; return true; }
         if (PicturePanel.IsVisible) { PictureCloseClicked(null, new RoutedEventArgs()); return true; }
         if (RoutePanel.IsVisible) { RoutePanel.IsVisible = false; return true; }
         if (ConfirmPanel.IsVisible) { ConfirmNoClicked(null, new RoutedEventArgs()); return true; }

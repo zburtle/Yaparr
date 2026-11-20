@@ -18,6 +18,12 @@ namespace Yaparr.Chat;
 public static class HistoryPieces
 {
     private const int MaxRaw = 64 * 1024 * 1024;
+
+    /// <summary>
+    /// A month with more rows than this is kept as a piece for each day instead of one piece (a piece is at most about 15 MiB locked, and a piece that would not fit was left out). A
+    /// row is a few hundred bytes and compresses well, so this is far below the size that would not fit. (<see cref="Local"/> takes another number, for tests.)
+    /// </summary>
+    internal const int MaxRowsPerPiece = 100_000;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     private sealed record RoomRow(string K, StoredMessage M, string? T);
@@ -66,11 +72,14 @@ public static class HistoryPieces
     private static bool TryParse(string name, out bool direct, out string who, out string month)
     {
         direct = false; who = month = "";
-        if (name.Length < 10 || name[1] != '-' || name[^7] != '-' || name[0] is not ('h' or 'd')) return false;
+        if (name.Length < 10 || name[1] != '-' || name[0] is not ('h' or 'd')) return false;
+        // The end is a month (yyyyMM) or, for a month with too many rows for one piece, a day of it (yyyyMMdd).
+        int length = name.Length > 12 && name[^9] == '-' ? 8 : 6;
+        if (name[^(length + 1)] != '-') return false;
         direct = name[0] == 'd';
-        who = name[2..^7];
-        month = name[^6..];
-        return Safe(who) && HistoryMonths.IsMonth(month);
+        who = name[2..^(length + 1)];
+        month = name[^length..];
+        return Safe(who) && HistoryMonths.IsPeriod(month);
     }
 
     /// <summary>Whether a piece is about a person's conversation (true) or a room (false), and which.</summary>
@@ -81,18 +90,26 @@ public static class HistoryPieces
     }
 
     /// <summary>The pieces this store has, by name, each with its tag.</summary>
-    public static Dictionary<string, string> Local(IChatHistoryStore store)
+    public static Dictionary<string, string> Local(IChatHistoryStore store, int maxRows = MaxRowsPerPiece)
     {
         var all = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var room in store.Rooms())
             if (Safe(room))
-                foreach (var (month, count) in store.MonthCounts(room)) all[RoomName(room, month)] = count.ToString();
+                foreach (var (month, count) in store.MonthCounts(room))
+                {
+                    if (count <= maxRows) all[RoomName(room, month)] = count.ToString();
+                    else foreach (var (day, n) in store.DayCounts(room, month)) all[RoomName(room, day)] = n.ToString();
+                }
         foreach (var room in store.RoomsWithRemoved())
             if (Safe(room)) all[RemovedName(room)] = store.RemovedKeys(room).Count.ToString();
         if (store is IDirectHistoryStore direct)
             foreach (var peer in direct.DirectPeers())
                 if (Safe(peer))
-                    foreach (var (month, count) in direct.DirectMonthCounts(peer)) all[DirectName(peer, month)] = count.ToString();
+                    foreach (var (month, count) in direct.DirectMonthCounts(peer))
+                    {
+                        if (count <= maxRows) all[DirectName(peer, month)] = count.ToString();
+                        else foreach (var (day, n) in direct.DirectDayCounts(peer, month)) all[DirectName(peer, day)] = n.ToString();
+                    }
         return all;
     }
 

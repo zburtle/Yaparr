@@ -8,6 +8,7 @@ namespace Yaparr.Tests;
 /// and the receiver must still take the repair; a receiver that remembered only the last 64 packet numbers threw most repairs away as duplicates (found in the
 /// first real logs of a Wi-Fi viewer: the sharer sent about 6,000 packets again a minute and the viewer took about 250).
 /// </summary>
+[Collection("real-time audio")]
 public class RepairWindowTests
 {
     [Fact]

@@ -48,7 +48,7 @@ public sealed class AccountCloudSync
     private sealed record Value(string? V, long Ts, bool D);
 
     public AccountCloudSync(Func<IReadOnlyList<AccountEntry>> entries, Action<IReadOnlyList<AccountEntry>> apply, ISyncState state, ISyncTransport transport,
-        SyncSealer sealer, string deviceId, Action<string>? log = null, Func<DateTimeOffset>? now = null, IKeepTransport? keep = null, IPieceSource? pieces = null, string? knownFile = null, bool haltOnUnreadable = false)
+        SyncSealer sealer, string deviceId, Action<string>? log = null, Func<DateTimeOffset>? now = null, IKeepTransport? keep = null, IPieceSource? pieces = null, string? knownFile = null, bool haltOnUnreadable = false, Action<PieceProgress>? progress = null)
     {
         _entries = entries;
         _apply = apply;
@@ -60,7 +60,7 @@ public sealed class AccountCloudSync
         _engine = new SyncEngine(state, transport, sealer, clock, deviceId);
         _engine.Remote += OnRemote;
         _engine.HaltOnUnreadable = haltOnUnreadable;
-        if (keep != null && pieces != null) _pieces = new PieceSync(_engine, keep, sealer, pieces, log, knownFile);
+        if (keep != null && pieces != null) _pieces = new PieceSync(_engine, keep, sealer, pieces, log, knownFile) { Progress = progress };
     }
 
     /// <summary>Whether an entry is on the cloud copy: its id says what it is, and the name has to be one the server takes.</summary>
@@ -170,7 +170,7 @@ public sealed class AccountCloudSync
     /// One sync of this app's account with the server it is signed in to (nothing when it is not, or has no recovery code yet). Never throws for what can go wrong with the
     /// server: that comes back as the result, and a sign-in the server no longer knows is cleared from the saved state so that it is not tried again.
     /// </summary>
-    public static async Task<AccountSyncResult> RunAsync(AppData data, ChatNode node, HttpClient? http = null, Action<string>? log = null, CancellationToken cancel = default, bool haltOnUnreadable = true)
+    public static async Task<AccountSyncResult> RunAsync(AppData data, ChatNode node, HttpClient? http = null, Action<string>? log = null, CancellationToken cancel = default, bool haltOnUnreadable = true, Action<PieceProgress>? progress = null)
     {
         var server = data.LoadBackupServer();
         if (!server.SignedIn || server.RecoveryCode.Length == 0) return AccountSyncResult.NotSetUp;
@@ -185,7 +185,7 @@ public sealed class AccountCloudSync
             using var transport = new SyncClient(new Uri(server.Url), server.Token, http);
             using var keep = new KeepClient(new Uri(server.Url), server.Token, http);
             var sync = new AccountCloudSync(() => node.AccountEntries, node.ApplyCloudEntries, state, transport, sealer, node.Id.Value, log,
-                keep: keep, pieces: PiecesOf(data, node), knownFile: Path.Combine(data.Directory, $"sync-{which}.known"), haltOnUnreadable: haltOnUnreadable);
+                keep: keep, pieces: PiecesOf(data, node), knownFile: Path.Combine(data.Directory, $"sync-{which}.known"), haltOnUnreadable: haltOnUnreadable, progress: progress);
             var result = (await sync.SyncAsync(cancel)).Result;
             if (result == AccountSyncResult.KeyChanged && !server.AutoNote.StartsWith(KeyChangedNote, StringComparison.Ordinal))
             {

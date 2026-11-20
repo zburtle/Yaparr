@@ -7,6 +7,7 @@ namespace Yaparr.Tests;
 /// link that was already full; a viewer on a Wi-Fi link that carried about 6 Mbit/s lost half its packets to a 6 Mbit/s share with the repairs on top, and 99% fewer
 /// frames at half the rate.
 /// </summary>
+[Collection("real-time audio")]
 public class RepairCapTests(Xunit.Abstractions.ITestOutputHelper output)
 {
     [Theory]

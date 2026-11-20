@@ -1172,6 +1172,7 @@
                                 <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="8">
                                     <Button x:Name="BackupToServerButton" Content="Sync now" Classes="primary" Click="BackupToServer_Click" />
                                     <Button x:Name="ShowRecoveryCodeButton" Content="Show Sync key" Click="ShowRecoveryCode_Click" />
+                                    <Button x:Name="CloudAccountButton" Content="Storage and devices…" Click="CloudAccount_Click" ToolTip.Tip="What your account holds against its limits, and the devices signed in (sign one out)" />
                                     <Button x:Name="ReplaceSyncKeyButton" Content="Replace Sync key…" Click="ReplaceSyncKey_Click" ToolTip.Tip="Make a new Sync key (if the old one was lost or seen by someone), or enter the one you made on another device" />
                                     <Button Content="Change password" Click="ServerChangePassword_Click" ToolTip.Tip="Opens the server's page in your browser" />
                                     <Button Content="Delete my account" Click="ServerDeleteAccount_Click" ToolTip.Tip="Opens the server's page in your browser, where the account and everything it holds is deleted" />

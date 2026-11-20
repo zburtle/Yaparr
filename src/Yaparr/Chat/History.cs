@@ -77,7 +77,10 @@ public interface IChatHistoryStore
     /// <summary>For each month (<see cref="HistoryMonths"/>, UTC) a room has anything from: how many rows it has (messages and reactions). What is kept in sync works a month at a time.</summary>
     IReadOnlyDictionary<string, int> MonthCounts(string roomKey);
 
-    /// <summary>Every row (message or reaction, with the key of what the reaction is on) of one month of a room.</summary>
+    /// <summary>For each day (<c>yyyyMMdd</c>, UTC) of one month, how many rows a room has. A month with too many rows for one piece is kept as a piece for each day.</summary>
+    IReadOnlyDictionary<string, int> DayCounts(string roomKey, string month);
+
+    /// <summary>Every row (message or reaction, with the key of what the reaction is on) of one month of a room, or of one day (<c>yyyyMMdd</c>) of it.</summary>
     IReadOnlyList<(string Key, StoredMessage Message, string? Target)> InMonth(string roomKey, string month);
 }
 
@@ -88,11 +91,15 @@ public static class HistoryMonths
 
     public static bool IsMonth(string? month) => month is { Length: 6 } && month.All(char.IsAsciiDigit) && int.Parse(month[4..]) is >= 1 and <= 12 && int.Parse(month[..4]) is >= 1970 and <= 9999;
 
-    /// <summary>The first millisecond of the month, and of the next one.</summary>
-    public static (long From, long To) Range(string month)
+    /// <summary>A month (<c>yyyyMM</c>) or a day of one (<c>yyyyMMdd</c>): what a piece of history covers.</summary>
+    public static bool IsPeriod(string? period) =>
+        IsMonth(period?.Length == 8 ? period[..6] : period) && (period!.Length == 6 || (period.All(char.IsAsciiDigit) && int.Parse(period[6..]) >= 1 && int.Parse(period[6..]) <= DateTime.DaysInMonth(int.Parse(period[..4]), int.Parse(period[4..6]))));
+
+    /// <summary>The first millisecond of the month (or the day), and of the next one.</summary>
+    public static (long From, long To) Range(string period)
     {
-        var start = new DateTimeOffset(int.Parse(month[..4]), int.Parse(month[4..]), 1, 0, 0, 0, TimeSpan.Zero);
-        return (start.ToUnixTimeMilliseconds(), start.AddMonths(1).ToUnixTimeMilliseconds());
+        var start = new DateTimeOffset(int.Parse(period[..4]), int.Parse(period[4..6]), period.Length == 8 ? int.Parse(period[6..]) : 1, 0, 0, 0, TimeSpan.Zero);
+        return (start.ToUnixTimeMilliseconds(), (period.Length == 8 ? start.AddDays(1) : start.AddMonths(1)).ToUnixTimeMilliseconds());
     }
 }
 
@@ -287,10 +294,26 @@ public sealed class MemoryHistoryStore : IChatHistoryStore, IDirectHistoryStore
         lock (_gate) return Room(roomKey).Values.GroupBy(v => HistoryMonths.Of(v.Message.Ts)).ToDictionary(g => g.Key, g => g.Count());
     }
 
+    public IReadOnlyDictionary<string, int> DayCounts(string roomKey, string month)
+    {
+        var (from, to) = HistoryMonths.Range(month);
+        lock (_gate)
+            return Room(roomKey).Values.Where(v => v.Message.Ts >= from && v.Message.Ts < to)
+                .GroupBy(v => DateTimeOffset.FromUnixTimeMilliseconds(v.Message.Ts).UtcDateTime.ToString("yyyyMMdd")).ToDictionary(g => g.Key, g => g.Count());
+    }
+
     public IReadOnlyList<(string Key, StoredMessage Message, string? Target)> InMonth(string roomKey, string month)
     {
         var (from, to) = HistoryMonths.Range(month);
         lock (_gate) return Room(roomKey).Where(kv => kv.Value.Message.Ts >= from && kv.Value.Message.Ts < to).Select(kv => (kv.Key, kv.Value.Message, kv.Value.Target)).ToList();
+    }
+
+    public IReadOnlyDictionary<string, int> DirectDayCounts(string peer, string month)
+    {
+        var (from, to) = HistoryMonths.Range(month);
+        lock (_gate)
+            return Chat(peer).Values.Where(v => v.Record.Ts >= from && v.Record.Ts < to)
+                .GroupBy(v => DateTimeOffset.FromUnixTimeMilliseconds(v.Record.Ts).UtcDateTime.ToString("yyyyMMdd")).ToDictionary(g => g.Key, g => g.Count());
     }
 
     public IReadOnlyDictionary<string, int> DirectMonthCounts(string peer)

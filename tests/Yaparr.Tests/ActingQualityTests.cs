@@ -4,6 +4,7 @@ using Yaparr.Screen;
 namespace Yaparr.Tests;
 
 /// <summary>Adaptive quality acting on the bitrate steps: the policy's decision reaches the encoder (as a pending bitrate for the thread that encodes) and the stream's repair share.</summary>
+[Collection("real-time audio")]
 public class ActingQualityTests(Xunit.Abstractions.ITestOutputHelper output)
 {
     private static ViewerQualitySample Bad => new(true, true, 12, true);
