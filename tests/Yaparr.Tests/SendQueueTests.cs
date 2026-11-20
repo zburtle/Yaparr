@@ -10,6 +10,7 @@ namespace Yaparr.Tests;
 /// share's clock miss its ticks (1.77.0 sent 17 of 30 pictures a second while its encoder kept up). What the queue does is counted, and when sending falls more
 /// than a second behind what is queued is thrown away and a key frame asked for.
 /// </summary>
+[Collection("real-time audio")]
 public class SendQueueTests(Xunit.Abstractions.ITestOutputHelper output)
 {
     private const long Ms = TimeSpan.TicksPerMillisecond;

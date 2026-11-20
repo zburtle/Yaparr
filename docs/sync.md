@@ -46,7 +46,7 @@ Message history is far too big for a synced record and has to last, so it is kep
 
 **A conversation that is open shows what was taken in.** Taking in a piece that changed anything tells the node (`ChatNode.HistoryChangedBySync`), which raises `ChatRoom.HistoryChanged` or `DirectChat.HistoryChanged`; both apps read the window again for that conversation (a room's, including what was removed; a direct chat's, adding what is missing).
 
-Limits: a month so busy that its piece goes over about 15 MiB is left out (it is logged).
+**A very busy month** (more than 100,000 rows in a room or chat) is kept as a piece for each day instead of one for the month (`h-<room>-yyyyMMdd`), so no piece comes near the 15 MiB the server takes; a device reads either kind. **A big first sync** (a new device taking in many pieces, or a first sync keeping many) says how far it has come: "Syncing your account… 12 of 40" in the banner above the room list on the phone and in the status line on the computer (`PieceSync.Progress`), only when there is a good deal to do.
 
 Tests: `tests/Yaparr.Tests/HistoryPieceTests.cs`.
 

@@ -96,6 +96,32 @@ public sealed class HistoryPieceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_run_tells_how_far_it_has_come_while_it_takes_in_and_keeps_pieces()
+    {
+        var phone = NewDevice("phone");
+        for (int month = 1; month <= 4; month++) Say(phone, "message " + month, 35 * month);        // four different months
+        var reports = new List<PieceProgress>();
+        phone.Pieces.Progress = reports.Add;
+        await Run(phone);
+        Assert.Equal(4, reports.Count);
+        Assert.Equal(Enumerable.Range(1, 4), reports.Select(r => r.Done));
+        Assert.All(reports, r => Assert.Equal(4, r.Total));
+
+        var laptop = NewDevice("laptop");
+        var taken = new List<PieceProgress>();
+        laptop.Pieces.Progress = taken.Add;
+        await Run(laptop);
+        Assert.Equal(4, taken.Count);
+        Assert.Equal(4, taken[^1].Done);
+        Assert.Equal(4, taken[^1].Total);
+
+        var quiet = new List<PieceProgress>();
+        laptop.Pieces.Progress = quiet.Add;
+        await Run(laptop);
+        Assert.Empty(quiet);                                                  // nothing to do, nothing said
+    }
+
+    [Fact]
     public async Task Direct_messages_are_kept_the_same_way()
     {
         var phone = NewDevice("phone");
@@ -420,5 +446,71 @@ public sealed class SyncRestoreTests : IDisposable
         Assert.Single(_keep.Pieces);
         var source = new IdentityPieceSource(() => device.Export());
         Assert.True(source.Take(IdentityPieceSource.Name, root.Export()));      // accepted and ignored: a running device keeps its own identity
+    }
+}
+
+public sealed class BigMonthPieceTests : IDisposable
+{
+    private static readonly string Room = new('f', 64);
+    private readonly PeerIdentity _who = PeerIdentity.Generate();
+
+    public void Dispose() => _who.Dispose();
+
+    [Fact]
+    public void A_month_with_too_many_rows_for_one_piece_is_kept_as_a_piece_for_each_day_and_every_row_arrives()
+    {
+        // Two days of one month, in the past: 4 rows on the first, 1 on the second.
+        var first = new DateTime(2026, 3, 10, 0, 0, 0, DateTimeKind.Utc);
+        var second = first.AddDays(1);
+        var source = new MemoryHistoryStore();
+        for (int i = 0; i < 4; i++) AddMessage(source, first.AddHours(i + 1), "one " + i);
+        AddMessage(source, second.AddHours(2), "two");
+        var month = HistoryMonths.Of(new DateTimeOffset(first, TimeSpan.Zero).ToUnixTimeMilliseconds());
+        var secondMonth = HistoryMonths.Of(new DateTimeOffset(second, TimeSpan.Zero).ToUnixTimeMilliseconds());
+        Assert.Equal(month, secondMonth);
+        var days = source.DayCounts(Room, month);
+        Assert.Equal(2, days.Count);
+
+        var whole = HistoryPieces.Local(source);                          // under the usual limit: one piece for the month
+        Assert.Equal(new[] { HistoryPieces.RoomName(Room, month) }, whole.Keys);
+        Assert.Equal("5", whole.Values.Single());
+
+        var split = HistoryPieces.Local(source, maxRows: 3);              // over this one: a piece for each day, and none for the month
+        Assert.Equal(2, split.Count);
+        Assert.All(split.Keys, name => Assert.Equal(8, name.Split('-')[^1].Length));
+        Assert.DoesNotContain(HistoryPieces.RoomName(Room, month), split.Keys);
+
+        var target = new MemoryHistoryStore();
+        foreach (var name in split.Keys) Assert.True(HistoryPieces.Take(target, name, HistoryPieces.Build(source, name)!) >= 0);
+        Assert.Equal(5, target.MonthCounts(Room).Values.Sum());
+        Assert.Equal(source.InMonth(Room, month).Select(r => r.Key).Order(), target.InMonth(Room, month).Select(r => r.Key).Order());
+        // A day's piece holds only that day: the rows of the other day are refused.
+        var firstDay = split.Keys.Order().First();
+        var other = new MemoryHistoryStore();
+        Assert.Equal(4, HistoryPieces.Take(other, firstDay, HistoryPieces.Build(source, firstDay)!));
+        Assert.Single(other.MonthCounts(Room));
+        var swapped = split.Keys.Order().Last();
+        Assert.Equal(0, HistoryPieces.Take(new MemoryHistoryStore(), firstDay, HistoryPieces.Build(source, swapped)!));
+    }
+
+    [Fact]
+    public void A_name_ending_in_a_month_or_a_day_is_read_and_anything_else_is_not()
+    {
+        Assert.Equal((false, Room), HistoryPieces.WhoOf("h-" + Room + "-202611"));
+        Assert.Equal((false, Room), HistoryPieces.WhoOf("h-" + Room + "-20261107"));
+        Assert.Equal((true, Room), HistoryPieces.WhoOf("d-" + Room + "-20261107"));
+        Assert.Null(HistoryPieces.WhoOf("h-" + Room + "-20261131"));          // no 31st of November
+        Assert.Null(HistoryPieces.WhoOf("h-" + Room + "-2026110"));
+        Assert.True(HistoryMonths.IsPeriod("202611"));
+        Assert.True(HistoryMonths.IsPeriod("20260228"));
+        Assert.False(HistoryMonths.IsPeriod("20260230"));
+        var (from, to) = HistoryMonths.Range("20261107");
+        Assert.Equal(TimeSpan.FromDays(1).TotalMilliseconds, to - from);
+    }
+
+    private void AddMessage(MemoryHistoryStore store, DateTimeOffset at, string text)
+    {
+        var m = SignedMessage.Create(_who, Room, "Zed", text, at.ToUnixTimeMilliseconds());
+        store.Add(Room, SignedMessage.Key(m), m, null);
     }
 }

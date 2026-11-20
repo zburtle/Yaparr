@@ -107,11 +107,15 @@ public sealed partial class Session : IDisposable
         var states = new List<RoomSyncState>();
         foreach (var chat in Chats.ToList()) if (chat.IsRoom) states.Add(chat.UpdateSync());
         var banner = SyncStatus.Banner(_deviceSearch.Update(node), states, out var progress);
+        // A lot of history or shelves being taken in from, or kept on, Yaparr Cloud (a new device, a first sync): said, with how far it has come.
+        if (_cloudProgress is { } cloud) { banner = cloud.Text; progress = cloud.Fraction; }
         if (banner == _banner && progress == _bannerProgress) return;
         _banner = banner;
         _bannerProgress = progress;
         SyncChanged?.Invoke(banner, progress);
     }
+
+    private (string Text, double Fraction)? _cloudProgress;
 
     private readonly Queue<string> _log = new();
 
@@ -1221,9 +1225,18 @@ public sealed partial class Session : IDisposable
     private async Task RunCloudSyncAsync()
     {
         if (_node is not { } node) return;
-        try { await Task.Run(() => AccountCloudSync.RunAsync(_data, node, log: Log, cancel: _cts.Token)); }
+        try
+        {
+            await Task.Run(() => AccountCloudSync.RunAsync(_data, node, log: Log, cancel: _cts.Token, progress: p => UI(() =>
+            {
+                // Only when there is a good deal to do: a few pieces come and go without a banner.
+                _cloudProgress = p.Total < 3 || p.Done >= p.Total ? null : ($"Syncing your account\u2026 {p.Done} of {p.Total}", (double)p.Done / p.Total);
+                UpdateSync();
+            })));
+        }
         catch (OperationCanceledException) { }
         catch (Exception ex) { Log("sync: " + ex.Message); }
+        finally { UI(() => { if (_cloudProgress != null) { _cloudProgress = null; UpdateSync(); } }); }      // a sync that stopped half way leaves no banner behind
     }
 
     public void Dispose()

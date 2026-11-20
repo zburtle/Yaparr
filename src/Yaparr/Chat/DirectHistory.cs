@@ -68,7 +68,10 @@ public interface IDirectHistoryStore
     /// <summary>For each month (<see cref="HistoryMonths"/>) a conversation has anything from: how many rows it has (messages and reactions).</summary>
     IReadOnlyDictionary<string, int> DirectMonthCounts(string peer);
 
-    /// <summary>Every row (message or reaction, with the key of what the reaction is on) of one month of a conversation.</summary>
+    /// <summary>For each day (<c>yyyyMMdd</c>, UTC) of one month, how many rows a conversation has.</summary>
+    IReadOnlyDictionary<string, int> DirectDayCounts(string peer, string month);
+
+    /// <summary>Every row (message or reaction, with the key of what the reaction is on) of one month of a conversation, or of one day (<c>yyyyMMdd</c>) of it.</summary>
     IReadOnlyList<(string Key, DirectRecord Record, string? Target)> DirectInMonth(string peer, string month);
 }
 

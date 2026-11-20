@@ -145,11 +145,22 @@ public partial class MainWindow
         public void Debounce() { _timer.Stop(); _timer.Start(); }
     }
 
+    private bool _syncProgressShown;
+
     private async Task RunCloudSyncAsync()
     {
         if (_node is not { } node) return;
-        try { await Task.Run(() => AccountCloudSync.RunAsync(_data, node, log: _log.Write)); }
+        try
+        {
+            await Task.Run(() => AccountCloudSync.RunAsync(_data, node, log: _log.Write, progress: p => UI(() =>
+            {
+                // Only when there is a good deal to do (a new device, a first sync): a few pieces come and go without a word.
+                if (p.Total >= 3 && p.Done < p.Total) { StatusText.Text = $"Syncing your account\u2026 {p.Done} of {p.Total}"; _syncProgressShown = true; }
+                else if (_syncProgressShown) { StatusText.Text = ""; _syncProgressShown = false; }
+            })));
+        }
         catch (Exception ex) when (ex is not OperationCanceledException) { _log.Write("sync: " + ex.Message); }
+        finally { UI(() => { if (_syncProgressShown) { StatusText.Text = ""; _syncProgressShown = false; } }); }      // a sync that stopped half way leaves no words behind
     }
 
     private async Task RunAutoBackupAsync()
@@ -314,6 +325,22 @@ public partial class MainWindow
     }
 
     private void ServerCancelSignIn_Click(object? sender, RoutedEventArgs e) => _serverSignIn?.Cancel();
+
+    // What the account holds against its limits, and the devices signed in as it (sign one out).
+    private async void CloudAccount_Click(object? sender, RoutedEventArgs e)
+    {
+        if (!_server.SignedIn || !Uri.TryCreate(_server.Url, UriKind.Absolute, out var server)) return;
+        var window = new CloudAccountWindow(server, _server.Token, signedOut: () =>
+        {
+            // This device was signed out (here, or from another device): the sign-in shows again.
+            _server = _data.LoadBackupServer();
+            _server.Token = "";
+            _data.SaveBackupServer(_server);
+            ServerUrlBox.Text = ReleaseConfig.Current.BackupServerToOffer(_server.Url);
+            ShowServerState();
+        });
+        await window.ShowDialog(this);
+    }
 
     private async void ServerSignOut_Click(object? sender, RoutedEventArgs e)
     {
