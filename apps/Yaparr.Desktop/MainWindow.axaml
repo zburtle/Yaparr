@@ -1180,7 +1180,7 @@
                                 </WrapPanel>
                                 <CheckBox x:Name="LeaveForAbsentCheck" Content="Leave messages for people who are away" Margin="0,6,0,0" Click="LeaveForAbsent_Click" />
                                 <CheckBox x:Name="GatewayCheck" Content="Use Yaparr Cloud for messages when this network blocks UDP" Margin="0,6,0,0" Click="Gateway_Click"
-                                          ToolTip.Tip="Some networks only let web traffic out. Yaparr then sends its traffic to your Yaparr Cloud account, which passes it on. Enough for messages; not for voice or screen sharing." />
+                                          ToolTip.Tip="Some networks only let web traffic out. Yaparr then sends its traffic to your Yaparr Cloud account, which passes it on. Enough for messages and voice; not for screen sharing." />
                                 <TextBlock Classes="muted" TextWrapping="Wrap" FontSize="12"
                                            Text="Messages and pictures go straight to the people who are online. Only when someone you know is away is a locked copy left on the server, for up to 7 days, so they get it when they are back. The server cannot read it. Turn this off and nothing is left there (you still receive what others leave for you)." />
                                 <TextBlock Classes="muted" TextWrapping="Wrap" FontSize="12"
