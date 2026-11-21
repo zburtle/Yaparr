@@ -5,7 +5,9 @@ using Avalonia;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Yaparr.AppCore;
 using Yaparr.Chat;
+using Yaparr.Chat.Files;
 using Yaparr.Identity;
 
 namespace Yaparr.Desktop;
@@ -171,7 +173,7 @@ public sealed class MessageVm : Observable
     public bool HasText => Text.Length > 0;
 
     /// <summary>A message of nothing but one to three emoji (standard or custom), shown large.</summary>
-    public bool IsBigEmoji => !IsSystem && Attachment == null
+    public bool IsBigEmoji => !IsSystem && Attachment == null && File == null
         && (EmojiTyping.IsOnlyEmoji(Text) || Emoji is { Count: > 0 } && CustomEmojiRules.IsOnlyEmoji(Text, Emoji.Select(e => e.Name).ToList()));
 
     // ---- custom emoji ----
@@ -221,6 +223,44 @@ public sealed class MessageVm : Observable
     }
 
     public static string FormatSize(long bytes) => bytes >= 1 << 20 ? $"{bytes / 1048576.0:0.#} MB" : $"{Math.Max(1, bytes / 1024)} KB";
+
+    // ---- a file offered in the message (see docs/file-sharing.md) ----
+
+    private FileProgress? _fileProgress;
+    private string? _filePath;
+
+    /// <summary>The file this message offers, if it does. Nothing of it is on this computer until the person chooses Download.</summary>
+    public FileOffer? File { get; init; }
+    public bool HasFile => File != null;
+    public string FileName => File?.Name ?? "";
+
+    /// <summary>Where the file is on this computer (the original that was sent, or where the download was saved), once it is here.</summary>
+    public string? FilePath => _filePath;
+
+    /// <summary>What the person sees under the file's name.</summary>
+    public string FileStatusText =>
+        _fileProgress is { State: not (FileState.Canceled or FileState.Completed) } p ? FileTexts.Status(p)
+        : _filePath != null ? FileTexts.Size(File?.Size ?? 0) + (IsMine ? " · shared from this computer" : " · saved")
+        : _fileProgress is { State: FileState.Canceled } ? FileTexts.Size(File?.Size ?? 0) + " · canceled"
+        : FileTexts.Size(File?.Size ?? 0);
+
+    private bool FileBusy => _fileProgress is { State: FileState.Downloading or FileState.Waiting or FileState.Paused };
+    public bool FileShowsProgress => FileBusy;
+    public double FilePercent => _fileProgress is { } p ? FileTexts.Percent(p) : 0;
+    public bool FileCanDownload => HasFile && _filePath == null && !FileBusy;
+    public bool FileCanPause => _fileProgress is { State: FileState.Downloading or FileState.Waiting };
+    public bool FileCanResume => _fileProgress is { State: FileState.Paused };
+    public bool FileCanCancel => FileBusy;
+    public bool FileCanOpen => _filePath != null;
+
+    /// <summary>Shows how the file stands now: how a download is going, and where the file is once it is on this computer.</summary>
+    public void SetFile(FileProgress? progress, string? path)
+    {
+        _fileProgress = progress;
+        _filePath = path;
+        foreach (var name in new[] { nameof(FileStatusText), nameof(FileShowsProgress), nameof(FilePercent), nameof(FileCanDownload), nameof(FileCanPause), nameof(FileCanResume), nameof(FileCanCancel), nameof(FileCanOpen), nameof(FilePath) })
+            Raise(name);
+    }
 
     public DateTimeOffset Time { get; }
     public string Sender { get; }
@@ -292,6 +332,7 @@ public sealed class MessageVm : Observable
     {
         get
         {
+            if (File != null) return "📄 " + File.Name;
             if (Attachment != null) return HasText ? "📷 " + Flatten(Text) : "📷 Picture";
             return Flatten(Text);
         }

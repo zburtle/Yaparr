@@ -674,6 +674,25 @@
                                                 <Button IsVisible="{Binding NeedsAction}" Content="{Binding ActionText}" Classes="primary"
                                                         HorizontalAlignment="Center" VerticalAlignment="Center" Click="Download_Click" />
                                             </Grid>
+                                            <Border IsVisible="{Binding HasFile}" Padding="2" HorizontalAlignment="Left">
+                                                <StackPanel Spacing="6" MinWidth="240" MaxWidth="360">
+                                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                                        <TextBlock Text="&#128196;" FontSize="28" VerticalAlignment="Center" FontFamily="Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji, Twemoji Mozilla" />
+                                                        <StackPanel VerticalAlignment="Center" Spacing="1">
+                                                            <TextBlock Text="{Binding FileName}" FontWeight="SemiBold" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock Text="{Binding FileStatusText}" FontSize="12" Opacity="0.85" TextWrapping="Wrap" />
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                    <ProgressBar IsVisible="{Binding FileShowsProgress}" Value="{Binding FilePercent}" Maximum="100" Height="4" />
+                                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                                        <Button Content="Download" Classes="primary" IsVisible="{Binding FileCanDownload}" Click="FileDownload_Click" />
+                                                        <Button Content="Pause" IsVisible="{Binding FileCanPause}" Click="FilePause_Click" />
+                                                        <Button Content="Resume" Classes="primary" IsVisible="{Binding FileCanResume}" Click="FileResume_Click" />
+                                                        <Button Content="Cancel" IsVisible="{Binding FileCanCancel}" Click="FileCancel_Click" />
+                                                        <Button Content="Show in folder" IsVisible="{Binding FileCanOpen}" Click="FileReveal_Click" />
+                                                    </StackPanel>
+                                                </StackPanel>
+                                            </Border>
                                             <local:MessageText Classes="body" Classes.bigemoji="{Binding IsBigEmoji}" EmojiImages="{Binding EmojiImages}" IsVisible="{Binding HasText}" Body="{Binding Text}" Marks="{Binding MentionMarks}" TextWrapping="Wrap" LinkClicked="MessageLink_Clicked" />
                                             <Border Classes="linkpreview" IsVisible="{Binding HasPreview}" PointerReleased="PreviewCard_PointerReleased" ToolTip.Tip="{Binding Card.Url}">
                                                 <Grid ColumnDefinitions="Auto,*">
@@ -840,6 +859,8 @@
                                     Margin="6,4,0,4" IsEnabled="False" Click="Send_Click" />
                             <Button x:Name="AttachButton" DockPanel.Dock="Left" VerticalAlignment="Bottom" Content="📎" Width="36" Height="36" Padding="0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Margin="0,4,2,4" CornerRadius="18"
                                     Background="Transparent" IsEnabled="False" ToolTip.Tip="Send a picture or GIF" Click="Attach_Click" />
+                            <Button x:Name="FileButton" DockPanel.Dock="Left" VerticalAlignment="Bottom" Content="&#128196;" Width="36" Height="36" Padding="0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Margin="0,4,2,4" CornerRadius="18"
+                                    Background="Transparent" IsEnabled="False" ToolTip.Tip="Send a file of any size. It is only sent to people who download it, from where it is on your computer." Click="SendFileButton_Click" />
                             <Button x:Name="ShelfButton" DockPanel.Dock="Left" VerticalAlignment="Bottom" Content="GIF" FontSize="11" FontWeight="SemiBold" Width="36" Height="36" Padding="0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Margin="0,4,2,4" CornerRadius="18"
                                     Background="Transparent" IsEnabled="False" ToolTip.Tip="Your GIF shelf" Click="Shelf_Click" />
                             <Button x:Name="ComposerEmojiButton" DockPanel.Dock="Left" VerticalAlignment="Bottom" Content="😀" Width="36" Height="36" Padding="0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Margin="0,4,2,4" CornerRadius="18"

@@ -26,6 +26,6 @@ public sealed partial class Line
     public void RaiseEmoji() => Raise(nameof(EmojiImages));
 
     /// <summary>A message of nothing but one to three emoji (standard or custom), shown large.</summary>
-    public bool IsBigEmoji => Attachment == null
+    public bool IsBigEmoji => Attachment == null && !HasFile
         && (EmojiTyping.IsOnlyEmoji(Text) || Emoji is { Count: > 0 } && CustomEmojiRules.IsOnlyEmoji(Text, Emoji.Select(e => e.Name).ToList()));
 }

@@ -3,7 +3,7 @@
 internal sealed class ReliableChannel
 {
     public const int MaxSegment = 1000;
-    private const int Window = 64;
+    private const int DefaultWindow = 64;
     private const int MaxQueuedSegments = 8192;
     private const int MaxReorder = 1024;
 
@@ -28,6 +28,14 @@ internal sealed class ReliableChannel
     private readonly Queue<(byte[] Payload, bool Last)> _queue = new();
     private readonly SortedDictionary<uint, InFlight> _inFlight = new();
     private uint _nextSeq;
+
+    public ReliableChannel(int window = DefaultWindow) => Window = Math.Clamp(window, 8, 1024);
+
+    /// <summary>How many segments may be on their way at once. The ordinary 64 is about 64 KB per round trip, which caps a single connection well below what a home line can carry; a channel that moves big files asks for more.</summary>
+    public int Window { get; }
+
+    /// <summary>Segments handed to the channel that the other end has not yet confirmed (the ones waiting for a place in the window, and the ones in it).</summary>
+    public int Pending => _queue.Count + _inFlight.Count;
 
     private uint _expected;
     private readonly Dictionary<uint, (byte[] Payload, bool Last)> _reorder = new();

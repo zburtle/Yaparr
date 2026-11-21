@@ -172,11 +172,23 @@ public sealed class PeerConnection : IDisposable
         lock (_gate)
         {
             RequireEstablished();
-            if (!_channels.TryGetValue(channel, out var ch)) _channels[channel] = ch = new ReliableChannel();
+            if (!_channels.TryGetValue(channel, out var ch)) _channels[channel] = ch = new ReliableChannel(WindowFor(channel));
             ch.Enqueue(message);
             PumpLocked(Environment.TickCount64);
         }
     }
+
+    /// <summary>Bytes handed to <see cref="SendReliable"/> on a channel that the other end has not yet confirmed. A sender of something big waits for this to fall instead of piling it up.</summary>
+    public long ReliableBacklog(byte channel)
+    {
+        lock (_gate) return _channels.TryGetValue(channel, out var ch) ? (long)ch.Pending * ReliableChannel.MaxSegment : 0;
+    }
+
+    // The channel that moves files gets a window four times the usual one on a direct path; through a relay (whose share per sender is small) it keeps the usual.
+    private int WindowFor(byte channel) => channel == FileSwarmChannel && !IsRelayed ? 256 : 64;
+
+    /// <summary>The channel number of the file swarm (<c>ChannelIds.FileSwarm</c>), which the transport gives a larger window.</summary>
+    internal const byte FileSwarmChannel = 4;
 
     public void SendUnreliable(byte channel, ReadOnlySpan<byte> payload)
     {
@@ -374,7 +386,7 @@ public sealed class PeerConnection : IDisposable
                 if (!_channels.TryGetValue(ch, out var channel))
                 {
                     if (_channels.Count >= MaxChannels) { post.Add(() => CloseCore(notifyPeer: false, "used too many channels")); break; }
-                    _channels[ch] = channel = new ReliableChannel();
+                    _channels[ch] = channel = new ReliableChannel(WindowFor(ch));
                 }
 
                 var delivered = new List<byte[]>();

@@ -10,6 +10,7 @@ public static class ChannelIds
 {
     public const byte Chat = 1;
     public const byte File = 3;
+    public const byte FileSwarm = 4;
     public const byte Voice = 16;
     public const byte Media = 17;
     public const byte Speed = 18;
@@ -62,6 +63,12 @@ public sealed record ChatMessage(PeerInfo From, string? Room, string Id, string 
 
     /// <summary>The key of a message written by the device <paramref name="sender"/> with the id <paramref name="id"/>.</summary>
     public static string KeyOf(PeerId sender, string id) => SignedMessage.KeyOf(sender.Value, id);
+
+    /// <summary>The file this message offers (see <c>docs/file-sharing.md</c>), or null. Nothing of it is on this device until the person chooses to download it.</summary>
+    public Yaparr.Chat.Files.FileOffer? File => Yaparr.Chat.Files.FileOffer.TryParse(Text, out var offer, out _) ? offer : null;
+
+    /// <summary>The words that go with an offered file.</summary>
+    public string FileCaption => Yaparr.Chat.Files.FileOffer.TryParse(Text, out _, out var caption) ? caption : "";
 
     /// <summary>The words, which message this answers and whom it names. <see cref="Text"/> is the same thing as it was sent.</summary>
     public MessageParts Parts => Attachment != null ? new MessageParts(Text, Attachment.ReplyTo, Array.Empty<Mention>()) : MessageEnvelope.Parse(Text);

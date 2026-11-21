@@ -77,7 +77,7 @@ public sealed partial class Line : Observable
     }
 
     /// <summary>A short form of the message for the reply bar and the quote under a reply.</summary>
-    public string Preview => Attachment != null ? (Text.Length == 0 ? "Picture" : "Picture: " + Text) : Text.Length > 120 ? Text[..120] + "\u2026" : Text;
+    public string Preview => HasFile ? "File: " + FileName : Attachment != null ? (Text.Length == 0 ? "Picture" : "Picture: " + Text) : Text.Length > 120 ? Text[..120] + "\u2026" : Text;
 
 
     public string Id { get; }
@@ -170,7 +170,7 @@ public sealed partial class Line : Observable
     private bool _thumbnailTried;
 
     /// <summary>The line for the chat list: the words, or that it is a picture.</summary>
-    public string PreviewText => Attachment == null ? Text : Text.Length == 0 ? "Picture" : "Picture: " + Text;
+    public string PreviewText => HasFile ? "File: " + FileName : Attachment == null ? Text : Text.Length == 0 ? "Picture" : "Picture: " + Text;
 
     public HorizontalAlignment Align => Mine ? HorizontalAlignment.Right : HorizontalAlignment.Left;
     public IBrush Fill => MentionsMe && !Mine ? Resource("Mention") : Resource(Mine ? "BubbleMine" : "BubbleOther");

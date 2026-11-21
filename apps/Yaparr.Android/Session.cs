@@ -191,6 +191,8 @@ public sealed partial class Session : IDisposable
             HistoryStore = _historyStore = _data.OpenHistoryStore(historyCipher, Log),
             DirectHistoryDirectory = Path.Combine(_data.Directory, "direct"),
             AttachmentDirectory = Path.Combine(_data.Directory, "attachments"),
+            FilesDirectory = Path.Combine(_data.Directory, "files"),
+            OpenSharedFile = MainActivity.OpenContent,
             Traversal = traversal,
             RolesDirectory = Path.Combine(_data.Directory, "roles"),
             EnableLocalDiscovery = traversal.LocalDiscovery,
@@ -204,6 +206,7 @@ public sealed partial class Session : IDisposable
         // Where the people in the rooms can ask for this phone to be woken, when push is on (see PushManager).
         if (_data.LoadPush() is { Registered: true } push) node.WakeAddressOfMine = push.WakeAddress;
         node.AttachmentChanged += update => UI(() => OnAttachmentChanged(update));
+        node.FileTransferChanged += progress => UI(() => OnFileTransferChanged(progress));
         EmojiPictures.Reader = hash => node.ReadAttachment(hash);
         node.BlockChanged += (id, blocked) => UI(() => OnBlockChanged(id, blocked));
         node.AvatarChanged += account => UI(() => OnAvatarChanged(account));
@@ -752,7 +755,7 @@ public sealed partial class Session : IDisposable
     {
         bool mine = _node != null && _node.IsMyDevice(m.From.Id);
         var parts = m.Parts;
-        var line = new Line(m.Key, m.From.DisplayName, m.Attachment != null ? parts.Body : m.Body, m.Timestamp, mine, m.Channel, m)
+        var line = new Line(m.Key, m.From.DisplayName, m.File != null ? m.FileCaption : m.Attachment != null ? parts.Body : m.Body, m.Timestamp, mine, m.Channel, m)
         {
             ReplyKey = parts.ReplyTo, Mentions = parts.Mentions, Card = parts.Preview, Emoji = parts.Emoji,
             MentionsMe = _node != null && !mine && (m.Room != null && _rooms.Keys.FirstOrDefault(r => r.Name == m.Room) is { } named
@@ -768,6 +771,7 @@ public sealed partial class Session : IDisposable
         var line = ToLine(m);
         if (!chat.Add(line)) return;
         TrackPicture(line);
+        TrackFile(line);
         if (!counted || line.Mine || m.Channel is not { } channel) return;
         if (_marks.IsUnread(roomId, channel, m.Timestamp.ToUnixTimeMilliseconds())) chat.NoteUnread(channel);
     }
@@ -777,6 +781,7 @@ public sealed partial class Session : IDisposable
         var line = ToLine(m);
         if (!chat.Add(line)) return;
         TrackPicture(line);
+        TrackFile(line);
         bool shown = _open == chat && (!chat.IsRoom || (m.Channel ?? RoomChannels.DefaultText) == chat.CurrentChannel);
         if (shown) MarkRead(chat);
         else if (!line.Mine) chat.NoteUnread(m.Channel);
@@ -827,7 +832,7 @@ public sealed partial class Session : IDisposable
         if (!NotificationPolicy.ShouldNotify(facts, AppHost.InForeground, _settings.NotifyMessages)) return;
         if (!OperatingSystem.IsAndroidVersionAtLeast(26)) return;
         bool gif = line.Attachment?.Mime == "image/gif";
-        var body = NotificationPolicy.Body(line.Text, line.Attachment != null, gif);
+        var body = line.HasFile ? "Sent a file: " + line.FileName : NotificationPolicy.Body(line.Text, line.Attachment != null, gif);
         if (body.Length == 0) body = "New message";
         Notifier.Message(Android.App.Application.Context, KeyOf(chat), chat.Title, line.Who, body, !chat.IsRoom, m.Channel);
     }
