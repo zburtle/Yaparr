@@ -57,12 +57,11 @@ public sealed partial class Session
         catch (Exception ex) when (ex is Java.Lang.IllegalArgumentException or IOException) { return true; }
     }
 
-    /// <summary>Starts downloading the file a message offers into the app's folder for received files.</summary>
-    public FileProgress? StartFile(Line line)
+    /// <summary>Starts downloading the file a message offers; when it is done it is written to <paramref name="address"/>, the place the person chose, and kept track of there.</summary>
+    public FileProgress? StartFile(Line line, string address)
     {
-        if (_node == null || line.Source == null || line.File is not { } offer || MainActivity.Instance is not { } activity) return null;
-        var destination = Path.Combine(activity.ReceivedFilesDirectory, offer.Name);
-        var progress = _node.StartFileDownload(line.Source, destination);
+        if (_node == null || line.Source == null || line.File is not { } offer) return null;
+        var progress = _node.StartFileDownload(line.Source, address);
         line.SetFile(progress, _node.FilePath(offer.Root));
         return progress;
     }

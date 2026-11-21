@@ -44,15 +44,19 @@ public sealed partial class MainView
         }
     }
 
-    private void FileDownloadClicked(object? sender, RoutedEventArgs e)
+    // Download asks where to keep the file first; the app then remembers that place as where the file is.
+    private async void FileDownloadClicked(object? sender, RoutedEventArgs e)
     {
         if (sender is not Control { DataContext: Line { File: { } offer } line } || _session == null || MainActivity.Instance is not { } activity) return;
+        // The pieces arrive in the app's folder first (they come from several people at once), then the finished file goes to the chosen place.
         if (!_session.HasRoomFor(offer.Size, activity.ReceivedFilesDirectory))
         {
             if (_current != null) ShowChatNote(_current, $"There is not enough room on this phone for {offer.Name} ({FileTexts.Size(offer.Size)}).");
             return;
         }
-        _session.StartFile(line);
+        if (await activity.PickSaveLocationAsync(offer.Name) is not { } place) return;
+        _session.StartFile(line, place.Address);
+        line.SetSavedTo(place.Name);
     }
 
     private void FilePauseClicked(object? sender, RoutedEventArgs e)

@@ -193,6 +193,7 @@ public sealed partial class Session : IDisposable
             AttachmentDirectory = Path.Combine(_data.Directory, "attachments"),
             FilesDirectory = Path.Combine(_data.Directory, "files"),
             OpenSharedFile = MainActivity.OpenContent,
+            SaveReceivedFile = MainActivity.WriteReceivedFile,
             Traversal = traversal,
             RolesDirectory = Path.Combine(_data.Directory, "roles"),
             EnableLocalDiscovery = traversal.LocalDiscovery,
@@ -759,6 +760,7 @@ public sealed partial class Session : IDisposable
         var parts = m.Parts;
         var line = new Line(m.Key, m.From.DisplayName, m.File != null ? m.FileCaption : m.Attachment != null ? parts.Body : m.Body, m.Timestamp, mine, m.Channel, m)
         {
+            SentHere = _node != null && m.From.Id == _node.Id,
             ReplyKey = parts.ReplyTo, Mentions = parts.Mentions, Card = parts.Preview, Emoji = parts.Emoji,
             MentionsMe = _node != null && !mine && (m.Room != null && _rooms.Keys.FirstOrDefault(r => r.Name == m.Room) is { } named
                 ? named.Names(m, _node.AccountId)
