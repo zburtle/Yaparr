@@ -571,6 +571,15 @@ public sealed partial class Session : IDisposable
         chat.SelectChannel(keep);
     }
 
+    /// <summary>Whether this is one of your own notes, which you can delete.</summary>
+    public bool CanDeleteNote(Chat chat, Line line) => chat.IsNotes && line.Mine && line.Source != null;
+
+    /// <summary>Deletes a note, on all your devices.</summary>
+    public void DeleteNote(Chat chat, Line line)
+    {
+        if (chat.Direct is { IsNotes: true } notes && line.Source != null) notes.DeleteNote(line.Source.Id);
+    }
+
     /// <summary>The people of a room other than you, one entry for each person however many devices they have.</summary>
     public IReadOnlyList<Person> PeopleOf(Chat chat)
     {
@@ -734,6 +743,7 @@ public sealed partial class Session : IDisposable
         direct.EarlierHistoryReceived += () => UI(() => OnEarlierArrived(chat));
         // History taken in from the account's kept copy: what is missing from the window is added (a direct message is never removed by it).
         direct.HistoryChanged += () => UI(() => { foreach (var m in direct.History) chat.Add(ToLine(m)); RefreshReactions(chat); });
+        direct.MessageDeleted += id => UI(() => chat.RemoveMessage(id));
         // Another of your devices read it: nothing here is new any more.
         direct.ReadChanged += () => UI(chat.ClearAllUnread);
         var readUpTo = direct.ReadUpTo;

@@ -96,6 +96,15 @@ public partial class MainWindow
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { StatusText.Text = ex.Message; }
     }
 
+    private async void DeleteNote_Click(object? sender, RoutedEventArgs e)
+    {
+        if (MessageList.SelectedItem is not MessageVm { Id: { } id } || _selected is not { IsNotes: true }) return;
+        var proceed = await Dialogs.ConfirmAsync(this, "Delete note", "Delete this note from all your devices? It cannot be brought back.", "Delete", "Keep");
+        if (!proceed) return;
+        try { _node?.NotesChat.DeleteNote(id); }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { StatusText.Text = ex.Message; }
+    }
+
     private async void DeleteMessage_Click(object? sender, RoutedEventArgs e)
     {
         if (MessageList.SelectedItem is not MessageVm { Key: { } key } || SelectedRoom is not { } room) return;

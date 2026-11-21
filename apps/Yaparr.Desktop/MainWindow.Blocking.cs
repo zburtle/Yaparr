@@ -50,7 +50,8 @@ public partial class MainWindow
         // Owners and admins delete any message; everyone deletes their own.
         DeleteMessageItem.IsVisible = room is { Owner: not null } && message is { Key: not null, IsSystem: false } && (room.MyRole >= RoomRole.Admin || message.IsMine);
         BanSenderItem.IsVisible = source != null && !message!.IsMine && CanBan(source.From.Account.Value, room?.RoleOf(source.From.Account) ?? RoomRole.Member) && room?.IsBanned(source.From.Account) == false;
-        if (!ReplyItem.IsVisible && !SavePictureItem.IsVisible && !RetryItem.IsVisible && !BlockSenderItem.IsVisible && !DeleteMessageItem.IsVisible && !BanSenderItem.IsVisible) e.Cancel = true;
+        DeleteNoteItem.IsVisible = _selected is { IsNotes: true } && message is { Id: not null, IsSystem: false, IsMine: true };
+        if (!ReplyItem.IsVisible && !SavePictureItem.IsVisible && !RetryItem.IsVisible && !BlockSenderItem.IsVisible && !DeleteMessageItem.IsVisible && !BanSenderItem.IsVisible && !DeleteNoteItem.IsVisible) e.Cancel = true;
     }
 
     // Everyone blocked, by name where it is known, so that someone met only in a direct chat can be unblocked too.

@@ -533,6 +533,10 @@ public sealed class DirectChat
     public event Action? HistoryChanged;
     internal void RaiseHistoryChanged() => HistoryChanged?.Invoke();
 
+    /// <summary>A note was deleted, here or on another of your devices (<see cref="ChatMessage.Id"/>): stop showing it.</summary>
+    public event Action<string>? MessageDeleted;
+    internal void RaiseMessageDeleted(string id) => MessageDeleted?.Invoke(id);
+
     /// <summary>
     /// Asks your other devices and the other person's (those connected, up to four) for the messages before the one with the id <paramref name="beforeId"/>, when this
     /// device holds nothing earlier. Returns how many were asked: 0 when none is connected, history sync is off, or the message is not held.
@@ -587,6 +591,13 @@ public sealed class DirectChat
     }
 
     public Task<string> SendAsync(string text) => Task.FromResult(_node.SendDirectMessage(PeerId, text));
+
+    /// <summary>Deletes a note (<see cref="ChatMessage.Id"/>) from the chat with yourself, on all your devices. Only notes can be deleted; throws for any other chat or an unknown note.</summary>
+    public void DeleteNote(string messageId)
+    {
+        if (!IsNotes) throw new InvalidOperationException("only notes can be deleted");
+        _node.DeleteNote(messageId);
+    }
 
     /// <summary>Sends a message that answers the message with the key <paramref name="replyTo"/> (<see cref="ChatMessage.Key"/>).</summary>
     public Task<string> SendAsync(string text, string? replyTo, LinkPreview? preview = null, IReadOnlyCollection<CustomEmoji>? emoji = null) => Task.FromResult(_node.SendDirectMessage(PeerId, MessageEnvelope.Wrap(text, replyTo, null, preview, emoji)));

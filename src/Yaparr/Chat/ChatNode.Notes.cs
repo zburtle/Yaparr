@@ -18,6 +18,32 @@ public sealed partial class ChatNode
     /// <summary>Whether this direct chat is the one with yourself (a device of your own counts, so does your account).</summary>
     public bool IsNotesChat(PeerId person) => person == AccountId || person == Id || AccountOf(person) == AccountId;
 
+    private const string NoteDeletedPrefix = "notedel:";
+
+    /// <summary>Whether a note was deleted (on any of your devices).</summary>
+    private bool IsNoteDeleted(string id)
+    {
+        lock (_acctGate) return _acct.TryGetValue(NoteDeletedPrefix + id, out var e) && !e.Deleted;
+    }
+
+    /// <summary>
+    /// Deletes a note from the chat with yourself, here and on your other devices. The deletion is one more setting of the account (so a device that was away learns of it,
+    /// and a device that still holds the note cannot bring it back).
+    /// </summary>
+    internal void DeleteNote(string id)
+    {
+        if (id.Length is 0 or > 64) throw new ArgumentException("not a note id", nameof(id));
+        if (_directHistory.FindById(AccountId.Value, id) is not { Mine: true }) throw new InvalidOperationException("no such note");
+        Stamp(NoteDeletedPrefix + id, "1", deleted: false);
+        RemoveNote(id);
+    }
+
+    private void RemoveNote(string id)
+    {
+        _directHistory.Delete(AccountId.Value, DirectHistory.KeyFor(AccountId.Value, id, true));
+        if (_directChats.TryGetValue(AccountId, out var chat)) chat.RaiseMessageDeleted(id);
+    }
+
     // A note: signed like a direct message, for your own account. Not sent as a message to your devices; they receive the record.
     private string SendNote(string text)
     {

@@ -17,7 +17,7 @@ public sealed partial class ChatNode
     private bool RecordDirect(DirectRecord record, bool mirror)
     {
         record = record with { Name = CleanName(record.Name) };
-        if (!DirectHistory.IsValid(record) || !_directHistory.TryAdd(record)) return false;
+        if (!DirectHistory.IsValid(record) || IsDeletedNote(record) || !_directHistory.TryAdd(record)) return false;
         if (mirror && record.Sig.Length > 0) SendDirectRecords(_peers.Values.Where(IsSibling), new[] { record }, catchUp: false);
         return true;
     }
@@ -58,7 +58,7 @@ public sealed partial class ChatNode
         if (!IsSibling(peer)) return;
         foreach (var r in records.Take(DirectPerFrame))
         {
-            if (!DirectHistory.IsValid(r) || !DirectProof.Verify(r, AccountId)) continue;
+            if (!DirectHistory.IsValid(r) || IsDeletedNote(r) || !DirectProof.Verify(r, AccountId)) continue;
             // Someone you have blocked on any device stays blocked on all of them.
             if (!r.Mine && IsBlocked(new PeerId(r.Peer))) continue;
             long ts = Math.Min(r.Ts, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
@@ -105,7 +105,9 @@ public sealed partial class ChatNode
         r.Mine ? new PeerInfo(Id, DisplayName, null, false, AccountId) : new PeerInfo(person, r.Name.Length > 0 ? r.Name : person.Short, null, false, person),
         null, r.Id, r.Text, DateTimeOffset.FromUnixTimeMilliseconds(r.Ts));
 
-    private bool IsShownDirect(DirectRecord r, PeerId person) => r.Mine || !IsBlocked(person);
+    private bool IsDeletedNote(DirectRecord r) => r.Peer == AccountId.Value && IsNoteDeleted(r.Id);
+
+    private bool IsShownDirect(DirectRecord r, PeerId person) => !IsDeletedNote(r) && (r.Mine || !IsBlocked(person));
 
     /// <summary>The newest <see cref="InitialHistoryPerChannel"/> messages of a direct chat, oldest first.</summary>
     internal IReadOnlyList<ChatMessage> GetDirectHistory(PeerId person) =>

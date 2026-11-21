@@ -24,6 +24,9 @@ public interface IDirectHistoryStore
     /// <summary>Keeps a message. False when the conversation already has it.</summary>
     bool AddDirect(string key, DirectRecord record, string? reactionTarget);
 
+    /// <summary>Removes a message, and the reactions on it. False when the conversation does not have it.</summary>
+    bool DeleteDirect(string peer, string key);
+
     /// <summary>Keeps many at once (bringing history over); those already held are left alone. Returns how many were new.</summary>
     int AddDirectMany(IEnumerable<(string Key, DirectRecord Record, string? Target)> records)
     {
@@ -108,6 +111,8 @@ internal sealed class DirectHistory
 
     /// <summary>False if it was already here.</summary>
     public bool TryAdd(DirectRecord r) => _store.AddDirect(Key(r), r, ReactionTargetOf(r.Text));
+
+    public bool Delete(string peer, string key) => _store.DeleteDirect(peer, key);
 
     /// <summary>The newest messages of a conversation (reactions are not messages), oldest first.</summary>
     public List<DirectRecord> Newest(string peer, int count) =>

@@ -420,6 +420,18 @@ public sealed class SqliteHistoryStore : IChatHistoryStore, IDirectHistoryStore,
         }
     }
 
+    public bool DeleteDirect(string peer, string key)
+    {
+        lock (_gate)
+        {
+            using var cmd = _db.CreateCommand();
+            cmd.CommandText = "DELETE FROM direct WHERE peer = $p AND (key = $k OR target = $k)";
+            cmd.Parameters.AddWithValue("$p", peer);
+            cmd.Parameters.AddWithValue("$k", key);
+            return cmd.ExecuteNonQuery() > 0;
+        }
+    }
+
     public int AddDirectMany(IEnumerable<(string Key, DirectRecord Record, string? Target)> records)
     {
         lock (_gate)

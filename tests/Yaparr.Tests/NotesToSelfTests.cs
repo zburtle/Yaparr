@@ -96,6 +96,34 @@ public class NotesToSelfTests : IDisposable
     }
 
     [Fact]
+    public async Task A_deleted_note_is_gone_here_and_on_the_other_device_and_does_not_come_back()
+    {
+        var first = Node("alice", _firstId);
+        var second = Node("alice", _secondId);
+        await first.NotesChat.SendAsync("keep");
+        var id = await first.NotesChat.SendAsync("drop me");
+        await Task.WhenAll(first.JoinRoomAsync("lobby"), second.JoinRoomAsync("lobby"));
+        await TestUtil.WaitFor(() => second.NotesChat.History.Count == 2, 30_000);
+
+        first.NotesChat.DeleteNote(id);
+        Assert.Equal("keep", Assert.Single(first.NotesChat.History).Text);
+        await TestUtil.WaitFor(() => second.NotesChat.History.Count == 1, 30_000);
+        Assert.Equal("keep", Assert.Single(second.NotesChat.History).Text);
+
+        // Neither device accepts it again when the other offers its copy.
+        await Task.Delay(500);
+        Assert.Single(first.NotesChat.History);
+        Assert.Single(second.NotesChat.History);
+    }
+
+    [Fact]
+    public void Deleting_a_note_that_does_not_exist_is_refused()
+    {
+        var node = Node("alice", _firstId);
+        Assert.Throws<InvalidOperationException>(() => node.NotesChat.DeleteNote("nope"));
+    }
+
+    [Fact]
     public async Task A_device_that_was_off_gets_the_notes_it_missed_when_it_meets_the_other()
     {
         var first = Node("alice", _firstId);

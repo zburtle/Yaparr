@@ -961,6 +961,7 @@ public partial class MainWindow : Window
         chat.EarlierHistoryReceived += () => UI(() => { conv.NoteEarlierArrived(); RefreshReactions(conv); if (_selected == conv) MaybeLoadEarlier(); });
         // History taken in from the account's kept copy: what is missing from the window is added (a direct message is never removed by it).
         chat.HistoryChanged += () => UI(() => { foreach (var m in chat.History) conv.Add(ToVm(m)); RefreshReactions(conv); });
+        chat.MessageDeleted += id => UI(() => conv.Remove(id));
         UI(() =>
         {
             foreach (var m in kept) conv.Add(ToVm(m));

@@ -116,6 +116,17 @@ public sealed class MemoryHistoryStore : IChatHistoryStore, IDirectHistoryStore
         lock (_gate) return Chat(record.Peer).TryAdd(key, (record, reactionTarget));
     }
 
+    public bool DeleteDirect(string peer, string key)
+    {
+        lock (_gate)
+        {
+            var chat = Chat(peer);
+            if (!chat.Remove(key)) return false;
+            foreach (var k in chat.Where(kv => kv.Value.Target == key).Select(kv => kv.Key).ToList()) chat.Remove(k);
+            return true;
+        }
+    }
+
     public IReadOnlyList<DirectRecord> DirectNewest(string peer, int count)
     {
         lock (_gate)

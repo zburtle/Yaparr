@@ -947,6 +947,15 @@ public sealed class ConversationVm : Observable
     /// an id, such as notices, stay. Messages read from earlier history are not in <paramref name="current"/>, so <paramref name="stillShown"/> says which of
     /// them (by key) are still to be shown; without it only the messages of <paramref name="current"/> stay.
     /// </summary>
+    /// <summary>Stops showing the message with this id (a note that was deleted).</summary>
+    public void Remove(string id)
+    {
+        for (int i = Messages.Count - 1; i >= 0; i--)
+            if (Messages[i].Id == id) { Messages.RemoveAt(i); }
+        _ids.Remove(id);
+        for (int i = 0; i < Messages.Count; i++) MarkDays(i);
+    }
+
     public void Reload(IReadOnlyList<MessageVm> current, Func<IReadOnlyCollection<string>, ISet<string>>? stillShown = null)
     {
         var keep = current.Where(m => m.Id != null).Select(m => m.Id!).ToHashSet();

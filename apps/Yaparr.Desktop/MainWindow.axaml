@@ -757,6 +757,7 @@
                                 <MenuItem x:Name="AddToShelfItem" Header="Add to my _GIF shelf" Click="AddToShelf_Click" />
                                 <MenuItem x:Name="RetryItem" Header="_Retry sending" Click="RetryMessage_Click" />
                                 <MenuItem x:Name="DeleteMessageItem" Header="_Delete for everyone" Click="DeleteMessage_Click" />
+                                <MenuItem x:Name="DeleteNoteItem" Header="_Delete note" Click="DeleteNote_Click" />
                                 <MenuItem x:Name="BanSenderItem" Header="Ban sender from this _room…" Click="BanSender_Click" />
                                 <MenuItem x:Name="BlockSenderItem" Header="_Block sender" Click="BlockSender_Click" />
                             </ContextMenu>

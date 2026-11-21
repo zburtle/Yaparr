@@ -365,6 +365,19 @@ public sealed class Chat : Observable
         return true;
     }
 
+    /// <summary>Stops showing the message with this id (<see cref="ChatMessage.Id"/>), a note that was deleted.</summary>
+    public void RemoveMessage(string messageId)
+    {
+        var gone = _all.Where(l => l.Source?.Id == messageId).ToList();
+        foreach (var line in gone)
+        {
+            _all.Remove(line);
+            Shown.Remove(line);
+            _ids.Remove(line.Id);
+            _byKey.Remove(line.Id);
+        }
+    }
+
     /// <summary>Forgets all the messages, so the history can be put back as it is now (a message an admin deleted is then gone).</summary>
     public void ResetMessages()
     {
