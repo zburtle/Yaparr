@@ -299,6 +299,40 @@ public class MainActivity : AvaloniaMainActivity
     }
 
     /// <summary>
+    /// Copies a received file into the phone's Downloads folder (a folder called Yaparr in it), where the Files app and other apps can see it, in pieces. Returns where it went
+    /// ("Downloads/Yaparr/name"), or null when it could not be done. Android 10 and newer need no permission for this; older ones use "Save as…" instead.
+    /// </summary>
+    public Task<string?> SaveToDownloadsAsync(string path, string fileName)
+    {
+        if (!OperatingSystem.IsAndroidVersionAtLeast(29)) return Task.FromResult<string?>(null);
+        return Task.Run<string?>(() =>
+        {
+            if (!OperatingSystem.IsAndroidVersionAtLeast(29)) return null;
+            try
+            {
+                var values = new ContentValues();
+                values.Put(Android.Provider.MediaStore.IMediaColumns.DisplayName, fileName);
+                values.Put(Android.Provider.MediaStore.IMediaColumns.MimeType, "application/octet-stream");
+                values.Put(Android.Provider.MediaStore.IMediaColumns.RelativePath, "Download/Yaparr");
+                var uri = ContentResolver?.Insert(Android.Provider.MediaStore.Downloads.ExternalContentUri!, values);
+                if (uri == null) return null;
+                using (var output = ContentResolver?.OpenOutputStream(uri))
+                {
+                    if (output == null) return null;
+                    using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+                    input.CopyTo(output, 1 << 20);
+                }
+                // The name Android gave it, which has a number added when the name was taken.
+                string shown = fileName;
+                using (var cursor = ContentResolver?.Query(uri, new[] { "_display_name" }, null, null, null))
+                    if (cursor != null && cursor.MoveToFirst() && cursor.GetString(0) is { Length: > 0 } actual) shown = actual;
+                return "Downloads/Yaparr/" + shown;
+            }
+            catch (Exception ex) when (ex is Java.IO.IOException or IOException or Java.Lang.SecurityException or Java.Lang.IllegalStateException) { return null; }
+        });
+    }
+
+    /// <summary>
     /// Opens the system's chooser for a file of any kind to share, and returns its address (not its bytes: the file stays where it is and is read as people download it) and name.
     /// Android is asked to keep the permission to read it, so it can still be sent after the app is closed and opened again. Null if the person backs out.
     /// </summary>

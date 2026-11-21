@@ -70,11 +70,22 @@ public sealed partial class MainView
         if (sender is Control { DataContext: Line line }) _session?.CancelFile(line);
     }
 
+    // One tap: a copy in the phone's Downloads folder (Downloads/Yaparr), where the Files app and other apps can see it.
+    private async void FileSaveToDownloadsClicked(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control { DataContext: Line { FilePath: { } path, File: { } offer } line } || MainActivity.Instance is not { } activity) return;
+        if (_current != null) ShowChatNote(_current, $"Saving {offer.Name} to Downloads\u2026");
+        var where = await activity.SaveToDownloadsAsync(path, offer.Name);
+        if (where != null) line.SetSavedTo(where);
+        if (_current != null) ShowChatNote(_current, where != null ? $"Saved to {where}." : "Could not save it to Downloads. Try Save as\u2026");
+    }
+
     // Copies a downloaded file to a place the person picks; it stays where it is as well, and is still given to others from there.
     private async void FileSaveClicked(object? sender, RoutedEventArgs e)
     {
         if (sender is not Control { DataContext: Line { FilePath: { } path, File: { } offer } } || MainActivity.Instance is not { } activity) return;
         bool saved = await activity.SaveCopyAsync(path, offer.Name);
+        if (saved && sender is Control { DataContext: Line line }) line.SetSavedTo("the place you chose");
         if (_current != null) ShowChatNote(_current, saved ? "Saved." : "Not saved.");
     }
 }
