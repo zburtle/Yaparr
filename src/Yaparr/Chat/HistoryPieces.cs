@@ -35,7 +35,8 @@ public static class HistoryPieces
 
     public static string RemovedName(string room) => RemovedPrefix + room;
 
-    private static bool IsMessageKey(string key) => key.Length == 32 && key.All(c => c is (>= '0' and <= '9') or (>= 'a' and <= 'f'));
+    // A room's messages are known by 32 characters, a direct conversation's by 16.
+    private static bool IsMessageKey(string key) => (key.Length is 32 or 16) && key.All(c => c is (>= '0' and <= '9') or (>= 'a' and <= 'f'));
 
     private static byte[] Pack<T>(T value)
     {
@@ -85,7 +86,13 @@ public static class HistoryPieces
     /// <summary>Whether a piece is about a person's conversation (true) or a room (false), and which.</summary>
     public static (bool Direct, string Who)? WhoOf(string name)
     {
-        if (name.StartsWith(RemovedPrefix, StringComparison.Ordinal)) return Safe(name[RemovedPrefix.Length..]) ? (false, name[RemovedPrefix.Length..]) : null;
+        if (name.StartsWith(RemovedPrefix, StringComparison.Ordinal))
+        {
+            var removed = name[RemovedPrefix.Length..];
+            if (!Safe(removed)) return null;
+            // "d:<person>" is the removals of a person's conversation.
+            return removed.StartsWith(DirectHistory.RemovedPrefix, StringComparison.Ordinal) ? (true, removed[DirectHistory.RemovedPrefix.Length..]) : (false, removed);
+        }
         return TryParse(name, out var direct, out var who, out _) ? (direct, who) : null;
     }
 

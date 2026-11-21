@@ -162,6 +162,9 @@ internal sealed class Wire
 
     public const string Direct = "dm", DirectSync = "dmsync", DmKey = "dmkey", Cloud = "cld";
 
+    /// <summary>Notes you deleted, passed to your other devices so they are gone from all of them (<c>Have</c> holds the keys, see <see cref="DirectHistory.Key"/>).</summary>
+    public const string NotesRemoved = "dmdel";
+
     /// <summary>A request for the direct messages before a time (<c>Text</c> is the other person's account, <c>Ts</c> the time, <c>N</c> how many), and the answer (<c>Dm</c>, in the order of the asker's side of the conversation).</summary>
     public const string DirectBack = "dmback";
 

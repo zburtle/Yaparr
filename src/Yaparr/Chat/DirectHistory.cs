@@ -75,6 +75,12 @@ public interface IDirectHistoryStore
     IReadOnlyList<(string Key, DirectRecord Record, string? Target)> DirectInMonth(string peer, string month);
 }
 
+/// <summary>How a store keeps the messages of a direct conversation that were removed for good: in its list of removed messages, under <c>d:</c> and the person (a room's are under its id).</summary>
+public static class DirectRemovals
+{
+    public const string Prefix = "d:";
+}
+
 /// <summary>
 /// The direct messages of each conversation. All of them are kept; a device that was off, or is new, can be given the conversations it missed by another
 /// of your devices from the window of the last <c>maxAge</c> (at most <c>max</c> messages of each conversation), the same limits room history has.
@@ -103,8 +109,22 @@ internal sealed class DirectHistory
     public static string KeyFor(string peer, string id, bool mine) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{(mine ? "o" : "i")}:{peer}:{id}")))[..16].ToLowerInvariant();
 
+    /// <summary>What a conversation's removals are kept under in the store's list of removed messages (a room's are kept under its id): <c>d:</c> and the person.</summary>
+    public const string RemovedPrefix = DirectRemovals.Prefix;
+
+    public static string RemovedRoom(string peer) => RemovedPrefix + peer;
+
     public static string? ReactionTargetOf(string text) =>
         MessageEnvelope.TryReadReaction(text, out var reaction) ? reaction.Target : MessageEnvelope.IsReactionText(text) ? "" : null;
+
+    /// <summary>
+    /// Removes messages of a conversation (by <see cref="Key"/>) for good: forgotten here, and remembered as removed so they are never kept again, by this device or by any other of
+    /// the account (it is the store's list of removed messages, kept in sync like a room's, under <see cref="RemovedRoom"/>). Returns how many were not removed before.
+    /// </summary>
+    public int RemoveForGood(string peer, IReadOnlyCollection<string> keys) => (_store as IChatHistoryStore)?.ApplyRemoved(RemovedRoom(peer), keys) ?? 0;
+
+    /// <summary>The keys of the messages of a conversation that were removed for good.</summary>
+    public IReadOnlyList<string> RemovedKeys(string peer) => (_store as IChatHistoryStore)?.RemovedKeys(RemovedRoom(peer)) ?? Array.Empty<string>();
 
     /// <summary>False if it was already here.</summary>
     public bool TryAdd(DirectRecord r) => _store.AddDirect(Key(r), r, ReactionTargetOf(r.Text));

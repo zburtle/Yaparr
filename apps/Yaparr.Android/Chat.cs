@@ -365,6 +365,21 @@ public sealed class Chat : Observable
         return true;
     }
 
+    /// <summary>Takes a message off the screen (it was deleted). Its id stays known, so the same message arriving again is not shown again.</summary>
+    public void Remove(Line line)
+    {
+        _all.Remove(line);
+        Shown.Remove(line);
+        if (_byKey.TryGetValue(line.Id, out var held) && ReferenceEquals(held, line)) _byKey.Remove(line.Id);
+        // What the list of chats shows of this one follows the newest message that is left.
+        if (_all.Count > 0 && _all[^1] is { } last && last.When <= LastActivity)
+        {
+            LastActivity = last.When > DateTimeOffset.Now ? DateTimeOffset.Now : last.When;
+            Preview = (last.Mine ? "You: " : IsRoom ? last.Who + ": " : "") + last.PreviewText;
+        }
+        else if (_all.Count == 0) Preview = "";
+    }
+
     /// <summary>Forgets all the messages, so the history can be put back as it is now (a message an admin deleted is then gone).</summary>
     public void ResetMessages()
     {

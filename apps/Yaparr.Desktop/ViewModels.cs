@@ -1102,6 +1102,14 @@ public sealed class ConversationVm : Observable
         }
     }
 
+    /// <summary>Takes messages (by id) off the screen: they were deleted. They are remembered as seen, so the same ones arriving again are not shown.</summary>
+    public void Drop(ISet<string> ids)
+    {
+        for (int i = Messages.Count - 1; i >= 0; i--)
+            if (Messages[i].Id is { } id && ids.Contains(id)) Messages.RemoveAt(i);
+        for (int i = 0; i < Messages.Count; i++) MarkDays(i);
+    }
+
     public void Add(MessageVm message)
     {
         if (message.Id != null && !_ids.Add(message.Id)) return;

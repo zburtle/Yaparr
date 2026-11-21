@@ -43,8 +43,12 @@ public sealed partial class ChatNode
     }
 
     // A device that has just connected says which messages it has; the other side sends what is missing.
-    private void SendDirectSync(PeerState sibling) =>
+    private void SendDirectSync(PeerState sibling)
+    {
         Send(sibling.Connection, new Wire { Type = Wire.DirectSync, Have = _directHistory.Keys(DirectSyncKeys) });
+        // The notes you deleted while it was away.
+        if (_directHistory.RemovedKeys(AccountId.Value) is { Count: > 0 } removed) SendNotesRemoved(new[] { sibling }, removed);
+    }
 
     private void OnDirectSync(PeerState peer, string[] have)
     {

@@ -1823,6 +1823,10 @@ public sealed partial class ChatNode : IDisposable
                 OnDirectSync(peer, wire.Have);
                 break;
 
+            case Wire.NotesRemoved when wire.Have != null:
+                OnNotesRemoved(peer, wire.Have);
+                break;
+
             case Wire.Media when wire.Room != null && ResolveRoom(peer, wire.Room) is { } mediaRoom && mediaRoom.MemberStates.ContainsKey(peer.Id):
                 if (wire.Ann != null) OnMediaAnnounce(peer, mediaRoom, wire.Ann);
                 if (wire.Mx != null) OnMediaControl(peer, mediaRoom, wire.Mx);

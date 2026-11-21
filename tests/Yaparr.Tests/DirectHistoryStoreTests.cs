@@ -121,6 +121,51 @@ public class DirectHistoryStoreTests : IDisposable
         Assert.Equal(2, s.DirectNewest(Alice, 100).Count(r => r.Id is "ancient" or "a0"));
     }
 
+    [Theory, MemberData(nameof(Kinds))]
+    public void A_message_removed_for_good_is_gone_and_is_not_kept_again(string kind)
+    {
+        using var d = new Disposing(Make(kind));
+        var s = d.Store;
+        var gone = Msg(Alice, "m1", 1000, mine: true);
+        var kept = Msg(Alice, "m2", 2000, mine: true);
+        Add(s, gone); Add(s, kept);
+
+        var chat = (IChatHistoryStore)s;
+        Assert.Equal(1, chat.ApplyRemoved(DirectRemovals.Prefix + Alice, new[] { DirectHistory.Key(gone) }));
+        Assert.Equal(0, chat.ApplyRemoved(DirectRemovals.Prefix + Alice, new[] { DirectHistory.Key(gone) }));
+        Assert.Null(s.DirectFind(Alice, DirectHistory.Key(gone)));
+        Assert.Equal(new[] { "m2" }, s.DirectNewest(Alice, 10).Select(r => r.Id));
+        Assert.False(Add(s, gone));                                   // an old copy brought back by another device
+        Assert.Equal(0, s.AddDirectMany(new[] { (DirectHistory.Key(gone), gone, (string?)null) }));
+        Assert.Equal(new[] { DirectHistory.Key(gone) }, chat.RemovedKeys(DirectRemovals.Prefix + Alice));
+        Assert.Contains(DirectRemovals.Prefix + Alice, chat.RoomsWithRemoved());
+    }
+
+    [Theory, MemberData(nameof(Kinds))]
+    public void What_was_removed_travels_with_the_kept_history_and_stays_removed_in_any_order(string kind)
+    {
+        using var d = new Disposing(Make(kind));
+        var s = d.Store;
+        var chat = (IChatHistoryStore)s;
+        var month = HistoryMonths.Of(1_700_000_000_000);
+        var gone = Msg(Alice, "m1", 1_700_000_000_000, mine: true);
+        var kept = Msg(Alice, "m2", 1_700_000_001_000, mine: true);
+        Add(s, gone); Add(s, kept);
+        var monthPiece = HistoryPieces.Build(chat, HistoryPieces.DirectName(Alice, month))!;
+        chat.ApplyRemoved(DirectRemovals.Prefix + Alice, new[] { DirectHistory.Key(gone) });
+        var removedPiece = HistoryPieces.Build(chat, HistoryPieces.RemovedName(DirectRemovals.Prefix + Alice))!;
+        Assert.Equal((true, Alice), HistoryPieces.WhoOf(HistoryPieces.RemovedName(DirectRemovals.Prefix + Alice)));
+
+        // Another device that still holds both takes the removal, and the old month cannot bring the message back.
+        var other = Path.Combine(_dir, "other.db");
+        using var o = new Disposing(kind == "memory" ? new MemoryHistoryStore() : new SqliteHistoryStore(other, Key));
+        var otherChat = (IChatHistoryStore)o.Store;
+        Assert.True(HistoryPieces.Take(otherChat, HistoryPieces.DirectName(Alice, month), monthPiece) >= 0);
+        Assert.True(HistoryPieces.Take(otherChat, HistoryPieces.RemovedName(DirectRemovals.Prefix + Alice), removedPiece) >= 0);
+        Assert.True(HistoryPieces.Take(otherChat, HistoryPieces.DirectName(Alice, month), monthPiece) >= 0);
+        Assert.Equal(new[] { "m2" }, o.Store.DirectNewest(Alice, 10).Select(r => r.Id));
+    }
+
     private sealed class Disposing(IDirectHistoryStore store) : IDisposable
     {
         public IDirectHistoryStore Store { get; } = store;

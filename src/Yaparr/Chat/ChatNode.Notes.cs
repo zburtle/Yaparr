@@ -28,4 +28,41 @@ public sealed partial class ChatNode
         RecordDirect(new DirectRecord(wire.Id!, AccountId.Value, DisplayName, true, wire.Ts, text, proof.Pub, proof.Acct, proof.Cert, proof.Sig, wire.Ts), mirror: true);
         return wire.Id!;
     }
+
+    /// <summary>
+    /// Deletes a note (by its <see cref="ChatMessage.Id"/>) for good, on every device of the account: it is removed here, remembered as removed (so no copy that turns up later
+    /// from another device, the mailbox or the kept history brings it back), and your connected devices are told. False when there is no such note.
+    /// </summary>
+    internal bool DeleteNote(string messageId)
+    {
+        var key = DirectHistory.KeyFor(AccountId.Value, messageId, mine: true);
+        if (_directHistory.Find(AccountId.Value, key) == null) return false;
+        _directHistory.RemoveForGood(AccountId.Value, new[] { key });
+        SendNotesRemoved(_peers.Values.Where(IsSibling), new[] { key });
+        return true;
+    }
+
+    /// <summary>Which of these notes (by id) were deleted.</summary>
+    internal HashSet<string> RemovedNotesAmong(IEnumerable<string> messageIds)
+    {
+        var removed = _directHistory.RemovedKeys(AccountId.Value);
+        if (removed.Count == 0) return new HashSet<string>();
+        var keys = new HashSet<string>(removed, StringComparer.Ordinal);
+        return messageIds.Where(id => keys.Contains(DirectHistory.KeyFor(AccountId.Value, id, mine: true))).ToHashSet();
+    }
+
+    private void SendNotesRemoved(IEnumerable<PeerState> to, IReadOnlyList<string> keys)
+    {
+        foreach (var sibling in to.ToList())
+            for (int i = 0; i < keys.Count; i += DirectSyncKeys)
+                Send(sibling.Connection, new Wire { Type = Wire.NotesRemoved, Have = keys.Skip(i).Take(DirectSyncKeys).ToArray() });
+    }
+
+    // Only a device of your own account may say a note is gone.
+    private void OnNotesRemoved(PeerState peer, string[] keys)
+    {
+        if (!IsSibling(peer)) return;
+        var good = keys.Take(DirectSyncKeys).Where(k => k.Length == 16 && k.All(c => c is (>= '0' and <= '9') or (>= 'a' and <= 'f'))).Distinct().ToList();
+        if (good.Count > 0 && _directHistory.RemoveForGood(AccountId.Value, good) > 0) NotesChat.RaiseHistoryChanged();
+    }
 }

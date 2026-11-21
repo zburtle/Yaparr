@@ -49,8 +49,10 @@ public partial class MainWindow
         // By key, so the message you have just sent (shown before it has come back as a ChatMessage, so it has no source yet) can be deleted too.
         // Owners and admins delete any message; everyone deletes their own.
         DeleteMessageItem.IsVisible = room is { Owner: not null } && message is { Key: not null, IsSystem: false } && (room.MyRole >= RoomRole.Admin || message.IsMine);
+        // A note in Notes to self is deleted for good on all your devices.
+        DeleteNoteItem.IsVisible = SelectedNotes != null && message is { Id: not null, IsSystem: false };
         BanSenderItem.IsVisible = source != null && !message!.IsMine && CanBan(source.From.Account.Value, room?.RoleOf(source.From.Account) ?? RoomRole.Member) && room?.IsBanned(source.From.Account) == false;
-        if (!ReplyItem.IsVisible && !SavePictureItem.IsVisible && !RetryItem.IsVisible && !BlockSenderItem.IsVisible && !DeleteMessageItem.IsVisible && !BanSenderItem.IsVisible) e.Cancel = true;
+        if (!ReplyItem.IsVisible && !SavePictureItem.IsVisible && !RetryItem.IsVisible && !BlockSenderItem.IsVisible && !DeleteMessageItem.IsVisible && !DeleteNoteItem.IsVisible && !BanSenderItem.IsVisible) e.Cancel = true;
     }
 
     // Everyone blocked, by name where it is known, so that someone met only in a direct chat can be unblocked too.

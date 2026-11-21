@@ -113,7 +113,7 @@ public sealed class MemoryHistoryStore : IChatHistoryStore, IDirectHistoryStore
 
     public bool AddDirect(string key, DirectRecord record, string? reactionTarget)
     {
-        lock (_gate) return Chat(record.Peer).TryAdd(key, (record, reactionTarget));
+        lock (_gate) return !IsRemoved(DirectHistory.RemovedRoom(record.Peer), key) && Chat(record.Peer).TryAdd(key, (record, reactionTarget));
     }
 
     public IReadOnlyList<DirectRecord> DirectNewest(string peer, int count)
@@ -205,10 +205,12 @@ public sealed class MemoryHistoryStore : IChatHistoryStore, IDirectHistoryStore
     {
         lock (_gate)
         {
+            // The removals of a direct conversation are kept under "d:<person>", and take its messages out too.
+            var gone = roomKey.StartsWith(DirectRemovals.Prefix, StringComparison.Ordinal) ? Chat(roomKey[DirectRemovals.Prefix.Length..]) : null;
             var room = Room(roomKey);
             if (!_removed.TryGetValue(roomKey, out var set)) _removed[roomKey] = set = new HashSet<string>(StringComparer.Ordinal);
             int added = 0;
-            foreach (var k in keys) { room.Remove(k); if (set.Add(k)) added++; }
+            foreach (var k in keys) { room.Remove(k); gone?.Remove(k); if (set.Add(k)) added++; }
             return added;
         }
     }

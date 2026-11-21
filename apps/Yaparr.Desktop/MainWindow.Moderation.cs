@@ -96,6 +96,16 @@ public partial class MainWindow
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { StatusText.Text = ex.Message; }
     }
 
+    /// <summary>Notes to self, when it is the conversation on show.</summary>
+    private DirectChat? SelectedNotes => _node != null && _selected != null && _directConversations.TryGetValue(_node.AccountId, out var notes) && notes == _selected ? _node.NotesChat : null;
+
+    private async void DeleteNote_Click(object? sender, RoutedEventArgs e)
+    {
+        if (MessageList.SelectedItem is not MessageVm { Id: { } id } message || SelectedNotes is not { } chat || _selected is not { } conv) return;
+        if (!await Dialogs.ConfirmAsync(this, "Delete note", "Delete this note? It is deleted on all your devices and cannot be brought back.", "Delete", "Keep")) return;
+        if (chat.DeleteNote(id)) conv.Drop(new HashSet<string> { id });
+    }
+
     private async void DeleteMessage_Click(object? sender, RoutedEventArgs e)
     {
         if (MessageList.SelectedItem is not MessageVm { Key: { } key } || SelectedRoom is not { } room) return;

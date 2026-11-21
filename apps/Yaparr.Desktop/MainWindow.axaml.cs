@@ -960,7 +960,13 @@ public partial class MainWindow : Window
         conv.AskOthersForEarlier = (_, _, id) => chat.RequestEarlierHistory(id);
         chat.EarlierHistoryReceived += () => UI(() => { conv.NoteEarlierArrived(); RefreshReactions(conv); if (_selected == conv) MaybeLoadEarlier(); });
         // History taken in from the account's kept copy: what is missing from the window is added (a direct message is never removed by it).
-        chat.HistoryChanged += () => UI(() => { foreach (var m in chat.History) conv.Add(ToVm(m)); RefreshReactions(conv); });
+        chat.HistoryChanged += () => UI(() =>
+        {
+            foreach (var m in chat.History) conv.Add(ToVm(m));
+            // Notes deleted on another of your devices (or in the kept history) go from the screen.
+            if (chat.IsNotes && chat.DeletedNotesAmong(conv.Messages.Where(m => m.Id != null).Select(m => m.Id!).ToList()) is { Count: > 0 } gone) conv.Drop(new HashSet<string>(gone));
+            RefreshReactions(conv);
+        });
         UI(() =>
         {
             foreach (var m in kept) conv.Add(ToVm(m));
