@@ -75,3 +75,7 @@ The Android release counts from the last `android-v` tag, and its version code i
 Every action in `.github/workflows` is pinned to a full commit hash, with its version in a comment (`uses: actions/checkout@3d3c42e… # v7.0.1`), so a moved or hijacked tag cannot change what runs with the repository's permissions. The release tools (semantic-release and its plugin) are installed from `.github/release/package-lock.json` with `npm ci`, which checks the hash of every package. Dependabot raises weekly pull requests for both, and for a new action use the hash of its release, not the tag.
 
 Pull requests are squash-merged, so the pull request title becomes the commit on `master`. A check fails a title that is not a conventional commit, such as `fix: ...` or `feat: ...`.
+
+## Keeping the apps short
+
+A setting in either app says what it does in one line. Anything longer goes in a guide in `docs/guides`, and the setting gets a "Learn more about …" link: `LearnMoreLink` on the desktop, a `TextBlock` with a `Tag` and `Tapped="LearnMoreTapped"` on Android. Both ask `Guides.Url(topic)` (`src/Yaparr.AppCore/Guides.cs`) for the address, and `GuidesTests` checks that every topic points at a guide and a heading that exist. Warnings in a confirmation (what a ban or a backup means, why a Sync key cannot be recovered) stay in the app.

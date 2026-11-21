@@ -231,6 +231,13 @@ public partial class MainView
     private async Task<bool> OpenInBrowserAsync(Uri uri) =>
         TopLevel.GetTopLevel(this)?.Launcher is { } launcher && await launcher.LaunchUriAsync(uri);
 
+    // "Learn more about …" under a setting: opens the guide for its topic (Tag) in the browser (see Guides).
+    private async void LearnMoreTapped(object? sender, Avalonia.Input.TappedEventArgs e)
+    {
+        if (sender is Control { Tag: string topic } && Guides.Url(topic) is { } guide && !await OpenInBrowserAsync(guide))
+            SettingsNote.Text = "Couldn't open your browser.";
+    }
+
     private async void ServerSignInClicked(object? sender, RoutedEventArgs e)
     {
         var server = BackupServerClient.ParseServerAddress(ServerUrlBox.Text);

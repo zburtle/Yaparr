@@ -110,7 +110,7 @@ public partial class MainWindow
         RoomKeyReplace.IsVisible = has;
         RoomKeyReplaceButton.IsVisible = owner;
         RoomKeyReplaceNote.Text = owner
-            ? "Gives the room a new key and hands it to everyone Yaparr has seen in it. Banned people, and anyone who only kept the old invite, can no longer find the room or talk in it."
+            ? "Gives the room a new key. Banned people and anyone with the old invite are locked out."
             : "Only the person who made the room can replace its key.";
     }
 

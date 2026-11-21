@@ -821,7 +821,7 @@
                                     <Button x:Name="ShelfAddButton" Grid.Column="2" Content="Add…" Padding="10,3" CornerRadius="14" Click="ShelfAdd_Click" />
                                 </Grid>
                                 <TextBlock x:Name="ShelfEmpty" DockPanel.Dock="Top" Classes="muted" TextWrapping="Wrap" Margin="4,6,4,10" IsVisible="False"
-                                           Text="Nothing here yet. Add GIFs and pictures you like to send again, or right-click one in a chat and choose Add to my GIF shelf. They stay on this computer." />
+                                           Text="Nothing here yet. Right-click a picture in a chat and choose Add to my GIF shelf." />
                                 <ScrollViewer MaxHeight="340" HorizontalScrollBarVisibility="Disabled">
                                     <WrapPanel x:Name="ShelfGrid" />
                                 </ScrollViewer>
@@ -1003,7 +1003,8 @@
                             <StackPanel x:Name="RoomKeyReplace" Spacing="10" Margin="0,8,0,0">
                                 <TextBlock Text="Replace the key" FontWeight="SemiBold" />
                                 <TextBlock x:Name="RoomKeyReplaceNote" Classes="muted small" TextWrapping="Wrap"
-                                           Text="Gives the room a new key and hands it to everyone Yaparr has seen in it. Banned people, and anyone who only kept the old invite, can no longer find the room or talk in it." />
+                                           Text="Gives the room a new key. Banned people and anyone with the old invite are locked out." />
+                                           <local:LearnMoreLink Topic="room-key" Text="Learn more about replacing the room key" Foreground="{DynamicResource Accent}" />
                                 <Button x:Name="RoomKeyReplaceButton" Content="Replace the room key…" HorizontalAlignment="Left" Click="RotateKey_Click" />
                             </StackPanel>
                         </StackPanel>
@@ -1014,7 +1015,8 @@
                                 <Button Grid.Column="2" Content="Add…" Padding="10,3" CornerRadius="14" Click="RoomShelfAdd_Click" />
                             </Grid>
                             <TextBlock Classes="muted small" TextWrapping="Wrap"
-                                       Text="Pictures every member of this room can send from the GIF button. Anyone can add; you can remove your own, and the person who made the room (and its admins) can take down any. Click a picture for its options." />
+                                       Text="Pictures every member can send from the GIF button." />
+                                       <local:LearnMoreLink Topic="gif-shelf" Text="Learn more about the GIF shelf" Foreground="{DynamicResource Accent}" />
                             <TextBlock x:Name="RoomShelfEmpty" Classes="muted" TextWrapping="Wrap" IsVisible="False"
                                        Text="Nothing here yet. Add a GIF or picture and everyone in this room can send it." />
                             <WrapPanel x:Name="RoomShelfGrid" />
@@ -1022,7 +1024,8 @@
                         <StackPanel x:Name="RoomSectionSounds" Spacing="10" IsVisible="False">
                             <TextBlock Text="Soundboard" FontSize="15" FontWeight="SemiBold" />
                             <TextBlock Classes="muted small" TextWrapping="Wrap"
-                                       Text="Short sounds that everyone in the room can play into a voice call from the Soundboard button. Add a WAV, MP3 or OGG file; a longer one is cut to 20 seconds. The soundboard itself is where sounds are played, renamed and deleted." />
+                                       Text="Short sounds everyone can play into a voice call." />
+                                       <local:LearnMoreLink Topic="soundboard" Text="Learn more about the soundboard" Foreground="{DynamicResource Accent}" />
                             <Grid ColumnDefinitions="*,Auto">
                                 <TextBlock x:Name="RoomSoundCount" Classes="muted" VerticalAlignment="Center" />
                                 <Button Grid.Column="1" Content="Add a sound…" Classes="primary" Click="RoomSoundAdd_Click" />
@@ -1118,7 +1121,8 @@
                                        Text="Your other devices show here while they are on and connected to this one." />
                             <Button Content="Link another device…" HorizontalAlignment="Left" Click="LinkDevice_Click" />
                             <TextBlock Classes="muted small" TextWrapping="Wrap" Margin="0,8,0,0"
-                                       Text="Log out removes your account, rooms, history and settings from this computer and takes you back to the first-start screen. Your other devices keep the account." />
+                                       Text="Removes your account, rooms and history from this computer. Your other devices keep the account." />
+                                       <local:LearnMoreLink Topic="logout" Text="Learn more about logging out" Foreground="{DynamicResource Accent}" />
                             <Button Content="Log out…" HorizontalAlignment="Left" Foreground="{DynamicResource Bad}" Click="LogOut_Click" />
                         </StackPanel>
                         <StackPanel x:Name="SectionNotifications" Spacing="10" IsVisible="False">
@@ -1150,7 +1154,8 @@
                             <TextBlock Text="Link previews" FontWeight="SemiBold" Margin="0,10,0,0" />
                             <CheckBox x:Name="LinkPreviewItem" Content="Show a preview under the links I send" />
                             <TextBlock Classes="muted small" TextWrapping="Wrap"
-                                       Text="When you send a web link, this computer reads the page's title, description and picture and sends them with the message. The people who read it never contact the site, so it does not see their address, but it does see yours. Turn this off to send only the link." />
+                                       Text="Sends the page's title and picture with a link you send." />
+                                       <local:LearnMoreLink Topic="link-previews" Text="Learn more about link previews" Foreground="{DynamicResource Accent}" />
                         </StackPanel>
                         <StackPanel x:Name="SectionVpn" Spacing="10" IsVisible="False">
                             <TextBlock Text="VPN" FontSize="15" FontWeight="SemiBold" />
@@ -1181,7 +1186,8 @@
                         <StackPanel x:Name="SectionCloud" Spacing="10" IsVisible="False">
                             <TextBlock Text="Yaparr Cloud" FontSize="15" FontWeight="SemiBold" />
                             <TextBlock Classes="muted" TextWrapping="Wrap"
-                                       Text="An optional account on a Yaparr Cloud server, such as cloud.yaparr.com, whose address someone gives you. It keeps your account in step on your computers and phones (your rooms, name, pins and message history), so a new device can pick up where you left off, and on a phone it can wake Yaparr when someone writes to you. You sign in in your browser. The server cannot read what it holds (it is locked here with your Sync key), and nothing is sent anywhere unless you use this." />
+                                       Text="Optional. Keeps your account in step on your computers and phones." />
+                                       <local:LearnMoreLink Topic="cloud" Text="Learn more about Yaparr Cloud" Foreground="{DynamicResource Accent}" />
                                                         <StackPanel x:Name="ServerSignedOutPanel" Spacing="4" MaxWidth="420" HorizontalAlignment="Left">
                                 <TextBlock Text="Server address" Classes="muted" />
                                 <TextBox x:Name="ServerUrlBox" MinWidth="320" PlaceholderText="https://backup.example.org" />
@@ -1203,11 +1209,13 @@
                                 </WrapPanel>
                                 <CheckBox x:Name="LeaveForAbsentCheck" Content="Leave messages for people who are away" Margin="0,6,0,0" Click="LeaveForAbsent_Click" />
                                 <CheckBox x:Name="GatewayCheck" Content="Use Yaparr Cloud for messages when this network blocks UDP" Margin="0,6,0,0" Click="Gateway_Click"
-                                          ToolTip.Tip="Some networks only let web traffic out. Yaparr then sends its traffic to your Yaparr Cloud account, which passes it on. Enough for messages and voice; not for screen sharing." />
+                                          ToolTip.Tip="Passes Yaparr's traffic on through Yaparr Cloud when this network blocks UDP. Enough for messages and voice, not for screen sharing." />
                                 <TextBlock Classes="muted" TextWrapping="Wrap" FontSize="12"
-                                           Text="Messages and pictures go straight to the people who are online. Only when someone you know is away is a locked copy left on the server, for up to 7 days, so they get it when they are back. The server cannot read it. Turn this off and nothing is left there (you still receive what others leave for you)." />
+                                           Text="Leaves a locked copy for people who are away." />
+                                           <local:LearnMoreLink Topic="cloud-away" Text="Learn more about messages for people who are away" Foreground="{DynamicResource Accent}" />
                                 <TextBlock Classes="muted" TextWrapping="Wrap" FontSize="12"
-                                           Text="Yaparr syncs by itself: soon after your rooms, keys or name change, and once a day for your message history. It never asks anything; if you are signed out it stops and says so here. It starts once your Sync key has been made." />
+                                           Text="Syncs by itself when something changes, and once a day for your message history." />
+                                           <local:LearnMoreLink Topic="cloud-sync" Text="Learn more about syncing" Foreground="{DynamicResource Accent}" />
                                 <TextBlock x:Name="AutoBackupStatus" Classes="muted" TextWrapping="Wrap" FontSize="12" />
                             </StackPanel>
                             <TextBlock x:Name="ServerStatus" Classes="muted" TextWrapping="Wrap" IsVisible="False" />
@@ -1215,7 +1223,8 @@
                         <StackPanel x:Name="SectionBackup" Spacing="10" IsVisible="False">
                             <TextBlock Text="Backup" FontSize="15" FontWeight="SemiBold" />
                             <TextBlock Classes="muted" TextWrapping="Wrap"
-                                       Text="Saves a zip of everything Yaparr keeps for you: your identity key, rooms, message history, pictures and settings. Keep it somewhere safe; it holds your account key." />
+                                       Text="Saves a zip of everything Yaparr keeps for you, including your account key. Keep it safe." />
+                                       <local:LearnMoreLink Topic="backups" Text="Learn more about backups" Foreground="{DynamicResource Accent}" />
                             <Button Content="Back up profile…" HorizontalAlignment="Left" Click="BackupProfile_Click" />
                             <TextBlock Classes="muted" TextWrapping="Wrap"
                                        Text="To keep your account in step on Yaparr Cloud, and set up another device from it, see Yaparr Cloud." />

@@ -18,9 +18,9 @@ public partial class MainWindow
     {
         var start = await Dialogs.ChoiceAsync(this, "Welcome to Yaparr",
             "Do you already have a Yaparr account?\n\n" +
-            "Link this device: join the account of a device you still use. Your name, rooms and blocks carry over, and people see you as one person.\n\n" +
-            "Restore a backup: bring back an account from a backup file, for a new or reinstalled computer. It joins your account as another device, so the old computer can stay in use.\n\n" +
-            "Restore from Yaparr Cloud: the same, from the account you keep in sync on Yaparr Cloud (you need its address, your account there and your Sync key).\n\n" +
+            "Link this device: join an account you use on another device.\n" +
+            "Restore a backup: bring an account back from a backup file.\n" +
+            "Restore from Yaparr Cloud: bring it back from your account there.\n" +
             "Start fresh: make a new account.",
             "Link this device", "Restore a backup", "Restore from Yaparr Cloud", "Start fresh");
         if (start == "Restore a backup") { await RestoreBackupAsync(); return; }

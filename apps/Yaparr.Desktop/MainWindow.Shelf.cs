@@ -82,7 +82,7 @@ public partial class MainWindow
         var items = await Task.Run(() => Shelf.List());
         if (version != _shelfVersion) return;
         total = items.Count;
-        ShelfEmpty.Text = "Nothing here yet. Add GIFs and pictures you like to send again, or right-click one in a chat and choose Add to my GIF shelf. They stay on this computer.";
+        ShelfEmpty.Text = "Nothing here yet. Right-click a picture in a chat and choose Add to my GIF shelf.";
         ShelfGrid.Children.Clear();
         ShelfEmpty.IsVisible = total == 0;
         ShelfCount.Text = Count(total);

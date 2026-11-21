@@ -1,9 +1,11 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="using:Yaparr.Desktop"
              x:Class="Yaparr.Desktop.VpnView">
     <StackPanel Spacing="4">
         <TextBlock TextWrapping="Wrap" Margin="0,0,0,8"
-                   Text="Connect Yaparr to a WireGuard VPN to get around networks that block direct connections. Only Yaparr's own traffic goes through the VPN; other apps are not affected." />
+                   Text="Send Yaparr's own traffic through a WireGuard VPN." />
+                   <local:LearnMoreLink Topic="vpn" Text="Learn more about the VPN" Foreground="{DynamicResource Accent}" />
         <TextBlock x:Name="ConfigText" TextWrapping="Wrap" FontWeight="SemiBold" />
         <TextBlock x:Name="StatusText" TextWrapping="Wrap" />
         <TextBlock x:Name="NetworkText" TextWrapping="Wrap" Foreground="Gray" />

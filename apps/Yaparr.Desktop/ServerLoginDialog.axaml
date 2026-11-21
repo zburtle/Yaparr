@@ -1,11 +1,13 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="using:Yaparr.Desktop"
         x:Class="Yaparr.Desktop.ServerLoginDialog"
         Title="Restore from a server" Icon="avares://Yaparr.Desktop/Assets/yaparr.png" SizeToContent="Height" Width="460" CanResize="False"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
     <StackPanel Margin="16" Spacing="4">
         <TextBlock TextWrapping="Wrap" Margin="0,0,0,8"
-                   Text="Bring your account back from Yaparr Cloud. You sign in in your browser, and your account is unlocked here with your Sync key, which is never sent to the server." />
+                   Text="Bring your account back from Yaparr Cloud. You sign in in your browser." />
+                   <local:LearnMoreLink Topic="cloud" Text="Learn more about Yaparr Cloud" Foreground="{DynamicResource Accent}" />
         <TextBlock Text="Server address" Classes="muted" />
         <TextBox x:Name="UrlBox" PlaceholderText="https://backup.example.org" />
         <TextBlock Text="Sync key" Classes="muted" Margin="0,8,0,0" />

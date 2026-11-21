@@ -276,20 +276,24 @@
                         <StackPanel x:Name="Section_notifications" Spacing="10" IsVisible="False">
                     <TextBlock Text="Notifications" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource Ink}" />
                     <CheckBox x:Name="NotifyCheck" Content="Notify me of messages" Click="NotificationSettingChanged" />
-                    <TextBlock Text="Direct messages, mentions and replies to you. In a room's menu you can turn on every message. The lock screen shows who wrote and where, never the words." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
+                    <TextBlock Text="Direct messages, mentions and replies to you." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
+                    <TextBlock Text="Learn more about notifications" Tag="notifications" Tapped="LearnMoreTapped" Background="Transparent" Padding="0,6" FontSize="13" Foreground="{DynamicResource Accent}" TextDecorations="Underline" />
                     <CheckBox x:Name="BackgroundCheck" Content="Stay connected in the background" Click="NotificationSettingChanged" />
-                    <TextBlock x:Name="BackgroundNote" Text="Keeps Yaparr connected when you leave it, so messages arrive and notify. Android shows a notification while it is on, and it uses some battery." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
+                    <TextBlock x:Name="BackgroundNote" Text="Keeps Yaparr connected when you leave it. Uses some battery." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
+                    <TextBlock x:Name="BackgroundLearn" Text="Learn more about staying connected" Tag="background" Tapped="LearnMoreTapped" Background="Transparent" Padding="0,6" FontSize="13" Foreground="{DynamicResource Accent}" TextDecorations="Underline" />
                     <Button HorizontalAlignment="Stretch" Content="Send a test notification" Click="TestNotificationClicked" />
                     <Button x:Name="BatteryButton" HorizontalAlignment="Stretch" Content="Let Yaparr run in the background" Click="BatteryClicked" />
                     <TextBlock x:Name="NotificationNote" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
 
                     <TextBlock Text="Link previews" FontWeight="SemiBold" Margin="0,14,0,0" Foreground="{DynamicResource Muted}" />
                     <CheckBox x:Name="LinkPreviewCheck" Content="Show a preview under the links I send" Click="LinkPreviewChanged" />
-                    <TextBlock Text="When you send a web link, this phone reads the page's title, description and picture and sends them with the message. The people who read it never contact the site, so it does not see their address, but it does see yours. Turn this off to send only the link." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
+                    <TextBlock Text="Sends the page's title and picture with a link you send." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
+                    <TextBlock Text="Learn more about link previews" Tag="link-previews" Tapped="LearnMoreTapped" Background="Transparent" Padding="0,6" FontSize="13" Foreground="{DynamicResource Accent}" TextDecorations="Underline" />
                         </StackPanel>
                         <StackPanel x:Name="Section_cloud" Spacing="10" IsVisible="False">
                     <TextBlock Text="Yaparr Cloud" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource Ink}" />
-                    <TextBlock Text="An optional account on a Yaparr Cloud server, such as cloud.yaparr.com, whose address someone gives you. It keeps your account in step on your phones and computers (your rooms, name, pins and message history), so a new device can pick up where you left off, and it can wake this phone when someone writes to you. You sign in in your browser. The server cannot read what it holds (it is locked on this phone with your Sync key), and nothing is sent anywhere unless you use this." TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />
+                    <TextBlock Text="Optional. Keeps your account in step on your phones and computers." TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />
+                    <TextBlock Text="Learn more about Yaparr Cloud" Tag="cloud" Tapped="LearnMoreTapped" Background="Transparent" Padding="0,6" FontSize="13" Foreground="{DynamicResource Accent}" TextDecorations="Underline" />
                     <StackPanel x:Name="ServerSignedOutPanel" Spacing="8">
                         <TextBox x:Name="ServerUrlBox" PlaceholderText="https://cloud.yaparr.com" />
                         <Button x:Name="ServerSignInButton" Classes="primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Sign in with your browser" Click="ServerSignInClicked" />
@@ -300,7 +304,8 @@
                         <Button x:Name="BackupToServerButton" Classes="primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Sync now" Click="BackupToServerClicked" />
                         <CheckBox x:Name="LeaveForAbsentCheck" Content="Leave messages for people who are away" Click="LeaveForAbsentClicked" />
                         <CheckBox x:Name="GatewayCheck" Content="Use Yaparr Cloud for messages when this network blocks UDP" Click="GatewayClicked" />
-                        <TextBlock Text="Messages and pictures go straight to people who are online. Only when someone you know is away is a locked copy left on the server, for up to 7 days. The server cannot read it. Turn this off and nothing is left there; you still receive what others leave for you." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
+                        <TextBlock Text="Leaves a locked copy for people who are away." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
+                        <TextBlock Text="Learn more about messages for people who are away" Tag="cloud-away" Tapped="LearnMoreTapped" Background="Transparent" Padding="0,6" FontSize="13" Foreground="{DynamicResource Accent}" TextDecorations="Underline" />
                         <TextBlock x:Name="AutoBackupStatus" IsVisible="False" TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />
                         <Button x:Name="ShowRecoveryCodeButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Show Sync key" Click="ShowRecoveryCodeClicked" />
                         <Button x:Name="ReplaceSyncKeyButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Replace Sync key…" Click="ReplaceSyncKeyClicked" />
@@ -312,7 +317,8 @@
                     <TextBlock x:Name="ServerStatus" IsVisible="False" TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />
 
                     <TextBlock Text="Push notifications" FontWeight="SemiBold" Margin="0,14,0,0" Foreground="{DynamicResource Muted}" />
-                    <TextBlock Text="Wakes this phone when someone writes while Yaparr is closed, without keeping it connected all the time. It uses your Yaparr Cloud account and a push app such as ntfy (UnifiedPush); with no push app, Google's Firebase is used instead. The push carries nothing: no names and no words." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
+                    <TextBlock Text="Wakes this phone when someone writes while Yaparr is closed." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
+                    <TextBlock Text="Learn more about push notifications" Tag="cloud-push" Tapped="LearnMoreTapped" Background="Transparent" Padding="0,6" FontSize="13" Foreground="{DynamicResource Accent}" TextDecorations="Underline" />
                     <TextBlock x:Name="PushState" TextWrapping="Wrap" FontSize="13" />
                     <ComboBox x:Name="PushDistributorBox" HorizontalAlignment="Stretch" IsVisible="False" />
                     <Button x:Name="PushOnButton" HorizontalAlignment="Stretch" Content="Turn on push notifications" Click="PushOnClicked" />
@@ -321,6 +327,7 @@
                         <StackPanel x:Name="Section_backup" Spacing="10" IsVisible="False">
                     <TextBlock Text="Backup" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource Ink}" />
                     <TextBlock Text="A backup is a copy of your account, room keys and message history, to bring back on a new phone if you lose this one." TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource Muted}" />
+                    <TextBlock Text="Learn more about backups" Tag="backups" Tapped="LearnMoreTapped" Background="Transparent" Padding="0,6" FontSize="13" Foreground="{DynamicResource Accent}" TextDecorations="Underline" />
                     <Button HorizontalAlignment="Stretch" Content="Back up this phone's account" Click="BackupClicked" />
                         </StackPanel>
                         <StackPanel x:Name="Section_about" Spacing="10" IsVisible="False">
@@ -329,7 +336,8 @@
                     <TextBlock x:Name="UpdateText" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Accent}" />
                     <Button x:Name="UpdateButton" HorizontalAlignment="Stretch" Content="Check for updates" Click="UpdateClicked" />
                     <CheckBox x:Name="UpdateCheck" Content="Look for updates when Yaparr opens" Click="UpdateCheckChanged" />
-                    <TextBlock Text="An update is downloaded from Yaparr's releases on GitHub, which sees this phone's address, and is checked against the checksum published with it. Android asks you to confirm before it is installed, and only accepts a package signed with the same key as this app." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
+                    <TextBlock Text="Updates come from Yaparr's releases on GitHub and are checked before they are installed." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
+                    <TextBlock Text="Learn more about updates" Tag="updates" Tapped="LearnMoreTapped" Background="Transparent" Padding="0,6" FontSize="13" Foreground="{DynamicResource Accent}" TextDecorations="Underline" />
                     <Button HorizontalAlignment="Stretch" Content="Copy what this phone is connected to" Click="DiagnosticsClicked" />
                     <TextBlock Text="Copies who this phone is connected to and what it has been doing, for a report of a problem." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" />
                         </StackPanel>
