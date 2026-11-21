@@ -360,13 +360,14 @@
                                             <TextBlock Text="{Binding Initial}" FontSize="15" />
                                         </Border>
                                         <StackPanel Grid.Column="1" Margin="10,0,6,0" VerticalAlignment="Center">
-                                            <Grid ColumnDefinitions="Auto,*">
+                                            <Grid ColumnDefinitions="Auto,*,Auto">
                                                 <Path IsVisible="{Binding IsPinned}" Data="M3,0.5 H7 M3.5,0.5 L3.2,4.2 L1.2,6.2 H8.8 L6.8,4.2 L6.5,0.5 M5,6.2 V10.5" Stroke="{DynamicResource Muted}"
                                                       StrokeThickness="1.1" StrokeLineCap="Round" StrokeJoin="Round" Width="10" Height="11" Margin="0,0,6,0" VerticalAlignment="Center"
                                                       ToolTip.Tip="Pinned" />
                                                 <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Grid.Column="2" Text="{Binding LastTimeText}" Classes="muted small" Margin="8,0,0,0" VerticalAlignment="Center" />
                                             </Grid>
-                                            <TextBlock Text="{Binding Subtitle}" IsVisible="{Binding ShowSubtitle}" Classes="muted small" />
+                                            <TextBlock Text="{Binding Subtitle}" IsVisible="{Binding ShowSubtitle}" Classes="muted small" MaxLines="1" TextTrimming="CharacterEllipsis" />
                                             <TextBlock Text="{Binding SyncText}" IsVisible="{Binding HasSyncText}" Classes="small" Foreground="{DynamicResource Accent}" />
                                             <ProgressBar IsVisible="{Binding IsSyncing}" IsIndeterminate="True" Height="2" MinHeight="2" MinWidth="0" Width="64" HorizontalAlignment="Left" Margin="0,2,0,0" />
                                         </StackPanel>

@@ -35,6 +35,8 @@ public class SyncStatusTests
         Assert.False(SyncStatus.IsBusy(RoomSyncState.NoOneOnline));
         Assert.True(SyncStatus.IsBusy(RoomSyncState.FindingMembers));
         Assert.Equal("", SyncStatus.RoomText(RoomSyncState.Ready));
+        // Nobody being online says nothing: the list shows the room's latest message instead.
+        Assert.Equal("", SyncStatus.RoomText(RoomSyncState.NoOneOnline));
     }
 
     [Fact]
