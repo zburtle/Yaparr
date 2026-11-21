@@ -842,7 +842,6 @@ public partial class MainView : UserControl
         ChatPanel.DataContext = chat;
         // Notes to self has nothing to copy, block or leave.
         MenuButton.IsVisible = !chat.IsNotes;
-        MenuButton.Flyout = BuildMenu(chat);
         // New messages scroll the list down, once for each chat.
         if (!_watched.ContainsKey(chat))
         {
@@ -877,49 +876,49 @@ public partial class MainView : UserControl
         if (_current is { Shown.Count: > 0 } chat) Messages.ScrollIntoView(chat.Shown.Count - 1);
     });
 
-    private MenuFlyout BuildMenu(Chat chat)
+    // The ⋮ menu: a sheet from the bottom with big rows (the same one the long press uses).
+    private void MenuClicked(object? sender, RoutedEventArgs e)
     {
-        var menu = new MenuFlyout();
-        void Add(string header, EventHandler<RoutedEventArgs> click)
-        {
-            var item = new MenuItem { Header = header };
-            item.Click += click;
-            menu.Items.Add(item);
-        }
+        if (_current is { } chat) ShowChatMenu(chat);
+    }
+
+    private void ShowChatMenu(Chat chat)
+    {
+        ActionTitle.Text = chat.Title;
+        ActionList.Children.Clear();
+        void Add(string label, EventHandler<RoutedEventArgs> click, bool danger = false) => AddAction(label, () => click(null, new RoutedEventArgs()), danger);
         if (chat.IsRoom)
         {
             Add("People", PeopleClicked);
             Add("Rename the room", RenameClicked);
             if (_session != null)
-                Add(_session.NotifiesAll(chat) ? "Notify only for mentions and replies" : "Notify for every message", (_, _) =>
+                AddAction(_session.NotifiesAll(chat) ? "Notify only for mentions and replies" : "Notify for every message", () =>
                 {
                     bool all = !_session!.NotifiesAll(chat);
                     _session.SetNotifiesAll(chat, all);
-                    MenuButton.Flyout = BuildMenu(chat);
                     ShowChatNote(chat, all ? "You will be notified of every message here" : "You will be notified of mentions and replies here");
                     if (all) _ = EnsureNotificationsAsync();
                 });
             if (_session != null)
-                Add(_session.IsMuted(chat) ? "Unmute notifications" : "Mute notifications", (_, _) =>
+                AddAction(_session.IsMuted(chat) ? "Unmute notifications" : "Mute notifications", () =>
                 {
                     bool muted = !_session!.IsMuted(chat);
                     _session.SetMuted(chat, muted);
-                    MenuButton.Flyout = BuildMenu(chat);
                     ShowChatNote(chat, muted ? "Nothing here will notify you, not even a mention. Messages still count as unread." : "You will be notified here again");
                 });
             Add("Blocked and banned", BlockedClicked);
             Add("Copy invite link", CopyInviteLinkClicked);
             Add("Copy invite", CopyInviteClicked);
-            Add("Leave the room", LeaveClicked);
+            Add("Leave the room", LeaveClicked, danger: true);
         }
         else
         {
             Add("Copy chat link", CopyChatLinkClicked);
             Add("Copy their ID", CopyIdClicked);
-            Add("Block this person", BlockDirectClicked);
+            Add("Block this person", BlockDirectClicked, danger: true);
             Add("Blocked and banned", BlockedClicked);
         }
-        return menu;
+        ActionPanel.IsVisible = true;
     }
 
     private void ChannelClicked(object? sender, RoutedEventArgs e)
@@ -1240,9 +1239,12 @@ public partial class MainView : UserControl
         var item = new Avalonia.Controls.Button
         {
             Content = label,
+            FontSize = 17,
+            MinHeight = 56,
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
             HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Left,
-            Padding = new Avalonia.Thickness(16, 14),
+            VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Padding = new Avalonia.Thickness(16, 0),
             Background = Avalonia.Media.Brushes.Transparent,
             Foreground = Yaparr.AndroidApp.Theme.Brush(danger ? "Bad" : "Ink"),
         };

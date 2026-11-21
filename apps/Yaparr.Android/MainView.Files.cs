@@ -8,18 +8,15 @@ namespace Yaparr.AndroidApp;
 // Files of any size (docs/file-sharing.md): the + button offers a picture or a file; a file someone offered shows as a card with Download.
 public sealed partial class MainView
 {
-    // The + button: a small menu, since there are now two things to attach.
+    // The + button: a sheet from the bottom, since there are now two things to attach.
     private void AttachClicked(object? sender, RoutedEventArgs e)
     {
-        if (_current == null || _session == null || sender is not Control anchor) return;
-        var menu = new ContextMenu();
-        var picture = new MenuItem { Header = "Picture or GIF" };
-        picture.Click += async (_, _) => await SendPictureFromChooserAsync();
-        var file = new MenuItem { Header = "File of any size" };
-        file.Click += async (_, _) => await SendFileFromChooserAsync();
-        menu.Items.Add(picture);
-        menu.Items.Add(file);
-        menu.Open(anchor);
+        if (_current == null || _session == null) return;
+        ActionTitle.Text = "Add to the message";
+        ActionList.Children.Clear();
+        AddAction("Picture or GIF", async () => await SendPictureFromChooserAsync());
+        AddAction("File of any size", async () => await SendFileFromChooserAsync());
+        ActionPanel.IsVisible = true;
     }
 
     private async Task SendFileFromChooserAsync()
