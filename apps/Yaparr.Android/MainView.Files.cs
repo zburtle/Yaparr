@@ -44,15 +44,19 @@ public sealed partial class MainView
         }
     }
 
-    private void FileDownloadClicked(object? sender, RoutedEventArgs e)
+    // Download asks where to keep the file first; the app then remembers that place as where the file is.
+    private async void FileDownloadClicked(object? sender, RoutedEventArgs e)
     {
         if (sender is not Control { DataContext: Line { File: { } offer } line } || _session == null || MainActivity.Instance is not { } activity) return;
+        // The pieces arrive in the app's folder first (they come from several people at once), then the finished file goes to the chosen place.
         if (!_session.HasRoomFor(offer.Size, activity.ReceivedFilesDirectory))
         {
             if (_current != null) ShowChatNote(_current, $"There is not enough room on this phone for {offer.Name} ({FileTexts.Size(offer.Size)}).");
             return;
         }
-        _session.StartFile(line);
+        if (await activity.PickSaveLocationAsync(offer.Name) is not { } place) return;
+        _session.StartFile(line, place.Address);
+        line.SetSavedTo(place.Name);
     }
 
     private void FilePauseClicked(object? sender, RoutedEventArgs e)
@@ -75,9 +79,28 @@ public sealed partial class MainView
     {
         if (sender is not Control { DataContext: Line { FilePath: { } path, File: { } offer } line } || MainActivity.Instance is not { } activity) return;
         if (_current != null) ShowChatNote(_current, $"Saving {offer.Name} to Downloads\u2026");
-        var where = await activity.SaveToDownloadsAsync(path, offer.Name);
-        if (where != null) line.SetSavedTo(where);
-        if (_current != null) ShowChatNote(_current, where != null ? $"Saved to {where}." : "Could not save it to Downloads. Try Save as\u2026");
+        var saved = await activity.SaveToDownloadsWithAddressAsync(path, offer.Name);
+        if (saved is { } s) line.SetSavedTo(s.Where, s.Address);
+        if (_current != null) ShowChatNote(_current, saved != null ? $"Saved to {saved.Value.Where}." : "Could not save it to Downloads. Try Save as\u2026");
+    }
+
+    // Opens the file in another app. A file sent from this phone is opened where it is; a download is first copied to Downloads (once), since its own folder is private to Yaparr.
+    private async void FileOpenClicked(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control { DataContext: Line { FilePath: { } path, File: { } offer } line } || MainActivity.Instance is not { } activity) return;
+        var address = path.Contains("://", StringComparison.Ordinal) ? path : line.SavedAddress;
+        if (address == null)
+        {
+            var saved = await activity.SaveToDownloadsWithAddressAsync(path, offer.Name);
+            if (saved is not { } s)
+            {
+                if (_current != null) ShowChatNote(_current, "Could not open it. Try Save as\u2026 and open it from there.");
+                return;
+            }
+            line.SetSavedTo(s.Where, s.Address);
+            address = s.Address;
+        }
+        if (!activity.OpenFile(address, offer.Name) && _current != null) ShowChatNote(_current, "No app on this phone can open that file.");
     }
 
     // Copies a downloaded file to a place the person picks; it stays where it is as well, and is still given to others from there.

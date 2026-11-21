@@ -502,7 +502,8 @@
                                             <Button Content="Pause" Margin="0,0,6,0" IsVisible="{Binding FileCanPause}" Click="FilePauseClicked" />
                                             <Button Content="Resume" Classes="primary" Margin="0,0,6,0" IsVisible="{Binding FileCanResume}" Click="FileResumeClicked" />
                                             <Button Content="Cancel" Margin="0,0,6,0" IsVisible="{Binding FileCanCancel}" Click="FileCancelClicked" />
-                                            <Button Content="Save to Downloads" Classes="primary" Margin="0,0,6,6" IsVisible="{Binding FileCanSaveCopy}" Click="FileSaveToDownloadsClicked" />
+                                            <Button Content="Open" Classes="primary" Margin="0,0,6,6" IsVisible="{Binding FileCanOpen}" Click="FileOpenClicked" />
+                                            <Button Content="Save to Downloads" Margin="0,0,6,6" IsVisible="{Binding FileCanSaveCopy}" Click="FileSaveToDownloadsClicked" />
                                             <Button Content="Save as&#8230;" Margin="0,0,6,6" IsVisible="{Binding FileCanSaveCopy}" Click="FileSaveClicked" />
                                         </WrapPanel>
                                     </StackPanel>

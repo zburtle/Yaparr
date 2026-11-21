@@ -129,6 +129,7 @@ public class MainActivity : AvaloniaMainActivity
         return request.Task;
     }
 
+    private const int SaveLocationRequest = 0x736c;
     private const int MicrophoneRequest = 0x6d69, PickRequest = 0x7069, SaveRequest = 0x7376, PickFileRequest = 0x7066, PickShareRequest = 0x7073, CaptureRequest = 0x6361, NotificationsRequest = 0x6e74;
     private static TaskCompletionSource<(int ResultCode, Intent Data)?>? s_capture;
 
@@ -302,10 +303,13 @@ public class MainActivity : AvaloniaMainActivity
     /// Copies a received file into the phone's Downloads folder (a folder called Yaparr in it), where the Files app and other apps can see it, in pieces. Returns where it went
     /// ("Downloads/Yaparr/name"), or null when it could not be done. Android 10 and newer need no permission for this; older ones use "Save as…" instead.
     /// </summary>
-    public Task<string?> SaveToDownloadsAsync(string path, string fileName)
+    public async Task<string?> SaveToDownloadsAsync(string path, string fileName) => (await SaveToDownloadsWithAddressAsync(path, fileName))?.Where;
+
+    /// <summary>Like <see cref="SaveToDownloadsAsync"/>, and also gives the content address of the copy (so it can be opened).</summary>
+    public Task<(string Where, string Address)?> SaveToDownloadsWithAddressAsync(string path, string fileName)
     {
-        if (!OperatingSystem.IsAndroidVersionAtLeast(29)) return Task.FromResult<string?>(null);
-        return Task.Run<string?>(() =>
+        if (!OperatingSystem.IsAndroidVersionAtLeast(29)) return Task.FromResult<(string, string)?>(null);
+        return Task.Run<(string, string)?>(() =>
         {
             if (!OperatingSystem.IsAndroidVersionAtLeast(29)) return null;
             try
@@ -326,10 +330,80 @@ public class MainActivity : AvaloniaMainActivity
                 string shown = fileName;
                 using (var cursor = ContentResolver?.Query(uri, new[] { "_display_name" }, null, null, null))
                     if (cursor != null && cursor.MoveToFirst() && cursor.GetString(0) is { Length: > 0 } actual) shown = actual;
-                return "Downloads/Yaparr/" + shown;
+                return ("Downloads/Yaparr/" + shown, uri.ToString() ?? "");
             }
             catch (Exception ex) when (ex is Java.IO.IOException or IOException or Java.Lang.SecurityException or Java.Lang.IllegalStateException) { return null; }
         });
+    }
+
+    private static TaskCompletionSource<(string Address, string Name)?>? s_pickLocation;
+
+    /// <summary>
+    /// Asks where to keep a file that is about to be downloaded (the system's "save as"): returns the address of the new, empty file and its name, or null when the person backs out.
+    /// Android is asked to keep the permission, so the file can be read (and given on to others) after the app is closed and opened again.
+    /// </summary>
+    public Task<(string Address, string Name)?> PickSaveLocationAsync(string fileName)
+    {
+        s_pickLocation?.TrySetResult(null);
+        var request = s_pickLocation = new TaskCompletionSource<(string, string)?>();
+        var intent = new Intent(Intent.ActionCreateDocument).SetType("application/octet-stream").AddCategory(Intent.CategoryOpenable).PutExtra(Intent.ExtraTitle, fileName)
+            .AddFlags(ActivityFlags.GrantReadUriPermission | ActivityFlags.GrantWriteUriPermission | ActivityFlags.GrantPersistableUriPermission);
+        try { StartActivityForResult(intent, SaveLocationRequest); }
+        catch (ActivityNotFoundException) { request.TrySetResult(null); }
+        return request.Task;
+    }
+
+    private void FinishPickLocation(Result resultCode, Intent? data)
+    {
+        var request = s_pickLocation;
+        if (request == null) return;
+        if (resultCode != Result.Ok || data?.Data is not { } uri) { request.TrySetResult(null); return; }
+        try { ContentResolver?.TakePersistableUriPermission(uri, ActivityFlags.GrantReadUriPermission | ActivityFlags.GrantWriteUriPermission); }
+        catch (Java.Lang.SecurityException) { }
+        var address = uri.ToString() ?? "";
+        request.TrySetResult((address, DisplayNameOf(address) ?? "file"));
+    }
+
+    /// <summary>The name a content address shows in the Files app, or null when it cannot be told.</summary>
+    public static string? DisplayNameOf(string address)
+    {
+        try
+        {
+            if (Instance?.ContentResolver is not { } resolver || Android.Net.Uri.Parse(address) is not { } uri) return null;
+            using var cursor = resolver.Query(uri, new[] { "_display_name" }, null, null, null);
+            return cursor != null && cursor.MoveToFirst() && cursor.GetString(0) is { Length: > 0 } name ? name : null;
+        }
+        catch (Exception ex) when (ex is Java.Lang.SecurityException or Java.Lang.IllegalArgumentException) { return null; }
+    }
+
+    /// <summary>Writes a finished download to the place the person chose (replacing what was there), piece by piece. False when it cannot be written.</summary>
+    public static bool WriteReceivedFile(string address, string sourcePath)
+    {
+        try
+        {
+            if (Instance?.ContentResolver is not { } resolver || Android.Net.Uri.Parse(address) is not { } uri) return false;
+            using var output = resolver.OpenOutputStream(uri, "wt");
+            if (output == null) return false;
+            using var input = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            input.CopyTo(output, 1 << 20);
+            return true;
+        }
+        catch (Exception ex) when (ex is Java.IO.IOException or IOException or Java.Lang.SecurityException) { return false; }
+    }
+
+    /// <summary>Opens a file (a content address) in whatever app on the phone handles its type. False when there is no such app or it cannot be read.</summary>
+    public bool OpenFile(string address, string fileName)
+    {
+        try
+        {
+            if (Android.Net.Uri.Parse(address) is not { } uri) return false;
+            var extension = Path.GetExtension(fileName).TrimStart('.').ToLowerInvariant();
+            var mime = (extension.Length > 0 ? Android.Webkit.MimeTypeMap.Singleton?.GetMimeTypeFromExtension(extension) : null) ?? "*/*";
+            var intent = new Intent(Intent.ActionView).SetDataAndType(uri, mime).AddFlags(ActivityFlags.GrantReadUriPermission);
+            StartActivity(Intent.CreateChooser(intent, "Open with"));
+            return true;
+        }
+        catch (Exception ex) when (ex is ActivityNotFoundException or Java.Lang.SecurityException) { return false; }
     }
 
     /// <summary>
@@ -453,6 +527,7 @@ public class MainActivity : AvaloniaMainActivity
         base.OnActivityResult(requestCode, resultCode, data);
         if (requestCode == PickRequest) { FinishPick(resultCode, data); return; }
         if (requestCode == SaveRequest) { FinishSave(resultCode, data); return; }
+        if (requestCode == SaveLocationRequest) { FinishPickLocation(resultCode, data); return; }
         if (requestCode == PickFileRequest) { FinishPickFile(resultCode, data); return; }
         if (requestCode == PickShareRequest) { FinishPickShare(resultCode, data); return; }
         if (requestCode == CaptureRequest) { s_capture?.TrySetResult(resultCode == Result.Ok && data != null ? ((int)resultCode, data) : null); return; }

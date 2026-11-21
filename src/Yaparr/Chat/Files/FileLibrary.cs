@@ -35,6 +35,9 @@ internal sealed class FileLibrary
 
     public string PartialDirectory(string root) => Path.Combine(_directory, "partial", root);
 
+    /// <summary>Where a finished download waits while it is copied to a place that is not a path.</summary>
+    public string FinishedPath(string root) => Path.Combine(_directory, "finished", root);
+
     public sealed record DownloadRecord(FileOffer Offer, string Destination, bool Paused);
 
     public SharedFile? Shared(string root) { lock (_gate) return _shared.GetValueOrDefault(root); }

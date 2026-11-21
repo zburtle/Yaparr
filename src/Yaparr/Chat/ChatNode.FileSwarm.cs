@@ -155,9 +155,26 @@ public sealed partial class ChatNode
         try
         {
             var hashes = download.File.Hashes;
-            var target = UniquePath(destination);
+            // A place that is an address (not a path) is written by the app; the file is finished next to the records first, and kept there if the copy fails.
+            var save = destination.Contains("://", StringComparison.Ordinal) ? _options.SaveReceivedFile : null;
+            var target = save != null ? files.FinishedPath(offer.Root) : UniquePath(destination);
+            if (save != null && File.Exists(target)) File.Delete(target);
             download.File.Finish(target);
-            if (hashes != null) files.AddShared(Path.GetFullPath(target), offer, hashes);
+            var keptAt = Path.GetFullPath(target);
+            if (save != null)
+            {
+                bool copied = false;
+                try { copied = save(destination, target); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { _options.Log?.Invoke($"could not write {offer.Name} to the place chosen: {ex.Message}"); }
+                if (copied)
+                {
+                    keptAt = destination;
+                    try { File.Delete(target); }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+                }
+                else _options.Log?.Invoke($"{offer.Name} is kept inside the app, as it could not be written to the place chosen");
+            }
+            if (hashes != null) files.AddShared(keptAt, offer, hashes);
             files.ForgetDownload(offer.Root);
             _fileDownloads.TryRemove(offer.Root, out _);
             _fileAttached.TryRemove(offer.Root, out _);

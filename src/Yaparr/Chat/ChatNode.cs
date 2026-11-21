@@ -169,6 +169,13 @@ public sealed class ChatNodeOptions
     /// </summary>
     public Func<string, Stream?>? OpenSharedFile { get; init; }
 
+    /// <summary>
+    /// Copies a finished download to a place the person chose that is not a path (the phone's "save as" hands over an address like <c>content://…</c>): given that address and the path of
+    /// the finished file, returns whether it was written. The address is then where the file is kept and shared from, so <see cref="OpenSharedFile"/> has to be able to read it.
+    /// Without this a download is always kept at the path it was started with.
+    /// </summary>
+    public Func<string, string, bool>? SaveReceivedFile { get; init; }
+
     /// <summary>The most this device sends of shared files, in bytes a second, over all of them; 0 for no limit.</summary>
     public long FileBytesPerSecond { get; init; }
 

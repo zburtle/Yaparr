@@ -179,6 +179,49 @@ public sealed class FileSharingNodeTests : IDisposable
     }
 
     [Fact]
+    public async Task A_download_chosen_to_go_to_an_address_is_written_there_and_kept_track_of_there()
+    {
+        var hub = new InMemoryDiscoveryHub();
+        var chosen = new MemoryStream();
+        const string place = "content://docs/chosen/1";
+        Stream? Open(string address) => address == place ? new MemoryStream(chosen.ToArray(), writable: false) : null;
+        using var a = Node(hub, "a");
+        using var b = new ChatNode(new ChatNodeOptions
+        {
+            DisplayName = "b",
+            EnableRelaying = true,
+            RelayFallbackDelay = TimeSpan.FromMilliseconds(500),
+            DiscoveryFactory = mux => hub.CreateClient(new IPEndPoint(IPAddress.Loopback, mux.LocalPort)),
+            DiscoveryInterval = TimeSpan.FromMilliseconds(300),
+            Network = TestUtil.FastNetwork,
+            FilesDirectory = Path.Combine(_dir, "b-files"),
+            OpenSharedFile = Open,
+            SaveReceivedFile = (address, source) =>
+            {
+                if (address != place) return false;
+                chosen.SetLength(0);
+                chosen.Write(File.ReadAllBytes(source));
+                return true;
+            },
+        });
+        var ra = await a.JoinRoomAsync("Chosen");
+        var rb = await b.JoinRoomAsync("Chosen");
+        await TestUtil.WaitFor(() => ra.MemberStates.Count == 1 && rb.MemberStates.Count == 1);
+
+        var path = MakeFile("pick.bin", 1_300_000);
+        var offer = await a.ShareFileAsync(path, room: ra);
+        var got = new TaskCompletionSource<ChatMessage>();
+        rb.MessageReceived += m => { if (m.File != null) got.TrySetResult(m); };
+        await ra.SendAsync(offer.ToText(""));
+        var message = await got.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        b.StartFileDownload(message, place);
+        await TestUtil.WaitFor(() => b.HasFile(offer.Root), timeoutMs: 30_000);
+        Assert.Equal(place, b.FilePath(offer.Root));
+        Assert.Equal(File.ReadAllBytes(path), chosen.ToArray());
+    }
+
+    [Fact]
     public async Task A_shared_file_and_a_download_under_way_are_remembered_across_a_restart()
     {
         var dir = Path.Combine(_dir, "library");

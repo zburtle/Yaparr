@@ -25,9 +25,10 @@ public sealed partial class Line
 
     public string FileStatusText =>
         _fileProgress is { State: not (FileState.Canceled or FileState.Completed) } p ? FileTexts.Status(p)
-        : _filePath != null && !Mine && _savedTo != null ? FileTexts.Size(File?.Size ?? 0) + " · saved to " + _savedTo
-        : _filePath != null && !Mine && !_filePath.Contains("://", StringComparison.Ordinal) ? FileTexts.Size(File?.Size ?? 0) + " · kept inside Yaparr, where the Files app cannot see it. Save it to Downloads to find it."
-        : _filePath != null ? FileTexts.Size(File?.Size ?? 0) + (Mine ? " · shared from this phone" : " · on this phone")
+        : _filePath != null && !SharedFromHere && _filePath.Contains("://", StringComparison.Ordinal) ? FileTexts.Size(File?.Size ?? 0) + " · saved to " + (_savedTo ?? "the place you chose")
+        : _filePath != null && !SharedFromHere && _savedTo != null ? FileTexts.Size(File?.Size ?? 0) + " · saved to " + _savedTo
+        : _filePath != null && !SharedFromHere ? FileTexts.Size(File?.Size ?? 0) + " · kept inside Yaparr, where the Files app cannot see it. Save it to Downloads to find it."
+        : _filePath != null ? FileTexts.Size(File?.Size ?? 0) + " · shared from this phone"
         : _fileProgress is { State: FileState.Canceled } ? FileTexts.Size(File?.Size ?? 0) + " · canceled"
         : FileTexts.Size(File?.Size ?? 0);
 
@@ -40,12 +41,25 @@ public sealed partial class Line
     public bool FileCanCancel => FileBusy;
 
     /// <summary>A file that was downloaded can be saved somewhere else on the phone (where its own folder, which Android hides, is not wanted).</summary>
-    public bool FileCanSaveCopy => _filePath != null && !Mine && !_filePath.Contains("://", StringComparison.Ordinal);
+    public bool FileCanSaveCopy => _filePath != null && !SharedFromHere && !_filePath.Contains("://", StringComparison.Ordinal);
+
+    /// <summary>The file is here, so it can be opened.</summary>
+    public bool FileCanOpen => _filePath != null;
+
+    /// <summary>The content address of the copy in Downloads, once one was made.</summary>
+    public string? SavedAddress { get; private set; }
+
+    /// <summary>This phone sent the message (not another of your devices, nor someone else), so its file is the one picked here.</summary>
+    public bool SentHere { get; init; }
+
+    // A file picked on this phone was sent from here. Anything else on this phone is a download (even of a file your own desktop sent), kept where the person chose.
+    private bool SharedFromHere => _filePath != null && (SentHere || FileOffered != null);
 
     /// <summary>Says where a copy was saved (shown on the card from then on).</summary>
-    public void SetSavedTo(string where)
+    public void SetSavedTo(string where, string? address = null)
     {
         _savedTo = where;
+        if (address != null) SavedAddress = address;
         Raise(nameof(FileStatusText));
     }
 
@@ -53,7 +67,9 @@ public sealed partial class Line
     {
         _fileProgress = progress;
         _filePath = path;
-        foreach (var name in new[] { nameof(FileStatusText), nameof(FileShowsProgress), nameof(FilePercent), nameof(FileCanDownload), nameof(FileCanPause), nameof(FileCanResume), nameof(FileCanCancel), nameof(FileCanSaveCopy), nameof(FilePath), nameof(HasFile), nameof(FileName) })
+        // After a restart the name of the chosen place is read from where it is kept.
+        if (path != null && _savedTo == null && !SharedFromHere && path.Contains("://", StringComparison.Ordinal)) _savedTo = MainActivity.DisplayNameOf(path);
+        foreach (var name in new[] { nameof(FileStatusText), nameof(FileShowsProgress), nameof(FilePercent), nameof(FileCanDownload), nameof(FileCanPause), nameof(FileCanResume), nameof(FileCanCancel), nameof(FileCanSaveCopy), nameof(FileCanOpen), nameof(FilePath), nameof(HasFile), nameof(FileName) })
             Raise(name);
     }
 }
