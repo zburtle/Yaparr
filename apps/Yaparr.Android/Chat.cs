@@ -336,7 +336,21 @@ public sealed class Chat : Observable
         foreach (var chip in Channels) chip.Selected = chip.Id == id;
         Shown.Clear();
         foreach (var line in _all.Where(Belongs)) Shown.Add(line);
+        for (int i = 0; i < Shown.Count; i++) MarkDaysAround(i);
         Raise(nameof(CurrentChannel));
+    }
+
+    // A date line above the first message of each day, as on the computer: the message at this place and the one after it are looked at again (markers are not messages).
+    private void MarkDaysAround(int index)
+    {
+        for (int j = index; j <= index + 1 && j < Shown.Count; j++)
+        {
+            var line = Shown[j];
+            if (line.IsMarker) continue;
+            int before = j - 1;
+            while (before >= 0 && Shown[before].IsMarker) before--;
+            line.ShowDay = before < 0 || Shown[before].When.LocalDateTime.Date != line.When.LocalDateTime.Date;
+        }
     }
 
     private bool Belongs(Line line) => !IsRoom || (line.Channel ?? RoomChannels.DefaultText) == _channel;
@@ -358,6 +372,7 @@ public sealed class Chat : Observable
             int shown = Shown.Count;
             while (shown > 0 && Shown[shown - 1].When > line.When) shown--;
             Shown.Insert(shown, line);
+            MarkDaysAround(shown);
         }
         // A message stamped in the future (a clock that is ahead) counts as now, so it cannot keep its chat at the top.
         var when = line.When > DateTimeOffset.Now ? DateTimeOffset.Now : line.When;
@@ -374,7 +389,9 @@ public sealed class Chat : Observable
     public void Remove(Line line)
     {
         _all.Remove(line);
+        int at = Shown.IndexOf(line);
         Shown.Remove(line);
+        if (at >= 0) MarkDaysAround(Math.Max(0, at));
         if (_byKey.TryGetValue(line.Id, out var held) && ReferenceEquals(held, line)) _byKey.Remove(line.Id);
         // What the list of chats shows of this one follows the newest message that is left.
         if (_all.Count > 0 && _all[^1] is { } last && last.When <= LastActivity)

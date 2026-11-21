@@ -30,6 +30,18 @@ public sealed partial class Line : Observable
     /// <summary>Not a message: a spinner while earlier messages are being got (<see cref="MarkerKind.Loading"/>), or the words "End Of Messages" (<see cref="MarkerKind.End"/>), as the first row of the list.</summary>
     public static Line Marker(MarkerKind kind) => new("marker:" + kind, "", "", DateTimeOffset.FromUnixTimeSeconds(0), false) { Kind = kind };
 
+    private bool _showDay;
+
+    /// <summary>True when this is the first message of its day, so a date line is shown above it (kept up to date by <see cref="Chat"/>).</summary>
+    public bool ShowDay
+    {
+        get => _showDay;
+        set { if (_showDay == value) return; _showDay = value; Raise(); }
+    }
+
+    /// <summary>"Today", "Yesterday" or the date, for the line above the first message of a day.</summary>
+    public string DayLabel => Yaparr.AppCore.ListTime.DayLabel(When, DateTimeOffset.Now);
+
     public MarkerKind Kind { get; private init; }
     public bool IsMarker => Kind != MarkerKind.None;
     public bool IsLoadingMarker => Kind == MarkerKind.Loading;

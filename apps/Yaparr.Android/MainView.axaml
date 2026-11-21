@@ -466,6 +466,7 @@
                               StrokeThickness="2.5" StrokeLineCap="Round" Width="24" Height="24" Margin="0,14" HorizontalAlignment="Center"><Path.RenderTransform><RotateTransform /></Path.RenderTransform></Path>
                         <TextBlock IsVisible="{Binding IsEndMarker}" Text="End Of Messages" HorizontalAlignment="Center" Margin="0,14" FontSize="13" Foreground="{DynamicResource Muted}" />
                         <StackPanel IsVisible="{Binding !IsMarker}">
+                        <TextBlock IsVisible="{Binding ShowDay}" Text="{Binding DayLabel}" HorizontalAlignment="Center" FontSize="13" FontWeight="SemiBold" Margin="0,12,0,8" Foreground="{DynamicResource Muted}" />
                         <Border HorizontalAlignment="{Binding Align}" MaxWidth="320" Padding="12,8" CornerRadius="16" Background="{Binding Fill}" Holding="MessageHeld">
                             <StackPanel Spacing="2">
                                 <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding !Mine}">
