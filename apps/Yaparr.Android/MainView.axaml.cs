@@ -304,11 +304,11 @@ public partial class MainView : UserControl
         if (session.FindRoom(key) is { } have) { OpenChat(have); return; }
         // Not yet: the room is named and confirmed on the sheet that joins rooms.
         if (_current != null) BackToList();
+        ShowAdd(AddMode.Join);
         RoomNameBox.Text = "";
         RoomInviteBox.Text = invite;
         AddStatus.Text = "A link is asking you to join a room. Once you join, the other members can see your IP address, and anyone with the link can join too. " +
-                         "Only join if you trust whoever sent it. Name the room (only you see the name), then tap Make or join the room.";
-        AddPanel.IsVisible = true;
+                         "Only join if you trust whoever sent it. Name the room (only you see the name), then tap Join the room.";
         RoomNameBox.Focus();
     }
 
@@ -772,11 +772,50 @@ public partial class MainView : UserControl
         SettingsNote.Text = note;
     }
 
+    // The + button: first a room or a person, then (for a room) make one or join one, then only the fields that needs.
+    private enum AddMode { Create, Join, Direct }
+
+    private AddMode _addMode;
+
     private void AddClicked(object? sender, RoutedEventArgs e)
     {
+        ActionTitle.Text = "Start a chat";
+        ActionList.Children.Clear();
+        AddAction("Room", ShowRoomChoice);
+        AddAction("Direct chat", () => ShowAdd(AddMode.Direct));
+        ActionPanel.IsVisible = true;
+    }
+
+    private void ShowRoomChoice()
+    {
+        ActionTitle.Text = "Room";
+        ActionList.Children.Clear();
+        AddAction("Create a room", () => ShowAdd(AddMode.Create));
+        AddAction("Join a room", () => ShowAdd(AddMode.Join));
+        ActionPanel.IsVisible = true;
+    }
+
+    // One small form for what was chosen: a name to make a room, a name and an invite to join one, an ID for a person.
+    private void ShowAdd(AddMode mode)
+    {
+        _addMode = mode;
         AddStatus.Text = "";
+        bool room = mode != AddMode.Direct;
+        AddTitle.Text = mode switch { AddMode.Create => "Create a room", AddMode.Join => "Join a room", _ => "Direct chat" };
+        AddHint.Text = mode switch
+        {
+            AddMode.Create => "Name it, then share its invite with the people you want in it.",
+            AddMode.Join => "Paste the invite you were given and name the room. Only you see the name.",
+            _ => "Enter the ID of the person you want to write to.",
+        };
+        RoomNameBox.IsVisible = room;
+        RoomInviteBox.IsVisible = mode == AddMode.Join;
+        RoomGoButton.IsVisible = room;
+        RoomGoButton.Content = mode == AddMode.Join ? "Join the room" : "Create the room";
+        PersonBox.IsVisible = !room;
+        PersonGoButton.IsVisible = !room;
         AddPanel.IsVisible = true;
-        RoomNameBox.Focus();
+        (room ? (mode == AddMode.Join ? RoomInviteBox : RoomNameBox) : PersonBox).Focus();
     }
 
     private void AddCloseClicked(object? sender, RoutedEventArgs e)
@@ -798,7 +837,10 @@ public partial class MainView : UserControl
         var invite = (RoomInviteBox.Text ?? "").Trim();
         // A link that carries the invite works as well as the bare key.
         if (DeepLink.Parse(invite) is { Kind: DeepLinkKind.Join } pasted) invite = pasted.Value;
+        if (_addMode == AddMode.Join && invite.Length == 0) { AddStatus.Text = "Paste the invite."; return; }
         if (label.Length == 0) { AddStatus.Text = "Give the room a name."; return; }
+        // Making a room never takes an invite, whatever was left in the box.
+        if (_addMode == AddMode.Create) invite = "";
         AddStatus.Text = invite.Length > 0 ? "Joining..." : "Making the room...";
         try
         {
