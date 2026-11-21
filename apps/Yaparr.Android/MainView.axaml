@@ -348,7 +348,7 @@
                         <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="17" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource Ink}" />
                         <TextBlock Text="{Binding Status}" FontSize="12" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource Muted}" />
                     </StackPanel>
-                    <Button x:Name="MenuButton" Grid.Column="2" Content="⋮" FontSize="22" Padding="16,0" Background="Transparent" Foreground="{DynamicResource Ink}" />
+                    <Button x:Name="MenuButton" Grid.Column="2" Content="⋮" FontSize="22" Padding="16,0" Background="Transparent" Foreground="{DynamicResource Ink}" Click="MenuClicked" />
                 </Grid>
             </Border>
 
@@ -714,12 +714,15 @@
             </Border>
         </Border>
 
-        <!-- What can be done with a message: a small window in the middle. -->
+        <!-- What can be done with a message, a chat, the + button or the ⋮ menu: a sheet from the bottom, with big rows to hit with a thumb. -->
         <Border x:Name="ActionPanel" IsVisible="False" Background="#99000000" PointerPressed="OverlayBackdropPressed">
-            <Border Background="{DynamicResource Surface}" CornerRadius="16" Margin="40" Padding="8" MaxWidth="320" VerticalAlignment="Center">
+            <Border Background="{DynamicResource Surface}" CornerRadius="24,24,0,0" Padding="12,10,12,28" VerticalAlignment="Bottom" HorizontalAlignment="Stretch">
                 <StackPanel Spacing="2">
-                    <TextBlock x:Name="ActionTitle" FontSize="13" MaxLines="2" TextTrimming="CharacterEllipsis" Margin="12,8,12,6" Foreground="{DynamicResource Muted}" />
-                    <StackPanel x:Name="ActionList" />
+                    <Border Width="40" Height="4" CornerRadius="2" Background="{DynamicResource Muted}" Opacity="0.5" HorizontalAlignment="Center" Margin="0,0,0,8" />
+                    <TextBlock x:Name="ActionTitle" FontSize="14" MaxLines="2" TextTrimming="CharacterEllipsis" Margin="16,6,16,8" Foreground="{DynamicResource Muted}" />
+                    <ScrollViewer MaxHeight="520" VerticalScrollBarVisibility="Auto">
+                        <StackPanel x:Name="ActionList" Spacing="2" />
+                    </ScrollViewer>
                 </StackPanel>
             </Border>
         </Border>
