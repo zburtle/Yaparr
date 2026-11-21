@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="using:Yaparr.Desktop"
              x:Class="Yaparr.Desktop.VoiceSettingsView"
              Focusable="True">
     <StackPanel Spacing="4">
@@ -12,21 +13,22 @@
         <TextBlock Classes="muted small" TextWrapping="Wrap" Text="100% is as received; higher makes everyone louder." />
         <CheckBox x:Name="LevelSpeakersBox" Margin="0,10,0,0" Content="Even out how loud people are" />
         <TextBlock Classes="muted small" TextWrapping="Wrap"
-                   Text="Turns up people with a quiet microphone and down people who are loud, as they talk. Your slider for each person still applies on top." />
+                   Text="Evens out how loud people are, as they talk." />
+                   <local:LearnMoreLink Topic="voice" Text="Learn more about voice settings" Foreground="{DynamicResource Accent}" />
         <CheckBox x:Name="AutomaticVolumeBox" Margin="0,6,0,0" Content="Automatic volume for my microphone" />
         <TextBlock Classes="muted small" TextWrapping="Wrap"
-                   Text="Raises a quiet microphone and lowers a loud one before it is sent. The volume changes only while you talk and is held in pauses." />
+                   Text="Evens out your own microphone before it is sent." />
         <CheckBox x:Name="EchoBox" Margin="0,10,0,0" Content="Echo cancellation (others do not hear themselves through your speakers)" />
         <TextBlock Text="Noise suppressor" FontWeight="SemiBold" Margin="0,8,0,0" />
         <ComboBox x:Name="SuppressorBox" HorizontalAlignment="Stretch" AutomationProperties.Name="Noise suppressor" />
         <TextBlock x:Name="NoiseLevelLabel" Text="Strength" FontWeight="SemiBold" Margin="0,6,0,0" />
         <ComboBox x:Name="NoiseBox" HorizontalAlignment="Stretch" AutomationProperties.Name="Noise suppression strength" />
         <TextBlock x:Name="ProcessingNote" Classes="muted small" TextWrapping="Wrap"
-                   Text="Takes steady noise such as fans and hiss out of your microphone. A headset works best and needs no echo cancellation." />
+                   Text="Takes steady noise such as fans out of your microphone." />
         <TextBlock x:Name="SuppressorNote" Classes="muted small" TextWrapping="Wrap" />
         <CheckBox x:Name="ClickBox" Margin="0,6,0,0" Content="Take out keyboard and mouse clicks" />
         <TextBlock x:Name="ClickNote" Classes="muted small" TextWrapping="Wrap"
-                   Text="Removes short, sharp clicks such as keys and mouse buttons, which noise suppression does not. Adds about 10 ms of delay to your voice." />
+                   Text="Removes clicks such as keys and mouse buttons. Adds about 10 ms of delay." />
         <TextBlock Text="Voice quality" FontWeight="SemiBold" Margin="0,8,0,0" />
         <ComboBox x:Name="QualityBox" HorizontalAlignment="Stretch" AutomationProperties.Name="Voice quality" />
         <TextBlock x:Name="QualityNote" Classes="muted small" TextWrapping="Wrap" />
@@ -40,7 +42,7 @@
         <CheckBox x:Name="PushToTalkSoundBox" Margin="24,0,0,0" Content="Play a short tick when the key goes down" />
         <TextBlock Text="Voice activation sensitivity" FontWeight="SemiBold" Margin="0,8,0,0" />
         <TextBlock Classes="muted small" TextWrapping="Wrap"
-                   Text="Your microphone is sent when its level (the bar) goes above the slider. Move the slider just above the level you see while you are quiet." />
+                   Text="Sent when the level (the bar) goes above the slider." />
         <Grid Height="22" Margin="0,4,0,0">
             <ProgressBar x:Name="LevelBar" Minimum="0" Maximum="100" Height="8" VerticalAlignment="Center" />
         </Grid>

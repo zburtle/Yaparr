@@ -91,8 +91,8 @@ public partial class VoiceSettingsView : UserControl
 
     private static readonly SuppressorChoice[] Suppressors =
     {
-        new(nameof(NoiseSuppressor.YaparrCustom), "Yaparr Custom", "WebRTC's noise suppression, the one Yaparr has always used. Pick how strong it is."),
-        new(nameof(NoiseSuppressor.RNNoise), "RNNoise", "A small neural network trained on speech. It has no strength to set, and takes out more than steady noise (keys and voices in the background too), at the cost of a little more processing."),
+        new(nameof(NoiseSuppressor.YaparrCustom), "Yaparr Custom", "WebRTC's noise suppression. Pick how strong it is."),
+        new(nameof(NoiseSuppressor.RNNoise), "RNNoise", "A small neural network trained on speech. Removes more than steady noise, at the cost of more processing."),
     };
 
     /// <summary>The suppressor kept in the settings; Yaparr Custom for anything that is not one of them.</summary>

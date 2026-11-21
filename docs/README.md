@@ -6,6 +6,7 @@ Yaparr is a serverless chat, voice and screen sharing library for .NET with a de
 
 ## Using Yaparr
 
+- [Guides](guides/README.md): short explanations of the settings, which the apps link to from "Learn more about …".
 - [Getting started](getting-started.md): use the library from code and try the command line.
 - [The desktop app](desktop-app.md): the chat app, its notifications, diagnostics and logs.
 - [Installer and updates](installer-and-updates.md): the MSI, the .deb and how the app updates itself.

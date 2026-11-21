@@ -50,8 +50,8 @@ public partial class ShareDialog : Window
         }
         SoundNote.IsVisible = ScreenSound.IsSupported;
         if (!OperatingSystem.IsWindows()) SoundNote.Text = ScreenCapture.UsesPortal
-            ? "The sound of your computer is shared too, except Yaparr's own, so the voice chat does not go round. Wayland does not say which program a window belongs to, so to share only one program's sound, pick it below (it must be playing now)."
-            : "The sound of a shared window is shared too (not the voice chat, which is another program); a whole monitor shares the sound of your computer, except Yaparr's own.";
+            ? "The sound is shared too, except Yaparr's own. To share only one program's sound, pick it below (it must be playing now)."
+            : "The sound is shared too, except Yaparr's own.";
         if (ScreenCapture.UsesPortal && ScreenSound.IsSupported)
         {
             SoundBox.IsVisible = true;
@@ -130,7 +130,7 @@ public partial class ShareDialog : Window
         // What the hint says depends on what is picked: AV1 is unhooked from the check, H.265 has its own words.
         if (FormatBox.SelectedIndex == 2 && ScreenFeatures.H265)
         {
-            FormatHint.Text = "H.265 looks better than H.264 at the same connection speed, but only a graphics card makes it here (NVIDIA, AMD or Intel; the card's maker has to support H.265 live). If yours cannot, Yaparr shares in H.264 instead. Watchers need an up to date Yaparr (on a computer it plays in software if the graphics card cannot decode it, though a busy processor may struggle at high resolutions) or a phone that can play H.265.";
+            FormatHint.Text = "AV1 and H.265 need a newer graphics card. If yours cannot, Yaparr shares in H.264.";
             FormatHint.IsVisible = true;
         }
         else if (Av1Support.Latest is not { CanEncode: false }) FormatHint.IsVisible = FormatBox.SelectedIndex == 1;
@@ -186,8 +186,8 @@ public partial class ShareDialog : Window
         SoundBox.IsVisible = picker;
         if (picker) FillSoundChoices();
         SoundNote.Text = picker
-            ? "The sound of your computer is shared too, except Yaparr's own, so the voice chat does not go round. The desktop's picker does not say which program a window belongs to, so to share only one program's sound, pick it below (it must be playing now)."
-            : "The sound of a shared window is shared too (not the voice chat, which is another program); a whole monitor shares the sound of your computer, except Yaparr's own.";
+            ? "The sound is shared too, except Yaparr's own. To share only one program's sound, pick it below (it must be playing now)."
+            : "The sound is shared too, except Yaparr's own.";
     }
 
     private const string PortalWindowChoice = "A window, chosen in the desktop's picker (keeps up when it is resized)";

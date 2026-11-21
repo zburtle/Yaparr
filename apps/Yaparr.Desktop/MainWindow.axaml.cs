@@ -727,7 +727,7 @@ public partial class MainWindow : Window
             _data.SaveSettings(_settings);
         }
         var conv = AddRoom(room, PrivatePrefix + label, invite: key.ToString());
-        if (persist) conv.Add(MessageVm.System("Share the invite with people you want in this room: click the room key in the room details to copy it, or use Copy link for a link that opens Yaparr. Anyone who has it can join."));
+        if (persist) conv.Add(MessageVm.System("Share the invite with the people you want in this room: copy the room key in the room details, or use Copy link. Anyone who has it can join."));
         if (persist && key.Owner != null && key.Owner == _node.AccountId)
             conv.Add(MessageVm.System("You own this room, and that cannot be handed over or taken back. If a computer or phone you use Yaparr on is lost or stolen, whoever has it can act as you here, including appointing admins. If that happens, make a new room."));
     }

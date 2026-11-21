@@ -465,7 +465,7 @@ public partial class MainView : UserControl
         NotifyCheck.IsChecked = _settings.NotifyMessages;
         BackgroundCheck.IsChecked = _settings.BackgroundConnection;
         bool canService = OperatingSystem.IsAndroidVersionAtLeast(26);
-        BackgroundCheck.IsVisible = BackgroundNote.IsVisible = BatteryButton.IsVisible = canService;
+        BackgroundCheck.IsVisible = BackgroundNote.IsVisible = BackgroundLearn.IsVisible = BatteryButton.IsVisible = canService;
         NotificationNote.Text = "";
         FillServerForm();
         ShowPush();
@@ -1481,7 +1481,7 @@ public partial class MainView : UserControl
         if (version != _shelfVersion) return;
         ShelfGrid.Children.Clear();
         ShelfHint.Text = items.Count == 0
-            ? "Nothing here yet. Add GIFs and pictures you like to send again, or hold a picture in a chat and choose Add to my GIF shelf. They stay on this phone."
+            ? "Nothing here yet. Hold a picture in a chat and choose Add to my GIF shelf."
             : CountText(items.Count) + ". Tap one to send it, hold it for more.";
         // A few previews at a time, so a long shelf opens at once and fills in.
         foreach (var chunk in items.Chunk(18))
