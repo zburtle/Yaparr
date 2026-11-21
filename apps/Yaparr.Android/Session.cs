@@ -733,14 +733,16 @@ public sealed partial class Session : IDisposable
         direct.ReactionsChanged += _ => UI(() => ScheduleReactions(chat));
         direct.EarlierHistoryReceived += () => UI(() => OnEarlierArrived(chat));
         // History taken in from the account's kept copy: what is missing from the window is added (a direct message is never removed by it).
-        direct.HistoryChanged += () => UI(() => { foreach (var m in direct.History) chat.Add(ToLine(m)); RefreshReactions(chat); });
+        direct.HistoryChanged += () => UI(() => { foreach (var m in direct.History) { var l = ToLine(m); if (chat.Add(l)) TrackFile(l); } RefreshReactions(chat); });
         // Another of your devices read it: nothing here is new any more.
         direct.ReadChanged += () => UI(chat.ClearAllUnread);
         var readUpTo = direct.ReadUpTo;
         foreach (var m in direct.History)
         {
             var line = ToLine(m);
-            if (chat.Add(line) && !line.Mine && (readUpTo == null || m.Timestamp > readUpTo)) chat.NoteUnread(null);
+            if (!chat.Add(line)) continue;
+            TrackFile(line);
+            if (!line.Mine && (readUpTo == null || m.Timestamp > readUpTo)) chat.NoteUnread(null);
         }
         RefreshReactions(chat);
         chat.Status = direct.IsNotes ? "Only you: kept on all your devices" : "Direct chat";

@@ -37,7 +37,7 @@ public sealed partial class Session
                 else
                 {
                     var line = ToLine(m);
-                    if (chat.Add(line)) TrackPicture(line);
+                    if (chat.Add(line)) { TrackPicture(line); TrackFile(line); }
                 }
             }
         }
