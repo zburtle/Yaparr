@@ -11,6 +11,10 @@ using Avalonia.Android;
 [assembly: UsesPermission(Android.Manifest.Permission.Internet)]
 [assembly: UsesPermission(Android.Manifest.Permission.AccessNetworkState)]
 [assembly: UsesPermission(Android.Manifest.Permission.ChangeWifiMulticastState)]
+// That permission makes Android assume the phone needs Wi-Fi, and the QR scanner being locked to portrait makes it assume a portrait screen. Neither is needed (the
+// app works over mobile data, Ethernet or a VPN, and in any orientation), so say so, or Play hides the app from phones, tablets and desktops without them.
+[assembly: UsesFeature("android.hardware.wifi", Required = false)]
+[assembly: UsesFeature("android.hardware.screen.portrait", Required = false)]
 
 // The microphone is for voice channels, asked for the first time you join one.
 [assembly: UsesPermission(Android.Manifest.Permission.RecordAudio)]
