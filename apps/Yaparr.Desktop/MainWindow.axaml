@@ -676,13 +676,13 @@
                                             </Grid>
                                             <Border IsVisible="{Binding HasFile}" Padding="2" HorizontalAlignment="Left">
                                                 <StackPanel Spacing="6" MinWidth="240" MaxWidth="360">
-                                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
                                                         <TextBlock Text="&#128196;" FontSize="28" VerticalAlignment="Center" FontFamily="Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji, Twemoji Mozilla" />
-                                                        <StackPanel VerticalAlignment="Center" Spacing="1">
+                                                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
                                                             <TextBlock Text="{Binding FileName}" FontWeight="SemiBold" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
                                                             <TextBlock Text="{Binding FileStatusText}" FontSize="12" Opacity="0.85" TextWrapping="Wrap" />
                                                         </StackPanel>
-                                                    </StackPanel>
+                                                    </Grid>
                                                     <ProgressBar IsVisible="{Binding FileShowsProgress}" Value="{Binding FilePercent}" Maximum="100" Height="4" />
                                                     <StackPanel Orientation="Horizontal" Spacing="6">
                                                         <Button Content="Download" Classes="primary" IsVisible="{Binding FileCanDownload}" Click="FileDownload_Click" />

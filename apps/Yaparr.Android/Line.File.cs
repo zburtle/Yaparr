@@ -9,6 +9,7 @@ public sealed partial class Line
 {
     private FileProgress? _fileProgress;
     private string? _filePath;
+    private string? _savedTo;
 
     /// <summary>The file this message offers, if it does.</summary>
     public FileOffer? File => Source?.File ?? FileOffered;
@@ -24,6 +25,8 @@ public sealed partial class Line
 
     public string FileStatusText =>
         _fileProgress is { State: not (FileState.Canceled or FileState.Completed) } p ? FileTexts.Status(p)
+        : _filePath != null && !Mine && _savedTo != null ? FileTexts.Size(File?.Size ?? 0) + " · saved to " + _savedTo
+        : _filePath != null && !Mine && !_filePath.Contains("://", StringComparison.Ordinal) ? FileTexts.Size(File?.Size ?? 0) + " · kept inside Yaparr, where the Files app cannot see it. Save it to Downloads to find it."
         : _filePath != null ? FileTexts.Size(File?.Size ?? 0) + (Mine ? " · shared from this phone" : " · on this phone")
         : _fileProgress is { State: FileState.Canceled } ? FileTexts.Size(File?.Size ?? 0) + " · canceled"
         : FileTexts.Size(File?.Size ?? 0);
@@ -38,6 +41,13 @@ public sealed partial class Line
 
     /// <summary>A file that was downloaded can be saved somewhere else on the phone (where its own folder, which Android hides, is not wanted).</summary>
     public bool FileCanSaveCopy => _filePath != null && !Mine && !_filePath.Contains("://", StringComparison.Ordinal);
+
+    /// <summary>Says where a copy was saved (shown on the card from then on).</summary>
+    public void SetSavedTo(string where)
+    {
+        _savedTo = where;
+        Raise(nameof(FileStatusText));
+    }
 
     public void SetFile(FileProgress? progress, string? path)
     {
