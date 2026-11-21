@@ -384,17 +384,7 @@ public sealed class MessageVm : Observable
         set { if (_showDay != value) { _showDay = value; Raise(); } }
     }
 
-    public string DayLabel
-    {
-        get
-        {
-            var day = Time.LocalDateTime.Date;
-            var today = DateTime.Now.Date;
-            if (day == today) return "Today";
-            if (day == today.AddDays(-1)) return "Yesterday";
-            return day.Year == today.Year ? day.ToString("dddd, MMMM d") : day.ToString("dddd, MMMM d, yyyy");
-        }
-    }
+    public string DayLabel => ListTime.DayLabel(Time, DateTimeOffset.Now);
     public bool ShowSender => !IsMine && !IsSystem;
     public bool IsOther => !IsMine && !IsSystem;
     public IBrush SenderBrush => Avatars.BrushFor(Sender);

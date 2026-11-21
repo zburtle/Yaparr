@@ -15,6 +15,17 @@ public class ListTimeTests
     }
 
     [Fact]
+    public void The_date_line_of_a_chat_says_today_yesterday_or_the_date()
+    {
+        Assert.Equal("Today", ListTime.DayLabel(Now.AddHours(-5), Now));
+        Assert.Equal("Yesterday", ListTime.DayLabel(Now.AddDays(-1), Now));
+        var earlier = Now.AddDays(-30);
+        Assert.Equal(earlier.LocalDateTime.ToString("dddd, MMMM d"), ListTime.DayLabel(earlier, Now));
+        var lastYear = new DateTimeOffset(2025, 12, 25, 12, 0, 0, TimeZoneInfo.Local.GetUtcOffset(new DateTime(2025, 12, 25, 12, 0, 0)));
+        Assert.Equal("Thursday, December 25, 2025", ListTime.DayLabel(lastYear, Now));
+    }
+
+    [Fact]
     public void Older_messages_show_the_date_and_no_message_shows_nothing()
     {
         Assert.Equal(Now.AddDays(-20).LocalDateTime.ToString("MMM d"), ListTime.Of(Now.AddDays(-20), Now));
