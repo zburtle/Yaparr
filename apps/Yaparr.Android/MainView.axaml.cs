@@ -1214,6 +1214,12 @@ public partial class MainView : UserControl
                 _session?.DeleteMessage(chat, line);
                 return Task.CompletedTask;
             }), danger: true);
+        if (_session.CanDeleteNote(chat, line))
+            AddAction("Delete note", () => Ask("Delete this note? It is deleted on all your devices.", "Delete", () =>
+            {
+                _session?.DeleteNote(chat, line);
+                return Task.CompletedTask;
+            }), danger: true);
         if (!line.Mine && line.Source is { } source)
         {
             var who = _session.SenderOf(chat, source);

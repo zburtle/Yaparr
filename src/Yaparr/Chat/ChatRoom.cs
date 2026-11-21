@@ -549,6 +549,15 @@ public sealed class DirectChat
     /// <summary>The messages before the one with the id <paramref name="beforeId"/> (<see cref="ChatMessage.Id"/>), oldest first, up to <paramref name="count"/> of them.</summary>
     public HistoryPage GetEarlierHistory(string beforeId, int count = 100) => _node.GetEarlierDirectHistory(PeerId, beforeId, Math.Clamp(count, 1, 500));
 
+    /// <summary>
+    /// Deletes a note (the message with this <see cref="ChatMessage.Id"/>) for good on every device of your account. Only the chat with yourself has this; other conversations
+    /// are the other person's as well. False when this is not that chat or the note is not here.
+    /// </summary>
+    public bool DeleteNote(string messageId) => IsNotes && _node.DeleteNote(messageId);
+
+    /// <summary>Which of these messages (by id) of the chat with yourself were deleted, here or on another of your devices; read again when <see cref="HistoryChanged"/> is raised.</summary>
+    public IReadOnlySet<string> DeletedNotesAmong(IEnumerable<string> messageIds) => IsNotes ? _node.RemovedNotesAmong(messageIds) : new HashSet<string>();
+
     /// <summary>The time of the newest message from them that you have read, on any of your devices.</summary>
     public DateTimeOffset? ReadUpTo => _node.DirectReadUpTo(PeerId);
 

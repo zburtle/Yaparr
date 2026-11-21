@@ -113,6 +113,67 @@ public class NotesToSelfTests : IDisposable
     }
 
     [Fact]
+    public async Task A_deleted_note_is_gone_here_and_on_your_other_device_and_does_not_come_back()
+    {
+        var first = Node("alice", _firstId);
+        var second = Node("alice", _secondId);
+        await Task.WhenAll(first.JoinRoomAsync("lobby"), second.JoinRoomAsync("lobby"));
+        await TestUtil.WaitFor(() => first.MyDevices.Count == 2 && second.MyDevices.Count == 2, 30_000);
+
+        var seen = new List<ChatMessage>();
+        second.NotesChat.MessageReceived += m => { lock (seen) seen.Add(m); };
+        var keep = await first.NotesChat.SendAsync("keep me");
+        var drop = await first.NotesChat.SendAsync("delete me");
+        await TestUtil.WaitFor(() => { lock (seen) return seen.Count == 2; }, 30_000);
+
+        Assert.True(first.NotesChat.DeleteNote(drop));
+        Assert.Equal("keep me", Assert.Single(first.NotesChat.History).Text);
+        Assert.Equal(new[] { drop }, first.NotesChat.DeletedNotesAmong(new[] { keep, drop }));
+
+        await TestUtil.WaitFor(() => second.NotesChat.History.Count == 1, 30_000);
+        Assert.Equal("keep me", Assert.Single(second.NotesChat.History).Text);
+        Assert.Equal(new[] { drop }, second.NotesChat.DeletedNotesAmong(new[] { keep, drop }));
+
+        // The device that deleted it does not take it back when the other one offers it again.
+        Assert.False(first.NotesChat.DeleteNote(drop));
+        Assert.Equal("keep me", Assert.Single(first.NotesChat.History).Text);
+    }
+
+    [Fact]
+    public async Task A_device_that_was_off_when_a_note_was_deleted_drops_it_when_it_meets_the_other()
+    {
+        var first = Node("alice", _firstId);
+        await first.NotesChat.SendAsync("keep me");
+        var drop = await first.NotesChat.SendAsync("delete me");
+
+        var secondDir = Path.Combine(_dir, "second");
+        using (var second = TestUtil.NewNode(_hub, "alice", identity: _secondId, directHistoryDirectory: secondDir))
+        {
+            await Task.WhenAll(first.JoinRoomAsync("lobby"), second.JoinRoomAsync("lobby"));
+            await TestUtil.WaitFor(() => second.NotesChat.History.Count == 2, 30_000);
+        }
+
+        Assert.True(first.NotesChat.DeleteNote(drop));
+
+        using var back = TestUtil.NewNode(_hub, "alice", identity: _secondId, directHistoryDirectory: secondDir);
+        Assert.Equal(2, back.NotesChat.History.Count);
+        await back.JoinRoomAsync("lobby");
+        await TestUtil.WaitFor(() => back.NotesChat.History.Count == 1, 30_000);
+        Assert.Equal("keep me", Assert.Single(back.NotesChat.History).Text);
+    }
+
+    [Fact]
+    public async Task Only_the_chat_with_yourself_lets_a_message_be_deleted()
+    {
+        var node = Node("alice", _firstId);
+        var id = await node.NotesChat.SendAsync("mine");
+        var other = new PeerId(new string('b', 64));
+        Assert.False(node.GetDirectChat(other).DeleteNote(id));
+        Assert.Empty(node.GetDirectChat(other).DeletedNotesAmong(new[] { id }));
+        Assert.False(node.NotesChat.DeleteNote("no such note"));
+    }
+
+    [Fact]
     public async Task Notes_are_kept_across_a_restart()
     {
         using (var alice = TestUtil.NewNode(new InMemoryDiscoveryHub(), "alice", identity: _firstId, directHistoryDirectory: _dir))

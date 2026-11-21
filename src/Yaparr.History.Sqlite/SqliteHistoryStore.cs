@@ -185,8 +185,12 @@ public sealed class SqliteHistoryStore : IChatHistoryStore, IDirectHistoryStore,
                 using (var cmd = _db.CreateCommand())
                 {
                     cmd.Transaction = tx;
-                    cmd.CommandText = $"DELETE FROM messages WHERE room = $r AND key IN ({Marks(part.Length)})";
-                    cmd.Parameters.AddWithValue("$r", roomKey);
+                    // The removals of a direct conversation ("d:<person>") take its messages out of the conversation's table.
+                    bool direct = roomKey.StartsWith(DirectRemovals.Prefix, StringComparison.Ordinal);
+                    cmd.CommandText = direct
+                        ? $"DELETE FROM direct WHERE peer = $r AND key IN ({Marks(part.Length)})"
+                        : $"DELETE FROM messages WHERE room = $r AND key IN ({Marks(part.Length)})";
+                    cmd.Parameters.AddWithValue("$r", direct ? roomKey[DirectRemovals.Prefix.Length..] : roomKey);
                     for (int i = 0; i < part.Length; i++) cmd.Parameters.AddWithValue("$" + i, part[i]);
                     cmd.ExecuteNonQuery();
                 }
@@ -405,7 +409,9 @@ public sealed class SqliteHistoryStore : IChatHistoryStore, IDirectHistoryStore,
     {
         var cmd = _db.CreateCommand();
         cmd.Transaction = tx;
-        cmd.CommandText = "INSERT OR IGNORE INTO direct(peer, key, id, name, mine, ts, body, pub, acct, cert, sig, st, target) VALUES($p, $k, $i, $n, $m, $t, $b, $u, $a, $c, $s, $x, $g)";
+        // A message that was removed for good (kept under "d:<person>") is not kept again.
+        cmd.CommandText = "INSERT OR IGNORE INTO direct(peer, key, id, name, mine, ts, body, pub, acct, cert, sig, st, target) " +
+                          "SELECT $p, $k, $i, $n, $m, $t, $b, $u, $a, $c, $s, $x, $g WHERE NOT EXISTS (SELECT 1 FROM removed WHERE room = 'd:' || $p AND key = $k)";
         foreach (var n in new[] { "$p", "$k", "$i", "$n", "$m", "$t", "$b", "$u", "$a", "$c", "$s", "$x", "$g" }) cmd.Parameters.Add(new SqliteParameter(n, null));
         return cmd;
     }

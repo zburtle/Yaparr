@@ -655,6 +655,25 @@ public sealed partial class Session : IDisposable
         if (chat.Room is { } room && line.Source != null) room.DeleteMessage(line.Source);
     }
 
+    /// <summary>Whether this message is a note in Notes to self, which can be deleted (for good, on all your devices).</summary>
+    public bool CanDeleteNote(Chat chat, Line line) => chat.Direct is { IsNotes: true } && line.Source != null;
+
+    /// <summary>Deletes a note for good on every device of your account, and takes it off the screen.</summary>
+    public void DeleteNote(Chat chat, Line line)
+    {
+        if (chat.Direct is { IsNotes: true } direct && line.Source is { } note && direct.DeleteNote(note.Id)) chat.Remove(line);
+    }
+
+    // Notes that were deleted on another of your devices (or came off the kept history) are taken off the screen.
+    private static void DropDeletedNotes(Chat chat)
+    {
+        if (chat.Direct is not { IsNotes: true } direct) return;
+        var shown = chat.AllLines.Where(l => l.Source != null).ToList();
+        if (shown.Count == 0) return;
+        var gone = direct.DeletedNotesAmong(shown.Select(l => l.Source!.Id));
+        foreach (var line in shown) if (gone.Contains(line.Source!.Id)) chat.Remove(line);
+    }
+
     /// <summary>The people who can be named in the chat: everyone in the room but you.</summary>
     public IReadOnlyList<Person> Mentionable(Chat chat) => PeopleOf(chat);
 
@@ -734,7 +753,7 @@ public sealed partial class Session : IDisposable
         direct.ReactionsChanged += _ => UI(() => ScheduleReactions(chat));
         direct.EarlierHistoryReceived += () => UI(() => OnEarlierArrived(chat));
         // History taken in from the account's kept copy: what is missing from the window is added (a direct message is never removed by it).
-        direct.HistoryChanged += () => UI(() => { foreach (var m in direct.History) { var l = ToLine(m); if (chat.Add(l)) TrackFile(l); } RefreshReactions(chat); });
+        direct.HistoryChanged += () => UI(() => { foreach (var m in direct.History) { var l = ToLine(m); if (chat.Add(l)) TrackFile(l); } DropDeletedNotes(chat); RefreshReactions(chat); });
         // Another of your devices read it: nothing here is new any more.
         direct.ReadChanged += () => UI(chat.ClearAllUnread);
         var readUpTo = direct.ReadUpTo;
