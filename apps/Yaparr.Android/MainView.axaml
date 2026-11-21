@@ -610,19 +610,18 @@
             </StackPanel>
         </Grid>
 
-        <!-- Make or join a room, or write to a person. -->
+        <!-- Make a room, join one, or write to a person: one small form for each, reached from the + button (see AddClicked). -->
         <Border x:Name="AddPanel" IsVisible="False" Background="#99000000" PointerPressed="OverlayBackdropPressed">
             <ScrollViewer VerticalAlignment="Center">
                 <Border Background="{DynamicResource Surface}" CornerRadius="16" Margin="20" Padding="16" MaxWidth="440">
                     <StackPanel Spacing="10">
-                        <TextBlock Text="Rooms" FontWeight="Bold" FontSize="20" Foreground="{DynamicResource Ink}" />
+                        <TextBlock x:Name="AddTitle" FontWeight="Bold" FontSize="20" Foreground="{DynamicResource Ink}" />
+                        <TextBlock x:Name="AddHint" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" />
                         <TextBox x:Name="RoomNameBox" PlaceholderText="Room name" MaxLength="40" />
-                        <TextBox x:Name="RoomInviteBox" PlaceholderText="Invite (empty makes a new room)" />
-                        <Button Classes="primary" HorizontalAlignment="Stretch" Content="Make or join the room" Click="RoomGoClicked" />
-                        <Border Height="1" Background="{DynamicResource Line}" Margin="0,6" />
-                        <TextBlock Text="Message a person" FontWeight="SemiBold" Foreground="{DynamicResource Ink}" />
+                        <TextBox x:Name="RoomInviteBox" PlaceholderText="Invite" />
+                        <Button x:Name="RoomGoButton" Classes="primary" HorizontalAlignment="Stretch" Click="RoomGoClicked" />
                         <TextBox x:Name="PersonBox" PlaceholderText="Their ID (64 characters)" />
-                        <Button HorizontalAlignment="Stretch" Content="Open the chat" Click="PersonGoClicked" />
+                        <Button x:Name="PersonGoButton" Classes="primary" HorizontalAlignment="Stretch" Content="Open the chat" Click="PersonGoClicked" />
                         <TextBlock x:Name="AddStatus" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" />
                         <Button HorizontalAlignment="Stretch" Content="Close" Click="AddCloseClicked" />
                     </StackPanel>
