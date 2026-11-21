@@ -302,10 +302,13 @@ public class MainActivity : AvaloniaMainActivity
     /// Copies a received file into the phone's Downloads folder (a folder called Yaparr in it), where the Files app and other apps can see it, in pieces. Returns where it went
     /// ("Downloads/Yaparr/name"), or null when it could not be done. Android 10 and newer need no permission for this; older ones use "Save as…" instead.
     /// </summary>
-    public Task<string?> SaveToDownloadsAsync(string path, string fileName)
+    public async Task<string?> SaveToDownloadsAsync(string path, string fileName) => (await SaveToDownloadsWithAddressAsync(path, fileName))?.Where;
+
+    /// <summary>Like <see cref="SaveToDownloadsAsync"/>, and also gives the content address of the copy (so it can be opened).</summary>
+    public Task<(string Where, string Address)?> SaveToDownloadsWithAddressAsync(string path, string fileName)
     {
-        if (!OperatingSystem.IsAndroidVersionAtLeast(29)) return Task.FromResult<string?>(null);
-        return Task.Run<string?>(() =>
+        if (!OperatingSystem.IsAndroidVersionAtLeast(29)) return Task.FromResult<(string, string)?>(null);
+        return Task.Run<(string, string)?>(() =>
         {
             if (!OperatingSystem.IsAndroidVersionAtLeast(29)) return null;
             try
@@ -326,10 +329,25 @@ public class MainActivity : AvaloniaMainActivity
                 string shown = fileName;
                 using (var cursor = ContentResolver?.Query(uri, new[] { "_display_name" }, null, null, null))
                     if (cursor != null && cursor.MoveToFirst() && cursor.GetString(0) is { Length: > 0 } actual) shown = actual;
-                return "Downloads/Yaparr/" + shown;
+                return ("Downloads/Yaparr/" + shown, uri.ToString() ?? "");
             }
             catch (Exception ex) when (ex is Java.IO.IOException or IOException or Java.Lang.SecurityException or Java.Lang.IllegalStateException) { return null; }
         });
+    }
+
+    /// <summary>Opens a file (a content address) in whatever app on the phone handles its type. False when there is no such app or it cannot be read.</summary>
+    public bool OpenFile(string address, string fileName)
+    {
+        try
+        {
+            if (Android.Net.Uri.Parse(address) is not { } uri) return false;
+            var extension = Path.GetExtension(fileName).TrimStart('.').ToLowerInvariant();
+            var mime = (extension.Length > 0 ? Android.Webkit.MimeTypeMap.Singleton?.GetMimeTypeFromExtension(extension) : null) ?? "*/*";
+            var intent = new Intent(Intent.ActionView).SetDataAndType(uri, mime).AddFlags(ActivityFlags.GrantReadUriPermission);
+            StartActivity(Intent.CreateChooser(intent, "Open with"));
+            return true;
+        }
+        catch (Exception ex) when (ex is ActivityNotFoundException or Java.Lang.SecurityException) { return false; }
     }
 
     /// <summary>

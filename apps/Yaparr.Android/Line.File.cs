@@ -42,13 +42,20 @@ public sealed partial class Line
     /// <summary>A file that was downloaded can be saved somewhere else on the phone (where its own folder, which Android hides, is not wanted).</summary>
     public bool FileCanSaveCopy => _filePath != null && !SharedFromHere;
 
+    /// <summary>The file is here, so it can be opened.</summary>
+    public bool FileCanOpen => _filePath != null;
+
+    /// <summary>The content address of the copy in Downloads, once one was made.</summary>
+    public string? SavedAddress { get; private set; }
+
     // A file chosen on this phone is read from its content address; a download (even of a file your own desktop sent) lives in the app's folder.
     private bool SharedFromHere => _filePath != null && _filePath.Contains("://", StringComparison.Ordinal);
 
     /// <summary>Says where a copy was saved (shown on the card from then on).</summary>
-    public void SetSavedTo(string where)
+    public void SetSavedTo(string where, string? address = null)
     {
         _savedTo = where;
+        if (address != null) SavedAddress = address;
         Raise(nameof(FileStatusText));
     }
 
@@ -56,7 +63,7 @@ public sealed partial class Line
     {
         _fileProgress = progress;
         _filePath = path;
-        foreach (var name in new[] { nameof(FileStatusText), nameof(FileShowsProgress), nameof(FilePercent), nameof(FileCanDownload), nameof(FileCanPause), nameof(FileCanResume), nameof(FileCanCancel), nameof(FileCanSaveCopy), nameof(FilePath), nameof(HasFile), nameof(FileName) })
+        foreach (var name in new[] { nameof(FileStatusText), nameof(FileShowsProgress), nameof(FilePercent), nameof(FileCanDownload), nameof(FileCanPause), nameof(FileCanResume), nameof(FileCanCancel), nameof(FileCanSaveCopy), nameof(FileCanOpen), nameof(FilePath), nameof(HasFile), nameof(FileName) })
             Raise(name);
     }
 }
