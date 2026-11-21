@@ -54,7 +54,7 @@ public static class SyncStatus
     {
         RoomSyncState.FindingMembers => "Finding members…",
         RoomSyncState.LoadingHistory => "Loading history…",
-        RoomSyncState.NoOneOnline => "No one online",
+        // Nobody being online is not worth a line: the list shows the room's latest message instead.
         _ => "",
     };
 

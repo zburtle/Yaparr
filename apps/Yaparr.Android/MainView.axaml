@@ -138,10 +138,11 @@
                                                HorizontalAlignment="Center" VerticalAlignment="Center" />
                                 </Border>
                                 <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center" Spacing="2">
-                                    <Grid ColumnDefinitions="Auto,*">
+                                    <Grid ColumnDefinitions="Auto,*,Auto">
                                         <Path IsVisible="{Binding IsPinned}" Data="M3,0.5 H7 M3.5,0.5 L3.2,4.2 L1.2,6.2 H8.8 L6.8,4.2 L6.5,0.5 M5,6.2 V10.5" Stroke="{DynamicResource Muted}"
                                               StrokeThickness="1.1" StrokeLineCap="Round" StrokeJoin="Round" Width="10" Height="11" Margin="0,0,6,0" VerticalAlignment="Center" />
                                         <TextBlock Grid.Column="1" Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource Ink}" />
+                                        <TextBlock Grid.Column="2" Text="{Binding LastTimeText}" FontSize="12" Margin="8,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource Muted}" />
                                     </Grid>
                                     <TextBlock Text="{Binding Preview}" IsVisible="{Binding ShowPreview}" FontSize="13" MaxLines="1" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource Muted}" />
                                     <TextBlock Text="{Binding SyncText}" IsVisible="{Binding HasSyncText}" FontSize="13" MaxLines="1" Foreground="{DynamicResource Accent}" />

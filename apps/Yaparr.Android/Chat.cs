@@ -157,7 +157,7 @@ public sealed class Chat : Observable
     public string Preview
     {
         get => _preview;
-        private set { if (_preview == value) return; _preview = value; Raise(); }
+        private set { if (_preview == value) return; _preview = value; Raise(); Raise(nameof(ShowPreview)); Raise(nameof(HasSyncText)); }
     }
 
     // ---- voice ----
@@ -272,9 +272,13 @@ public sealed class Chat : Observable
         private set { if (_syncText == value) return; _syncText = value; Raise(); Raise(nameof(HasSyncText)); Raise(nameof(ShowPreview)); }
     }
 
-    public bool HasSyncText => _syncText.Length > 0;
+    // The latest message is always what the list shows; what the room is doing to get going is only said while there is no message to show.
+    public bool HasSyncText => _syncText.Length > 0 && _preview.Length == 0;
 
-    public bool ShowPreview => _syncText.Length == 0;
+    public bool ShowPreview => _preview.Length > 0 || _syncText.Length == 0;
+
+    /// <summary>When the latest message was sent, short, for the list ("14:05", "Yesterday", "Mon", "Nov 3"); empty when there is none.</summary>
+    public string LastTimeText => ListTime.Of(LastActivity, DateTimeOffset.Now);
 
     /// <summary>The room is working on it, so the list shows a progress bar.</summary>
     public bool IsSyncing
@@ -360,6 +364,7 @@ public sealed class Chat : Observable
         if (when >= LastActivity)
         {
             LastActivity = when;
+            Raise(nameof(LastTimeText));
             Preview = (line.Mine ? "You: " : IsRoom ? line.Who + ": " : "") + line.PreviewText;
         }
         return true;
@@ -375,9 +380,10 @@ public sealed class Chat : Observable
         if (_all.Count > 0 && _all[^1] is { } last && last.When <= LastActivity)
         {
             LastActivity = last.When > DateTimeOffset.Now ? DateTimeOffset.Now : last.When;
+            Raise(nameof(LastTimeText));
             Preview = (last.Mine ? "You: " : IsRoom ? last.Who + ": " : "") + last.PreviewText;
         }
-        else if (_all.Count == 0) Preview = "";
+        else if (_all.Count == 0) { Preview = ""; Raise(nameof(LastTimeText)); }
     }
 
     /// <summary>Forgets all the messages, so the history can be put back as it is now (a message an admin deleted is then gone).</summary>
