@@ -106,6 +106,7 @@ public sealed partial class ChatNode
     // contacts). Otherwise it waits for a click, as it does when it is too big.
     private void AutoFetch(ChatMessage message, bool trustedOnly = false)
     {
+        NoteFileOffer(message);
         if (message.Attachment != null && !_blobs.Has(message.Attachment.Hash)) _ = StartFetch(message, force: false, trustedOnly, CancellationToken.None);
         // The custom emoji a message uses are small pictures, fetched the same way, so the words show them as soon as they can.
         else if (message.Attachment == null && message.Parts.Emoji is { } emoji)

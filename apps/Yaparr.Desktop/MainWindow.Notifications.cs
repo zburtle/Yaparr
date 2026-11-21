@@ -196,7 +196,7 @@ public partial class MainWindow
     private void ShowPopup(ConversationVm conv, MessageVm message)
     {
         var who = message.Highlight ? $"{message.Sender} named you in {conv.Title}" : conv.IsDirect ? message.Sender : $"{message.Sender} in {conv.Title}";
-        var text = message.HasAttachment && !message.HasText ? "Sent a picture" : message.Text;
+        var text = message.HasFile ? "Sent a file: " + message.FileName : message.HasAttachment && !message.HasText ? "Sent a picture" : message.Text;
         text = text.Length > 140 ? text[..139] + "…" : text;
         var room = RoomFor(conv);
         // What the pop-up's buttons do (where the desktop shows them): open the chat, send a typed reply (KDE) in the channel the message came in, mute the room.

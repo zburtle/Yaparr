@@ -466,6 +466,7 @@ public partial class MainWindow : Window
             DirectHistoryDirectory = Path.Combine(_data.Directory, "direct"),
             Traversal = traversal,
             AttachmentDirectory = Path.Combine(_data.Directory, "attachments"),
+            FilesDirectory = Path.Combine(_data.Directory, "files"),
             SoundboardDirectory = Path.Combine(_data.Directory, "soundboards"),
             RolesDirectory = Path.Combine(_data.Directory, "roles"),
             EnableLocalDiscovery = traversal.LocalDiscovery,
@@ -483,6 +484,7 @@ public partial class MainWindow : Window
         // A network that does not let UDP out: signed in to Yaparr Cloud, messages go through its gateway (if the person allows it).
         _ = new GatewayFallback(_node, () => GatewayFallback.AccountOf(_data.LoadBackupServer()), () => _settings.GatewayWhenUdpBlocked, _log.Write);
         _node.AttachmentChanged += update => UI(() => OnAttachmentChanged(update));
+        _node.FileTransferChanged += progress => UI(() => OnFileTransferChanged(progress));
         var emojiNode = _node;
         EmojiPictures.Reader = hash => emojiNode.ReadAttachment(hash);
         if (OperatingSystem.IsWindows()) Microsoft.Win32.SystemEvents.PowerModeChanged += OnPowerModeChanged;
@@ -988,13 +990,14 @@ public partial class MainWindow : Window
         Remember(m.From);
         bool mine = _node != null && _node.IsMyDevice(m.From.Id);
         var parts = m.Parts;
-        var vm = new MessageVm(m.Timestamp, m.From.DisplayName, parts.Body, m.IsCatchUp, isMine: mine, id: m.Id, attachment: m.Attachment)
+        var vm = new MessageVm(m.Timestamp, m.From.DisplayName, m.File != null ? m.FileCaption : parts.Body, m.IsCatchUp, isMine: mine, id: m.Id, attachment: m.Attachment)
         {
-            Source = m, Account = m.From.Account.Value, Key = m.Key, ReplyKey = parts.ReplyTo, Mentions = parts.Mentions, Card = parts.Preview, Emoji = parts.Emoji,
+            File = m.File, Source = m, Account = m.From.Account.Value, Key = m.Key, ReplyKey = parts.ReplyTo, Mentions = parts.Mentions, Card = parts.Preview, Emoji = parts.Emoji,
             MentionsMe = _node != null && NamesMe(m),
             Channel = m.Channel,
         };
         if (m.Attachment != null) TrackAttachment(vm);
+        if (m.File != null) TrackFile(vm);
         return vm;
     }
 
@@ -1355,7 +1358,7 @@ public partial class MainWindow : Window
         UpdateInlineScreen();
         UpdateSharerPanel();
         bool has = _selected != null;
-        InputBox.IsEnabled = SendButton.IsEnabled = AttachButton.IsEnabled = ShelfButton.IsEnabled = ComposerEmojiButton.IsEnabled = has;
+        InputBox.IsEnabled = SendButton.IsEnabled = AttachButton.IsEnabled = FileButton.IsEnabled = ShelfButton.IsEnabled = ComposerEmojiButton.IsEnabled = has;
         MessageList.ItemsSource = _selected?.Messages;
         HeaderText.Text = _selected?.Name ?? "Welcome to Yaparr";
         HeaderSubtitle.Text = _selected?.Subtitle ?? "Serverless chat between friends";

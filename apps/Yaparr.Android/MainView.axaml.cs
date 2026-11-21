@@ -1335,8 +1335,8 @@ public partial class MainView : UserControl
         _named.Where(kv => text.Contains("@" + kv.Value, StringComparison.Ordinal))
             .Select(kv => new Mention(new Yaparr.Identity.PeerId(kv.Key), kv.Value)).ToList();
 
-    // The + button: pick a picture with the system's chooser and send it, with what is typed as its caption.
-    private async void AttachClicked(object? sender, RoutedEventArgs e)
+    // Pick a picture with the system's chooser and send it, with what is typed as its caption (the + button's first choice, see AttachClicked).
+    private async Task SendPictureFromChooserAsync()
     {
         if (_current == null || _session == null || MainActivity.Instance is not { } activity) return;
         var chat = _current;

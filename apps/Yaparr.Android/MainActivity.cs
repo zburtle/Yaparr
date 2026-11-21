@@ -125,7 +125,7 @@ public class MainActivity : AvaloniaMainActivity
         return request.Task;
     }
 
-    private const int MicrophoneRequest = 0x6d69, PickRequest = 0x7069, SaveRequest = 0x7376, PickFileRequest = 0x7066, CaptureRequest = 0x6361, NotificationsRequest = 0x6e74;
+    private const int MicrophoneRequest = 0x6d69, PickRequest = 0x7069, SaveRequest = 0x7376, PickFileRequest = 0x7066, PickShareRequest = 0x7073, CaptureRequest = 0x6361, NotificationsRequest = 0x6e74;
     private static TaskCompletionSource<(int ResultCode, Intent Data)?>? s_capture;
 
     /// <summary>
@@ -254,20 +254,103 @@ public class MainActivity : AvaloniaMainActivity
     {
         var request = s_save;
         var bytes = s_saving;
+        var copyFrom = s_savingPath;
         s_saving = null;
+        s_savingPath = null;
         if (request == null) return;
-        if (resultCode != Result.Ok || data?.Data is not { } uri || bytes == null) { request.TrySetResult(false); return; }
+        if (resultCode != Result.Ok || data?.Data is not { } uri || (bytes == null && copyFrom == null)) { request.TrySetResult(false); return; }
         _ = Task.Run(() =>
         {
             try
             {
                 using var output = ContentResolver?.OpenOutputStream(uri);
                 if (output == null) { request.TrySetResult(false); return; }
-                output.Write(bytes, 0, bytes.Length);
+                if (copyFrom != null)
+                {
+                    // A file of any size (a received file): copied piece by piece, never held in memory.
+                    using var input = new FileStream(copyFrom, FileMode.Open, FileAccess.Read, FileShare.Read);
+                    input.CopyTo(output, 1 << 20);
+                }
+                else output.Write(bytes!, 0, bytes!.Length);
                 request.TrySetResult(true);
             }
             catch (Exception ex) when (ex is Java.IO.IOException or IOException or Java.Lang.SecurityException) { request.TrySetResult(false); }
         });
+    }
+
+    private static string? s_savingPath;
+    private static TaskCompletionSource<(string Address, string Name)?>? s_pickShare;
+
+    /// <summary>Asks where to save a copy of a file that is on this phone (a received file) and copies it there, in pieces. False if the person backs out or it cannot be written.</summary>
+    public Task<bool> SaveCopyAsync(string path, string fileName)
+    {
+        s_save?.TrySetResult(false);
+        var request = s_save = new TaskCompletionSource<bool>();
+        s_saving = null;
+        s_savingPath = path;
+        var intent = new Intent(Intent.ActionCreateDocument).SetType("application/octet-stream").AddCategory(Intent.CategoryOpenable).PutExtra(Intent.ExtraTitle, fileName);
+        try { StartActivityForResult(intent, SaveRequest); }
+        catch (ActivityNotFoundException) { request.TrySetResult(false); }
+        return request.Task;
+    }
+
+    /// <summary>
+    /// Opens the system's chooser for a file of any kind to share, and returns its address (not its bytes: the file stays where it is and is read as people download it) and name.
+    /// Android is asked to keep the permission to read it, so it can still be sent after the app is closed and opened again. Null if the person backs out.
+    /// </summary>
+    public Task<(string Address, string Name)?> PickSharedFileAsync()
+    {
+        s_pickShare?.TrySetResult(null);
+        var request = s_pickShare = new TaskCompletionSource<(string, string)?>();
+        var intent = new Intent(Intent.ActionOpenDocument).SetType("*/*").AddCategory(Intent.CategoryOpenable)
+            .AddFlags(ActivityFlags.GrantReadUriPermission | ActivityFlags.GrantPersistableUriPermission);
+        try { StartActivityForResult(intent, PickShareRequest); }
+        catch (ActivityNotFoundException) { request.TrySetResult(null); }
+        return request.Task;
+    }
+
+    private void FinishPickShare(Result resultCode, Intent? data)
+    {
+        var request = s_pickShare;
+        if (request == null) return;
+        if (resultCode != Result.Ok || data?.Data is not { } uri) { request.TrySetResult(null); return; }
+        try { ContentResolver?.TakePersistableUriPermission(uri, ActivityFlags.GrantReadUriPermission); }
+        catch (Java.Lang.SecurityException) { }
+        string name = "file";
+        try
+        {
+            using var cursor = ContentResolver?.Query(uri, new[] { "_display_name" }, null, null, null);
+            if (cursor != null && cursor.MoveToFirst() && cursor.GetString(0) is { Length: > 0 } shown) name = shown;
+        }
+        catch (Exception ex) when (ex is Java.Lang.SecurityException or Java.Lang.IllegalArgumentException) { }
+        request.TrySetResult((uri.ToString() ?? "", name));
+    }
+
+    /// <summary>Opens a file the person chose to share (its content address) for reading, or null when it is gone or not readable. A file read through a pipe (some cloud providers) has no length and cannot be shared.</summary>
+    public static Stream? OpenContent(string address)
+    {
+        try
+        {
+            var resolver = Instance?.ContentResolver;
+            if (Android.Net.Uri.Parse(address) is not { } uri) return null;
+            using var descriptor = resolver?.OpenFileDescriptor(uri, "r");
+            if (descriptor == null) return null;
+            var stream = new FileStream(new Microsoft.Win32.SafeHandles.SafeFileHandle((IntPtr)descriptor.DetachFd(), ownsHandle: true), FileAccess.Read);
+            _ = stream.Length;
+            return stream;
+        }
+        catch (Exception ex) when (ex is Java.IO.IOException or IOException or Java.Lang.SecurityException or NotSupportedException or Java.Lang.IllegalArgumentException) { return null; }
+    }
+
+    /// <summary>Where received files are kept: the app's own folder on shared storage, which needs no permission and is removed with the app.</summary>
+    public string ReceivedFilesDirectory
+    {
+        get
+        {
+            var dir = System.IO.Path.Combine(GetExternalFilesDir(null)?.AbsolutePath ?? FilesDir?.AbsolutePath ?? System.IO.Path.GetTempPath(), "received");
+            Directory.CreateDirectory(dir);
+            return dir;
+        }
     }
 
     public override void OnRequestPermissionsResult(int requestCode, string[] permissions, Permission[] grantResults)
@@ -333,6 +416,7 @@ public class MainActivity : AvaloniaMainActivity
         if (requestCode == PickRequest) { FinishPick(resultCode, data); return; }
         if (requestCode == SaveRequest) { FinishSave(resultCode, data); return; }
         if (requestCode == PickFileRequest) { FinishPickFile(resultCode, data); return; }
+        if (requestCode == PickShareRequest) { FinishPickShare(resultCode, data); return; }
         if (requestCode == CaptureRequest) { s_capture?.TrySetResult(resultCode == Result.Ok && data != null ? ((int)resultCode, data) : null); return; }
         App.Scanner?.OnActivityResult(requestCode, resultCode, data);
     }

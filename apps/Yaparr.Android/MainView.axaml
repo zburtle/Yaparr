@@ -487,6 +487,25 @@
                                         <TextBlock Text="{Binding PictureStatus}" IsVisible="{Binding HasPictureStatus}" FontSize="12" Foreground="{Binding Ink}" />
                                     </StackPanel>
                                 </Border>
+                                <Border IsVisible="{Binding HasFile}" Padding="2">
+                                    <StackPanel Spacing="6" MinWidth="220" MaxWidth="280">
+                                        <StackPanel Orientation="Horizontal" Spacing="10">
+                                            <TextBlock Text="&#128196;" FontSize="28" VerticalAlignment="Center" />
+                                            <StackPanel VerticalAlignment="Center" Spacing="1">
+                                                <TextBlock Text="{Binding FileName}" FontWeight="SemiBold" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" Foreground="{Binding Ink}" />
+                                                <TextBlock Text="{Binding FileStatusText}" FontSize="12" TextWrapping="Wrap" Opacity="0.85" Foreground="{Binding Ink}" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                        <ProgressBar IsVisible="{Binding FileShowsProgress}" Value="{Binding FilePercent}" Maximum="100" Height="4" />
+                                        <WrapPanel>
+                                            <Button Content="Download" Classes="primary" Margin="0,0,6,0" IsVisible="{Binding FileCanDownload}" Click="FileDownloadClicked" />
+                                            <Button Content="Pause" Margin="0,0,6,0" IsVisible="{Binding FileCanPause}" Click="FilePauseClicked" />
+                                            <Button Content="Resume" Classes="primary" Margin="0,0,6,0" IsVisible="{Binding FileCanResume}" Click="FileResumeClicked" />
+                                            <Button Content="Cancel" Margin="0,0,6,0" IsVisible="{Binding FileCanCancel}" Click="FileCancelClicked" />
+                                            <Button Content="Save a copy" Margin="0,0,6,0" IsVisible="{Binding FileCanSaveCopy}" Click="FileSaveClicked" />
+                                        </WrapPanel>
+                                    </StackPanel>
+                                </Border>
                                 <local:LinkText Body="{Binding Text}" EmojiImages="{Binding EmojiImages}" Classes.bigemoji="{Binding IsBigEmoji}" TextWrapping="Wrap" Foreground="{Binding Ink}" IsVisible="{Binding HasText}" LinkTapped="MessageLinkTapped" />
                                 <Border IsVisible="{Binding HasCard}" Background="#22000000" CornerRadius="8" Padding="8" Margin="0,2,0,0" Tapped="CardTapped">
                                     <Grid ColumnDefinitions="Auto,*">

@@ -160,6 +160,18 @@ public sealed class ChatNodeOptions
     /// <summary>Where pictures and GIFs from messages are kept. Without a folder they are only kept in memory.</summary>
     public string? AttachmentDirectory { get; init; }
 
+    /// <summary>Where file sharing keeps its records and the parts of files that are being downloaded (see <c>docs/file-sharing.md</c>). Without a folder files cannot be shared or downloaded.</summary>
+    public string? FilesDirectory { get; init; }
+
+    /// <summary>
+    /// Opens a file that is shared by something other than a path (the phone's file chooser hands over addresses like <c>content://…</c>), or null if it cannot be opened now. Paths
+    /// are opened as files without it. Used when sharing and whenever a piece is read, so the address has to stay readable (the phone app asks Android to keep the permission).
+    /// </summary>
+    public Func<string, Stream?>? OpenSharedFile { get; init; }
+
+    /// <summary>The most this device sends of shared files, in bytes a second, over all of them; 0 for no limit.</summary>
+    public long FileBytesPerSecond { get; init; }
+
     /// <summary>Where each room's soundboard list is kept. Without a folder it is only kept in memory (the sounds themselves go with the pictures).</summary>
     public string? SoundboardDirectory { get; init; }
 
@@ -396,6 +408,7 @@ public sealed partial class ChatNode : IDisposable
         _wakeBook = new WakeBook(_options.WakePeersPath);
         _clocks = new ClockOffsets(_options.ClockOffsetsPath);
         _blobs = new BlobStore(_options.AttachmentDirectory, _options.HistoryCipher);
+        InitFileSwarm();
         _floodBans = new FloodBans(_options.Limits);
         _directHistory = new DirectHistory(_options.HistoryStore as IDirectHistoryStore, _options.MaxHistoryMessages, _options.MaxHistoryAge);
         LoadPendingDirect();
@@ -422,6 +435,7 @@ public sealed partial class ChatNode : IDisposable
         Network.StandbyReady += OnStandbyReady;
         Network.RegisterChannel(ChannelIds.Chat, OnChatData);
         Network.RegisterChannel(ChannelIds.File, OnFileData);
+        Network.RegisterChannel(ChannelIds.FileSwarm, OnFileSwarmData);
         Network.RegisterChannel(ChannelIds.Voice, OnVoiceData);
         Network.RegisterChannel(ChannelIds.Media, OnMediaData);
         Network.RegisterChannel(ChannelIds.Speed, OnSpeedData);
@@ -483,6 +497,7 @@ public sealed partial class ChatNode : IDisposable
         _mux.Start();
         _ = Task.Run(() => _blobs.SealExisting());
         StartSpeedProbes();
+        StartFileSwarm();
         // Anyone looking for this person by their account id has to find every one of their devices.
         var peerTopics = AccountId == Id ? new[] { Topics.ForPeer(Id) } : new[] { Topics.ForPeer(Id), Topics.ForPeer(AccountId) };
         foreach (var d in _discoveries)
@@ -730,6 +745,7 @@ public sealed partial class ChatNode : IDisposable
     public void Dispose()
     {
         _cts.Cancel();
+        DisposeFileSwarm();
         if (_options.OwnsHistoryStore && _options.HistoryStore is IDisposable store) store.Dispose();
         System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged -= OnAddressChanged;
         _peerCache.Save();
@@ -1710,6 +1726,7 @@ public sealed partial class ChatNode : IDisposable
             AfterMembershipChange(room);
         }
         MediaPeerGone(id);
+        FileSwarmPeerGone(id);
         PeerDisconnected?.Invoke(state.Info);
         if (!conn.IsRelayed && !IsBackedOff(id.Value, Environment.TickCount64) && !IsBlocked(id) && !_cts.IsCancellationRequested)
             _redial[id] = new Redial(conn.RemoteEndPoint) { Next = Environment.TickCount64 + 1000 };
