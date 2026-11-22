@@ -235,7 +235,7 @@ public partial class MainView
     private async void LearnMoreTapped(object? sender, Avalonia.Input.TappedEventArgs e)
     {
         if (sender is Control { Tag: string topic } && Guides.Url(topic) is { } guide && !await OpenInBrowserAsync(guide))
-            SettingsNote.Text = "Couldn't open your browser.";
+            SettingsNote.Text = ExistingStatus.Text = "Couldn't open your browser.";
     }
 
     private async void ServerSignInClicked(object? sender, RoutedEventArgs e)

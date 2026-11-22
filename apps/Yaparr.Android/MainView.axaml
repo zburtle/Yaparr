@@ -25,6 +25,7 @@
                         <TextBlock Text="Bring it to this phone, from your computer or from a backup. People then see you as one person." FontSize="13" Opacity="0.75" TextWrapping="Wrap" />
                     </StackPanel>
                 </Button>
+                <TextBlock Text="Learn more about starting on a new device" Tag="accounts" Tapped="LearnMoreTapped" Background="Transparent" Padding="0,6" FontSize="13" Foreground="{DynamicResource Accent}" TextDecorations="Underline" />
             </StackPanel>
         </ScrollViewer>
 
@@ -65,6 +66,7 @@
                         <TextBlock Text="Sign in to Yaparr Cloud with your Sync key. For a new phone." FontSize="13" Opacity="0.75" TextWrapping="Wrap" />
                     </StackPanel>
                 </Button>
+                <TextBlock Text="Learn more about starting on a new device" Tag="accounts" Tapped="LearnMoreTapped" Background="Transparent" Padding="0,6" FontSize="13" Foreground="{DynamicResource Accent}" TextDecorations="Underline" />
                 <TextBlock x:Name="ExistingStatus" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" />
                 <Button Content="Back" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="WelcomeBackClicked" />
             </StackPanel>
