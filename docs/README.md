@@ -20,6 +20,7 @@ Yaparr is a serverless chat, voice and screen sharing library for .NET with a de
 - [Yaparr Cloud](yaparr-cloud.md): what the optional account does, what it keeps and what the server can see, in plain words.
 - [Mailbox](mailbox.md): messages and pictures left on Yaparr Cloud, locked, for people who are offline (design).
 - [Subscriptions](billing.md): a paid plan for Yaparr Cloud, with Polar taking the payments and the provider kept swappable (design).
+- [Email](email.md): the links Yaparr Cloud emails when a person asks (choose or reset a password), and nothing else.
 - [Voice channels](voice.md)
 - [Soundboard](soundboard.md)
 - [Sharing a screen](screen-sharing.md)
