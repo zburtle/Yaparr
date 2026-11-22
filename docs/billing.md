@@ -12,7 +12,7 @@ Status: **a design, nothing is built.** It says how a paid plan for Yaparr Cloud
 
 1. **Billing is optional in the server and off by default.** A self-hosted Yaparr Cloud never has it, the apps work with a server that does not, and `GET /v1/plan` on such a server says billing is off (the apps show nothing). Only a deployment that sets `Service__Billing__Provider` has it. The AGPL code is all in the open; the secrets are not in the code.
 2. **The provider is an adapter, not a concept.** The server reasons about an **entitlement** (this account may use the cloud until this date). Polar's products, customers and event names appear in exactly one place, `PolarBilling`. Everything else, the database, the apps, the website, the admin portal, would be identical under Stripe.
-3. **An entitlement is a lease.** What a subscription grants is "until `valid_until`", and the server decides from that date. A missed webhook can then never cause a wrong lapse or a free ride for long: the lease runs out on its own, and a renewal only extends it.
+3. **An entitlement is a lease.** What a subscription grants is "until the end of the period paid for, and the grace days", and the server decides from that date. A missed webhook can then never cause a wrong lapse or a free ride for long: the lease runs out on its own, and a renewal only extends it.
 4. **Webhooks say "look", they do not say "what".** A webhook is verified, de-duplicated, and then the server **asks the provider for the subscription's current state** and stores that. Order, repeats and the exact meaning of each event name (which differ between providers and change between versions) stop mattering.
 5. **The provider's id for a person is ours.** Each account gets a random `billing_id`; that is what the provider stores as its customer reference (`external_customer_id` on Polar). The account's name (its email address) is never the key, and the provider never learns anything else about the account.
 6. **The apps never know the provider.** They ask the server for the plan, and for a page to manage it; the server redirects to Polar. Nothing in an app, the website or a guide needs to change when the provider does.
@@ -41,32 +41,32 @@ record Subscription(
     string ProviderSubscriptionId,
     string Plan,                    // "cloud"
     SubscriptionStatus Status,      // Active | PastDue | Canceling | Ended
-    DateTimeOffset ValidUntil,      // the end of the period paid for, plus the grace days
+    DateTimeOffset PeriodEnd,       // the end of the period paid for; the grace days are added when it is asked, not stored
     DateTimeOffset UpdatedAt);
 ```
 
 | Provider's word (Polar) | Our status | Meaning |
 |---|---|---|
 | `active` | `Active` | paid, renews |
-| `active` with cancel-at-period-end | `Canceling` | paid until `ValidUntil`, then ends |
+| `active` with cancel-at-period-end | `Canceling` | paid until `PeriodEnd`, then ends |
 | `past_due` | `PastDue` | a payment failed and is being retried; still has access |
-| `canceled` (after the period), `revoked`, `unpaid`, `incomplete_expired` | `Ended` | no access beyond `ValidUntil` |
+| `canceled` (after the period), `revoked`, `unpaid`, `incomplete_expired` | `Ended` | no access once it is `Ended`, whatever its dates say |
 
-`ValidUntil` is `current_period_end` plus `Billing__GraceDays` (3), so a payment that lands a day late does not lock anyone out. An `Ended` subscription's `ValidUntil` is clamped to now when it was revoked (a refund or a chargeback ends access at once).
+`PeriodEnd` is the provider's `current_period_end`. What an account is allowed is decided from it when asked: a subscription **covers** now unless it is `Ended` or now is more than `Billing__GraceDays` (3) past its `PeriodEnd`, so a payment that lands a day late does not lock anyone out, the date the app shows is the real end of the period, and changing the grace days applies to subscriptions already stored. `Ended` is how a refund or a chargeback ends access at once (`Ended` gives nothing, whatever its dates say).
 
 **What an account is, now** (`AccountPlan.Of(account, now)`; the only place that decides):
 
 | State | When | Signing in on a device | Syncing and the cloud's services | Taking data away, deleting, the account pages |
 |---|---|---|---|---|
 | `Lifetime` | the account's `pass` is `lifetime` (everyone so far, and anyone given the pass) | yes | yes | yes |
-| `Subscribed` | some subscription has `ValidUntil` in the future | yes | yes | yes |
+| `Subscribed` | some subscription covers now (not `Ended`, and not more than the grace days past its `PeriodEnd`) | yes | yes | yes |
 | `Lapsed` | had a subscription, none is valid now | **no** | **no** (`402`) | yes |
 
-"Signing in" is what makes a device token (`/login` for an app, `/v1/token`, the hand-off after sign-up): a lapsed account cannot make one, so no new device and no re-sign-in. "Syncing and the cloud's services" is everything the subscription pays for: `GET` and `PUT /v1/sync`, `PUT /v1/backup`, `GET` and `POST /v1/mailbox/{id}`, `PUT /v1/blob/{id}`, `PUT /v1/keep/{id}`, `PUT /v1/push`, and the gateway. All of those answer a lapsed account `402` `{"error":"subscription_required"}`; a wake for its push token answers as an unknown token does. **Nothing is ever removed**, and renewing brings everything back: the devices go on from their own sync cursors, and nothing has to be set up again.
+"Signing in" is what makes a device token (`/login` for an app, `/v1/token`, the hand-off after sign-up): a lapsed account cannot make one, so no new device and no re-sign-in. "Syncing and the cloud's services" is everything the subscription pays for: `GET` and `PUT /v1/sync`, `PUT /v1/backup`, `GET` and `POST /v1/mailbox/{id}`, `PUT /v1/blob/{id}`, `PUT /v1/keep/{id}`, `PUT /v1/push`, and the gateway. All of those answer a lapsed account `402` `{"error": "<a sentence for people>", "code": "subscription_required"}`; a wake for its push token answers as an unknown token does. **Nothing is ever removed**, and renewing brings everything back: the devices go on from their own sync cursors, and nothing has to be set up again.
 
 What a lapsed account can still do, so that it can leave or come back: `GET /v1/backup` and `GET /v1/keep/{id}` (the person can still take their own locked data away; this is the one exception to "no syncing", and the easiest to remove), every `DELETE`, `GET /v1/devices`, `/v1/usage`, `/v1/plan` and the list at `/v1/push`, and the `/account/*` pages (renew, change the password, delete the account).
 
-The account row keeps `pass`; `lifetime` is never changed by billing. A new column `billing_id` (random, 128 bits, made when the account first needs one) is the provider's customer reference.
+The account row keeps `pass`; `lifetime` is never changed by billing. The `billing_id` (random, 128 bits, made when the account first needs one) is kept in its own table beside the subscriptions (`billing_accounts`), not as a column of `accounts`, so that `IAccounts` knows nothing of billing beyond the pass; it is the provider's customer reference.
 
 ## The provider interface
 
@@ -112,9 +112,9 @@ The catalog (which Polar product is `cloud` monthly) is configuration, in the se
 
 **Managing it:** `cloud.yaparr.com/account/subscription` (signed in, like [`/account/password`](https://github.com/zburtle/Yaparr.Cloud#api)) shows the plan, the state and the date, with **Subscribe or renew** (checkout) and **Manage payment and invoices** (a fresh portal link). Cancelling is done in the provider's portal and arrives as a webhook.
 
-**A payment fails:** the provider retries and emails the customer; the subscription is `PastDue` and keeps access through its `ValidUntil` (period end plus grace). If the retries give up, it becomes `Ended`.
+**A payment fails:** the provider retries and emails the customer; the subscription is `PastDue` and keeps access until the grace days after its `PeriodEnd` have passed. If the retries give up, it becomes `Ended`.
 
-**A refund or a chargeback:** arrives as a revocation; `ValidUntil` becomes now, so the account is `Lapsed` at once.
+**A refund or a chargeback:** arrives as a revocation; the subscription is `Ended`, so the account is `Lapsed` at once.
 
 **Deleting an account** ([`/account/delete`](https://github.com/zburtle/Yaparr.Cloud#deleting-an-account)) cancels the account's subscriptions at the provider first (`CancelAsync`, immediately, so nothing is billed again), then removes everything as it does now. The page says so. If the provider cannot be reached the delete waits and says why: an account is not erased while it is still being charged.
 
@@ -129,13 +129,13 @@ The catalog (which Polar product is `cloud` monthly) is configuration, in the se
 
 The route has the provider's name in it so that **two providers can be live at once** while moving from one to the other.
 
-**Reconciling** (a daily job, and `accounts billing sync <email>` by hand): for each subscription that is `Active`, `PastDue` or `Canceling` and has not been updated for three days, or whose `ValidUntil` has passed by a day, ask the provider and store the answer. This is the safety net under lost webhooks.
+**Reconciling** (a daily job, and `accounts billing sync <email>` by hand): for each subscription that is `Active`, `PastDue` or `Canceling` and has not been updated for three days, or whose `PeriodEnd` has passed by a day, ask the provider and store the answer. This is the safety net under lost webhooks.
 
 **When it lapses:** the account is `Lapsed`: no new sign-in and no syncing (above), and nothing removed. The sign-in page, after the password is right, says "Your Yaparr Cloud subscription has ended" with **Renew** (a checkout, as above) instead of handing the app a code. Devices that are signed in see `402` from the services and show the same sentence (see *The apps*); once the subscription is paid, everything resumes without anyone signing in again. Nobody is emailed by Yaparr: the apps show the state and the provider has sent its own notices.
 
 ## The server (Yaparr.Cloud) changes
 
-- **Schema 6** (`PostgresDatabase`, and the file store alongside, behind a new `ISubscriptions` held to the same behaviour by one contract test, as the other stores are): `accounts.billing_id`, `subscriptions(account, provider, provider_customer_id, provider_subscription_id, plan, status, valid_until, updated_at)` keyed by `(provider, provider_subscription_id)`, and `billing_events(provider, event_id, received_at)` (purged after 30 days).
+- **Schema 6** (`PostgresDatabase`, and the file store alongside, behind a new `ISubscriptions` held to the same behaviour by one contract test, as the other stores are): `billing_accounts(account, billing_id)`, `subscriptions(account, provider, provider_customer_id, provider_subscription_id, plan, status, period_end, updated)` keyed by `(provider, provider_subscription_id)`, and `billing_events(provider, event_id, received_at)` (purged after 30 days).
 - **`AccountPlan`** and **`PlanGate`**: one function for the state, one check. It is applied where a device token is made (`POST /login`, `POST /v1/token`, `POST /v1/token/handoff`) and on each service listed under *What an account is, now*; not to `UserOfToken` (an existing token still identifies its account, which is how a lapsed device can read the plan, take its backup and delete), and not to the `/account/*` pages.
 - **A refused sign-in** is a page in the browser (the app starts the browser, so there is nothing for the app to parse): it says the subscription ended and offers **Renew**. Everything else is the `402` above, which the apps treat as a state and never as a failure to retry.
 - **Endpoints:** `GET /v1/plan` (bearer): `{billing:"off"}` when disabled, else `{billing:"on", state, plan, endsAt, willRenew}`; the account pages above; `POST /billing/start`, `GET /billing/done`, `POST /billing/webhook/{provider}`. No endpoint under `/v1` returns a provider link: those are pages in a browser, behind the sign-in.
@@ -158,7 +158,7 @@ The policy, as decided:
 - **Otherwise:** no refund, unless there are special circumstances, which the owner decides case by case.
 - **Where the law gives more, the law applies** (below), and `/subscribe` says so.
 
-How it works: the owner refunds in Polar's dashboard, which can refund all or part of an order. Polar then ends the subscription, the webhook arrives, and the account is `Lapsed` at once (`ValidUntil` becomes now). Nothing in Yaparr issues a refund, so Yaparr never holds a payment credential. A "request a refund" button could compute the amount, since the rule is mechanical; it is not in the first version.
+How it works: the owner refunds in Polar's dashboard, which can refund all or part of an order. Polar then ends the subscription, the webhook arrives, and the account is `Lapsed` at once (the subscription is `Ended`). Nothing in Yaparr issues a refund, so Yaparr never holds a payment credential. A "request a refund" button could compute the amount, since the rule is mechanical; it is not in the first version.
 
 What I found when I checked (Polar's [refund documentation](https://polar.sh/docs/features/refunds) and [buyer terms](https://polar.sh/legal/checkout-buyer-terms), and the law as described by secondary sources):
 
@@ -224,7 +224,7 @@ What the adapter uses (checked against [Polar's documentation](https://polar.sh/
 
 ## Tests
 
-- `ISubscriptions`: file and Postgres through one contract test (upsert, status mapping, `ValidUntil`, purging old events).
+- `ISubscriptions`: file and Postgres through one contract test (upsert, status mapping, `PeriodEnd`, purging old events).
 - `AccountPlan`: every row of the state table, with the clock injected, and `Lifetime` never changed by anything.
 - `PlanGate`: a `Lapsed` account is refused a new token at each place one is made and gets `402` from each service in the list (and `Lifetime`, `Subscribed` and a subscription within its grace days get neither), it can still read its plan and usage, take its backup and kept pieces, delete things and use the account pages, nothing is ever removed, and renewing brings the services back with no sign-in.
 - The webhook: a bad signature, a stale timestamp, a repeated event, an event naming no subscription, events out of order, the provider failing (`503`, retried), and the same set against a **fake provider** so the flow is tested end to end without Polar.
@@ -254,7 +254,7 @@ Checked (see *Refunds* and *Android and Google Play*): the refund policy against
 ## Order of work
 
 0. **The owner, in Polar:** the organization, the payout account, the sandbox, and the two products ($4 a month, $40 a year); nothing is needed in code for this.
-1. **Yaparr.Cloud:** the neutral model, `ISubscriptions` (file and Postgres, schema 6), `AccountPlan`, `PlanGate` on token issuing and on the sync services, `GET /v1/plan`, `accounts pass`, all with billing off by default and a **fake provider**. Nothing changes for anyone yet.
+1. **Yaparr.Cloud (built):** the neutral model, `ISubscriptions` (file and Postgres, schema 6), `AccountPlan`, `PlanGate` on token issuing and on the sync services, `GET /v1/plan`, `accounts pass`, all with billing off by default and a **fake provider**. Nothing changes for anyone yet.
 2. **Yaparr.Cloud:** the webhook, reconciling, the account pages and the pending-account flow against the fake provider.
 3. **Yaparr.Cloud:** `PolarBilling`, tested in the sandbox with a real test checkout.
 4. **Yaparr:** the plan line, the `402` handling, and the button in the direct build only (the Play build gets the state sentence and no button, see *Android and Google Play*).
