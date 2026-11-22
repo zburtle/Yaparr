@@ -1,6 +1,6 @@
 # Guides
 
-Short, plain explanations of Yaparr's settings, for people using the app. The apps link here from a "Learn more about …" line under a setting, so what a setting does is explained once, here, and not in a paragraph in the window. The technical write-ups of how things work are in the [docs](../README.md).
+Short, plain explanations of Yaparr's settings, for people using the app. They are also on the website at [yaparr.com/learn](https://yaparr.com/learn), which the apps link to. The apps link from a "Learn more about …" line under a setting, so what a setting does is explained once, here, and not in a paragraph in the window. The technical write-ups of how things work are in the [docs](../README.md).
 
 - [Yaparr Cloud](yaparr-cloud.md): the optional account that keeps your devices in step, leaves messages for people who are away, and wakes your phone
 - [Notifications](notifications.md): what notifies you, and staying connected in the background

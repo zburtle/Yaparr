@@ -37,7 +37,8 @@ public class GuidesTests
     [Fact]
     public void A_topic_gives_an_address_in_the_guides_and_an_unknown_one_gives_none()
     {
-        Assert.Equal("https://github.com/zburtle/Yaparr/blob/master/docs/guides/yaparr-cloud.md#syncing", Guides.Url("cloud-sync")!.ToString());
+        Assert.Equal("https://yaparr.com/learn/yaparr-cloud#syncing", Guides.Url("cloud-sync")!.ToString());
+        Assert.Equal("https://yaparr.com/learn/voice", Guides.Url("voice")!.ToString());
         Assert.Null(Guides.Url("nope"));
         Assert.Null(Guides.Url(null));
     }
