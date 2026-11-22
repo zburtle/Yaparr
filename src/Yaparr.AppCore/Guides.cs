@@ -1,15 +1,16 @@
 namespace Yaparr.AppCore;
 
 /// <summary>
-/// Where the explanations live. A setting says what it does in a line, and under it a "Learn more about …" link opens the guide for it (<c>docs/guides</c>, which can be mirrored
-/// on the website). Apps ask for a topic by name, so a guide can move without touching the windows: the topics are checked against the guides by a test.
+/// Where the explanations live. A setting says what it does in a line, and under it a "Learn more about …" link opens the guide for it on the website
+/// (yaparr.com/learn, made from <c>docs/guides</c> by the website repository's <c>scripts/sync-learn.mjs</c>). Apps ask for a topic by name, so a guide can move without touching
+/// the windows: the topics are checked against the guides by a test.
 /// </summary>
 public static class Guides
 {
-    /// <summary>Where the guides are read.</summary>
-    public const string Base = "https://github.com/zburtle/Yaparr/blob/master/docs/guides/";
+    /// <summary>Where the guides are read: a page of the website for each guide file, and an anchor for each heading.</summary>
+    public const string Base = "https://yaparr.com/learn/";
 
-    // Topic: guide file and, after the #, the heading it is about (as GitHub makes an anchor of it).
+    // Topic: guide file (its page on the website has the name without .md) and, after the #, the heading it is about (as GitHub makes an anchor of it, which the website keeps).
     internal static readonly IReadOnlyDictionary<string, string> Topics = new Dictionary<string, string>
     {
         ["cloud"] = "yaparr-cloud.md#what-yaparr-cloud-is",
@@ -39,5 +40,5 @@ public static class Guides
     };
 
     /// <summary>The address of the guide for a topic, or null for a name that is not one.</summary>
-    public static Uri? Url(string? topic) => topic != null && Topics.TryGetValue(topic, out var path) ? new Uri(Base + path) : null;
+    public static Uri? Url(string? topic) => topic != null && Topics.TryGetValue(topic, out var path) ? new Uri(Base + path.Replace(".md", "")) : null;
 }
