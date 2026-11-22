@@ -56,13 +56,15 @@ record Subscription(
 
 **What an account is, now** (`AccountPlan.Of(account, now)`; the only place that decides):
 
-| State | When | Signing in on a new device | Everything else |
-|---|---|---|---|
-| `Lifetime` | the account's `pass` is `lifetime` (everyone so far, and anyone given the pass) | yes | yes |
-| `Subscribed` | some subscription has `ValidUntil` in the future | yes | yes |
-| `Lapsed` | had a subscription, none is valid now | **no** | unchanged: devices that are already signed in keep working, reads, deletes and the account pages work, and **nothing is ever removed** |
+| State | When | Signing in on a device | Syncing and the cloud's services | Taking data away, deleting, the account pages |
+|---|---|---|---|---|
+| `Lifetime` | the account's `pass` is `lifetime` (everyone so far, and anyone given the pass) | yes | yes | yes |
+| `Subscribed` | some subscription has `ValidUntil` in the future | yes | yes | yes |
+| `Lapsed` | had a subscription, none is valid now | **no** | **no** (`402`) | yes |
 
-"Signing in" here is what makes a device token (`/login` for an app, `/v1/token`, the hand-off after sign-up): a device that signed out, or a new one, cannot get one until the subscription is renewed. A token that exists keeps working. This is the whole lever: the cloud stays as it is today (data is never purged), and what a subscription buys is being able to add a device.
+"Signing in" is what makes a device token (`/login` for an app, `/v1/token`, the hand-off after sign-up): a lapsed account cannot make one, so no new device and no re-sign-in. "Syncing and the cloud's services" is everything the subscription pays for: `GET` and `PUT /v1/sync`, `PUT /v1/backup`, `GET` and `POST /v1/mailbox/{id}`, `PUT /v1/blob/{id}`, `PUT /v1/keep/{id}`, `PUT /v1/push`, and the gateway. All of those answer a lapsed account `402` `{"error":"subscription_required"}`; a wake for its push token answers as an unknown token does. **Nothing is ever removed**, and renewing brings everything back: the devices go on from their own sync cursors, and nothing has to be set up again.
+
+What a lapsed account can still do, so that it can leave or come back: `GET /v1/backup` and `GET /v1/keep/{id}` (the person can still take their own locked data away; this is the one exception to "no syncing", and the easiest to remove), every `DELETE`, `GET /v1/devices`, `/v1/usage`, `/v1/plan` and the list at `/v1/push`, and the `/account/*` pages (renew, change the password, delete the account).
 
 The account row keeps `pass`; `lifetime` is never changed by billing. A new column `billing_id` (random, 128 bits, made when the account first needs one) is the provider's customer reference.
 
@@ -129,19 +131,16 @@ The route has the provider's name in it so that **two providers can be live at o
 
 **Reconciling** (a daily job, and `accounts billing sync <email>` by hand): for each subscription that is `Active`, `PastDue` or `Canceling` and has not been updated for three days, or whose `ValidUntil` has passed by a day, ask the provider and store the answer. This is the safety net under lost webhooks.
 
-**When it lapses:** the account is `Lapsed`. Nothing is removed and nothing stops on a device that is already signed in. The sign-in page, after the password is right, says "Your Yaparr Cloud subscription has ended" with **Renew** (a checkout, as above) instead of handing the app a code; once the subscription is paid, signing in works again. Nobody is emailed by Yaparr: the apps show the state in Settings and the provider has sent its own notices.
-
-*What this leaves open:* a person who cancels keeps syncing on the devices they have, for as long as those stay signed in, and loses only the ability to add or re-sign-in a device (the cap of 20 devices, and a lost phone, are where it bites). If that turns out to cost too much, the same `PlanGate` can also refuse the writes (`402`) with no change to the model; it is one setting away, and not on by default.
+**When it lapses:** the account is `Lapsed`: no new sign-in and no syncing (above), and nothing removed. The sign-in page, after the password is right, says "Your Yaparr Cloud subscription has ended" with **Renew** (a checkout, as above) instead of handing the app a code. Devices that are signed in see `402` from the services and show the same sentence (see *The apps*); once the subscription is paid, everything resumes without anyone signing in again. Nobody is emailed by Yaparr: the apps show the state and the provider has sent its own notices.
 
 ## The server (Yaparr.Cloud) changes
 
 - **Schema 6** (`PostgresDatabase`, and the file store alongside, behind a new `ISubscriptions` held to the same behaviour by one contract test, as the other stores are): `accounts.billing_id`, `subscriptions(account, provider, provider_customer_id, provider_subscription_id, plan, status, valid_until, updated_at)` keyed by `(provider, provider_subscription_id)`, and `billing_events(provider, event_id, received_at)` (purged after 30 days).
-- **`AccountPlan`** and **`PlanGate`**: one function for the state, one check, applied where a device token is made (`POST /login`, `POST /v1/token`, `POST /v1/token/handoff`; not to `UserOfToken`, so an existing token is untouched). Not gated: every call with a token that exists, the `/account/*` pages (a lapsed account must be able to renew, change its password and delete itself), and `POST /v1/push/wake/{token}`.
-- **A refused sign-in** is a page in the browser (the app starts the browser, so there is nothing for the app to parse): it says the subscription ended and offers **Renew**. `POST /v1/token` for a lapsed account answers `402` `{"error":"subscription_required"}`, for an app that is mid-sign-in when it lapses.
-- **Optional, off by default:** `Service__Billing__PauseWritesWhenLapsed=true` also refuses `PUT /v1/backup`, `PUT /v1/sync`, `POST /v1/mailbox/{id}`, `PUT /v1/blob/{id}`, `PUT /v1/keep/{id}`, `PUT /v1/push` and the gateway with the same `402` (see *When it lapses*).
+- **`AccountPlan`** and **`PlanGate`**: one function for the state, one check. It is applied where a device token is made (`POST /login`, `POST /v1/token`, `POST /v1/token/handoff`) and on each service listed under *What an account is, now*; not to `UserOfToken` (an existing token still identifies its account, which is how a lapsed device can read the plan, take its backup and delete), and not to the `/account/*` pages.
+- **A refused sign-in** is a page in the browser (the app starts the browser, so there is nothing for the app to parse): it says the subscription ended and offers **Renew**. Everything else is the `402` above, which the apps treat as a state and never as a failure to retry.
 - **Endpoints:** `GET /v1/plan` (bearer): `{billing:"off"}` when disabled, else `{billing:"on", state, plan, endsAt, willRenew}`; the account pages above; `POST /billing/start`, `GET /billing/done`, `POST /billing/webhook/{provider}`. No endpoint under `/v1` returns a provider link: those are pages in a browser, behind the sign-in.
 - **Admin:** the portal and `accounts list` show the plan state; `accounts pass <email> lifetime` (see [Lifetime passes](#lifetime-passes)), `accounts grant <email> --days N` (a comp, a subscription with provider `manual`), `accounts billing sync`. The admin portal can never see a card or an invoice: those are the provider's.
-- **Settings** (`Service__Billing__…`, nothing by default): `Provider` (`polar`), `GraceDays` (3), `PendingHours` (24), `PauseWritesWhenLapsed` (false), and for Polar `Server` (`sandbox` or `production`), `AccessToken`, `WebhookSecret`, and the products (`Plans__cloud__Monthly`, `Plans__cloud__Yearly`). The token and the secret come from `.env` (`chmod 600`), as the other secrets do, and are never logged, printed or committed.
+- **Settings** (`Service__Billing__…`, nothing by default): `Provider` (`polar`), `GraceDays` (3), `PendingHours` (24), and for Polar `Server` (`sandbox` or `production`), `AccessToken`, `WebhookSecret`, and the products (`Plans__cloud__Monthly`, `Plans__cloud__Yearly`). The token and the secret come from `.env` (`chmod 600`), as the other secrets do, and are never logged, printed or committed.
 - **Logging:** outcomes only (`billing: webhook subscription (polar)`, `billing: bad signature (polar)`, `billing: reconciled 3`), never an address, an id or a body, like [`PushApi`](https://github.com/zburtle/Yaparr.Cloud#push-notifications-pushapi).
 
 ## Lifetime passes
@@ -155,23 +154,46 @@ The route has the provider's name in it so that **two providers can be live at o
 The policy, as decided:
 
 - **Monthly:** a full refund if asked within **48 hours of the payment date**. After that, none.
-- **Annual:** a refund of the **unused time, prorated**: the price times the days left in the period over the days in it, counted from the day of the request, rounded down to the cent.
+- **Annual:** a refund of the **unused time, prorated, whenever it is asked**: the price times the days left in the period over the days in it, counted from the day of the request, rounded down to the cent.
 - **Otherwise:** no refund, unless there are special circumstances, which the owner decides case by case.
+- **Where the law gives more, the law applies** (below), and `/subscribe` says so.
 
-How it works: the owner refunds in Polar's dashboard (the amount for an annual refund is the formula above; Polar can refund part of a payment). Polar then ends the subscription, the webhook arrives, and the account is `Lapsed` at once (principle 4; `ValidUntil` becomes now). Nothing in Yaparr issues a refund, so Yaparr never holds a payment credential. A "request a refund" button could compute the amount, since the rule is mechanical; it is not in the first version.
+How it works: the owner refunds in Polar's dashboard, which can refund all or part of an order. Polar then ends the subscription, the webhook arrives, and the account is `Lapsed` at once (`ValidUntil` becomes now). Nothing in Yaparr issues a refund, so Yaparr never holds a payment credential. A "request a refund" button could compute the amount, since the rule is mechanical; it is not in the first version.
 
-Two things to settle when the page that states the policy is written: Polar is the seller, so its terms and the buyer's consumer law (for example the withdrawal rights some countries give for online services) apply on top of this policy; and whether Polar returns its own fee when a payment is refunded, because that decides what a refund costs. `/subscribe` must say the policy in plain words.
+What I found when I checked (Polar's [refund documentation](https://polar.sh/docs/features/refunds) and [buyer terms](https://polar.sh/legal/checkout-buyer-terms), and the law as described by secondary sources):
+
+- **A refund costs the fee.** Polar does not return its original payment fees on a refund. A refunded $4 month costs $0.70 on top of the $4; a refunded $40 year costs $2.50 on top of what is returned. A chargeback costs $15 whatever the outcome, which is the reason to refund early and easily.
+- **Polar may refund on its own.** It reserves the right to refund within 60 days of a purchase at its discretion, to head off chargebacks, **even where the seller has a "no refunds" policy**. The policy above cannot promise fewer refunds than Polar might give.
+- **Polar is the seller, and its terms defer to the law.** Refunds are judged under "applicable law, the applicable refund policy and the card network rules", and the agreement "does not limit any non-waivable consumer rights". A buyer's right to a chargeback is not restricted.
+- **In the EU and the UK a buyer has a 14-day right to withdraw** from an online purchase. For a *service* it is lost only once the service has been fully performed, after the buyer's prior express consent and acknowledgement, which a subscription that is still running has not been; the buyer may owe a proportionate payment for what they used. A ruling of the EU Court of Justice in July 2026, as reported by law firms, held that a streaming subscription that is a digital *service* cannot be made to lose the right by a term at sign-up. I read this from secondary sources and not from the judgment.
+- **What follows for the policy:** for a buyer in the EU or the UK the 48-hour monthly rule is stricter than the law, so the law wins. The wording to use on `/subscribe` is the three rules above plus: *"If you live where the law gives you a right to withdraw from an online purchase (the EU and the UK give 14 days), that right applies, and we refund the unused part of what you paid."* In practice that is a prorated refund inside 14 days of the first payment. Whether Polar's checkout records the consent that the law asks for, and how Polar handles an EU withdrawal request on a subscription, is not something I could find in its documentation: ask Polar's support before `/subscribe` goes live.
 
 ## The apps (Yaparr)
 
 - `BackupServerClient.PlanAsync()` for `GET /v1/plan`, and `BackupServerClient.SubscriptionPage(server)` for the page, beside `PasswordPage`.
-- **Settings > Yaparr Cloud**, one line under the sign-in: nothing when billing is off or the account is `Lifetime`; "Active, renews 3 Dec", "Ends 3 Dec", "Payment failed: update your card", or "Subscription ended: you can't sign in on a new device until you renew. Your data is kept." with one button, **Manage subscription**, which opens the page in the browser like **Change password** does. A "Learn more about Yaparr Cloud plans" link as for every other setting ([Learn more](development.md#keeping-the-apps-short)).
-- **A `402`** when signing in is shown as that same line ("Subscription ended …") with the button, and not as an unexplained failure. (If `PauseWritesWhenLapsed` is ever turned on, a `402` from sync, the mailbox, pictures or the gateway stops that work and the sync line says why.)
-- **Android and the stores.** Google Play requires its own billing for digital goods sold *inside* an app, and what an app may say about buying elsewhere differs by region and has been changing. The safe shape is the one above: the app **shows the state and opens the account page in the browser, and shows no price, no "subscribe" button and no purchase wording**; the Subscribe button and the price live on the website and the browser page only. Read the current Play policy before the first release with this, and consider a build without the button for Play only if the policy asks.
+- **Settings > Yaparr Cloud**, one line under the sign-in: nothing when billing is off or the account is `Lifetime`; "Active, renews 3 Dec", "Ends 3 Dec", "Payment failed: update your card", or "Subscription ended: syncing is paused and you can't sign in on a new device until it is renewed. Your data is kept." In builds that may (below) one button, **Manage subscription**, opens the account page in the browser like **Change password** does. A "Learn more about Yaparr Cloud" link as for every other setting ([Learn more](development.md#keeping-the-apps-short)).
+- **A `402`** from sign-in, sync, the mailbox, pictures or the gateway sets that state, stops that work (no retry loop) and shows the sentence above, not an unexplained failure.
+
+### Android and Google Play
+
+Checked against Google's [Payments policy](https://support.google.com/googleplay/android-developer/answer/9858738) and its [update for the US](https://support.google.com/googleplay/android-developer/answer/15582165) in November 2026:
+
+- The policy lists "subscription services" and "cloud software and services (such as data storage services)" among what an app must sell through Google Play's billing when it "require[s] or accept[s] payment for access to in-app features or services". **The page has no exemption for a service bought on a website and used in the app.** Yaparr Cloud is such a service, so this is a real risk for a Play build, not only a matter of wording.
+- Apart from the programs below, "apps may not lead users to a payment method other than Google Play's billing system", including through the store listing, in-app promotions, "webviews, buttons, links, messaging, advertisements, or other calls to action", and sign-up flows.
+- Alternative billing, and links out, are allowed in some regions through programs that need enrolment and have their own terms (the UK, the EEA and the US; in the US, enrolled developers report transactions and pay service fees to Google from 1 October 2026).
+- **In the US**, since a court injunction on 29 October 2025, Google "will not require the use of Google Play Billing" and will not stop a developer telling users about availability or pricing outside Play, or linking to transactions. A settlement of 4 March 2026 is waiting for a revised order, so this can change.
+- A listing that mentions a feature that may need a charge "must clearly notify users that payment is required".
+
+What the design does about it:
+
+1. **The Play build** (the `-p:PlayStore=true` switch that already removes the self-updater) shows **no price, no Subscribe or Manage button, no link to a page that sells, and no "renew at …" words, anywhere**, and its "Learn more" links go only to guides with no purchase content (so the guides get no plans section, and the plan page is not linked from them). It shows the state sentence and nothing else. That meets the rule against steering everywhere. The listing says that Yaparr Cloud needs a paid subscription (the rule above) and nothing about where to get one.
+2. **That does not settle the first rule outside the US:** a Play user who bought on the website and syncs in the app may still be seen as paying for an in-app service outside Google Play's billing. Reading the policy cannot answer it. **Ask Google** (Play Console, Help, contact policy support) with this design, before the first Play release that has billing on. If the answer is no, the fallback that keeps the design is a third provider, `GooglePlayBilling : IBillingProvider` (a purchase token checked with the Play Developer API, Google's real-time notifications as the webhook), for Play users only, at Google's fee: the lease model and the `provider` on each subscription are what let it sit beside Polar.
+3. **The direct download** (the GitHub release, the build without `PlayStore`) has none of these rules and shows **Manage subscription**.
+4. In the US the Play build could show the button too, but not while the order that allows it is being revised.
 
 ## The website (Yaparr.Web)
 
-`/subscribe` (the plan, what it holds, the price, what happens when it ends, a link to the guide, and the form), and a short `/subscribe/thanks` for the `/billing/done` fallback. The Yaparr Cloud [guide](guides/yaparr-cloud.md) gets a "Plans" section (the guides are copied to the site by `scripts/sync-learn.mjs`). The [privacy policy](https://yaparr.com/privacy) must say that payments are handled by Polar as the seller, that Polar sees the email address, card and country, that Yaparr Cloud stores only the subscription's state and ids, and what is removed when an account is deleted.
+`/subscribe` (the plan, what it holds, the price, what happens when it ends, a link to the guide, and the form), and a short `/subscribe/thanks` for the `/billing/done` fallback. The guides stay free of prices and of how to subscribe (the Play build links to them, see *Android and Google Play*); everything about the plan lives on `/subscribe`, which the Play build never links to. The [privacy policy](https://yaparr.com/privacy) must say that payments are handled by Polar as the seller, that Polar sees the email address, card and country, that Yaparr Cloud stores only the subscription's state and ids, and what is removed when an account is deleted.
 
 ## Polar specifics
 
@@ -204,7 +226,7 @@ What the adapter uses (checked against [Polar's documentation](https://polar.sh/
 
 - `ISubscriptions`: file and Postgres through one contract test (upsert, status mapping, `ValidUntil`, purging old events).
 - `AccountPlan`: every row of the state table, with the clock injected, and `Lifetime` never changed by anything.
-- `PlanGate`: a `Lapsed` account is refused a new token at each place one is made (and `Lifetime`, `Subscribed` and a subscription within its grace days are not), a token that already exists keeps working everywhere, nothing is ever removed, and the optional `402` on writes does exactly what the list says when turned on.
+- `PlanGate`: a `Lapsed` account is refused a new token at each place one is made and gets `402` from each service in the list (and `Lifetime`, `Subscribed` and a subscription within its grace days get neither), it can still read its plan and usage, take its backup and kept pieces, delete things and use the account pages, nothing is ever removed, and renewing brings the services back with no sign-in.
 - The webhook: a bad signature, a stale timestamp, a repeated event, an event naming no subscription, events out of order, the provider failing (`503`, retried), and the same set against a **fake provider** so the flow is tested end to end without Polar.
 - `PolarBilling`: recorded sandbox samples of the webhook and API responses; the signature check against signatures made by a Standard Webhooks reference library, so it is tested against someone else's implementation and not only our own.
 - The flows: new subscriber to a working account, the done page before and after the webhook, a pending account expiring, deleting a subscribed account.
@@ -217,25 +239,25 @@ Settled by the owner:
 |---|---|
 | Price | **$4 a month or $40 a year** |
 | Trial | none |
-| When it lapses | new devices cannot sign in; nothing is ever removed (data is not purged today and stays so) |
+| When it lapses | no new device can sign in and **syncing stops**; nothing is ever removed (data is not purged today and stays so); renewing brings it all back |
 | Existing accounts | free for life, and so is anyone given one of the owner's codes later |
-| Refunds | monthly: full, within 48 hours of payment; annual: prorated for the unused time; otherwise none unless there are special circumstances |
+| Refunds | monthly: full, within 48 hours of payment; annual: prorated for the unused time, whenever it is asked; otherwise none unless there are special circumstances; the law applies where it gives more |
 | Seller and payouts | Polar, paying out through Stripe to the owner's country and bank |
-| Android and the stores | as in *The apps*: state and a browser page, no price or purchase wording in the app |
+| Android and the stores | state only in the Play build, the button in the direct build (*Android and Google Play*) |
 
-Still to confirm:
+Checked (see *Refunds* and *Android and Google Play*): the refund policy against Polar's terms and consumer law, and the Android design against Google's Payments policy. Both found something to act on, and one thing that reading cannot settle:
 
-1. **Lapsed accounts keep their signed-in devices.** The decision was "no logins on new devices"; this design takes that literally (devices already signed in carry on syncing). If paying should also be needed to keep syncing, turn on `PauseWritesWhenLapsed`.
-2. **The annual refund reading.** "Prorated for annual" is read as available at any time; if it is meant only inside a window like the monthly one, say so and the formula gets a deadline.
-3. **Consumer law and Polar's terms** against the refund policy (above), before `/subscribe` is written.
-4. **The Android store policy,** read once more before the first release that shows the plan.
+1. **Before `/subscribe` goes live:** ask Polar's support how its checkout records the consent that EU withdrawal law asks for and how it handles a withdrawal on a subscription, and publish the refund wording from *Refunds*.
+2. **Before the first Play release that has billing on:** ask Google's policy support whether a service bought on the website and used in the app is allowed without Google Play's billing. If not, add the `GooglePlayBilling` provider, or leave the plan out of the Play build.
+3. **At that release:** read the Payments policy and the US update again; both change.
 
 ## Order of work
 
 0. **The owner, in Polar:** the organization, the payout account, the sandbox, and the two products ($4 a month, $40 a year); nothing is needed in code for this.
-1. **Yaparr.Cloud:** the neutral model, `ISubscriptions` (file and Postgres, schema 6), `AccountPlan`, `PlanGate` on token issuing and `GET /v1/plan`, `accounts pass`, all with billing off by default and a **fake provider**. Nothing changes for anyone yet.
+1. **Yaparr.Cloud:** the neutral model, `ISubscriptions` (file and Postgres, schema 6), `AccountPlan`, `PlanGate` on token issuing and on the sync services, `GET /v1/plan`, `accounts pass`, all with billing off by default and a **fake provider**. Nothing changes for anyone yet.
 2. **Yaparr.Cloud:** the webhook, reconciling, the account pages and the pending-account flow against the fake provider.
 3. **Yaparr.Cloud:** `PolarBilling`, tested in the sandbox with a real test checkout.
-4. **Yaparr:** the plan line, the `402` handling and the button; a guide section.
-5. **Yaparr.Web:** `/subscribe`, the privacy policy, the guide.
-6. Turn billing on in production, with the first checkout done by the owner.
+4. **Yaparr:** the plan line, the `402` handling, and the button in the direct build only (the Play build gets the state sentence and no button, see *Android and Google Play*).
+5. **Yaparr.Web:** `/subscribe` with the refund wording, the privacy policy. (No plan content in the guides.)
+6. **Before going live:** the two questions in *Decisions* (to Polar about EU withdrawal, to Google about the Play build).
+7. Turn billing on in production, with the first checkout done by the owner.
