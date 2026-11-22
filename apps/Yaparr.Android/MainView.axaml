@@ -830,6 +830,8 @@
                     <TextBlock Text="Yaparr Cloud account" FontWeight="Bold" FontSize="20" Foreground="{DynamicResource Ink}" />
                     <ScrollViewer Grid.Row="1">
                         <StackPanel Spacing="12">
+                            <TextBlock x:Name="CloudPlanLine" IsVisible="False" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" />
+                            <Button x:Name="CloudManage" Content="Manage subscription" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" IsVisible="False" Click="CloudManageClicked" />
                             <StackPanel x:Name="CloudUsageList" Spacing="10" />
                             <TextBlock Text="Devices signed in" FontWeight="SemiBold" Foreground="{DynamicResource Ink}" Margin="0,8,0,0" />
                             <StackPanel x:Name="CloudDeviceList" Spacing="8" />

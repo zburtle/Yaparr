@@ -177,7 +177,7 @@ public sealed class AutoBackupTests : IDisposable
     {
         public readonly List<byte[]> Versions = new();
         public int Puts, Gets;
-        public bool Down, Unauthorized;
+        public bool Down, Unauthorized, PaymentRequired;
         public string Token = "ycl_x";
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancel)
@@ -185,6 +185,7 @@ public sealed class AutoBackupTests : IDisposable
             if (Down) throw new HttpRequestException("connection refused");
             var asked = request.Headers.Authorization?.Parameter;
             if (Unauthorized || asked != Token) return Json(HttpStatusCode.Unauthorized, new { error = "no" });
+            if (PaymentRequired) return Json(HttpStatusCode.PaymentRequired, new { error = "This account's Yaparr Cloud subscription has ended, so it cannot sync or sign in on a new device until it is renewed. Nothing is deleted.", code = "subscription_required" });
             var path = request.RequestUri!.PathAndQuery;
             if (path == "/v1/backup/versions") { Gets++; return Json(HttpStatusCode.OK, new { username = "sam@example.com", versions = Versions.Select((v, i) => new { version = i + 1, size = v.Length, at = DateTimeOffset.UtcNow }).Reverse() }); }
             if (path == "/v1/backup" && request.Method == HttpMethod.Put)
@@ -381,6 +382,36 @@ public sealed class AutoBackupTests : IDisposable
         Assert.Equal("", state.Token);
         Assert.Contains("no longer signed in", state.AutoNote);
         Assert.Equal(AutoBackupResult.Nothing, await auto.CheckAsync());          // signed out: nothing more until the person signs in
+    }
+
+    [Fact]
+    public async Task A_subscription_that_has_ended_is_said_in_one_sentence_and_the_server_is_left_alone_until_it_is_renewed()
+    {
+        var (data, server, auto, _, advance) = Setup();
+        ChangeARoom(data);
+        await auto.CheckAsync();
+        advance(TimeSpan.FromMinutes(3));
+        server.PaymentRequired = true;
+
+        Assert.Equal(AutoBackupResult.Failed, await auto.CheckAsync());
+        var state = data.LoadBackupServer();
+        Assert.Equal(CloudPlanText.Ended, state.AutoNote);          // the sentence, not "Couldn't sync: … Trying again later"
+        Assert.Equal(0, state.Failures);                            // not a failure to count
+        Assert.True(state.SignedIn);                                // nothing is signed out
+        Assert.True(state.RetryAfter > T0.AddHours(5));                // a pause of hours, not minutes
+
+        // Left alone: no retry loop, however often it is checked.
+        var asked = server.Gets + server.Puts;
+        for (var i = 0; i < 5; i++) { advance(TimeSpan.FromMinutes(30)); Assert.Equal(AutoBackupResult.Nothing, await auto.CheckAsync()); }
+        Assert.Equal(asked, server.Gets + server.Puts);
+
+        // Renewed: the settings find out and the pause ends at once; the next check backs up.
+        server.PaymentRequired = false;
+        var renewed = data.LoadBackupServer();
+        renewed.SubscriptionResolved();
+        data.SaveBackupServer(renewed);
+        Assert.Equal(AutoBackupResult.BackedUp, await auto.CheckAsync());
+        Assert.Equal("", data.LoadBackupServer().AutoNote);
     }
 
     [Fact]

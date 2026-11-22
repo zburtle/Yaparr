@@ -64,6 +64,28 @@ public sealed class CloudAccountClient : IDisposable
                ?? throw new BackupServerException("The server answered with nothing.");
     }
 
+    /// <summary>Where the account stands on payments. A server with billing off (or one too old to know) says nothing is asked: <see cref="CloudPlan.Off"/>.</summary>
+    public async Task<CloudPlan> PlanAsync(CancellationToken cancel = default)
+    {
+        try
+        {
+            using var response = await SendAsync(HttpMethod.Get, "/v1/plan", cancel).ConfigureAwait(false);
+            var json = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>(BackupServerClient.Json, cancel).ConfigureAwait(false);
+            if (json.ValueKind != System.Text.Json.JsonValueKind.Object || Text(json, "billing") != "on") return CloudPlan.Off;
+            return new CloudPlan(true, Text(json, "state") ?? "lapsed", Text(json, "plan"),
+                DateTimeOffset.TryParse(Text(json, "endsAt"), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var end) ? end : null,
+                Flag(json, "willRenew"), Flag(json, "pastDue"));
+        }
+        catch (BackupServerException ex) when (ex.Status == System.Net.HttpStatusCode.NotFound) { return CloudPlan.Off; }   // a server from before paid plans
+        catch (System.Text.Json.JsonException) { return CloudPlan.Off; }
+    }
+
+    private static string? Text(System.Text.Json.JsonElement from, string name) =>
+        from.TryGetProperty(name, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String ? v.GetString() : null;
+
+    private static bool Flag(System.Text.Json.JsonElement from, string name) =>
+        from.TryGetProperty(name, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.True;
+
     public async Task<IReadOnlyList<CloudDevice>> DevicesAsync(CancellationToken cancel = default)
     {
         using var response = await SendAsync(HttpMethod.Get, "/v1/devices", cancel).ConfigureAwait(false);

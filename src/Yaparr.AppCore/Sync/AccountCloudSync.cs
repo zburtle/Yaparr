@@ -174,6 +174,7 @@ public sealed class AccountCloudSync
     {
         var server = data.LoadBackupServer();
         if (!server.SignedIn || server.RecoveryCode.Length == 0) return AccountSyncResult.NotSetUp;
+        if (server.SubscriptionPaused(DateTimeOffset.UtcNow)) return AccountSyncResult.Failed;   // the subscription ended: left alone until the pause is over (BackupServerState.PauseForSubscription)
         SyncSealer sealer;
         try { sealer = SyncSealer.FromRecoveryCode(server.RecoveryCode); }
         catch (ArgumentException) { return AccountSyncResult.NotSetUp; }
@@ -202,6 +203,13 @@ public sealed class AccountCloudSync
             data.SaveBackupServer(server);
             log?.Invoke("sync: no longer signed in");
             return AccountSyncResult.SignedOut;
+        }
+        catch (BackupServerException ex) when (ex.SubscriptionEnded)
+        {
+            server.PauseForSubscription(DateTimeOffset.UtcNow);
+            data.SaveBackupServer(server);
+            log?.Invoke("sync: the subscription has ended");
+            return AccountSyncResult.Failed;
         }
         catch (Exception ex) when (ex is BackupServerException or IOException or UriFormatException)
         {

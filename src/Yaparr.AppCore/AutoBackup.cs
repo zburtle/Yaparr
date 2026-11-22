@@ -145,6 +145,14 @@ public sealed class AutoBackup
             _log?.Invoke("automatic backup: no longer signed in");
             return AutoBackupResult.SignedOut;
         }
+        catch (BackupServerException ex) when (ex.SubscriptionEnded)
+        {
+            // Not a failure to count: the subscription ended. Say so, and leave the server alone for a while (the settings ask again whenever they are opened).
+            state.PauseForSubscription(now);
+            _data.SaveBackupServer(state);
+            _log?.Invoke("automatic backup: the subscription has ended");
+            return AutoBackupResult.Failed;
+        }
         catch (Exception ex) when (ex is BackupServerException or IOException or UnauthorizedAccessException or CryptographicException)
         {
             if (cancel.IsCancellationRequested) throw;

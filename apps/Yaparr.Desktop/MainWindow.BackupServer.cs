@@ -330,7 +330,7 @@ public partial class MainWindow
     private async void CloudAccount_Click(object? sender, RoutedEventArgs e)
     {
         if (!_server.SignedIn || !Uri.TryCreate(_server.Url, UriKind.Absolute, out var server)) return;
-        var window = new CloudAccountWindow(server, _server.Token, signedOut: () =>
+        var window = new CloudAccountWindow(server, _server.Token, planKnown: PlanKnown, signedOut: () =>
         {
             // This device was signed out (here, or from another device): the sign-in shows again.
             _server = _data.LoadBackupServer();
@@ -340,6 +340,15 @@ public partial class MainWindow
             ShowServerState();
         });
         await window.ShowDialog(this);
+    }
+
+    // What the server says about the subscription: when it covers the account again (or asks for nothing) the pause after a 402 ends at once; when it has ended, the settings say so.
+    private void PlanKnown(CloudPlan plan)
+    {
+        var state = _data.LoadBackupServer();
+        if (plan.Lapsed) state.PauseForSubscription(DateTimeOffset.UtcNow); else state.SubscriptionResolved();
+        _data.SaveBackupServer(state);
+        _server = state;
     }
 
     private async void ServerSignOut_Click(object? sender, RoutedEventArgs e)

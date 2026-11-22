@@ -20,6 +20,9 @@ public class BackupServerException(string message, HttpStatusCode? status = null
 
     /// <summary>True when the server no longer knows this device (signed out, the password was changed, or the account is gone).</summary>
     public bool SignedOut => Status == HttpStatusCode.Unauthorized;
+
+    /// <summary>True when the server answered <c>402</c>: the account's subscription has ended, so it does not sync or sign in on a new device (nothing is deleted).</summary>
+    public bool SubscriptionEnded => Status == HttpStatusCode.PaymentRequired;
 }
 
 /// <summary>Someone else (or this person on another device) saved a newer backup than the one this save was based on.</summary>
@@ -72,6 +75,29 @@ public sealed class BackupServerState
     }
 
     public bool SignedIn => Token.Length > 0 && Url.Length > 0;
+
+    /// <summary>How long to leave a server alone after it said <c>402</c>: its subscription may be renewed at any time, and the settings ask again whenever they are opened.</summary>
+    public static readonly TimeSpan SubscriptionRetry = TimeSpan.FromHours(6);
+
+    /// <summary>The server said the subscription has ended: say so in the note, and stop asking for a while (not a failure to count, and not retried in a loop).</summary>
+    public void PauseForSubscription(DateTimeOffset now)
+    {
+        // A note that says sync is stopped for another reason (the Sync key was replaced on another device) is the more useful one to keep.
+        if (AutoNote.StartsWith(AccountCloudSync.KeyChangedNote, StringComparison.Ordinal)) return;
+        AutoNote = CloudPlanText.Ended;
+        RetryAfter = now + SubscriptionRetry;
+    }
+
+    /// <summary>True while the app is leaving the server alone because of <see cref="PauseForSubscription"/>.</summary>
+    public bool SubscriptionPaused(DateTimeOffset now) => AutoNote == CloudPlanText.Ended && RetryAfter is { } retry && now < retry;
+
+    /// <summary>The server says the account is covered again (or asks for nothing): the pause ends at once, so syncing resumes without waiting out the hours.</summary>
+    public void SubscriptionResolved()
+    {
+        if (AutoNote != CloudPlanText.Ended) return;
+        AutoNote = "";
+        RetryAfter = null;
+    }
 }
 
 /// <summary>
@@ -304,6 +330,9 @@ public sealed class BackupServerClient : IDisposable
 
     /// <summary>The page where a person changes their password, for the browser.</summary>
     public static Uri PasswordPage(Uri server) => new(server, "/account/password");
+
+    /// <summary>The page where the account's subscription is looked after, for the browser. Only builds that may send people to pay open it (not the Google Play build).</summary>
+    public static Uri SubscriptionPage(Uri server) => new(server, "/account/subscription");
 
     /// <summary>The server's page where the owner deletes the account and everything it holds (backup, synced settings, wake-up registrations).</summary>
     public static Uri DeleteAccountPage(Uri server) => new(server, "/account/delete");
