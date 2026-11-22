@@ -1,6 +1,6 @@
 # Subscriptions for Yaparr Cloud (design)
 
-Status: **a design, nothing is built.** It says how a paid plan for Yaparr Cloud would work, with [Polar](https://polar.sh) taking the payments and the design kept generic enough that Stripe (or anyone else) can replace it by writing one adapter. The server is [Yaparr.Cloud](https://github.com/zburtle/Yaparr.Cloud); the website is [Yaparr.Web](https://github.com/zburtle/Yaparr.Web). See [Yaparr Cloud](guides/yaparr-cloud.md) for what the service does and [Mailbox](mailbox.md) for the rules it already follows.
+Status: **the server side is built and was tried in Polar's sandbox; the apps and the website are not.** It says how a paid plan for Yaparr Cloud would work, with [Polar](https://polar.sh) taking the payments and the design kept generic enough that Stripe (or anyone else) can replace it by writing one adapter. The server is [Yaparr.Cloud](https://github.com/zburtle/Yaparr.Cloud); the website is [Yaparr.Web](https://github.com/zburtle/Yaparr.Web). See [Yaparr Cloud](guides/yaparr-cloud.md) for what the service does and [Mailbox](mailbox.md) for the rules it already follows.
 
 ## What is sold, and what is not
 
@@ -255,8 +255,8 @@ Checked (see *Refunds* and *Android and Google Play*): the refund policy against
 
 0. **The owner, in Polar:** the organization, the payout account, the sandbox, and the two products ($4 a month, $40 a year); nothing is needed in code for this.
 1. **Yaparr.Cloud (built):** the neutral model, `ISubscriptions` (file and Postgres, schema 6), `AccountPlan`, `PlanGate` on token issuing and on the sync services, `GET /v1/plan`, `accounts pass`, all with billing off by default and a **fake provider**. Nothing changes for anyone yet.
-2. **Yaparr.Cloud:** the webhook, reconciling, the account pages and the pending-account flow against the fake provider.
-3. **Yaparr.Cloud:** `PolarBilling`, tested in the sandbox with a real test checkout.
+2. **Yaparr.Cloud (built):** the webhook, reconciling, the account pages and the pending-account flow, tested against the fake provider.
+3. **Yaparr.Cloud (built, tried in the sandbox):** `PolarBilling`, with the settings `Service__Billing__Polar__…` (README, *Paid plans*). Tried in Polar's sandbox through the adapter itself: a checkout through the service's own `/billing/start`, a test-card payment, finding and reading the subscription (`Active`, the account's random billing id as its reference), the customer portal, cancelling at period end (`Canceling`), revoking at once (`Ended`, and again with no error), and an unknown id (nothing). Polar's real webhooks reached the running service (`cloud.yaparr.com` with sandbox settings): nine deliveries, all answered `200`, so the real Standard Webhooks signatures check out; a revoke arrives as `customer.state_changed` alone, which is enough because the service looks the subscription up again. **Still to see:** what the service stored and the sign-in after paying (the password page), a failed payment (`past_due`), and a refund. Polar refuses `example.com` as a customer email (it does not accept mail), so tests use a real-looking address.
 4. **Yaparr:** the plan line, the `402` handling, and the button in the direct build only (the Play build gets the state sentence and no button, see *Android and Google Play*).
 5. **Yaparr.Web:** `/subscribe` with the refund wording, the privacy policy. (No plan content in the guides.)
 6. **Before going live:** the two questions in *Decisions* (to Polar about EU withdrawal, to Google about the Play build).
