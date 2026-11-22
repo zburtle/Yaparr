@@ -16,13 +16,16 @@ public partial class MainWindow
     // First start on a computer with no profile: offer to join an account that already exists.
     private async Task OfferLinkAsync()
     {
-        var start = await Dialogs.ChoiceAsync(this, "Welcome to Yaparr",
+        // Anything but the three ways of bringing an account back makes a new one, so "Learn more" opens the guide and asks again instead of ending the question.
+        string? start;
+        while ((start = await Dialogs.ChoiceAsync(this, "Welcome to Yaparr",
             "Do you already have a Yaparr account?\n\n" +
             "Link this device: join an account you use on another device.\n" +
             "Restore a backup: bring an account back from a backup file.\n" +
             "Restore from Yaparr Cloud: bring it back from your account there.\n" +
             "Start fresh: make a new account.",
-            "Link this device", "Restore a backup", "Restore from Yaparr Cloud", "Start fresh");
+            "Link this device", "Restore a backup", "Restore from Yaparr Cloud", "Start fresh", "Learn more")) == "Learn more")
+            await OpenGuideAsync("accounts");
         if (start == "Restore a backup") { await RestoreBackupAsync(); return; }
         if (start == "Restore from Yaparr Cloud") { await RestoreFromServerAsync(); return; }
         if (start != "Link this device") return;
