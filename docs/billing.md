@@ -16,7 +16,7 @@ Status: **the server side is built and was tried in Polar's sandbox; the apps an
 4. **Webhooks say "look", they do not say "what".** A webhook is verified, de-duplicated, and then the server **asks the provider for the subscription's current state** and stores that. Order, repeats and the exact meaning of each event name (which differ between providers and change between versions) stop mattering.
 5. **The provider's id for a person is ours.** Each account gets a random `billing_id`; that is what the provider stores as its customer reference (`external_customer_id` on Polar). The account's name (its email address) is never the key, and the provider never learns anything else about the account.
 6. **The apps never know the provider.** They ask the server for the plan, and for a page to manage it; the server redirects to Polar. Nothing in an app, the website or a guide needs to change when the provider does.
-7. **Yaparr still never emails anyone.** Receipts, failed-payment and renewal notices come from the provider, which is the seller and already has the address. Yaparr shows the state in the app (below).
+7. **Yaparr emails only the links a person asked for** (to choose a password and to reset one; see [email](email.md)), never marketing and never a notice. Receipts, failed-payment and renewal notices come from the provider, which is the seller and already has the address. Yaparr shows the state in the app (below).
 
 ## The pieces
 
@@ -219,7 +219,7 @@ What the adapter uses (checked against [Polar's documentation](https://polar.sh/
 - The webhook endpoint is public, so everything about it is defensive: raw-body signature check in constant time, a five-minute timestamp window, de-duplication, a size cap, rate limits, no state taken from the body, `200` for what it does not understand and `503` only when the provider cannot be asked.
 - A card number, a billing address or an invoice never reaches Yaparr; the checkout and the portal are Polar's pages.
 - The provider learns an email address and a payment. Yaparr Cloud learns the state of a subscription. Neither learns what is in the account: the cloud only ever holds locked data, and `billing_id` is random, so the provider's records cannot be tied to a room, a device or a message.
-- An email address that is typed at checkout is the account's name, as it is for every account, and is not verified (nothing is emailed). Someone could pay for an account named with someone else's address; it is a name only, and the payer, not the address's owner, is the one who then sets the password.
+- An email address that is typed at checkout is the account's name, as it is for every account, and is not verified before the payment. Someone could pay for an account named with someone else's address; with email off, the payer, not the address's owner, is the one who then sets the password. **With email on (see [email](email.md)) the link to choose the password goes to the address**, so only the owner of the address can finish the account.
 - Deleting an account cancels what it pays for (above).
 
 ## Tests
