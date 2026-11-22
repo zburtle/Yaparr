@@ -18,15 +18,19 @@ public sealed class CloudAccountWindow : Window
     private readonly StackPanel _devices = new() { Spacing = 6 };
     private readonly TextBlock _status = new() { TextWrapping = TextWrapping.Wrap, Foreground = Brushes.Gray };
     private readonly Action? _signedOut;
+    private readonly Action<CloudPlan>? _planKnown;
+    private readonly TextBlock _plan = new() { TextWrapping = TextWrapping.Wrap, IsVisible = false };
+    private readonly Button _manage = new() { Content = "Manage subscription", HorizontalAlignment = HorizontalAlignment.Left, IsVisible = false };
     private readonly Button _signOutOthers;
     private IReadOnlyList<CloudDevice> _listed = new List<CloudDevice>();
     private bool _busy;
 
-    public CloudAccountWindow(Uri server, string token, Action? signedOut = null)
+    public CloudAccountWindow(Uri server, string token, Action? signedOut = null, Action<CloudPlan>? planKnown = null)
     {
         _server = server;
         _token = token;
         _signedOut = signedOut;
+        _planKnown = planKnown;
         Title = "Yaparr Cloud account";
         Width = 520;
         Height = 560;
@@ -47,6 +51,8 @@ public sealed class CloudAccountWindow : Window
             Spacing = 12,
             Children =
             {
+                _plan,
+                _manage,
                 new TextBlock { Text = "What your account holds", FontSize = 15, FontWeight = FontWeight.SemiBold },
                 _usage,
                 new TextBlock { Text = "Devices signed in", FontSize = 15, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 10, 0, 0) },
@@ -65,6 +71,8 @@ public sealed class CloudAccountWindow : Window
                 new ScrollViewer { Content = body, Padding = new Thickness(0, 0, 12, 0) },
             },
         };
+        // The desktop build may send people to the page that looks after the subscription (the Google Play build of the phone app may not: see docs/billing.md).
+        _manage.Click += async (_, _) => await GetTopLevel(this)!.Launcher.LaunchUriAsync(BackupServerClient.SubscriptionPage(_server));
         Opened += async (_, _) => await LoadAsync();
     }
 
@@ -83,6 +91,7 @@ public sealed class CloudAccountWindow : Window
         try
         {
             using var client = new CloudAccountClient(_server, _token);
+            ShowPlan(await client.PlanAsync());
             var usage = await client.UsageAsync();
             var devices = await client.DevicesAsync();
             ShowUsage(usage);
@@ -91,6 +100,17 @@ public sealed class CloudAccountWindow : Window
         }
         catch (BackupServerException ex) { Failed(ex); }
         finally { _busy = false; }
+    }
+
+    // One line about the subscription (nothing when the server asks for nothing or the account is a lifetime one), and the button that opens the page for it.
+    private void ShowPlan(CloudPlan plan)
+    {
+        _planKnown?.Invoke(plan);
+        var line = CloudPlanText.Line(plan, DateTimeOffset.Now);
+        _plan.Text = line ?? "";
+        _plan.IsVisible = line != null;
+        _plan.Foreground = plan.Lapsed || plan.PastDue ? Brushes.DarkOrange : Brushes.Gray;
+        _manage.IsVisible = line != null;
     }
 
     private void Failed(BackupServerException ex)

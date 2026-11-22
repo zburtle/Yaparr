@@ -80,6 +80,7 @@ public partial class MainView
         try
         {
             using var client = new CloudAccountClient(server, _server.Token);
+            ShowCloudPlan(await client.PlanAsync());
             var usage = await client.UsageAsync();
             var devices = await client.DevicesAsync();
             CloudUsageList.Children.Clear();
@@ -114,6 +115,27 @@ public partial class MainView
         }
         catch (BackupServerException ex) { CloudAccountFailed(ex); }
         finally { _loadingCloudAccount = false; }
+    }
+
+    // One line about the subscription (nothing when the server asks for nothing or the account is a lifetime one). The build for Google Play shows that line and nothing that sells: no
+    // button and no address (its payments policy; docs/billing.md, "Android and Google Play"). The build from GitHub also has the button that opens the page that looks after it.
+    private void ShowCloudPlan(CloudPlan plan)
+    {
+        var state = _data.LoadBackupServer();
+        if (plan.Lapsed) state.PauseForSubscription(DateTimeOffset.UtcNow); else state.SubscriptionResolved();
+        _data.SaveBackupServer(state);
+        _server = state;
+        var line = CloudPlanText.Line(plan, DateTimeOffset.Now);
+        CloudPlanLine.Text = line ?? "";
+        CloudPlanLine.IsVisible = line != null;
+        CloudPlanLine.Foreground = plan.Lapsed || plan.PastDue ? Avalonia.Media.Brushes.DarkOrange : Yaparr.AndroidApp.Theme.Brush("Muted");
+        CloudManage.IsVisible = line != null && !AppUpdater.IsStoreBuild;
+    }
+
+    private async void CloudManageClicked(object? sender, RoutedEventArgs e)
+    {
+        if (AppUpdater.IsStoreBuild) return;   // never from the Google Play build
+        if (Uri.TryCreate(_server.Url, UriKind.Absolute, out var server)) await OpenInBrowserAsync(BackupServerClient.SubscriptionPage(server));
     }
 
     private void CloudAccountFailed(BackupServerException ex)

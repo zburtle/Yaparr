@@ -189,6 +189,7 @@ public sealed class MailboxSync
         // Pictures are left on the same server, locked (ChatNode.RelayAttachmentAsync) and fetched from it (see docs/mailbox.md).
         node.BlobRelay = server.SignedIn && Uri.TryCreate(server.Url, UriKind.Absolute, out var serverUri) ? new BlobRelayClient(serverUri, server.Token) : null;
         if (!server.SignedIn) return new MailboxSyncReport(MailboxSyncResult.NotSetUp);
+        if (server.SubscriptionPaused(DateTimeOffset.UtcNow)) return new MailboxSyncReport(MailboxSyncResult.Failed);   // the subscription ended: left alone until the pause is over
         // Another server or another account is another set of mailboxes: its cursors are kept in a file of their own.
         var which = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(server.Url + "|" + server.Username)))[..12];
         var cursors = new MailboxCursors(Path.Combine(data.Directory, $"mailbox-{which}.json"));
@@ -206,6 +207,13 @@ public sealed class MailboxSync
             node.BlobRelay = null;
             log?.Invoke("mailbox: no longer signed in");
             return new MailboxSyncReport(MailboxSyncResult.SignedOut);
+        }
+        catch (BackupServerException ex) when (ex.SubscriptionEnded)
+        {
+            server.PauseForSubscription(DateTimeOffset.UtcNow);
+            data.SaveBackupServer(server);
+            log?.Invoke("mailbox: the subscription has ended");
+            return new MailboxSyncReport(MailboxSyncResult.Failed);
         }
         catch (Exception ex) when (ex is BackupServerException or IOException or UriFormatException)
         {
