@@ -684,26 +684,8 @@ public sealed class ConversationVm : Observable
             return name;
         }
     }
-    private string _lastLine = "";
-
-    /// <summary>What the list says under the name: the latest message ("Who: what they said"), or what kind of conversation it is while there is none.</summary>
-    public string Subtitle => _lastLine.Length > 0 ? _lastLine : IsRoom ? "Room" : IsNotes ? "Only you: kept on all your devices" : "Direct chat";
-
-    /// <summary>When the latest message was sent, short, for the list; empty when there is none.</summary>
-    public string LastTimeText => ListTime.Of(LastActivity, DateTimeOffset.Now);
-
-    // The latest message is the one the list shows, whichever channel it is in.
-    private void NoteLastLine(MessageVm message)
-    {
-        if (message.IsSystem || message.Time < _lastLineTime) return;
-        _lastLineTime = message.Time;
-        var what = message.Attachment != null ? (message.Text.Length == 0 ? "Picture" : "Picture: " + message.Text) : message.File is { } file ? "File: " + file.Name : message.Text;
-        _lastLine = (message.IsMine ? "You" : message.Sender) + ": " + what;
-        Raise(nameof(Subtitle)); Raise(nameof(ShowSubtitle)); Raise(nameof(HasSyncText));
-        Raise(nameof(LastTimeText));
-    }
-
-    private DateTimeOffset _lastLineTime = DateTimeOffset.MinValue;
+    /// <summary>What the list says under the name: what kind of conversation it is (the desktop list does not show the latest message or its time; the phone's does).</summary>
+    public string Subtitle => IsRoom ? "Room" : IsNotes ? "Only you: kept on all your devices" : "Direct chat";
 
     private string _syncText = "";
     private bool _syncing;
@@ -715,9 +697,9 @@ public sealed class ConversationVm : Observable
         private set { if (_syncText == value) return; _syncText = value; Raise(); Raise(nameof(HasSyncText)); Raise(nameof(ShowSubtitle)); }
     }
 
-    public bool HasSyncText => _syncText.Length > 0 && _lastLine.Length == 0;
+    public bool HasSyncText => _syncText.Length > 0;
 
-    public bool ShowSubtitle => _syncText.Length == 0 || _lastLine.Length > 0;
+    public bool ShowSubtitle => _syncText.Length == 0;
 
     /// <summary>The room is working on it, so the list shows a progress bar.</summary>
     public bool IsSyncing
@@ -1117,17 +1099,12 @@ public sealed class ConversationVm : Observable
         for (int i = Messages.Count - 1; i >= 0; i--)
             if (Messages[i].Id is { } id && ids.Contains(id)) Messages.RemoveAt(i);
         for (int i = 0; i < Messages.Count; i++) MarkDays(i);
-        // The list follows the newest message that is left.
-        _lastLine = ""; _lastLineTime = DateTimeOffset.MinValue;
-        foreach (var m in Messages) NoteLastLine(m);
-        Raise(nameof(Subtitle)); Raise(nameof(ShowSubtitle)); Raise(nameof(HasSyncText));
     }
 
     public void Add(MessageVm message)
     {
         if (message.Id != null && !_ids.Add(message.Id)) return;
         if (message.Time > LastActivity) LastActivity = message.Time;
-        NoteLastLine(message);
         IndexForReplies(message);
         if (message.Id != null && _delivery.TryGetValue(message.Id, out var status))
         {
