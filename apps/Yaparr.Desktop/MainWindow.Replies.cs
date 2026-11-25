@@ -82,6 +82,12 @@ public partial class MainWindow
     private async void Quote_PointerReleased(object? sender, PointerReleasedEventArgs e)
     {
         if ((sender as Control)?.DataContext is not MessageVm { ReplyKey: { } key } || _selected is not { } conv) return;
+        await GoToMessageAsync(conv, key);
+    }
+
+    // Shows the message with this key in its conversation (which must be the one on show): in its channel, scrolled into view.
+    private async Task GoToMessageAsync(ConversationVm conv, string key)
+    {
         var original = conv.FindByKey(key);
         // A room asks its members; a direct chat asks your other devices and the person's.
         Func<IEnumerable<string>, int>? ask = RoomFor(conv) is { } asking ? asking.RequestMessages : DirectChatFor(conv) is { } direct ? direct.RequestMessages : null;
@@ -107,7 +113,9 @@ public partial class MainWindow
             MarkShownRead(conv);
             UpdateComposer();
         }
-        if (conv.Messages.Contains(original)) MessageList.ScrollIntoView(original);
+        // After the list has been laid out, which a conversation only just opened has not been yet.
+        var target = original;
+        Avalonia.Threading.Dispatcher.UIThread.Post(() => { if (_selected == conv && conv.Messages.Contains(target)) MessageList.ScrollIntoView(target); }, Avalonia.Threading.DispatcherPriority.Background);
     }
 
     // ---- naming people

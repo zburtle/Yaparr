@@ -33,7 +33,7 @@ public partial class MainView : UserControl
         Messages.TemplateApplied += MessagesTemplateApplied;
         // The box takes several lines (a pasted report, say); Enter still sends, so it is caught before the box turns it into a new line.
         InputBox.AddHandler(KeyDownEvent, InputKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
-        _screens = new Control[] { WelcomePanel, NamePanel, ExistingPanel, LinkPanel, ServerRestorePanel, ListPanel, ChatPanel, SettingsPanel };
+        _screens = new Control[] { WelcomePanel, NamePanel, ExistingPanel, LinkPanel, ServerRestorePanel, ListPanel, ChatPanel, SettingsPanel, NotificationsPanel };
         NameBox.Text = _settings.DisplayName ?? "";
         ApplyTheme();
         // A phone that has an account but no name (it was made, then closed before the name was typed) only needs the name; there is nothing to go back to.
@@ -126,6 +126,7 @@ public partial class MainView : UserControl
         if (PeoplePanel.IsVisible) { PeoplePanel.IsVisible = false; return true; }
         if (AddPanel.IsVisible) { AddPanel.IsVisible = false; return true; }
         if (SettingsPanel.IsVisible) { SettingsBackClicked(null, new RoutedEventArgs()); return true; }
+        if (NotificationsPanel.IsVisible) { NotificationsBackClicked(null, new RoutedEventArgs()); return true; }
         if (ChatPanel.IsVisible) { BackToList(); return true; }
         if (LinkPanel.IsVisible) { LinkBackClicked(null, new RoutedEventArgs()); return true; }
         if (ServerRestorePanel.IsVisible) { ServerRestoreBackClicked(null, new RoutedEventArgs()); return true; }
@@ -197,6 +198,8 @@ public partial class MainView : UserControl
         On<System.Collections.Specialized.NotifyCollectionChangedEventHandler>(h => session.Chats.CollectionChanged += h, h => session.Chats.CollectionChanged -= h,
             (_, _) => EmptyHint.IsVisible = session.Started && session.Chats.Count == 0);
         On<Action<string>>(h => session.Notice += h, h => session.Notice -= h, text => ListStatus.Text = text);
+        On<Action>(h => session.Notifications.Changed += h, h => session.Notifications.Changed -= h, () => Dispatcher.UIThread.Post(RefreshNotificationList));
+        RefreshNotificationList();
         On<Action<PeerId>>(h => session.AvatarChanged += h, h => session.AvatarChanged -= h, _ => ShowMyPicture());
         On<Action<Chat>>(h => session.SoundsChanged += h, h => session.SoundsChanged -= h, c => { if (SoundPanel.IsVisible && c == _current) ShowSounds(); });
         On<Action<Chat, Line>>(h => session.EarlierLoaded += h, h => session.EarlierLoaded -= h, KeepPlaceAfterEarlier);
@@ -1329,8 +1332,15 @@ public partial class MainView : UserControl
     // A tap on the quote in a reply goes to the message it answers, in its channel.
     private async void QuoteTapped(object? sender, TappedEventArgs e)
     {
-        if (sender is not Control { DataContext: Line { ReplyKey: { } key } } || _current is not { } chat || _session == null) return;
+        if (sender is not Control { DataContext: Line { ReplyKey: { } key } } || _current is not { } chat) return;
         e.Handled = true;
+        await GoToMessageAsync(chat, key);
+    }
+
+    // Shows the message with this key in the open chat: in its channel, scrolled into view. A message this phone no longer has is asked for from the others.
+    private async Task GoToMessageAsync(Chat chat, string key)
+    {
+        if (_session == null) return;
         var original = chat.FindByKey(key);
         if (original == null)
         {
@@ -1346,7 +1356,9 @@ public partial class MainView : UserControl
             if (original == null || _current != chat) return;
         }
         if (original.Channel is { } channel && channel != chat.CurrentChannel) _session.SelectChannel(chat, channel);
-        if (chat.Shown.Contains(original)) Messages.ScrollIntoView(original);
+        // After the list has been laid out, which a chat only just opened has not been yet.
+        var target = original;
+        Dispatcher.UIThread.Post(() => { if (_current == chat && chat.Shown.Contains(target)) Messages.ScrollIntoView(target); }, DispatcherPriority.Background);
     }
 
     // While an @ and some letters end the text, the people they could mean are offered.

@@ -26,7 +26,8 @@ public partial class MainWindow
             _data.SaveSettings(_settings);
         };
         // Coming back to the window ends the flashing (Windows also does this itself when it is brought to the front).
-        Activated += (_, _) => { TaskbarFlash.Stop(this); UpdateTaskbarBadge(); };
+        Activated += (_, _) => { TaskbarFlash.Stop(this); UpdateTaskbarBadge(); MarkNotificationsRead(_selected); };
+        SetUpNotificationList();
 
         // The sound a new message makes, to choose from: each plays when it is picked.
         _sounds.MessageStyle = _settings.MessageSound;
@@ -99,6 +100,8 @@ public partial class MainWindow
         var room = RoomFor(conv);
         // A muted room is silent: no sound, no flash, no pop-up, not even for a mention. Its messages still count as unread.
         if (room != null && IsMuted(room)) return;
+        // Listed in the notifications as soon as it is one the system would tell you about (what it says, whether or not the sound or pop-up is on, and however long it waits below).
+        if (message.Highlight || conv.IsDirect || !_settings.NotifyOnlyMentions) RecordNotification(conv, message);
         // Another of your devices is in use (the phone in your hand, say) but not showing this chat: you may read it there, so this one waits a little and tells you only
         // if it is still unread by then.
         if (_node is { } node && node.SiblingIsActive() && !(room != null ? node.SiblingIsViewing(room.RoomId, message.Channel, null) : false))
@@ -218,6 +221,17 @@ public partial class MainWindow
             }));
     }
 
+    // Shows another text channel of a room, as if it had been picked there.
+    private void ShowChannel(ConversationVm conv, string channel)
+    {
+        if (channel == conv.CurrentChannel || RoomFor(conv) is not { } room) return;
+        conv.SelectChannel(channel);
+        conv.PendingChannel = null;
+        RememberChannel(room, channel);
+        MarkShownRead(conv);
+        UpdateComposer();
+    }
+
     // Goes to the oldest message that names you or answers you and that you have not seen yet, in whichever room it is.
     private void GoToFirstMention_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
@@ -234,14 +248,7 @@ public partial class MainWindow
         if (first is not { } target) { StatusText.Text = "Nothing unread names you or answers you."; return; }
 
         SelectConversation(target.Conv);
-        if (target.Message.Channel is { } channel && channel != target.Conv.CurrentChannel && RoomFor(target.Conv) is { } room2)
-        {
-            target.Conv.SelectChannel(channel);
-            target.Conv.PendingChannel = null;
-            RememberChannel(room2, channel);
-            MarkShownRead(target.Conv);
-            UpdateComposer();
-        }
+        if (target.Message.Channel is { } channel) ShowChannel(target.Conv, channel);
         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
         {
             if (target.Conv.Messages.Contains(target.Message)) MessageList.ScrollIntoView(target.Message);

@@ -1360,6 +1360,7 @@ public partial class MainWindow : Window
             finally { _selecting = false; }
         }
         _selected = picked;
+        MarkNotificationsRead(picked);
         ResetComposerExtras();
         UpdateInlineScreen();
         UpdateSharerPanel();

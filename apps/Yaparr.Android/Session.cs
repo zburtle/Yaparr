@@ -49,6 +49,9 @@ public sealed partial class Session : IDisposable
         _data = data;
         _settings = settings;
         _marks = new ReadMarks(settings.ReadMarks);
+        Notifications = new NotificationLog(data.LoadNotifications());
+        Notifications.Changed += SaveNotifications;
+        SaveNotifications();
         _saveTimer.Tick += (_, _) => Save();
     }
 
@@ -705,6 +708,7 @@ public sealed partial class Session : IDisposable
             _directs.Remove(direct.PeerId.Value);
         }
         if (_open == chat) _open = null;
+        Notifications.RemoveChat(KeyOf(chat));
         Chats.Remove(chat);
     }
 
@@ -847,17 +851,39 @@ public sealed partial class Session : IDisposable
 
     private void Notify(Chat chat, Line line, ChatMessage m)
     {
-        if (!_settings.NotifyMessages) return;
         bool replyToMe = line.ReplyKey is { } key && chat.FindByKey(key) is { Mine: true };
         // A chat that another of your devices (the computer) has open in front of you needs no notification here.
         bool shownElsewhere = _node is { } node && (chat.Room is { } room ? node.SiblingIsViewing(room.RoomId, m.Channel, null) : chat.Direct is { } direct && node.SiblingIsViewing(null, null, direct.PeerId));
         var facts = new NotificationPolicy.Message(!chat.IsRoom, line.Mine, line.MentionsMe, replyToMe, NotifiesAll(chat), DateTimeOffset.UtcNow - m.Timestamp, shownElsewhere, IsMuted(chat));
-        if (!NotificationPolicy.ShouldNotify(facts, AppHost.InForeground, _settings.NotifyMessages)) return;
-        if (!OperatingSystem.IsAndroidVersionAtLeast(26)) return;
+        // The list of notifications keeps what would have been one, whether or not Android is allowed to show it (the setting, the permission).
+        if (!NotificationPolicy.ShouldNotify(facts, AppHost.InForeground, notificationsOn: true)) return;
         bool gif = line.Attachment?.Mime == "image/gif";
         var body = line.HasFile ? "Sent a file: " + line.FileName : NotificationPolicy.Body(line.Text, line.Attachment != null, gif);
         if (body.Length == 0) body = "New message";
+        Notifications.Add(new NotificationEntry
+        {
+            Time = m.Timestamp.ToUnixTimeMilliseconds(),
+            ChatKey = KeyOf(chat),
+            IsRoom = chat.IsRoom,
+            Title = chat.Title,
+            Sender = line.Who,
+            Body = body,
+            Channel = chat.IsRoom ? (m.Channel ?? RoomChannels.DefaultText) : null,
+            MessageKey = m.Key,
+            Mentioned = line.MentionsMe || replyToMe,
+        });
+        if (!_settings.NotifyMessages || !OperatingSystem.IsAndroidVersionAtLeast(26)) return;
         Notifier.Message(Android.App.Application.Context, KeyOf(chat), chat.Title, line.Who, body, !chat.IsRoom, m.Channel);
+    }
+
+    /// <summary>The messages that were worth a notification while the app was not on the screen, kept until they are seen (see <see cref="NotificationLog"/>).</summary>
+    public NotificationLog Notifications { get; }
+
+    private void SaveNotifications()
+    {
+        if (!Notifications.Dirty) return;
+        try { _data.SaveNotifications(Notifications.ForSaving); Notifications.Saved(); }
+        catch (IOException) { }
     }
 
     // ---- pictures ----
@@ -1126,6 +1152,7 @@ public sealed partial class Session : IDisposable
     {
         _open = chat;
         MarkRead(chat);
+        Notifications.MarkChatRead(KeyOf(chat));
         if (OperatingSystem.IsAndroidVersionAtLeast(26)) Notifier.Clear(Android.App.Application.Context, KeyOf(chat));
     }
 
