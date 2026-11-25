@@ -1198,7 +1198,7 @@ public sealed class VoiceMemberVm : Observable
     public bool Speaking
     {
         get => _speaking;
-        set { if (_speaking == value) return; _speaking = value; Raise(); Raise(nameof(Ring)); }
+        set { if (_speaking == value) return; _speaking = value; Raise(); Raise(nameof(NameWeight)); }
     }
 
     public bool Muted
@@ -1286,7 +1286,8 @@ public sealed class VoiceMemberVm : Observable
     }
 
     public string Status => (_deafened ? "🎧✕" : _muted ? "🎤✕" : "") + (_reconnecting ? (_deafened || _muted ? "  " : "") + "reconnecting…" : "");
-    public IBrush Ring => _speaking ? new SolidColorBrush(Color.Parse("#46A758")) : Brushes.Transparent;
+    /// <summary>The name is bold while the person is talking: a sign that does not depend on any colour (see the voice row in the main window).</summary>
+    public FontWeight NameWeight => _speaking ? FontWeight.Bold : FontWeight.Normal;
 }
 
 /// <summary>A text or voice channel of a room, shown as a button.</summary>
