@@ -45,8 +45,8 @@ public sealed class AppSettings
     /// <summary>The version of the update the phone app offered last, so that the same one is not offered again at every start.</summary>
     public string? OfferedUpdate { get; set; }
 
-    /// <summary>System, Light or Dark: the colours the app uses (the phone app; the computer follows its system).</summary>
-    public string Theme { get; set; } = "System";
+    /// <summary>System, Light or Dark: the colours the app uses, chosen in the settings on the phone and on the computer (each device keeps its own). System follows the device's own light or dark setting.</summary>
+    public string Theme { get; set; } = ThemeChoice.System;
 
     /// <summary>The first-run connection guide has been shown, so it does not come up again by itself.</summary>
     public bool ConnectionGuideShown { get; set; }

@@ -70,7 +70,7 @@ public partial class MainWindow
         if (key == "cloud") FillServerForm();
         var sections = new (string Key, Control Panel)[]
         {
-            ("devices", SectionDevices), ("notifications", SectionNotifications), ("voice", SectionVoice), ("network", SectionNetwork),
+            ("devices", SectionDevices), ("appearance", SectionAppearance), ("notifications", SectionNotifications), ("voice", SectionVoice), ("network", SectionNetwork),
             ("vpn", SectionVpn), ("turn", SectionTurn), ("blocked", SectionBlocked), ("cloud", SectionCloud), ("backup", SectionBackup), ("about", SectionAbout),
         };
         foreach (var (name, panel) in sections) panel.IsVisible = name == key;
