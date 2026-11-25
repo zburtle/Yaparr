@@ -419,7 +419,12 @@ public partial class MainWindow
             Avalonia.Threading.Dispatcher.UIThread.Post(() => { if (watch.Window == window) DockIn(watch); });
         };
         watch.Control.Docked = false;
-        window.Show(this);
+        // The window has no owner, on every system. A window with an owner is kept above it (Windows, and Linux desktops, where it is "transient for" its owner), so in full
+        // screen Alt+Tab to the main window changed nothing: the stream stayed on top of it, and both seemed to show the stream. Standing alone it goes behind the main
+        // window like any other. It opens near the main window. (Closing the main window still closes it: see Shutdown.)
+        window.WindowStartupLocation = WindowStartupLocation.Manual;
+        window.Position = new Avalonia.PixelPoint(Position.X + 48, Position.Y + 48);
+        window.Show();
         UpdateInlineScreen();
     }
 
