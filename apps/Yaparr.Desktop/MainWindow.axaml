@@ -14,12 +14,21 @@
                                                         <MenuItem Header="Kick from voice…" IsVisible="{Binding CanKick}" Click="KickFromVoice_Click" />
                                                     </ContextMenu>
                                                 </StackPanel.ContextMenu>
-                                                <Border Width="28" Height="28" CornerRadius="14" Background="{Binding Avatar}"
-                                                        BorderBrush="{Binding Ring}" BorderThickness="3">
-                                                    <TextBlock Text="{Binding Initial}" Foreground="White" FontSize="12" FontWeight="SemiBold"
-                                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                </Border>
-                                                <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                                                <!-- Someone talking is shown three ways, so that no colour of avatar can hide it: a ring with a gap between it and the picture,
+                                                     a dark badge with sound bars in white at the corner, and the name in bold. -->
+                                                <Grid Width="34" Height="34" VerticalAlignment="Center">
+                                                    <Ellipse IsVisible="{Binding Speaking}" Stroke="#46A758" StrokeThickness="2.5" />
+                                                    <Border Width="26" Height="26" CornerRadius="13" Background="{Binding Avatar}">
+                                                        <TextBlock Text="{Binding Initial}" Foreground="White" FontSize="12" FontWeight="SemiBold"
+                                                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                    </Border>
+                                                    <Border IsVisible="{Binding Speaking}" Width="16" Height="16" CornerRadius="8" Background="#1B1F24" BorderBrush="White" BorderThickness="1"
+                                                            HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-3,-3">
+                                                        <Path Data="M0,5 V8 M4,2 V11 M8,4 V9" Stroke="White" StrokeThickness="1.6" StrokeLineCap="Round" Width="9" Height="12"
+                                                              HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                    </Border>
+                                                </Grid>
+                                                <TextBlock Text="{Binding Name}" FontWeight="{Binding NameWeight}" VerticalAlignment="Center" />
                                                 <Path IsVisible="{Binding UsesCloud}" Data="M7,18 A4,4 0 0 1 6.5,10.03 A6,6 0 0 1 17.9,11.5 A3.5,3.5 0 0 1 17.5,18 Z" Stroke="{DynamicResource Muted}" StrokeThickness="1.9" StrokeLineCap="Round" StrokeJoin="Round" Stretch="Uniform" Width="13" Height="13" VerticalAlignment="Center" ToolTip.Tip="Uses Yaparr Cloud" />
                                                 <TextBlock Text="{Binding Status}" Classes="muted small" VerticalAlignment="Center" />
                                                 <TextBlock Text="{Binding Where}" Classes="muted small where" VerticalAlignment="Center" />
