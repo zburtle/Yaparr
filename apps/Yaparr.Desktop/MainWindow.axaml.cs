@@ -428,6 +428,7 @@ public partial class MainWindow : Window
         CrashLog.Attach(_log, _log.Folder);
         _log.Write($"Yaparr {Updater.CurrentVersion} starting");
         Updater.Log = _log.Write;
+        SetUpAppearance();
         SetUpNotifications();
         SetUpLinkPreviews();
         SetUpTray();

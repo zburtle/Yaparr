@@ -1070,6 +1070,7 @@
                 <ComboBox x:Name="SettingsPicker" Grid.Row="1" Grid.ColumnSpan="2" IsVisible="False" HorizontalAlignment="Stretch" Margin="18,0,18,10"
                           AutomationProperties.Name="Settings section" SelectionChanged="SettingsPicker_SelectionChanged">
                     <ComboBoxItem Content="Devices" Tag="devices" />
+                    <ComboBoxItem Content="Appearance" Tag="appearance" />
                     <ComboBoxItem Content="Notifications" Tag="notifications" />
                     <ComboBoxItem Content="Voice &amp; audio" Tag="voice" />
                     <ComboBoxItem Content="Network" Tag="network" />
@@ -1082,6 +1083,7 @@
                 </ComboBox>
                 <TreeView x:Name="SettingsTree" Grid.Row="2" Margin="8,0,0,8" AutomationProperties.Name="Settings sections" SelectionChanged="SettingsTree_SelectionChanged">
                     <TreeViewItem Header="Devices" Tag="devices" />
+                    <TreeViewItem Header="Appearance" Tag="appearance" />
                     <TreeViewItem Header="Notifications" Tag="notifications" />
                     <TreeViewItem Header="Voice &amp; audio" Tag="voice" />
                     <TreeViewItem x:Name="NetworkNode" Header="Network" Tag="network">
@@ -1123,6 +1125,16 @@
                                        Text="Removes your account, rooms and history from this computer. Your other devices keep the account." />
                                        <local:LearnMoreLink Topic="logout" Text="Learn more about logging out" Foreground="{DynamicResource Accent}" />
                             <Button Content="Log out…" HorizontalAlignment="Left" Foreground="{DynamicResource Bad}" Click="LogOut_Click" />
+                        </StackPanel>
+                        <StackPanel x:Name="SectionAppearance" Spacing="10" IsVisible="False">
+                            <TextBlock Text="Appearance" FontSize="15" FontWeight="SemiBold" />
+                            <TextBlock Classes="muted" TextWrapping="Wrap" Text="The colours Yaparr uses on this computer." />
+                            <StackPanel Spacing="6" Margin="0,4,0,0">
+                                <RadioButton x:Name="ThemeSystemItem" GroupName="theme" Content="System default" Tag="System" />
+                                <RadioButton x:Name="ThemeLightItem" GroupName="theme" Content="Light" Tag="Light" />
+                                <RadioButton x:Name="ThemeDarkItem" GroupName="theme" Content="Dark" Tag="Dark" />
+                            </StackPanel>
+                            <TextBlock Classes="muted small" TextWrapping="Wrap" Text="System default follows the light or dark setting of your computer, and changes with it." />
                         </StackPanel>
                         <StackPanel x:Name="SectionNotifications" Spacing="10" IsVisible="False">
                             <TextBlock Text="Notifications" FontSize="15" FontWeight="SemiBold" />
