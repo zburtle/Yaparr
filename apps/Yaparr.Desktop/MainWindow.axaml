@@ -324,6 +324,7 @@
                 <MenuItem Header="_Join with invite…" Click="JoinRoom_Click" />
                 <Separator />
                 <MenuItem Header="_Settings…" InputGesture="Ctrl+," Click="Settings_Click" />
+                <MenuItem Header="_Notifications…" InputGesture="Ctrl+Shift+N" Click="Notifications_Click" />
                 <MenuItem Header="Go to the first unread m_ention" Click="GoToFirstMention_Click" />
                 <Separator />
                 <MenuItem Header="E_xit" Click="Exit_Click" />
@@ -478,6 +479,17 @@
                     <!-- The two lists follow one another and scroll together: the chats sit right under the rooms, not at the bottom. -->
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <StackPanel>
+                            <!-- Messages that were worth a notification, to find again: the badge counts the ones not seen yet. -->
+                            <Button x:Name="NotificationsButton" Classes="ghost" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="10,2,10,4" Padding="8,6"
+                                    AutomationProperties.Name="Notifications" ToolTip.Tip="Messages you may have missed" Click="Notifications_Click">
+                                <Grid ColumnDefinitions="Auto,*,Auto">
+                                    <TextBlock Text="🔔" FontSize="13" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="Notifications" VerticalAlignment="Center" />
+                                    <Border x:Name="NotificationsBadge" Grid.Column="2" IsVisible="False" Background="{DynamicResource Accent}" CornerRadius="10" MinWidth="20" Height="20" Padding="6,0" VerticalAlignment="Center">
+                                        <TextBlock x:Name="NotificationsBadgeText" Foreground="White" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </Border>
+                                </Grid>
+                            </Button>
                             <Grid ColumnDefinitions="*,Auto,Auto" Margin="18,4,8,4">
                                 <TextBlock Text="ROOMS" Classes="muted small" FontWeight="SemiBold" VerticalAlignment="Center" />
                                 <Button Grid.Column="1" Classes="ghost" Width="26" Height="26" Padding="0" BorderThickness="0" Background="Transparent" FontSize="14" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" ToolTip.Tip="Join a room with an invite" Click="JoinRoom_Click" Content="🔗" />
@@ -513,6 +525,8 @@
                                     <MenuItem Tag="pin" Header="_Pin to top" Click="TogglePin_Click" />
                                     <MenuItem Tag="up" Header="Move _up" Click="MovePinUp_Click" />
                                     <MenuItem Tag="down" Header="Move _down" Click="MovePinDown_Click" />
+                                    <Separator Tag="direct" />
+                                    <MenuItem Tag="direct" Header="_Invite to a room…" Click="InviteDirect_Click" />
                                     <Separator Tag="room" />
                                     <MenuItem Tag="room" Header="Room _settings…" Click="RoomSettings_Click" />
                                     <MenuItem Tag="room" Header="_Leave room" Click="LeaveRoom_Click" />
@@ -674,6 +688,12 @@
                                                 <Button IsVisible="{Binding NeedsAction}" Content="{Binding ActionText}" Classes="primary"
                                                         HorizontalAlignment="Center" VerticalAlignment="Center" Click="Download_Click" />
                                             </Grid>
+                                            <Border IsVisible="{Binding HasInvite}" Padding="2" HorizontalAlignment="Left">
+                                                <StackPanel Spacing="6" MinWidth="240" MaxWidth="360">
+                                                    <TextBlock Text="{Binding InviteText}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                                    <Button Content="Join room" Classes="primary" HorizontalAlignment="Left" IsVisible="{Binding CanJoinInvite}" Click="InviteJoin_Click" />
+                                                </StackPanel>
+                                            </Border>
                                             <Border IsVisible="{Binding HasFile}" Padding="2" HorizontalAlignment="Left">
                                                 <StackPanel Spacing="6" MinWidth="240" MaxWidth="360">
                                                     <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
@@ -908,6 +928,7 @@
                         <ListBox.ContextMenu>
                             <ContextMenu Opening="PeopleMenu_Opening">
                                 <MenuItem x:Name="DirectChatPersonItem" Header="_Direct chat" Click="DirectChatPerson_Click" />
+                                <MenuItem x:Name="InvitePersonItem" Header="_Invite to another room…" Click="InvitePerson_Click" />
                                 <MenuItem x:Name="MakeAdminItem" Header="Make _admin of this room" Click="MakeAdmin_Click" />
                                 <MenuItem x:Name="RemoveAdminItem" Header="Remove _admin from this room" Click="RemoveAdmin_Click" />
                                 <MenuItem x:Name="BanPersonItem" Header="Ban from this _room…" Click="BanPerson_Click" />
@@ -1251,6 +1272,48 @@
             PointerPressed="SoundboardOverlay_PointerPressed" KeyDown="SoundboardOverlay_KeyDown">
         <Border Classes="card" x:Name="SoundboardHost" HorizontalAlignment="Stretch" VerticalAlignment="Center" MaxWidth="760" MaxHeight="760"
                 ClipToBounds="True" KeyboardNavigation.TabNavigation="Cycle" />
+    </Border>
+
+    <!-- The notifications over the window: what was worth one while you were elsewhere, newest first. Escape, the cross or a click outside puts it away. -->
+    <Border x:Name="NotificationsOverlay" IsVisible="False" Background="#D8000000" Padding="24" Focusable="True"
+            AutomationProperties.Name="Notifications"
+            PointerPressed="NotificationsOverlay_PointerPressed" KeyDown="NotificationsOverlay_KeyDown">
+        <Border Classes="card" HorizontalAlignment="Center" VerticalAlignment="Stretch" Width="520" MaxWidth="560" MaxHeight="720" Padding="0"
+                KeyboardNavigation.TabNavigation="Cycle">
+            <Grid RowDefinitions="Auto,*">
+                <Grid ColumnDefinitions="*,Auto,Auto,Auto" Margin="18,12,12,8">
+                    <TextBlock Text="Notifications" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <Button x:Name="NotificationsMarkAll" Grid.Column="1" Classes="ghost" Content="Mark all seen" Click="NotificationsMarkAll_Click" />
+                    <Button x:Name="NotificationsClear" Grid.Column="2" Classes="ghost" Content="Clear" Click="NotificationsClear_Click" />
+                    <Button Grid.Column="3" Classes="ghost" Content="✕" AutomationProperties.Name="Close notifications" ToolTip.Tip="Close (Esc)" Click="CloseNotifications_Click" />
+                </Grid>
+                <Grid Grid.Row="1">
+                    <ListBox x:Name="NotificationList" Classes="flat" Margin="6,0,6,8" SelectionChanged="NotificationList_SelectionChanged" AutomationProperties.Name="Notifications">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="local:NotificationItem">
+                                <Grid ColumnDefinitions="Auto,*,Auto,Auto" Margin="4,6">
+                                    <Ellipse Width="8" Height="8" Margin="2,6,10,0" VerticalAlignment="Top" Fill="{DynamicResource Accent}" Opacity="{Binding DotOpacity}" />
+                                    <StackPanel Grid.Column="1" Spacing="2">
+                                        <TextBlock Text="{Binding Heading}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding Body}" IsVisible="{Binding ShowBody}" Classes="muted" MaxLines="2" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding OutcomeText}" IsVisible="{Binding ShowOutcome}" Classes="muted" />
+                                        <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,4,0,0" IsVisible="{Binding CanAnswer}">
+                                            <Button Content="Join" Classes="primary" Tag="{Binding Id}" Click="NotificationJoin_Click" />
+                                            <Button Content="Decline" Tag="{Binding Id}" Click="NotificationDecline_Click" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="2" Text="{Binding TimeText}" Classes="muted small" Margin="8,2,4,0" VerticalAlignment="Top" />
+                                    <Button Grid.Column="3" Classes="ghost" Content="✕" FontSize="10" Width="26" Height="26" Padding="0" VerticalAlignment="Top"
+                                            Tag="{Binding Id}" AutomationProperties.Name="Remove" ToolTip.Tip="Remove from the list" Click="NotificationRemove_Click" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <TextBlock x:Name="NotificationsEmpty" Classes="muted" TextWrapping="Wrap" TextAlignment="Center" Margin="32" VerticalAlignment="Center" IsVisible="False"
+                               Text="Nothing missed. Messages that would notify you while you are elsewhere are listed here." />
+                </Grid>
+            </Grid>
+        </Border>
     </Border>
 
     <!-- A picture from the chat shown large over everything else. A click or Escape closes it. -->

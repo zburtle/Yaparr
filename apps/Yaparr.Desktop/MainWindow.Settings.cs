@@ -161,6 +161,12 @@ public partial class MainWindow
     // Ctrl+, opens the settings from anywhere in the window.
     private void OnSettingsKey(object? sender, KeyEventArgs e)
     {
+        if (e.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift) && e.Key == Key.N)
+        {
+            e.Handled = true;
+            if (NotificationsOverlay.IsVisible) CloseNotificationList(); else ShowNotificationList();
+            return;
+        }
         if (e.KeyModifiers != KeyModifiers.Control || e.Key != Key.OemComma) return;
         e.Handled = true;
         if (SettingsOverlay.IsVisible) CloseSettings(); else ShowSettings();

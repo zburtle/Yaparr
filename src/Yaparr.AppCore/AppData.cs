@@ -356,6 +356,21 @@ public sealed class AppData
         MakePrivate(PushPath);
     }
 
+    private string NotificationsPath => Path.Combine(Directory, "notifications.json");
+
+    /// <summary>The notifications this device has listed (see <see cref="NotificationLog"/>). They hold what people wrote, so the file is sealed like the others with secrets, and it is not part of a backup: each device lists what it missed.</summary>
+    public List<NotificationEntry> LoadNotifications()
+    {
+        try { return JsonSerializer.Deserialize<List<NotificationEntry>>(SecretStore.ReadAllText(NotificationsPath)) ?? new(); }
+        catch (Exception ex) when (ex is IOException or JsonException or System.Security.Cryptography.CryptographicException or UnauthorizedAccessException) { return new(); }
+    }
+
+    public void SaveNotifications(IEnumerable<NotificationEntry> entries)
+    {
+        SecretStore.WriteAllText(NotificationsPath, JsonSerializer.Serialize(entries.ToList(), Json));
+        MakePrivate(NotificationsPath);
+    }
+
     /// <summary>What this device remembers about its backup server. It is sealed like the other files with secrets, and is not part of a backup.</summary>
     public BackupServerState LoadBackupServer()
     {

@@ -65,6 +65,9 @@ public sealed record ChatMessage(PeerInfo From, string? Room, string Id, string 
     public static string KeyOf(PeerId sender, string id) => SignedMessage.KeyOf(sender.Value, id);
 
     /// <summary>The file this message offers (see <c>docs/file-sharing.md</c>), or null. Nothing of it is on this device until the person chooses to download it.</summary>
+    /// <summary>The room this message invites to, or null. Only a direct chat (a message with no room) can invite; in a room the same text is plain words.</summary>
+    public RoomInvite? Invite => Room == null && RoomInvite.TryParse(Text, out var invite) ? invite : null;
+
     public Yaparr.Chat.Files.FileOffer? File => Yaparr.Chat.Files.FileOffer.TryParse(Text, out var offer, out _) ? offer : null;
 
     /// <summary>The words that go with an offered file.</summary>

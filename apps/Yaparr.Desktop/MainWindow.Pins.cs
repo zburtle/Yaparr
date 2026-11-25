@@ -103,6 +103,9 @@ public partial class MainWindow
                 case "room":
                     item.IsVisible = conv.IsRoom;
                     break;
+                case "direct":
+                    item.IsVisible = !conv.IsRoom && !conv.IsNotes && conv.PeerId != null;
+                    break;
                 case "mute":
                     item.IsVisible = conv.IsRoom;
                     if (item is MenuItem mute) mute.Header = RoomFor(conv) is { } room && IsMuted(room) ? "Un_mute notifications" : "_Mute notifications";
