@@ -20,6 +20,43 @@ public static class Dialogs
     private static double WidthFor(string[] buttons) =>
         Math.Clamp(buttons.Sum(b => Math.Max(80, b.Length * 8 + 32)) + (buttons.Length - 1) * 8 + 32 + 16, 440, 620);
 
+    /// <summary>A list to pick one from: the index of the choice, or null when it was cancelled. A double click picks too.</summary>
+    public static async Task<int?> PickAsync(Window owner, string title, string text, IReadOnlyList<string> options, string accept)
+    {
+        int? result = null;
+        var list = new ListBox { ItemsSource = options, MaxHeight = 260, SelectedIndex = options.Count > 0 ? 0 : -1 };
+        var ok = new Button { Content = accept, MinWidth = 80, HorizontalContentAlignment = HorizontalAlignment.Center };
+        ok.Classes.Add("primary");
+        var cancel = new Button { Content = "Cancel", MinWidth = 80, HorizontalContentAlignment = HorizontalAlignment.Center };
+        var dialog = new Window
+        {
+            Title = title,
+            Width = 460,
+            SizeToContent = SizeToContent.Height,
+            CanResize = false,
+            ShowInTaskbar = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Content = new StackPanel
+            {
+                Margin = new Thickness(16),
+                Spacing = 12,
+                Children =
+                {
+                    new TextBlock { Text = text, TextWrapping = Avalonia.Media.TextWrapping.Wrap },
+                    list,
+                    new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 8, Children = { ok, cancel } },
+                },
+            },
+        };
+        void Pick() { if (list.SelectedIndex >= 0) { result = list.SelectedIndex; dialog.Close(); } }
+        ok.Click += (_, _) => Pick();
+        cancel.Click += (_, _) => dialog.Close();
+        list.DoubleTapped += (_, _) => Pick();
+        dialog.KeyDown += (_, e) => { if (e.Key == Avalonia.Input.Key.Escape) { dialog.Close(); e.Handled = true; } };
+        await dialog.ShowDialog(owner);
+        return result;
+    }
+
     public static async Task<string?> ChoiceAsync(Window owner, string title, string text, params string[] buttons)
     {
         string? result = null;

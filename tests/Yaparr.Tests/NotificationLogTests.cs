@@ -162,3 +162,49 @@ public class NotificationLogTests
         finally { try { Directory.Delete(dir, true); } catch (IOException) { } }
     }
 }
+
+public class InviteNotificationTests
+{
+    private const long Now = 1_800_000_000_000;
+    private static NotificationEntry Invite(string key = "m1", string? outcome = null) =>
+        new() { Kind = NotificationKinds.Invite, ChatKey = "peer", Title = "The room", Sender = "Alex", MessageKey = key, Time = Now - 10, Invite = Yaparr.Chat.RoomKey.Generate().ToString(), Outcome = outcome };
+
+    [Fact]
+    public void An_invitation_waits_until_it_is_answered_and_then_counts_as_seen()
+    {
+        var log = new NotificationLog(new[] { Invite() }, () => Now);
+        var entry = log.Items[0];
+        Assert.True(entry.IsOpenInvite);
+        Assert.Single(log.OpenInvites);
+        Assert.True(log.SetOutcome(entry.Id, NotificationOutcomes.Joined));
+        Assert.False(entry.IsOpenInvite);
+        Assert.True(entry.IsInvite);
+        Assert.True(entry.Read);
+        Assert.Empty(log.OpenInvites);
+        Assert.False(log.SetOutcome("nope", NotificationOutcomes.Declined));
+    }
+
+    [Fact]
+    public void An_entry_of_kind_invite_without_a_key_is_not_an_invitation()
+    {
+        var entry = new NotificationEntry { Kind = NotificationKinds.Invite, Invite = null };
+        Assert.False(entry.IsInvite);
+        Assert.False(entry.IsOpenInvite);
+    }
+
+    [Fact]
+    public void The_heading_of_an_invitation_says_who_invited_you_to_what()
+    {
+        Assert.Equal("Alex invited you to The room", NotificationLog.Heading(Invite()));
+        Assert.Equal("Someone invited you to a room", NotificationLog.Heading(new NotificationEntry { Kind = NotificationKinds.Invite, Invite = "x" }));
+    }
+
+    [Fact]
+    public void An_answered_invitation_survives_the_file()
+    {
+        var json = JsonSerializer.Serialize(new[] { Invite(outcome: NotificationOutcomes.Declined) });
+        var back = new NotificationLog(JsonSerializer.Deserialize<List<NotificationEntry>>(json)!, () => Now).Items[0];
+        Assert.Equal(NotificationOutcomes.Declined, back.Outcome);
+        Assert.NotNull(back.Invite);
+    }
+}

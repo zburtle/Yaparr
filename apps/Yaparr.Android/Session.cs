@@ -781,8 +781,10 @@ public sealed partial class Session : IDisposable
     {
         bool mine = _node != null && _node.IsMyDevice(m.From.Id);
         var parts = m.Parts;
-        var line = new Line(m.Key, m.From.DisplayName, m.File != null ? m.FileCaption : m.Attachment != null ? parts.Body : m.Body, m.Timestamp, mine, m.Channel, m)
+        var invite = m.Invite;
+        var line = new Line(m.Key, m.From.DisplayName, invite != null ? "" : m.File != null ? m.FileCaption : m.Attachment != null ? parts.Body : m.Body, m.Timestamp, mine, m.Channel, m)
         {
+            Invite = invite,
             SentHere = _node != null && m.From.Id == _node.Id,
             ReplyKey = parts.ReplyTo, Mentions = parts.Mentions, Card = parts.Preview, Emoji = parts.Emoji,
             MentionsMe = _node != null && !mine && (m.Room != null && _rooms.Keys.FirstOrDefault(r => r.Name == m.Room) is { } named
@@ -851,6 +853,7 @@ public sealed partial class Session : IDisposable
 
     private void Notify(Chat chat, Line line, ChatMessage m)
     {
+        if (line.Invite != null && !line.Mine && !chat.IsRoom) RecordInvite(chat, line, m);
         bool replyToMe = line.ReplyKey is { } key && chat.FindByKey(key) is { Mine: true };
         // A chat that another of your devices (the computer) has open in front of you needs no notification here.
         bool shownElsewhere = _node is { } node && (chat.Room is { } room ? node.SiblingIsViewing(room.RoomId, m.Channel, null) : chat.Direct is { } direct && node.SiblingIsViewing(null, null, direct.PeerId));
@@ -858,9 +861,10 @@ public sealed partial class Session : IDisposable
         // The list of notifications keeps what would have been one, whether or not Android is allowed to show it (the setting, the permission).
         if (!NotificationPolicy.ShouldNotify(facts, AppHost.InForeground, notificationsOn: true)) return;
         bool gif = line.Attachment?.Mime == "image/gif";
-        var body = line.HasFile ? "Sent a file: " + line.FileName : NotificationPolicy.Body(line.Text, line.Attachment != null, gif);
+        var body = line.Invite is { } invited ? $"Invited you to \"{invited.Name}\"" : line.HasFile ? "Sent a file: " + line.FileName : NotificationPolicy.Body(line.Text, line.Attachment != null, gif);
         if (body.Length == 0) body = "New message";
-        Notifications.Add(new NotificationEntry
+        // An invitation has its own entry, with buttons (see RecordInvite).
+        if (line.Invite == null) Notifications.Add(new NotificationEntry
         {
             Time = m.Timestamp.ToUnixTimeMilliseconds(),
             ChatKey = KeyOf(chat),
@@ -875,6 +879,40 @@ public sealed partial class Session : IDisposable
         if (!_settings.NotifyMessages || !OperatingSystem.IsAndroidVersionAtLeast(26)) return;
         Notifier.Message(Android.App.Application.Context, KeyOf(chat), chat.Title, line.Who, body, !chat.IsRoom, m.Channel);
     }
+
+    // An invitation that has just come in is listed in the notifications, with Join and Decline, whether or not the app is open. (An old one, from the history, is only in its chat.)
+    private void RecordInvite(Chat chat, Line line, ChatMessage m)
+    {
+        if (line.Invite is not { } invite || DateTimeOffset.UtcNow - m.Timestamp > NotificationPolicy.Fresh) return;
+        if (_settings.PrivateRooms.Any(r => r.Key == invite.Key)) return;   // already in that room, with that key
+        Notifications.Add(new NotificationEntry
+        {
+            Kind = NotificationKinds.Invite,
+            Time = m.Timestamp.ToUnixTimeMilliseconds(),
+            ChatKey = KeyOf(chat),
+            IsRoom = false,
+            Title = invite.Name,
+            Sender = line.Who,
+            MessageKey = m.Key,
+            Invite = invite.Key,
+            Read = _open == chat && AppHost.InForeground,
+        });
+    }
+
+    /// <summary>Invites the person of a direct chat to a room by sending its key in that chat. They choose whether to join.</summary>
+    public async Task SendInviteAsync(Chat chat, Chat room)
+    {
+        if (_node is not { } node || chat.Direct is not { } direct || room.Invite is not { } key) return;
+        var invite = new RoomInvite(key, RoomInvite.CleanName(room.Title));
+        var text = invite.ToText();
+        var id = await direct.SendAsync(text);
+        var line = new Line(ChatMessage.KeyOf(node.Id, id), node.DisplayName, "", DateTimeOffset.Now, mine: true, null, OwnMessage(chat, id, text, null, null)) { Invite = invite };
+        chat.Add(line);
+        Resort(chat);
+    }
+
+    /// <summary>The rooms you are in that have a key to give, except this one.</summary>
+    public IReadOnlyList<Chat> RoomsToInviteTo(Chat? except) => Chats.Where(c => c.IsRoom && c.Invite != null && c != except).ToList();
 
     /// <summary>The messages that were worth a notification while the app was not on the screen, kept until they are seen (see <see cref="NotificationLog"/>).</summary>
     public NotificationLog Notifications { get; }

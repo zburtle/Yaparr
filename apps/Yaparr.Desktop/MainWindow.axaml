@@ -525,6 +525,8 @@
                                     <MenuItem Tag="pin" Header="_Pin to top" Click="TogglePin_Click" />
                                     <MenuItem Tag="up" Header="Move _up" Click="MovePinUp_Click" />
                                     <MenuItem Tag="down" Header="Move _down" Click="MovePinDown_Click" />
+                                    <Separator Tag="direct" />
+                                    <MenuItem Tag="direct" Header="_Invite to a room…" Click="InviteDirect_Click" />
                                     <Separator Tag="room" />
                                     <MenuItem Tag="room" Header="Room _settings…" Click="RoomSettings_Click" />
                                     <MenuItem Tag="room" Header="_Leave room" Click="LeaveRoom_Click" />
@@ -686,6 +688,12 @@
                                                 <Button IsVisible="{Binding NeedsAction}" Content="{Binding ActionText}" Classes="primary"
                                                         HorizontalAlignment="Center" VerticalAlignment="Center" Click="Download_Click" />
                                             </Grid>
+                                            <Border IsVisible="{Binding HasInvite}" Padding="2" HorizontalAlignment="Left">
+                                                <StackPanel Spacing="6" MinWidth="240" MaxWidth="360">
+                                                    <TextBlock Text="{Binding InviteText}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                                    <Button Content="Join room" Classes="primary" HorizontalAlignment="Left" IsVisible="{Binding CanJoinInvite}" Click="InviteJoin_Click" />
+                                                </StackPanel>
+                                            </Border>
                                             <Border IsVisible="{Binding HasFile}" Padding="2" HorizontalAlignment="Left">
                                                 <StackPanel Spacing="6" MinWidth="240" MaxWidth="360">
                                                     <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
@@ -920,6 +928,7 @@
                         <ListBox.ContextMenu>
                             <ContextMenu Opening="PeopleMenu_Opening">
                                 <MenuItem x:Name="DirectChatPersonItem" Header="_Direct chat" Click="DirectChatPerson_Click" />
+                                <MenuItem x:Name="InvitePersonItem" Header="_Invite to another room…" Click="InvitePerson_Click" />
                                 <MenuItem x:Name="MakeAdminItem" Header="Make _admin of this room" Click="MakeAdmin_Click" />
                                 <MenuItem x:Name="RemoveAdminItem" Header="Remove _admin from this room" Click="RemoveAdmin_Click" />
                                 <MenuItem x:Name="BanPersonItem" Header="Ban from this _room…" Click="BanPerson_Click" />
@@ -1287,6 +1296,11 @@
                                     <StackPanel Grid.Column="1" Spacing="2">
                                         <TextBlock Text="{Binding Heading}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                                         <TextBlock Text="{Binding Body}" IsVisible="{Binding ShowBody}" Classes="muted" MaxLines="2" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding OutcomeText}" IsVisible="{Binding ShowOutcome}" Classes="muted" />
+                                        <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,4,0,0" IsVisible="{Binding CanAnswer}">
+                                            <Button Content="Join" Classes="primary" Tag="{Binding Id}" Click="NotificationJoin_Click" />
+                                            <Button Content="Decline" Tag="{Binding Id}" Click="NotificationDecline_Click" />
+                                        </StackPanel>
                                     </StackPanel>
                                     <TextBlock Grid.Column="2" Text="{Binding TimeText}" Classes="muted small" Margin="8,2,4,0" VerticalAlignment="Top" />
                                     <Button Grid.Column="3" Classes="ghost" Content="✕" FontSize="10" Width="26" Height="26" Padding="0" VerticalAlignment="Top"

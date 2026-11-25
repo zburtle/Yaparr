@@ -101,7 +101,8 @@ public partial class MainWindow
         // A muted room is silent: no sound, no flash, no pop-up, not even for a mention. Its messages still count as unread.
         if (room != null && IsMuted(room)) return;
         // Listed in the notifications as soon as it is one the system would tell you about (what it says, whether or not the sound or pop-up is on, and however long it waits below).
-        if (message.Highlight || conv.IsDirect || !_settings.NotifyOnlyMentions) RecordNotification(conv, message);
+        // (An invitation has its own entry, with buttons: see RecordInvite.)
+        if (message.Invite == null && (message.Highlight || conv.IsDirect || !_settings.NotifyOnlyMentions)) RecordNotification(conv, message);
         // Another of your devices is in use (the phone in your hand, say) but not showing this chat: you may read it there, so this one waits a little and tells you only
         // if it is still unread by then.
         if (_node is { } node && node.SiblingIsActive() && !(room != null ? node.SiblingIsViewing(room.RoomId, message.Channel, null) : false))
@@ -199,7 +200,7 @@ public partial class MainWindow
     private void ShowPopup(ConversationVm conv, MessageVm message)
     {
         var who = message.Highlight ? $"{message.Sender} named you in {conv.Title}" : conv.IsDirect ? message.Sender : $"{message.Sender} in {conv.Title}";
-        var text = message.HasFile ? "Sent a file: " + message.FileName : message.HasAttachment && !message.HasText ? "Sent a picture" : message.Text;
+        var text = message.HasInvite ? $"Invited you to \"{message.Invite!.Name}\"" : message.HasFile ? "Sent a file: " + message.FileName : message.HasAttachment && !message.HasText ? "Sent a picture" : message.Text;
         text = text.Length > 140 ? text[..139] + "…" : text;
         var room = RoomFor(conv);
         // What the pop-up's buttons do (where the desktop shows them): open the chat, send a typed reply (KDE) in the channel the message came in, mute the room.

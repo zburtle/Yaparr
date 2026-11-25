@@ -18,7 +18,15 @@ public sealed class NotificationItem
         IsUnread = !entry.Read;
         Mentioned = entry.Mentioned;
         ShowBody = entry.Body.Length > 0;
+        CanAnswer = entry.IsOpenInvite;
+        OutcomeText = entry.Outcome switch { NotificationOutcomes.Joined => "You joined", NotificationOutcomes.Declined => "Declined", _ => "" };
+        ShowOutcome = OutcomeText.Length > 0;
     }
+
+    /// <summary>An invitation nobody has answered: it has Join and Decline.</summary>
+    public bool CanAnswer { get; }
+    public string OutcomeText { get; }
+    public bool ShowOutcome { get; }
 
     public string Id { get; }
     public string Heading { get; }

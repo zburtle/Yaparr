@@ -958,6 +958,7 @@ public partial class MainView : UserControl
         }
         else
         {
+            if (!chat.IsNotes && chat.Direct != null) AddAction("Invite to a room", () => ChooseRoomToInvite(except: null, async room => await InviteAsync(chat, chat.Title, room)));
             Add("Copy chat link", CopyChatLinkClicked);
             Add("Copy their ID", CopyIdClicked);
             Add("Block this person", BlockDirectClicked, danger: true);
@@ -1765,6 +1766,12 @@ public partial class MainView : UserControl
         ActionTitle.Text = person.Role.Length > 0 ? person.Name + " (" + person.Role.ToLowerInvariant() + ")" : person.Name;
         ActionList.Children.Clear();
         AddAction("Message", () => _ = OpenPersonAsync(person));
+        if (person.Id != _session.Node?.AccountId.Value && _session.Node?.IsBlocked(new PeerId(person.Id)) == false)
+            AddAction("Invite to another room", () => ChooseRoomToInvite(except: chat, async room =>
+            {
+                var direct = await _session.OpenDirectAsync(new PeerId(person.Id));
+                await InviteAsync(direct, person.Name, room, noteIn: chat);
+            }));
         if (_session.CanSetAdmin(chat, person))
         {
             bool admin = _session.IsAdmin(person);

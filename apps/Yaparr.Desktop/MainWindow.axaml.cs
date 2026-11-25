@@ -996,9 +996,10 @@ public partial class MainWindow : Window
         Remember(m.From);
         bool mine = _node != null && _node.IsMyDevice(m.From.Id);
         var parts = m.Parts;
-        var vm = new MessageVm(m.Timestamp, m.From.DisplayName, m.File != null ? m.FileCaption : parts.Body, m.IsCatchUp, isMine: mine, id: m.Id, attachment: m.Attachment)
+        var invite = m.Invite;
+        var vm = new MessageVm(m.Timestamp, m.From.DisplayName, invite != null ? "" : m.File != null ? m.FileCaption : parts.Body, m.IsCatchUp, isMine: mine, id: m.Id, attachment: m.Attachment)
         {
-            File = m.File, Source = m, Account = m.From.Account.Value, Key = m.Key, ReplyKey = parts.ReplyTo, Mentions = parts.Mentions, Card = parts.Preview, Emoji = parts.Emoji,
+            Invite = invite, File = m.File, Source = m, Account = m.From.Account.Value, Key = m.Key, ReplyKey = parts.ReplyTo, Mentions = parts.Mentions, Card = parts.Preview, Emoji = parts.Emoji,
             MentionsMe = _node != null && NamesMe(m),
             Channel = m.Channel,
         };
@@ -1140,6 +1141,7 @@ public partial class MainWindow : Window
         else if (!message.IsMine) conv.NoteUnread(message.Channel, message.Highlight);
         // What you wrote on another device needs no announcing.
         if (announce && !message.IsMine) NotifyMessage(conv, message);
+        if (announce && !message.IsMine && message.Invite != null) RecordInvite(conv, message);
     }
 
     // A direct conversation you are looking at is read on all of your devices.

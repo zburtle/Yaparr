@@ -195,6 +195,11 @@
                                 <StackPanel Grid.Column="1" Spacing="2">
                                     <TextBlock Text="{Binding Heading}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource Ink}" />
                                     <TextBlock Text="{Binding Body}" IsVisible="{Binding ShowBody}" FontSize="13" MaxLines="2" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource Muted}" />
+                                    <TextBlock Text="{Binding OutcomeText}" IsVisible="{Binding ShowOutcome}" FontSize="13" Foreground="{DynamicResource Muted}" />
+                                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,6,0,0" IsVisible="{Binding CanAnswer}">
+                                        <Button Content="Join" Classes="primary" Padding="16,8" Tag="{Binding Id}" Click="NotificationJoinClicked" />
+                                        <Button Content="Decline" Padding="16,8" Tag="{Binding Id}" Click="NotificationDeclineClicked" />
+                                    </StackPanel>
                                 </StackPanel>
                                 <TextBlock Grid.Column="2" Text="{Binding TimeText}" FontSize="12" Margin="8,2,0,0" VerticalAlignment="Top" Foreground="{DynamicResource Muted}" />
                                 <!-- A big enough target for a finger; it only removes this one from the list. -->
@@ -543,6 +548,12 @@
                                         <local:AnimatedImage Source="{Binding Picture}" Animation="{Binding Animation}" IsVisible="{Binding HasPicture}" MaxWidth="260" MaxHeight="340" Stretch="Uniform" />
                                         <Image Source="{Binding Thumbnail}" IsVisible="{Binding HasPictureStatus}" MaxWidth="260" MaxHeight="200" Stretch="Uniform" Opacity="0.6" />
                                         <TextBlock Text="{Binding PictureStatus}" IsVisible="{Binding HasPictureStatus}" FontSize="12" Foreground="{Binding Ink}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border IsVisible="{Binding HasInvite}" Padding="2">
+                                    <StackPanel Spacing="8" MinWidth="220" MaxWidth="280">
+                                        <TextBlock Text="{Binding InviteText}" FontWeight="SemiBold" TextWrapping="Wrap" Foreground="{Binding Ink}" />
+                                        <Button Content="Join room" Classes="primary" HorizontalAlignment="Left" IsVisible="{Binding CanJoinInvite}" Click="InviteJoinClicked" />
                                     </StackPanel>
                                 </Border>
                                 <Border IsVisible="{Binding HasFile}" Padding="2">

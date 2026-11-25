@@ -234,6 +234,14 @@ public sealed class MessageVm : Observable
     public bool HasFile => File != null;
     public string FileName => File?.Name ?? "";
 
+    /// <summary>The room this message invites to (it came in a direct chat), or null.</summary>
+    public Yaparr.Chat.RoomInvite? Invite { get; init; }
+    public bool HasInvite => Invite != null;
+    /// <summary>What the invitation says: who invited whom to what.</summary>
+    public string InviteText => Invite == null ? "" : IsMine ? $"You invited them to \"{Invite.Name}\"" : $"{Sender} invited you to \"{Invite.Name}\"";
+    /// <summary>Only an invitation someone else sent can be accepted.</summary>
+    public bool CanJoinInvite => Invite != null && !IsMine;
+
     /// <summary>Where the file is on this computer (the original that was sent, or where the download was saved), once it is here.</summary>
     public string? FilePath => _filePath;
 

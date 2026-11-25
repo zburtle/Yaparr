@@ -25,6 +25,7 @@ public partial class MainWindow
     {
         if (PeopleList.SelectedItem is not PeerVm person || BlockedIdOf(person) == null) { e.Cancel = true; return; }
         DirectChatPersonItem.IsVisible = !person.Blocked;
+        InvitePersonItem.IsVisible = !person.Blocked && person.Id != _node?.AccountId.Value;
         BlockPersonItem.IsVisible = !person.Blocked;
         UnblockPersonItem.IsVisible = person.Blocked;
         bool canChange = CanChangeAdmin(person, out _);

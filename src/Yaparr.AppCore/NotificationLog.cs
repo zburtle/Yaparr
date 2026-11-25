@@ -4,6 +4,15 @@ namespace Yaparr.AppCore;
 public static class NotificationKinds
 {
     public const string Message = "message";
+    /// <summary>Someone invited you to a room. The entry holds the key, and waits to be accepted or declined.</summary>
+    public const string Invite = "invite";
+}
+
+/// <summary>What was done about an entry that asks for an answer.</summary>
+public static class NotificationOutcomes
+{
+    public const string Joined = "joined";
+    public const string Declined = "declined";
 }
 
 /// <summary>One thing that was worth a notification: kept so that it can be looked at later, whether or not the system showed it, and whether or not it was seen.</summary>
@@ -28,6 +37,14 @@ public sealed class NotificationEntry
     /// <summary>The message named you (or answered you), not only arrived.</summary>
     public bool Mentioned { get; set; }
     public bool Read { get; set; }
+    /// <summary>For an invitation: the room's key. The file is sealed, as it is a secret that lets someone in.</summary>
+    public string? Invite { get; set; }
+    /// <summary>What was done about an invitation (see <see cref="NotificationOutcomes"/>); null while it waits.</summary>
+    public string? Outcome { get; set; }
+
+    public bool IsInvite => Kind == NotificationKinds.Invite && Invite is { Length: > 0 };
+    /// <summary>An invitation nobody has answered yet.</summary>
+    public bool IsOpenInvite => IsInvite && Outcome == null;
 }
 
 /// <summary>
@@ -117,6 +134,20 @@ public sealed class NotificationLog
         return true;
     }
 
+    /// <summary>An invitation was answered: it is recorded, and counts as seen. Returns false for an entry that is not there.</summary>
+    public bool SetOutcome(string id, string outcome)
+    {
+        var entry = _entries.FirstOrDefault(e => e.Id == id);
+        if (entry == null) return false;
+        entry.Outcome = outcome;
+        entry.Read = true;
+        Touch();
+        return true;
+    }
+
+    /// <summary>The open invitation to this room (by room id), if one is waiting.</summary>
+    public IEnumerable<NotificationEntry> OpenInvites => _entries.Where(e => e.IsOpenInvite);
+
     /// <summary>A chat was left or removed: what it had has nowhere to lead.</summary>
     public int RemoveChat(string chatKey)
     {
@@ -150,6 +181,7 @@ public sealed class NotificationLog
     /// <summary>"Alex in the new room", or just "Alex" in a direct chat: who, and where.</summary>
     public static string Heading(NotificationEntry e)
     {
+        if (e.IsInvite) return (e.Sender.Length > 0 ? e.Sender : "Someone") + " invited you to " + (e.Title.Length > 0 ? e.Title : "a room");
         if (e.Sender.Length == 0) return e.Title;
         return e.IsRoom && e.Title.Length > 0 && !string.Equals(e.Sender, e.Title, StringComparison.Ordinal) ? e.Sender + " in " + e.Title : e.Sender;
     }

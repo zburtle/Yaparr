@@ -68,18 +68,19 @@ public partial class MainWindow
         _roomConversations.Values.FirstOrDefault(c => c.Invite != null && RoomIdOf(c.Invite) == key.RoomId);
 
     // Joins the room a key opens, after asking when it came from a link. The same room under a newer key just takes the key.
-    private async Task JoinWithKeyAsync(RoomKey key, bool fromLink)
+    // Returns whether you are in the room afterwards (joined now, or already in it). invitedBy and roomName say who asked and what the room is called, when a person invited you.
+    private async Task<bool> JoinWithKeyAsync(RoomKey key, bool fromLink, string? invitedBy = null, string? roomName = null)
     {
         if (_settings.PrivateRooms.FirstOrDefault(r => r.Key == key.ToString() || RoomIdOf(r.Key) == key.RoomId) is { } have)
         {
             if (key.Epoch > EpochOf(have.Key) && _node != null)
             {
                 if (fromLink && !await Dialogs.ConfirmAsync(this, "New room key",
-                        $"This link has a newer key for \"{have.Label}\", which you are already in. Use it?", "Use it", "Cancel"))
-                    return;
+                        $"This {(invitedBy != null ? "invitation" : "link")} has a newer key for \"{have.Label}\", which you are already in. Use it?", "Use it", "Cancel"))
+                    return false;
                 await _node.JoinRoomAsync(key, have.Label);
                 StatusText.Text = "Your key for that room is now the new one.";
-                return;
+                return true;
             }
             if (fromLink)
             {
@@ -87,17 +88,19 @@ public partial class MainWindow
                 StatusText.Text = "You are already in that room.";
             }
             else await Dialogs.MessageAsync(this, "Yaparr", "You are already in that room.");
-            return;
+            return true;
         }
 
-        if (fromLink && !await Dialogs.ConfirmAsync(this, "Join room",
-                "A link is asking you to join a room.\n\nOnce you join, the other members can see your IP address, and anyone with the link can join too. Only join if you trust whoever sent it.",
-                "Join", "Cancel"))
-            return;
+        var ask = invitedBy != null
+            ? $"{invitedBy} invited you to \"{roomName}\".\n\nOnce you join, the other members can see your IP address, and anyone with the invite can join too. Only join if you trust them."
+            : "A link is asking you to join a room.\n\nOnce you join, the other members can see your IP address, and anyone with the link can join too. Only join if you trust whoever sent it.";
+        if (fromLink && !await Dialogs.ConfirmAsync(this, "Join room", ask, "Join", "Cancel"))
+            return false;
 
-        var label = await PromptDialog.AskAsync(this, "A name for this room (only you see it):", "Room");
-        if (string.IsNullOrWhiteSpace(label)) return;
+        var label = await PromptDialog.AskAsync(this, "A name for this room (only you see it):", roomName is { Length: > 0 } ? roomName : "Room");
+        if (string.IsNullOrWhiteSpace(label)) return false;
         await JoinKeyedRoomAsync(label, key, persist: true);
+        return true;
     }
 
     private async Task ChatFromLinkAsync(PeerId id)
