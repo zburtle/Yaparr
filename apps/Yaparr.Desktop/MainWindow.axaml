@@ -28,7 +28,7 @@
                                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
                                                     </Border>
                                                 </Grid>
-                                                <TextBlock Text="{Binding Name}" FontWeight="{Binding NameWeight}" VerticalAlignment="Center" />
+                                                <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="{Binding NameWeight}" VerticalAlignment="Center" />
                                                 <Path IsVisible="{Binding UsesCloud}" Data="M7,18 A4,4 0 0 1 6.5,10.03 A6,6 0 0 1 17.9,11.5 A3.5,3.5 0 0 1 17.5,18 Z" Stroke="{DynamicResource Muted}" StrokeThickness="1.9" StrokeLineCap="Round" StrokeJoin="Round" Stretch="Uniform" Width="13" Height="13" VerticalAlignment="Center" ToolTip.Tip="Uses Yaparr Cloud" />
                                                 <TextBlock Text="{Binding Status}" Classes="muted small" VerticalAlignment="Center" />
                                                 <TextBlock Text="{Binding Where}" Classes="muted small where" VerticalAlignment="Center" />
@@ -374,9 +374,9 @@
                                                 <Path IsVisible="{Binding IsPinned}" Data="M3,0.5 H7 M3.5,0.5 L3.2,4.2 L1.2,6.2 H8.8 L6.8,4.2 L6.5,0.5 M5,6.2 V10.5" Stroke="{DynamicResource Muted}"
                                                       StrokeThickness="1.1" StrokeLineCap="Round" StrokeJoin="Round" Width="10" Height="11" Margin="0,0,6,0" VerticalAlignment="Center"
                                                       ToolTip.Tip="Pinned" />
-                                                <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                                             </Grid>
-                                            <TextBlock Text="{Binding Subtitle}" IsVisible="{Binding ShowSubtitle}" Classes="muted small" />
+                                            <TextBlock Text="{Binding Subtitle}" IsVisible="{Binding ShowSubtitle}" Classes="muted small" FontSize="13" />
                                             <TextBlock Text="{Binding SyncText}" IsVisible="{Binding HasSyncText}" Classes="small" Foreground="{DynamicResource Accent}" />
                                             <ProgressBar IsVisible="{Binding IsSyncing}" IsIndeterminate="True" Height="2" MinHeight="2" MinWidth="0" Width="64" HorizontalAlignment="Left" Margin="0,2,0,0" />
                                         </StackPanel>
@@ -391,7 +391,7 @@
                                     </Grid>
                                     <StackPanel IsVisible="{Binding ShowChannelList}" Margin="48,6,0,2" Spacing="2">
                                         <Grid ColumnDefinitions="*,Auto">
-                                            <TextBlock Classes="label" Text="TEXT" VerticalAlignment="Center" />
+                                            <TextBlock Classes="label" Text="TEXT" FontSize="13" VerticalAlignment="Center" />
                                             <Button Grid.Column="1" Classes="ghost" Width="24" Height="24" Padding="0" BorderThickness="0" Background="Transparent" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" IsVisible="{Binding CanManageChannels}"
                                                     ToolTip.Tip="New text channel" Click="NewTextChannel_Click">
                                                 <Path Data="M0,5 H10 M5,0 V10" Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.4" StrokeLineCap="Round" Width="10" Height="10" HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -401,12 +401,12 @@
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate x:DataType="local:ChannelVm">
                                                     <Button Content="{Binding Label}" Classes="ghost" Classes.primary="{Binding Highlight}" HorizontalAlignment="Stretch" BorderThickness="0"
-                                                            HorizontalContentAlignment="Left" Padding="8,3" Click="Channel_Click" ContextRequested="Channel_ContextRequested" />
+                                                            HorizontalContentAlignment="Left" FontSize="15" Padding="8,4" Click="Channel_Click" ContextRequested="Channel_ContextRequested" />
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
                                         </ItemsControl>
                                         <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-                                            <TextBlock Classes="label" Text="VOICE" VerticalAlignment="Center" />
+                                            <TextBlock Classes="label" Text="VOICE" FontSize="13" VerticalAlignment="Center" />
                                             <Button Grid.Column="1" Classes="ghost" Width="24" Height="24" Padding="0" BorderThickness="0" Background="Transparent" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" IsVisible="{Binding CanManageChannels}"
                                                     ToolTip.Tip="New voice channel" Click="NewVoiceChannel_Click">
                                                 <Path Data="M0,5 H10 M5,0 V10" Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.4" StrokeLineCap="Round" Width="10" Height="10" HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -417,7 +417,7 @@
                                                 <DataTemplate x:DataType="local:ChannelVm">
                                                     <StackPanel>
                                                         <Button Content="{Binding Label}" Classes="ghost" Classes.primary="{Binding Highlight}" HorizontalAlignment="Stretch" BorderThickness="0"
-                                                                HorizontalContentAlignment="Left" Padding="8,3" Click="Channel_Click" ContextRequested="Channel_ContextRequested" />
+                                                                HorizontalContentAlignment="Left" FontSize="15" Padding="8,4" Click="Channel_Click" ContextRequested="Channel_ContextRequested" />
                                                         <ItemsControl Classes="undervoice" ItemsSource="{Binding Members}" IsVisible="{Binding HasMembers}" Margin="22,2,0,2">
                                                             <ItemsControl.ItemTemplate>
                                                                 <StaticResource ResourceKey="VoiceMemberRow" />
@@ -433,7 +433,7 @@
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate x:DataType="local:ChannelVm">
                                                 <StackPanel IsVisible="{Binding HasMembers}">
-                                                    <TextBlock Text="{Binding Label}" Classes="muted" Margin="8,3" />
+                                                    <TextBlock Text="{Binding Label}" Classes="muted" FontSize="15" Margin="8,4" />
                                                     <ItemsControl Classes="undervoice" ItemsSource="{Binding Members}" Margin="22,2,0,2">
                                                         <ItemsControl.ItemTemplate>
                                                             <StaticResource ResourceKey="VoiceMemberRow" />
@@ -492,15 +492,15 @@
                             <Button x:Name="NotificationsButton" Classes="ghost" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="10,2,10,4" Padding="8,6"
                                     AutomationProperties.Name="Notifications" ToolTip.Tip="Messages you may have missed" Click="Notifications_Click">
                                 <Grid ColumnDefinitions="Auto,*,Auto">
-                                    <TextBlock Text="🔔" FontSize="13" Margin="0,0,8,0" VerticalAlignment="Center" />
-                                    <TextBlock Grid.Column="1" Text="Notifications" VerticalAlignment="Center" />
+                                    <TextBlock Text="🔔" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="Notifications" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
                                     <Border x:Name="NotificationsBadge" Grid.Column="2" IsVisible="False" Background="{DynamicResource Accent}" CornerRadius="10" MinWidth="20" Height="20" Padding="6,0" VerticalAlignment="Center">
                                         <TextBlock x:Name="NotificationsBadgeText" Foreground="White" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                     </Border>
                                 </Grid>
                             </Button>
                             <Grid ColumnDefinitions="*,Auto,Auto" Margin="18,4,8,4">
-                                <TextBlock Text="ROOMS" Classes="muted small" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                <TextBlock Text="ROOMS" Classes="muted small" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" />
                                 <Button Grid.Column="1" Classes="ghost" Width="26" Height="26" Padding="0" BorderThickness="0" Background="Transparent" FontSize="14" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" ToolTip.Tip="Join a room with an invite" Click="JoinRoom_Click" Content="🔗" />
                                 <Button Grid.Column="2" Classes="ghost" Width="26" Height="26" Padding="0" BorderThickness="0" Background="Transparent" FontSize="14" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" ToolTip.Tip="New room" Click="CreateRoom_Click">
                                     <Button.Content><Path Data="M0,6 H12 M6,0 V12" Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.6" StrokeLineCap="Round" Width="12" Height="12" HorizontalAlignment="Center" VerticalAlignment="Center" /></Button.Content>
@@ -522,7 +522,7 @@
                             </ListBox.ContextMenu>
                             </ListBox>
                             <Grid ColumnDefinitions="*,Auto" Margin="18,10,8,4">
-                                <TextBlock Text="DIRECT CHATS" Classes="muted small" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                <TextBlock Text="DIRECT CHATS" Classes="muted small" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" />
                                 <Button Grid.Column="1" Classes="ghost" Width="26" Height="26" Padding="0" BorderThickness="0" Background="Transparent" FontSize="14" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" ToolTip.Tip="New direct chat" Click="DirectChat_Click">
                                     <Button.Content><Path Data="M0,6 H12 M6,0 V12" Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.6" StrokeLineCap="Round" Width="12" Height="12" HorizontalAlignment="Center" VerticalAlignment="Center" /></Button.Content>
                                 </Button>
