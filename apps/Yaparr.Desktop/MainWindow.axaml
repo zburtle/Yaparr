@@ -488,17 +488,6 @@
                     <!-- The two lists follow one another and scroll together: the chats sit right under the rooms, not at the bottom. -->
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <StackPanel>
-                            <!-- Messages that were worth a notification, to find again: the badge counts the ones not seen yet. -->
-                            <Button x:Name="NotificationsButton" Classes="ghost" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="10,2,10,4" Padding="8,6"
-                                    AutomationProperties.Name="Notifications" ToolTip.Tip="Messages you may have missed" Click="Notifications_Click">
-                                <Grid ColumnDefinitions="Auto,*,Auto">
-                                    <TextBlock Text="🔔" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center" />
-                                    <TextBlock Grid.Column="1" Text="Notifications" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                    <Border x:Name="NotificationsBadge" Grid.Column="2" IsVisible="False" Background="{DynamicResource Accent}" CornerRadius="10" MinWidth="20" Height="20" Padding="6,0" VerticalAlignment="Center">
-                                        <TextBlock x:Name="NotificationsBadgeText" Foreground="White" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                    </Border>
-                                </Grid>
-                            </Button>
                             <Grid ColumnDefinitions="*,Auto,Auto" Margin="18,4,8,4">
                                 <TextBlock Text="ROOMS" Classes="muted small" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" />
                                 <Button Grid.Column="1" Classes="ghost" Width="26" Height="26" Padding="0" BorderThickness="0" Background="Transparent" FontSize="14" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" ToolTip.Tip="Join a room with an invite" Click="JoinRoom_Click" Content="🔗" />
@@ -983,7 +972,19 @@
         </Grid>
     </DockPanel>
     <!-- A small turning icon while rooms are getting going; it sits left of the window's buttons on Windows (the code places it). -->
-    <Border x:Name="SyncIcon" HorizontalAlignment="Right" VerticalAlignment="Top" Width="28" Height="32" Margin="0,0,12,0" Background="Transparent" IsVisible="False"
+    <!-- Messages that were worth a notification, to find again: the badge counts the ones not seen yet. It sits at the top right, left of the window's buttons on Windows (the code places it). -->
+    <Button x:Name="NotificationsButton" Classes="ghost" HorizontalAlignment="Right" VerticalAlignment="Top" Width="34" Height="28" Margin="0,2,12,0" Padding="0"
+            BorderThickness="0" Background="Transparent" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+            AutomationProperties.Name="Notifications" ToolTip.Tip="Notifications: messages you may have missed (Ctrl+Shift+N)" Click="Notifications_Click">
+        <Grid>
+            <TextBlock Text="🔔" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            <Border x:Name="NotificationsBadge" IsVisible="False" Background="{DynamicResource Accent}" CornerRadius="8" MinWidth="16" Height="16" Padding="4,0"
+                    HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-4,-6,0">
+                <TextBlock x:Name="NotificationsBadgeText" Foreground="White" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+        </Grid>
+    </Button>
+    <Border x:Name="SyncIcon" HorizontalAlignment="Right" VerticalAlignment="Top" Width="28" Height="32" Margin="0,0,52,0" Background="Transparent" IsVisible="False"
             ToolTip.Tip="Syncing">
         <Path Classes="spinner" Data="M8,1 A7,7 0 1 1 1,8" Stroke="{DynamicResource Accent}" StrokeThickness="2" StrokeLineCap="Round" Width="16" Height="16"
               HorizontalAlignment="Center" VerticalAlignment="Center"><Path.RenderTransform><RotateTransform /></Path.RenderTransform></Path>
@@ -1304,8 +1305,8 @@
             <Grid RowDefinitions="Auto,*">
                 <Grid ColumnDefinitions="*,Auto,Auto,Auto" Margin="18,12,12,8">
                     <TextBlock Text="Notifications" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" />
-                    <Button x:Name="NotificationsMarkAll" Grid.Column="1" Classes="ghost" Content="Mark all seen" Click="NotificationsMarkAll_Click" />
-                    <Button x:Name="NotificationsClear" Grid.Column="2" Classes="ghost" Content="Clear" Click="NotificationsClear_Click" />
+                    <Button x:Name="NotificationsMarkAll" Grid.Column="1" Classes="ghost" Margin="0,0,8,0" Content="Mark all seen" Click="NotificationsMarkAll_Click" />
+                    <Button x:Name="NotificationsClear" Grid.Column="2" Classes="ghost" Margin="0,0,8,0" Content="Clear" Click="NotificationsClear_Click" />
                     <Button Grid.Column="3" Classes="ghost" Content="✕" AutomationProperties.Name="Close notifications" ToolTip.Tip="Close (Esc)" Click="CloseNotifications_Click" />
                 </Grid>
                 <Grid Grid.Row="1">

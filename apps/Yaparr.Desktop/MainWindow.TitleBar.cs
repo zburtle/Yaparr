@@ -28,6 +28,7 @@ public partial class MainWindow
         TopBarIcon.IsVisible = true;
         TopBarTitle.IsVisible = true;
         Title = "";
-        SyncIcon.Margin = new Thickness(0, 0, CaptionButtonsWidth + 4, 0);
+        NotificationsButton.Margin = new Thickness(0, 2, CaptionButtonsWidth + 4, 0);
+        SyncIcon.Margin = new Thickness(0, 0, CaptionButtonsWidth + 44, 0);
     }
 }
