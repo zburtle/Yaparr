@@ -44,6 +44,7 @@ public partial class MainWindow
             conv.VoiceMembers.Add(vm);
         }
         UpdateVoiceChannels(conv, room);
+        LinkShares(conv);
         conv.VoiceMembersChanged();
         conv.InVoiceElsewhere = !conv.InVoice && room.CanShareScreen;
         WatchConnection();

@@ -796,6 +796,9 @@ public sealed class ConversationVm : Observable
     // ---- screen sharing ----
 
     public ObservableCollection<ShareVm> Shares { get; } = new();
+
+    /// <summary>The shares of other people that have no row in the voice list to carry their Watch button (the sharer is not in the call any more but the share goes on); they are listed beside it.</summary>
+    public ObservableCollection<ShareVm> UnlinkedShares { get; } = new();
     public bool HasShares => Shares.Count > 0;
 
     /// <summary>Shares are listed, and can be watched, only while you are in the room's voice channel.</summary>
@@ -824,7 +827,11 @@ public sealed class ConversationVm : Observable
     }
 
     /// <summary>The tip of the share button changes when screens are turned off or on (see <c>ScreenGate</c>).</summary>
-    public void RefreshShareTip() => Raise(nameof(ShareTip));
+    public void RefreshShareTip()
+    {
+        Raise(nameof(ShareTip));
+        foreach (var member in VoiceMembers) member.RefreshWatchTip();
+    }
 
     public string ShareTip => Yaparr.AppCore.ScreenGate.Instance.Reason ?? "Share";
     public bool CanStopSharing => _sharing;
@@ -1139,12 +1146,15 @@ public sealed class ShareVm : Observable
 {
     private bool _watching;
 
-    public ShareVm(string id, string name, bool isMine)
+    public ShareVm(string id, string name, bool isMine, string sharer = "")
     {
-        Id = id; Name = name; IsMine = isMine;
+        Id = id; Name = name; IsMine = isMine; Sharer = sharer;
     }
 
     public string Id { get; }
+
+    /// <summary>The device that shares it: the person in the voice list whose row has the Watch button.</summary>
+    public string Sharer { get; }
     public string Name { get; }
     public bool IsMine { get; }
     public bool CanWatch => !IsMine;
@@ -1194,6 +1204,38 @@ public sealed class VoiceMemberVm : Observable
 
     /// <summary>A picture arrived or changed for this person.</summary>
     public void AvatarChanged() { Raise(nameof(Initial)); Raise(nameof(Avatar)); }
+
+    private ShareVm? _share;
+
+    /// <summary>The screen this person is sharing that you can watch (null when they share none, it is yours, or you are not in the call): its Watch button sits on their row.</summary>
+    public ShareVm? Share
+    {
+        get => _share;
+        set
+        {
+            if (ReferenceEquals(_share, value)) return;
+            if (_share != null) _share.PropertyChanged -= OnShareChanged;
+            _share = value;
+            if (_share != null) _share.PropertyChanged += OnShareChanged;
+            Raise(); Raise(nameof(CanWatchShare)); Raise(nameof(WatchText)); Raise(nameof(WatchTip));
+        }
+    }
+
+    private void OnShareChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ShareVm.ButtonText)) Raise(nameof(WatchText));
+    }
+
+    public bool CanWatchShare => _share is { CanWatch: true };
+
+    /// <summary>"Watch", or "Stop watching" while it is on.</summary>
+    public string WatchText => _share?.ButtonText ?? "Watch";
+
+    /// <summary>Why watching is not possible now (screens are turned off, see <c>ScreenGate</c>), or else what they are sharing: the tip of the button.</summary>
+    public string? WatchTip => Yaparr.AppCore.ScreenGate.Instance.Reason ?? _share?.Name;
+
+    /// <summary>The reason in the tip changed (see <c>ScreenGate</c>).</summary>
+    public void RefreshWatchTip() => Raise(nameof(WatchTip));
 
     public bool Speaking
     {
