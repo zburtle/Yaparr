@@ -34,6 +34,9 @@ public sealed class ChatNodeOptions
 
     public TimeSpan DiscoveryInterval { get; init; } = TimeSpan.FromSeconds(15);
 
+    /// <summary>How often a room's place is announced again while nobody else is in it (with company it is announced on every search).</summary>
+    public TimeSpan AloneAnnounceInterval { get; init; } = TimeSpan.FromMinutes(3);
+
     public bool EnableRelaying { get; init; } = true;
 
     /// <summary>
@@ -866,12 +869,16 @@ public sealed partial class ChatNode : IDisposable
     private async Task RunRoomDiscoveryAsync(ChatRoom room)
     {
         int quick = 0;
+        long lastAnnounce = 0;
         try
         {
             while (!_cts.IsCancellationRequested && _rooms.ContainsKey(room.Key))
             {
                 bool alone = room.MemberStates.IsEmpty && room.Indirect.IsEmpty;
-                try { await DiscoverRoomAsync(room, announce: !alone || quick == 0, _cts.Token).ConfigureAwait(false); }
+                long now = Environment.TickCount64;
+                bool announce = ShouldAnnounce(alone, quick, lastAnnounce == 0 ? long.MaxValue : now - lastAnnounce, _options.AloneAnnounceInterval);
+                if (announce) lastAnnounce = now;
+                try { await DiscoverRoomAsync(room, announce, _cts.Token).ConfigureAwait(false); }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     _options.Log?.Invoke($"room {room.Name} failed: {ex.Message}");
@@ -884,6 +891,14 @@ public sealed partial class ChatNode : IDisposable
         }
         catch (OperationCanceledException) { }
     }
+
+    /// <summary>
+    /// Whether this search also announces us. Always while someone is around and on the first search, and while alone again every
+    /// <paramref name="aloneInterval"/>: what is announced is forgotten by the network after a while, and a first announcement made
+    /// while the network was still warming up may have reached the wrong nodes, so someone alone would not be found until a restart.
+    /// </summary>
+    internal static bool ShouldAnnounce(bool alone, int quickSoFar, long msSinceLastAnnounce, TimeSpan aloneInterval) =>
+        !alone || quickSoFar == 0 || msSinceLastAnnounce >= aloneInterval.TotalMilliseconds;
 
     private const int QuickSearches = 8;
     private static readonly TimeSpan QuickSearchGap = TimeSpan.FromSeconds(4);
