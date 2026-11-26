@@ -118,11 +118,11 @@ public partial class MainWindow
                 if (_filmSlider != null) _filmSlider.Maximum = Math.Max(1, target.Duration.TotalSeconds);
                 _ = RefreshFilmNextAsync(sharer);
             });
+            conv.IsSharing = true;
+            // The film is seen (and heard) by you too, as soon as it starts, with its player under the picture.
+            WatchOwnFilm(new ShareVm(sharer.Source.Info.Id, film.Title, isMine: true, sharer.Source.Info.Root.Value), conv);
             BuildFilmPanel(sharer, conv, room);
             _ = RefreshFilmNextAsync(sharer);
-            conv.IsSharing = true;
-            // The film is seen (and heard) by you too, as soon as it starts.
-            WatchOwnFilm(new ShareVm(sharer.Source.Info.Id, film.Title, isMine: true, sharer.Source.Info.Root.Value), conv);
             conv.Add(MessageVm.System(conv.InVoice
                 ? $"You are playing “{film.Title}”. Everyone in the room can watch it."
                 : $"You are playing “{film.Title}” through the call on your other device. Everyone in the room can watch it."));
@@ -161,15 +161,8 @@ public partial class MainWindow
             if (sharer.Paused) sharer.Resume(); else sharer.Pause();
             UpdateFilmPanel();
         };
-        var stop = new Button { Content = "Stop", MinWidth = 70, HorizontalContentAlignment = HorizontalAlignment.Center };
-        stop.Click += (_, _) =>
-        {
-            var title = _filmTitle;
-            StopFilm();
-            conv.Add(MessageVm.System($"You stopped “{title}”."));
-        };
         var top = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { _filmPause, stop } };
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { _filmPause } };
         Grid.SetColumn(buttons, 1);
         top.Children.Add(_filmText);
         top.Children.Add(buttons);
@@ -205,10 +198,24 @@ public partial class MainWindow
         _filmNote.Classes.Add("muted");
         var episode = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Margin = new Thickness(0, 6, 0, 0), IsVisible = _filmSeriesId != null, Children = { _filmNext, auto } };
 
-        var panel = new StackPanel { Margin = new Thickness(10, 8), Spacing = 0, Children = { top, position, episode, _filmNote } };
-        _filmPanel = new Border { Classes = { "details" }, Margin = new Thickness(0, 0, 0, 6), Child = panel };
-        SharerPanel.Child = _filmPanel;
-        UpdateSharerPanel();
+        var panel = new StackPanel { Spacing = 0, Children = { top, position, episode, _filmNote } };
+        if (_screenViews.TryGetValue(sharer.Source.Info.Id, out var view)) { _filmText.Foreground = Brushes.White; _filmNote.Foreground = Brushes.LightGray; auto.Foreground = Brushes.White; view.Control.AttachPlayer(panel); }   // under the picture, like a video player
+        else
+        {
+            // The view could not be shown: the player goes where the sharing panel is, so that the film can still be controlled and stopped.
+            var stop = new Button { Content = "Stop", MinWidth = 70, HorizontalContentAlignment = HorizontalAlignment.Center };
+            stop.Click += (_, _) =>
+            {
+                var title = _filmTitle;
+                StopFilm();
+                conv.Add(MessageVm.System($"You stopped “{title}”."));
+            };
+            buttons.Children.Add(stop);
+            panel.Margin = new Thickness(10, 8);
+            _filmPanel = new Border { Classes = { "details" }, Margin = new Thickness(0, 0, 0, 6), Child = panel };
+            SharerPanel.Child = _filmPanel;
+            UpdateSharerPanel();
+        }
         UpdateFilmPanel();
 
         // The film stops when none of your devices is in the voice channel any more, as a shared screen does.
