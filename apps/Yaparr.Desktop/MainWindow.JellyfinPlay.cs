@@ -260,8 +260,10 @@ public partial class MainWindow
         if (view != null)
         {
             var sound = view.Control.TakeSoundPanel();
-            sound.HorizontalAlignment = HorizontalAlignment.Left;
+            sound.HorizontalAlignment = HorizontalAlignment.Stretch;
             sound.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(sound, 0);
+            Grid.SetRow(sound, 0);
             controls.Children.Add(sound);
         }
         else
