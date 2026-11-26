@@ -101,6 +101,13 @@ public partial class ScreenViewControl : UserControl
 
     private LocalSound? _localSound;
 
+    /// <summary>The player of the film the sharer plays (pause, jump, next episode), shown above the buttons like a video player's.</summary>
+    public void AttachPlayer(Control player)
+    {
+        PlayerHost.Child = player;
+        PlayerHost.IsVisible = true;
+    }
+
     /// <summary>The film's sound, which the sharer hears here (the volume of the panel is its volume).</summary>
     public void AttachLocalSound(LocalSound sound, string? output)
     {

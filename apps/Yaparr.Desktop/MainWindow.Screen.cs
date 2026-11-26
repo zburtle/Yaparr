@@ -119,6 +119,7 @@ public partial class MainWindow
 
     private async void ShareScreen_Click(object? sender, RoutedEventArgs e)
     {
+        _jellyfin = _data.LoadJellyfin();   // the sign-in is read here, not only when the settings are opened
         if (_node == null || _selected is not { IsRoom: true } conv || _sharer != null || _film != null) return;
         if (ScreenGate.Instance.Blocked) { StatusText.Text = ScreenGate.Why; return; }
         var room = _roomConversations.FirstOrDefault(kv => kv.Value == conv).Key;
