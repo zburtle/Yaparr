@@ -7,13 +7,14 @@
         Background="{DynamicResource AppBg}">
     <Window.Resources>
 <DataTemplate x:Key="VoiceMemberRow" x:DataType="local:VoiceMemberVm">
-                                            <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,14,4" Background="Transparent">
-                                                <StackPanel.ContextMenu>
+                                            <Grid ColumnDefinitions="*,Auto" Margin="0,0,14,4" Background="Transparent">
+                                                <Grid.ContextMenu>
                                                     <ContextMenu Opening="VoiceMemberMenu_Opening">
                                                         <MenuItem Header="{Binding SoundboardMenuText}" Click="SoundboardMute_Click" />
                                                         <MenuItem Header="Kick from voice…" IsVisible="{Binding CanKick}" Click="KickFromVoice_Click" />
                                                     </ContextMenu>
-                                                </StackPanel.ContextMenu>
+                                                </Grid.ContextMenu>
+                                                <StackPanel Orientation="Horizontal" Spacing="6">
                                                 <!-- Someone talking is shown three ways, so that no colour of avatar can hide it: a ring with a gap between it and the picture,
                                                      a dark badge with sound bars in white at the corner, and the name in bold. -->
                                                 <Grid Width="34" Height="34" VerticalAlignment="Center">
@@ -51,6 +52,11 @@
                                                 <Button Content="{Binding SoundboardGlyph}" IsVisible="{Binding CanMuteSoundboard}" Click="SoundboardMute_Click"
                                                         ToolTip.Tip="{Binding SoundboardTip}" Classes="ghost" Padding="4,0" FontSize="11" VerticalAlignment="Center" />
                                             </StackPanel>
+                                            <!-- Someone who is sharing a screen has the button to watch it on their row, at the right of the volume and soundboard buttons. -->
+                                            <Button Grid.Column="1" Content="{Binding WatchText}" IsVisible="{Binding CanWatchShare}" Classes="primary" Padding="10,2" FontSize="12"
+                                                    HorizontalAlignment="Right" VerticalAlignment="Center" Margin="10,0,0,0"
+                                                    IsEnabled="{Binding Allowed, Source={x:Static core:ScreenGate.Instance}}" ToolTip.Tip="{Binding WatchTip}" Click="WatchScreen_Click" />
+                                        </Grid>
                                         </DataTemplate>
     </Window.Resources>
     <Window.Styles>
@@ -615,7 +621,7 @@
                                 <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
                                     <TextBlock Text="Someone is sharing a screen. Join voice to watch it." Classes="muted small" TextWrapping="Wrap" MaxWidth="260"
                                                IsVisible="{Binding NeedsVoiceToWatch}" />
-                                    <ItemsControl ItemsSource="{Binding Shares}" IsVisible="{Binding CanWatchShares}">
+                                    <ItemsControl ItemsSource="{Binding UnlinkedShares}" IsVisible="{Binding CanWatchShares}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate x:DataType="local:ShareVm">
                                                 <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,4">

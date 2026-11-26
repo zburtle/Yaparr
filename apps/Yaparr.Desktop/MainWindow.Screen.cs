@@ -58,7 +58,8 @@ public partial class MainWindow
         var watching = _screenViews.Keys.ToHashSet();
         conv.Shares.Clear();
         foreach (var g in shares)
-            conv.Shares.Add(new ShareVm(g.Id, g.Name, isMine: _node != null && _node.IsMyDevice(g.Root)) { Watching = watching.Contains(g.Id) });
+            conv.Shares.Add(new ShareVm(g.Id, g.Name, isMine: _node != null && _node.IsMyDevice(g.Root), sharer: g.Root.Value) { Watching = watching.Contains(g.Id) });
+        LinkShares(conv);
         conv.SharesChanged();
 
         // A share that ended stops being watched.
@@ -70,6 +71,21 @@ public partial class MainWindow
                 if (room.MediaGroups.All(g => g.Id != id)) { _sounds.ShareEnded(); watch.Control.ShowEnded(); }
                 else EndWatch(watch);
             }
+    }
+
+    // A share is watched with the button on the row of the person who shares it, in the list of who is in the call. Those that have no row there (the sharer left the call and the share
+    // goes on) stay in a list beside it, so that nothing that is shared cannot be watched.
+    internal static void LinkShares(ConversationVm conv)
+    {
+        var linked = new HashSet<string>();
+        foreach (var member in conv.VoiceMembers)
+        {
+            var share = conv.InVoice ? conv.Shares.FirstOrDefault(s => s.CanWatch && s.Sharer == member.Id) : null;
+            member.Share = share;
+            if (share != null) linked.Add(share.Id);
+        }
+        conv.UnlinkedShares.Clear();
+        foreach (var share in conv.Shares.Where(s => s.CanWatch && !linked.Contains(s.Id))) conv.UnlinkedShares.Add(share);
     }
 
     // FFmpeg's libraries, which capture, encode and decode a screen inside this program: found here, or downloaded after asking (Yaparr's FFmpeg package has
@@ -316,7 +332,9 @@ public partial class MainWindow
 
     private async void WatchScreen_Click(object? sender, RoutedEventArgs e)
     {
-        if (_node == null || _selected is not { IsRoom: true, InVoice: true } conv || (sender as Button)?.DataContext is not ShareVm share) return;
+        // The button is on a person's row (its data is that person) or beside the list of the shares that have no row (its data is the share).
+        var share = (sender as Button)?.DataContext switch { VoiceMemberVm member => member.Share, ShareVm shared => shared, _ => null };
+        if (_node == null || _selected is not { IsRoom: true, InVoice: true } conv || share == null) return;
         if (ScreenGate.Instance.Blocked) { StatusText.Text = ScreenGate.Why; return; }
         var room = _roomConversations.FirstOrDefault(kv => kv.Value == conv).Key;
         if (room == null) return;
