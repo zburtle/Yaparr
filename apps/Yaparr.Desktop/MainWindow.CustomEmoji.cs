@@ -70,7 +70,7 @@ public partial class MainWindow
         EmojiSearch.Text = "";
         ShowEmojiGroup(0);
         ReactionPopup.Placement = Avalonia.Controls.PlacementMode.TopEdgeAlignedLeft;
-        ReactionPopup.PlacementTarget = ComposerEmojiButton;
+        ReactionPopup.PlacementTarget = PlusButton;
         ReactionPopup.IsOpen = true;
         if (tab != CustomTab.None) { _customTab = tab; ShowCustom(); }
         EmojiSearch.Focus();

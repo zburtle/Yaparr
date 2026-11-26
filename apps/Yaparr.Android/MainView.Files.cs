@@ -16,6 +16,7 @@ public sealed partial class MainView
         ActionList.Children.Clear();
         AddAction("Picture or GIF", async () => await SendPictureFromChooserAsync());
         AddAction("File of any size", async () => await SendFileFromChooserAsync());
+        AddAction("Poll", ShowPollForm);
         ActionPanel.IsVisible = true;
     }
 

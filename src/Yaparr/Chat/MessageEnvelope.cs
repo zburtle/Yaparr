@@ -30,7 +30,7 @@ public sealed record Mention(PeerId Account, string Name)
 /// What a message says besides its words: which earlier message it answers, and which people it names.
 /// <see cref="ReplyTo"/> is the <see cref="ChatMessage.Key"/> of that message.
 /// </summary>
-public sealed record MessageParts(string Body, string? ReplyTo, IReadOnlyList<Mention> Mentions, LinkPreview? Preview = null, ReactionEvent? Reaction = null, IReadOnlyList<CustomEmoji>? Emoji = null)
+public sealed record MessageParts(string Body, string? ReplyTo, IReadOnlyList<Mention> Mentions, LinkPreview? Preview = null, ReactionEvent? Reaction = null, IReadOnlyList<CustomEmoji>? Emoji = null, Poll? Poll = null)
 {
     public static readonly MessageParts None = new("", null, Array.Empty<Mention>());
 }
@@ -60,7 +60,7 @@ public static class MessageEnvelope
     /// The text to send for <paramref name="body"/> that answers the message with key <paramref name="replyTo"/> and names
     /// <paramref name="mentions"/>. With neither, it is the body unchanged.
     /// </summary>
-    public static string Wrap(string body, string? replyTo, IReadOnlyCollection<Mention>? mentions, LinkPreview? preview = null, IReadOnlyCollection<CustomEmoji>? emoji = null)
+    public static string Wrap(string body, string? replyTo, IReadOnlyCollection<Mention>? mentions, LinkPreview? preview = null, IReadOnlyCollection<CustomEmoji>? emoji = null, Poll? poll = null)
     {
         var named = (mentions ?? Array.Empty<Mention>()).Select(m => new Mention(m.Account, CleanName(m.Name))).Where(m => m.Name.Length > 0)
             .GroupBy(m => m.Account).Select(g => g.First()).Take(MaxMentions).ToArray();
@@ -70,7 +70,9 @@ public static class MessageEnvelope
         var written = CustomEmojiRules.NamesIn(body);
         var used = (emoji ?? Array.Empty<CustomEmoji>()).Where(e => CustomEmojiRules.IsAcceptable(e) && written.Contains(e.Name))
             .GroupBy(e => e.Name).Select(g => g.First()).Take(CustomEmojiRules.MaxPerMessage).ToArray();
-        if (replyTo == null && named.Length == 0 && card == null && used.Length == 0) return body;
+        // A poll is asked in words that a version without polls shows as they are (the question and the numbered answers).
+        if (poll != null) body = poll.Words;
+        if (replyTo == null && named.Length == 0 && card == null && used.Length == 0 && poll == null) return body;
         // A card that does not fit loses its picture first, then goes; the words and the people they name always come first.
         foreach (var candidate in card == null ? new LinkPreview?[] { null } : new[] { card, card with { Thumbnail = null }, null })
         {
@@ -78,9 +80,10 @@ public static class MessageEnvelope
             {
                 R = replyTo, M = named.Length == 0 ? null : named.Select(m => new HeaderMention { A = m.Account.Value, N = m.Name }).ToArray(),
                 E = used.Length == 0 ? null : used.Select(e => new HeaderEmoji { N = e.Name, H = e.Hash, S = e.Size, M = e.Mime, W = e.Width, G = e.Height }).ToArray(),
+                L = poll == null ? null : new HeaderPoll { Q = poll.Question, O = poll.Options.ToArray(), M = poll.Multiple ? 1 : null },
                 P = candidate == null ? null : new HeaderPreview { U = candidate.Url, T = candidate.Title, D = candidate.Description.Length == 0 ? null : candidate.Description, I = candidate.Thumbnail is { Length: > 0 } th ? Convert.ToBase64String(th) : null },
             }, Json);
-            if (replyTo == null && named.Length == 0 && candidate == null && used.Length == 0) return body;
+            if (replyTo == null && named.Length == 0 && candidate == null && used.Length == 0 && poll == null) return body;
             var text = Marker + header + End + body;
             if (text.Length <= MaxText) return text;
         }
@@ -190,7 +193,7 @@ public static class MessageEnvelope
             var body = text[(end + 1)..];
             // A card is for a link that is in the words; a card for some other address is not shown.
             if (preview != null && !body.Contains(preview.Url, StringComparison.Ordinal)) preview = null;
-            return new MessageParts(body, reply, mentions, preview, reaction, ReadEmoji(header.E, body));
+            return new MessageParts(body, reply, mentions, preview, reaction, ReadEmoji(header.E, body), ReadPoll(header.L));
         }
         catch (JsonException) { return new MessageParts(text, null, Array.Empty<Mention>()); }
     }
@@ -206,6 +209,10 @@ public static class MessageEnvelope
         }
         return new LinkPreview(p.U, p.T ?? "", p.D ?? "", thumb).Normalized();
     }
+
+    // A poll from the header, held to the limits of one that is sent; anything that does not hold is not a poll (the words are still shown).
+    private static Poll? ReadPoll(HeaderPoll? l) =>
+        l?.Q == null || l.O == null || l.O.Length > Poll.MaxOptions * 2 ? null : Poll.Clean(l.Q, l.O, l.M == 1);
 
     // The custom emoji from the header: only those that are within the limits and that the words actually use, each name once.
     private static IReadOnlyList<CustomEmoji>? ReadEmoji(HeaderEmoji[]? list, string body)
@@ -265,6 +272,14 @@ public static class MessageEnvelope
         public HeaderMention[]? M { get; set; }
         public HeaderPreview? P { get; set; }
         public HeaderEmoji[]? E { get; set; }   // custom emoji the words use
+        public HeaderPoll? L { get; set; }      // the poll this message asks
+    }
+
+    private sealed class HeaderPoll
+    {
+        public string? Q { get; set; }     // the question
+        public string?[]? O { get; set; }  // the answers
+        public int? M { get; set; }        // 1 when more than one answer can be chosen
     }
 
     private sealed class HeaderEmoji
