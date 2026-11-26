@@ -376,27 +376,68 @@ public partial class MainWindow
                 ? $"the picture of the screen {share.Name} has been struggling for this viewer alone for 15 s while the room is fine and the sharer's own link has no trouble: told so"
                 : $"the picture of the screen {share.Name} is no longer struggling for this viewer alone");
             control.StreamResumed += seconds => _log.Write($"the picture of the screen {share.Name} is back after {seconds:0.0} s");
-            var watch = new ScreenWatch { Id = share.Id, Share = share, Conv = conv, Control = control };
-            _screenViews[share.Id] = watch;
-            share.Watching = true;
-            control.Stopped += () => UI(() => WatchEnded(watch));
-            control.StopRequested += () => EndWatch(watch);
-            control.FullScreenToggleRequested += () => ToggleFullScreen(watch);
-            control.DockToggleRequested += () =>
-            {
-                if (watch.Window == null) PopOut(watch); else DockIn(watch);
-                // The next screen opens where this one was left.
-                _settings.WatchScreensInWindow = watch.Window != null;
-                try { _data.SaveSettings(_settings); }
-                catch (Exception ex) { _log.Write("could not save the screen view choice: " + ex.Message); }
-            };
-            // It opens where it was last put: in a window of its own, or in the app over the chat.
-            if (_settings.WatchScreensInWindow) PopOut(watch); else DockIn(watch);
+            ShowWatch(share, conv, control);
         }
         catch (Exception ex)
         {
             _log.Write("could not watch the screen: " + ex.Message);
             StatusText.Text = "Could not watch the screen: " + ex.Message;
+        }
+    }
+
+    // Puts a view of a screen where it opens: in a window of its own, or in the app over the chat, as it was last put.
+    private void ShowWatch(ShareVm share, ConversationVm conv, ScreenViewControl control)
+    {
+        var watch = new ScreenWatch { Id = share.Id, Share = share, Conv = conv, Control = control };
+        _screenViews[share.Id] = watch;
+        share.Watching = true;
+        control.Stopped += () => UI(() => WatchEnded(watch));
+        control.StopRequested += () => EndWatch(watch);
+        control.FullScreenToggleRequested += () => ToggleFullScreen(watch);
+        control.DockToggleRequested += () =>
+        {
+            if (watch.Window == null) PopOut(watch); else DockIn(watch);
+            // The next screen opens where this one was left.
+            _settings.WatchScreensInWindow = watch.Window != null;
+            try { _data.SaveSettings(_settings); }
+            catch (Exception ex) { _log.Write("could not save the screen view choice: " + ex.Message); }
+        };
+        if (_settings.WatchScreensInWindow) PopOut(watch); else DockIn(watch);
+    }
+
+    // The film you play into the room is seen and heard by you too, from the frames and the sound as they are sent. It opens by itself when the film starts and cannot be set aside:
+    // closing it ends the film.
+    private void WatchOwnFilm(ShareVm share, ConversationVm conv)
+    {
+        if (_film is not { } film || _screenViews.ContainsKey(share.Id)) return;
+        try
+        {
+            var frames = new LocalFrames();
+            Action<byte[], bool> feed = (frame, key) => frames.Push(frame, key);
+            film.FrameSent += feed;
+            var control = new ScreenViewControl(share.Name, frames);
+            control.Stopped += () =>
+            {
+                film.FrameSent -= feed;
+                film.LocalSound = null;
+                UI(() =>
+                {
+                    if (_film != film) return;   // the film ended first, and closed the view
+                    var title = _filmTitle;
+                    StopFilm();
+                    conv.Add(MessageVm.System($"You stopped “{title}”."));
+                });
+            };
+            var sound = new Yaparr.Voice.LocalSound();
+            film.LocalSound = sound;
+            control.AttachLocalSound(sound, _settings.VoiceOutput);
+            _log.Write($"watching the film {share.Name} you play");
+            ShowWatch(share, conv, control);
+        }
+        catch (Exception ex)
+        {
+            _log.Write("could not show the film: " + ex.Message);
+            StatusText.Text = "Could not show the film: " + ex.Message;
         }
     }
 
@@ -421,6 +462,7 @@ public partial class MainWindow
         }
         _screenViews.Remove(watch.Id);
         watch.Share.Watching = false;
+        foreach (var s in watch.Conv.Shares.Where(s => s.Id == watch.Id)) s.Watching = false;
         if (_inlineWatch == watch)
         {
             _inlineWatch = null;

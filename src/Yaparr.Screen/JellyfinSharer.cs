@@ -94,6 +94,12 @@ public sealed class JellyfinSharer : IDisposable
 
     public bool Paused => _pause != null;
 
+    /// <summary>Each picture as it is sent (the frame and whether it is a key frame), for the sharer's own view of the film. Raised on another thread.</summary>
+    public event Action<byte[], bool>? FrameSent;
+
+    /// <summary>Where the sound is put as well, to be heard by the sharer (null: it is not).</summary>
+    public Yaparr.Voice.LocalSound? LocalSound { get; set; }
+
     /// <summary>How far into the film it is, by the time stamps of what was sent last.</summary>
     public TimeSpan Position
     {
@@ -285,11 +291,14 @@ public sealed class JellyfinSharer : IDisposable
                 _seenKey = true;
             }
             _sender.Enqueue(frame, key);
+            FrameSent?.Invoke(frame, key);
             Interlocked.Increment(ref _pictures);
         }
-        else if (_sound != null && _aac.Decode(unit.Data, _samples) > 0)
+        else if ((_sound != null || LocalSound != null) && _aac.Decode(unit.Data, _samples) > 0)
         {
-            _sound.Push(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_samples));
+            var samples = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_samples);
+            _sound?.Push(samples);
+            LocalSound?.Push(samples);
             Interlocked.Increment(ref _soundFrames);
         }
     }

@@ -77,6 +77,46 @@ public partial class ScreenViewControl : UserControl
         Docked = true;
     }
 
+    /// <summary>
+    /// The sharer's own view of a film played into the room: the frames that are being sent, decoded here (nothing is received, so there are no figures of a watch, and no other stream to move to).
+    /// </summary>
+    public ScreenViewControl(string name, IMediaFrameSource frames) : this()
+    {
+        _name = name;
+        _viewer = new ScreenViewer(frames);
+        StopButton.Content = "Stop the film";   // there is no setting it aside: closing this view ends the film
+        _viewer.PictureReceived += OnPicture;
+        _viewer.Failed += ex =>
+        {
+            DecoderFailed?.Invoke(ex.Message);
+            Dispatcher.UIThread.Post(() => { Waiting.IsVisible = true; Waiting.Text = "The picture stopped: " + ex.Message; });
+        };
+        _draw.Tick += (_, _) => DrawTick();
+        _timer.Tick += (_, _) => UpdateInfo();
+        _timer.Start();
+        DockButton.Click += (_, _) => DockToggleRequested?.Invoke();
+        StopButton.Click += (_, _) => StopRequested?.Invoke();
+        Docked = true;
+    }
+
+    private LocalSound? _localSound;
+
+    /// <summary>The film's sound, which the sharer hears here (the volume of the panel is its volume).</summary>
+    public void AttachLocalSound(LocalSound sound, string? output)
+    {
+        _localSound = sound;
+        try
+        {
+            _speaker = VoiceAudio.PlayLocal(sound, output);
+            SoundPanel.IsVisible = true;
+            SoundBox.PropertyChanged += (_, e) =>
+            {
+                if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty) sound.Gain = (float)SoundBox.Value / 100f;
+            };
+        }
+        catch (Exception) { _localSound = null; }
+    }
+
     /// <summary>The full screen button, a double-click on the picture or F11 asks for full screen, or for leaving it.</summary>
     public event Action? FullScreenToggleRequested;
 
@@ -354,8 +394,13 @@ public partial class ScreenViewControl : UserControl
         StreamChanged?.Invoke(_watched, reason);
     }
 
+    // What the sharer's own film sound is held back by beyond the picture's wait in the queue: the decoder and the drawing. YAPARR_FILM_SOUND_DELAY sets the whole delay in ms, to find what suits.
+    private const int SoundAllowanceMs = 80;
+    private static readonly int? SoundDelayOverride = int.TryParse(Environment.GetEnvironmentVariable("YAPARR_FILM_SOUND_DELAY"), out int ms) ? ms : null;
+
     private void UpdateInfo()
     {
+        if (_localSound != null) _localSound.DelayMs = SoundDelayOverride ?? (int)(_playout.Count * _playout.IntervalMs) + SoundAllowanceMs;
         HideStaleFilmStatus();
         if (_view == null) return;
         var st = _view.Status;

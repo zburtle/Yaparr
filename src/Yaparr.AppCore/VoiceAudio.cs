@@ -66,6 +66,24 @@ internal sealed class VoiceAudio : IDisposable
         return new Closer(device);
     }
 
+    private sealed class LocalSpeaker : SoundComponent
+    {
+        private readonly LocalSound _sound;
+        public LocalSpeaker(AudioEngine engine, AudioFormat format, LocalSound sound) : base(engine, format) => _sound = sound;
+        protected override void GenerateAudio(Span<float> buffer, int channels) => _sound.Pull(buffer);
+    }
+
+    /// <summary>Plays the sound of a film the sharer plays into the room on the chosen speakers until the returned object is disposed.</summary>
+    public static IDisposable PlayLocal(LocalSound sound, string? output)
+    {
+        var engine = Engine;
+        DeviceInfo? info = engine.PlaybackDevices.Where(d => d.Name == output).Select(d => (DeviceInfo?)d).FirstOrDefault();
+        var device = engine.InitializePlaybackDevice(info, StereoFormat, new MiniAudioDeviceConfig());
+        device.MasterMixer.AddComponent(new LocalSpeaker(engine, StereoFormat, sound));
+        device.Start();
+        return new Closer(device);
+    }
+
     private sealed class Closer : IDisposable
     {
         private readonly AudioPlaybackDevice _device;

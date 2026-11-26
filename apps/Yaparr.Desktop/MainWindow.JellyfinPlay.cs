@@ -121,6 +121,8 @@ public partial class MainWindow
             BuildFilmPanel(sharer, conv, room);
             _ = RefreshFilmNextAsync(sharer);
             conv.IsSharing = true;
+            // The film is seen (and heard) by you too, as soon as it starts.
+            WatchOwnFilm(new ShareVm(sharer.Source.Info.Id, film.Title, isMine: true, sharer.Source.Info.Root.Value), conv);
             conv.Add(MessageVm.System(conv.InVoice
                 ? $"You are playing “{film.Title}”. Everyone in the room can watch it."
                 : $"You are playing “{film.Title}” through the call on your other device. Everyone in the room can watch it."));
@@ -260,10 +262,13 @@ public partial class MainWindow
     {
         var sharer = _film;
         if (sharer == null) return;
+        var viewId = sharer.Source.Info.Id;
         var client = _filmClient;
         var now = _filmNow;
         var position = sharer.Position.Ticks;
         _film = null;
+        // The view of it that you have closes with it (it does not stop the film again: that is over).
+        if (_screenViews.TryGetValue(viewId, out var own)) EndWatch(own);
         _filmClient = null;
         _filmNow = null;
         _filmPlans.Clear();
