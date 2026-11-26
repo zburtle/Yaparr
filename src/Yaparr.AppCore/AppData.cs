@@ -371,6 +371,21 @@ public sealed class AppData
         MakePrivate(NotificationsPath);
     }
 
+    private string JellyfinPath => Path.Combine(Directory, "jellyfin.json");
+
+    /// <summary>What this device remembers about the Jellyfin server it watches from (see <see cref="JellyfinState"/>). Sealed like the other files with secrets (it holds a sign-in token), and not part of a backup.</summary>
+    public JellyfinState LoadJellyfin()
+    {
+        try { return JsonSerializer.Deserialize<JellyfinState>(SecretStore.ReadAllText(JellyfinPath)) ?? new(); }
+        catch (Exception ex) when (ex is IOException or JsonException or System.Security.Cryptography.CryptographicException or UnauthorizedAccessException) { return new(); }
+    }
+
+    public void SaveJellyfin(JellyfinState state)
+    {
+        SecretStore.WriteAllText(JellyfinPath, JsonSerializer.Serialize(state, Json));
+        MakePrivate(JellyfinPath);
+    }
+
     /// <summary>What this device remembers about its backup server. It is sealed like the other files with secrets, and is not part of a backup.</summary>
     public BackupServerState LoadBackupServer()
     {

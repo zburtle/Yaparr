@@ -68,9 +68,11 @@ public partial class MainWindow
         if (key == "network") NetworkView.Activate();
         if (key == "blocked") RefreshBlocked();
         if (key == "cloud") FillServerForm();
+        if (key != "jellyfin") StopJellyfinQuick();
+        if (key == "jellyfin") ShowJellyfinState();
         var sections = new (string Key, Control Panel)[]
         {
-            ("devices", SectionDevices), ("appearance", SectionAppearance), ("notifications", SectionNotifications), ("voice", SectionVoice), ("network", SectionNetwork),
+            ("devices", SectionDevices), ("appearance", SectionAppearance), ("notifications", SectionNotifications), ("voice", SectionVoice), ("jellyfin", SectionJellyfin), ("network", SectionNetwork),
             ("vpn", SectionVpn), ("turn", SectionTurn), ("blocked", SectionBlocked), ("cloud", SectionCloud), ("backup", SectionBackup), ("about", SectionAbout),
         };
         foreach (var (name, panel) in sections) panel.IsVisible = name == key;
