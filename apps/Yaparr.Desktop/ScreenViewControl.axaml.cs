@@ -104,12 +104,25 @@ public partial class ScreenViewControl : UserControl
     /// <summary>The line at the bottom left, which says what is playing when the player is shown (the figures of a watch are not kept for the sharer's own view).</summary>
     public TextBlock CaptionBlock => Info;
 
-    /// <summary>Takes the sound controls out of the bar of buttons, to be put where the caller wants them (beside the player's buttons).</summary>
-    public StackPanel TakeSoundPanel()
+    /// <summary>
+    /// Takes the sound controls out of the bar of buttons, to be put where the caller wants them (beside the player's buttons). The slider takes what room there is, between 40 and 120 wide,
+    /// so that it does not run over the buttons in a narrow window.
+    /// </summary>
+    public Control TakeSoundPanel()
     {
         (SoundPanel.Parent as Panel)?.Children.Remove(SoundPanel);
-        SoundPanel.Margin = new Thickness(0);
-        return SoundPanel;
+        var label = SoundPanel.Children.OfType<TextBlock>().First();
+        SoundPanel.Children.Clear();
+        SoundBox.Width = double.NaN;
+        SoundBox.MinWidth = 40;
+        SoundBox.MaxWidth = 120;
+        SoundBox.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch;
+        label.Margin = new Thickness(0, 0, 6, 0);
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), IsVisible = SoundPanel.IsVisible, Margin = new Thickness(0, 0, 8, 0) };
+        Grid.SetColumn(SoundBox, 1);
+        grid.Children.Add(label);
+        grid.Children.Add(SoundBox);
+        return grid;
     }
 
     /// <summary>The player of the film the sharer plays (pause, jump, next episode), shown above the buttons like a video player's.</summary>
