@@ -1103,6 +1103,7 @@
                     <ComboBoxItem Content="Appearance" Tag="appearance" />
                     <ComboBoxItem Content="Notifications" Tag="notifications" />
                     <ComboBoxItem Content="Voice &amp; audio" Tag="voice" />
+                    <ComboBoxItem Content="Jellyfin" Tag="jellyfin" />
                     <ComboBoxItem Content="Network" Tag="network" />
                     <ComboBoxItem Content="VPN" Tag="vpn" />
                     <ComboBoxItem Content="TURN relay" Tag="turn" />
@@ -1116,6 +1117,7 @@
                     <TreeViewItem Header="Appearance" Tag="appearance" />
                     <TreeViewItem Header="Notifications" Tag="notifications" />
                     <TreeViewItem Header="Voice &amp; audio" Tag="voice" />
+                    <TreeViewItem Header="Jellyfin" Tag="jellyfin" />
                     <TreeViewItem x:Name="NetworkNode" Header="Network" Tag="network">
                         <TreeViewItem Header="VPN" Tag="vpn" />
                         <TreeViewItem Header="TURN relay" Tag="turn" />
@@ -1165,6 +1167,37 @@
                                 <RadioButton x:Name="ThemeDarkItem" GroupName="theme" Content="Dark" Tag="Dark" />
                             </StackPanel>
                             <TextBlock Classes="muted small" TextWrapping="Wrap" Text="System default follows the light or dark setting of your computer, and changes with it." />
+                        </StackPanel>
+                        <StackPanel x:Name="SectionJellyfin" Spacing="10" IsVisible="False">
+                            <TextBlock Text="Jellyfin" FontSize="15" FontWeight="SemiBold" />
+                            <TextBlock Classes="muted" TextWrapping="Wrap" Text="Connect your own Jellyfin server to find a film or a show to watch with your friends. Yaparr talks to your server from this computer only: nothing about it goes to Yaparr or to the people in a room." />
+                            <StackPanel x:Name="JellyfinSignedOutPanel" Spacing="8">
+                                <TextBlock Text="Server address" Classes="muted" />
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBox x:Name="JellyfinAddressBox" PlaceholderText="192.168.1.20:8096 or https://jellyfin.example.org" KeyDown="JellyfinAddress_KeyDown" />
+                                    <Button x:Name="JellyfinFindButton" Grid.Column="1" Content="Connect" Margin="8,0,0,0" Click="JellyfinFind_Click" />
+                                </Grid>
+                                <StackPanel x:Name="JellyfinSignInPanel" Spacing="8" IsVisible="False">
+                                    <TextBlock x:Name="JellyfinServerText" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                    <StackPanel x:Name="JellyfinQuickPanel" Spacing="6">
+                                        <Button x:Name="JellyfinQuickButton" Content="Sign in with Quick Connect" HorizontalAlignment="Left" Click="JellyfinQuick_Click" />
+                                        <TextBlock x:Name="JellyfinQuickText" TextWrapping="Wrap" IsVisible="False" />
+                                    </StackPanel>
+                                    <TextBlock Text="or with your name and password" Classes="muted" Margin="0,4,0,0" />
+                                    <TextBox x:Name="JellyfinUserBox" PlaceholderText="User name" />
+                                    <TextBox x:Name="JellyfinPasswordBox" PasswordChar="●" PlaceholderText="Password" KeyDown="JellyfinPassword_KeyDown" />
+                                    <Button x:Name="JellyfinSignInButton" Content="Sign in" Classes="primary" HorizontalAlignment="Left" Click="JellyfinSignIn_Click" />
+                                </StackPanel>
+                            </StackPanel>
+                            <StackPanel x:Name="JellyfinSignedInPanel" Spacing="8" IsVisible="False">
+                                <TextBlock x:Name="JellyfinSignedInText" TextWrapping="Wrap" />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Content="Browse your library…" Classes="primary" Click="JellyfinBrowse_Click" />
+                                    <Button Content="Sign out" Click="JellyfinSignOut_Click" />
+                                </StackPanel>
+                            </StackPanel>
+                            <TextBlock x:Name="JellyfinStatus" TextWrapping="Wrap" IsVisible="False" />
+                            <TextBlock Classes="muted small" TextWrapping="Wrap" Text="The sign-in token is kept on this computer, sealed like your other secrets, and is not part of a backup. A server whose certificate does not check out is refused." />
                         </StackPanel>
                         <StackPanel x:Name="SectionNotifications" Spacing="10" IsVisible="False">
                             <TextBlock Text="Notifications" FontSize="15" FontWeight="SemiBold" />
