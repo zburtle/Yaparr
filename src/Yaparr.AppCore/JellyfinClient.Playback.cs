@@ -74,6 +74,31 @@ public sealed partial class JellyfinClient
         return new JellyfinPlaybackInfo(itemId, Str(source, "Id"), Long(source, "RunTimeTicks"), range, audio, subtitles);
     }
 
+    /// <summary>
+    /// The episodes that follow an episode, across the seasons of its show, in order (the one after it first): what plays next. Empty at the end of the show.
+    /// </summary>
+    public async Task<IReadOnlyList<JellyfinItem>> GetEpisodesAfterAsync(string seriesId, string episodeId, int count = 1, CancellationToken ct = default)
+    {
+        // The server counts from the item asked for, and gives that one too.
+        var page = await GetPageAsync($"Shows/{Uri.EscapeDataString(seriesId)}/Episodes?userId={_userId}&startItemId={Uri.EscapeDataString(episodeId)}&limit={count + 1}&fields=Overview,ProductionYear,RunTimeTicks", ct).ConfigureAwait(false);
+        return page.Items.SkipWhile(i => i.Id != episodeId).Skip(1).Take(count).ToList();
+    }
+
+    /// <summary>
+    /// The track of <paramref name="tracks"/> that is most like <paramref name="like"/>, which was picked for another film (the next episode has its own numbers): the same language,
+    /// and for sound the same number of channels and the same kind (a commentary stays a commentary); null when none is alike enough, which means the server's own choice.
+    /// </summary>
+    public static JellyfinTrack? TrackLike(IReadOnlyList<JellyfinTrack> tracks, JellyfinTrack? like)
+    {
+        if (like == null || tracks.Count == 0) return null;
+        bool commentary = like.Title.Contains("commentary", StringComparison.OrdinalIgnoreCase);
+        var sameLanguage = tracks.Where(t => t.Language.Length > 0 && string.Equals(t.Language, like.Language, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (sameLanguage.Count == 0) return null;
+        return sameLanguage.FirstOrDefault(t => t.Title.Contains("commentary", StringComparison.OrdinalIgnoreCase) == commentary && t.Codec == like.Codec)
+            ?? sameLanguage.FirstOrDefault(t => t.Title.Contains("commentary", StringComparison.OrdinalIgnoreCase) == commentary)
+            ?? sameLanguage[0];
+    }
+
     /// <summary>The path (and query) that asks the server for the transcode. A seek and burned-in subtitles do not go together (see the remark in the code).</summary>
     public static string StreamPath(JellyfinStreamRequest r, string deviceId)
     {
