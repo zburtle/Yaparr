@@ -51,6 +51,22 @@ public sealed class JellyfinWindow : Window
     private string? _seriesId;
     private bool _closing;
 
+    // On a small screen the window is taller than the room there is (the title bar, with the library choice, ends up off the top): make it fit and put it back in view.
+    private void FitToScreen()
+    {
+        var screen = Screens.ScreenFromWindow(this) ?? Screens.Primary;
+        if (screen == null) return;
+        var area = screen.WorkingArea;
+        var scale = screen.Scaling;
+        var maxW = area.Width / scale - 16;
+        var maxH = area.Height / scale - 16;
+        if (Width > maxW) Width = Math.Max(MinWidth, maxW);
+        if (Height > maxH) Height = Math.Max(MinHeight, maxH);
+        var x = Math.Clamp(Position.X, area.X, Math.Max(area.X, area.Right - (int)(Width * scale)));
+        var y = Math.Clamp(Position.Y, area.Y, Math.Max(area.Y, area.Bottom - (int)(Height * scale)));
+        if (x != Position.X || y != Position.Y) Position = new PixelPoint(x, y);
+    }
+
     public JellyfinWindow(JellyfinClient client, string serverName, Action signedOut, Func<JellyfinItem, Task>? play = null, string playLabel = "Choose this")
     {
         _playButton.Content = playLabel;
@@ -64,6 +80,7 @@ public sealed class JellyfinWindow : Window
         MinHeight = 400;
         ShowInTaskbar = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        Opened += (_, _) => FitToScreen();
         this[!BackgroundProperty] = new DynamicResourceExtension("AppBg");
         _status.Classes.Add("muted");
         _detailLine.Classes.Add("muted");
