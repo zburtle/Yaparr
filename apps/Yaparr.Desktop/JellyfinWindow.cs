@@ -25,7 +25,7 @@ public sealed class JellyfinWindow : Window
     private readonly Action _signedOut;
     private readonly Func<JellyfinItem, Task>? _play;
     private JellyfinItem? _shown;
-    private readonly Button _playButton = new() { Content = "Play in the room…", Classes = { "primary" }, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 6, 0, 0), IsVisible = false };
+    private readonly Button _playButton = new() { Content = "Choose this", Classes = { "primary" }, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 6, 0, 0), IsVisible = false };
     private readonly CancellationTokenSource _cts = new();
     private readonly Dictionary<string, Bitmap> _posters = new();
 
@@ -51,8 +51,9 @@ public sealed class JellyfinWindow : Window
     private string? _seriesId;
     private bool _closing;
 
-    public JellyfinWindow(JellyfinClient client, string serverName, Action signedOut, Func<JellyfinItem, Task>? play = null)
+    public JellyfinWindow(JellyfinClient client, string serverName, Action signedOut, Func<JellyfinItem, Task>? play = null, string playLabel = "Choose this")
     {
+        _playButton.Content = playLabel;
         _client = client;
         _signedOut = signedOut;
         _play = play;

@@ -1,38 +1,106 @@
 ﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:local="using:Yaparr.Desktop"
+        xmlns:local="using:Yaparr.Desktop"
         x:Class="Yaparr.Desktop.ShareDialog"
-        Title="Share your screen" Icon="avares://Yaparr.Desktop/Assets/yaparr.png" SizeToContent="Height" Width="420" CanResize="False"
-        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
-    <StackPanel Margin="16" Spacing="4">
-        <TextBlock Text="What to share" FontWeight="SemiBold" />
-        <ComboBox x:Name="WhatBox" HorizontalAlignment="Stretch" />
-        <TextBlock x:Name="WindowsNote" Classes="muted small" TextWrapping="Wrap"
-                   Text="A window is shared even when other windows are on top of it." />
-        <Button x:Name="RefreshButton" Content="Refresh the list of windows" HorizontalAlignment="Left" Margin="0,2,0,0" Click="Refresh_Click" />
-        <TextBlock x:Name="QualityLabel" Text="Quality" FontWeight="SemiBold" Margin="0,8,0,0" />
-        <ComboBox x:Name="QualityBox" HorizontalAlignment="Stretch" SelectionChanged="QualityBox_SelectionChanged" />
-        <TextBlock x:Name="QualityHint" Classes="muted small" TextWrapping="Wrap" IsVisible="False" />
-        <TextBlock x:Name="FormatLabel" Text="Video format" FontWeight="SemiBold" Margin="0,8,0,0" />
-        <ComboBox x:Name="FormatBox" HorizontalAlignment="Stretch" SelectedIndex="0" SelectionChanged="FormatBox_SelectionChanged">
-            <ComboBoxItem Content="Automatic (H.265 if the graphics card can, else H.264)" />
-            <ComboBoxItem Content="AV1 (sharper at the same speed, newer graphics cards)" />
-            <ComboBoxItem Content="H.265 (sharper at the same speed, graphics cards)" />
-        </ComboBox>
-        <TextBlock x:Name="FormatHint" Classes="muted small" TextWrapping="Wrap" IsVisible="False"
-                   Text="AV1 and H.265 need a newer graphics card. If yours cannot, Yaparr shares in H.264." />
-        <CheckBox x:Name="AdaptBox" IsChecked="True" Margin="0,8,0,0" Content="Lower the quality when viewers cannot keep up" />
-        <TextBlock x:Name="AdaptHint" Classes="muted small" TextWrapping="Wrap"
-                   Text="Sends a lower bitrate while most of the room is losing frames." />
-        <TextBlock x:Name="SoundNote" Classes="muted small" TextWrapping="Wrap" Margin="0,6,0,0"
-                   Text="The sound is shared too, except Yaparr's own." />
-        <ComboBox x:Name="SoundBox" HorizontalAlignment="Stretch" IsVisible="False" DropDownOpened="SoundBox_DropDownOpened" />
-        <TextBlock x:Name="Note" Classes="muted small" TextWrapping="Wrap" Margin="0,6,0,0"
-                   Text="Everyone in the room can watch. Higher quality needs a faster upload." />
-                   <local:LearnMoreLink Topic="screen-share" Text="Learn more about sharing a screen" Foreground="{DynamicResource Accent}" />
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,12,0,0">
-            <Button x:Name="ShareButton" Content="Share" Classes="primary" MinWidth="80" HorizontalContentAlignment="Center" IsDefault="True" Click="Share_Click" />
-            <Button Content="Cancel" IsCancel="True" MinWidth="70" HorizontalContentAlignment="Center" Click="Cancel_Click" />
+        Title="Share" Icon="avares://Yaparr.Desktop/Assets/yaparr.png" SizeToContent="Height" Width="500" CanResize="False"
+        Background="{DynamicResource AppBg}" WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+    <Window.Styles>
+        <!-- What to share is picked on a card; the card of the one picked has the accent colour round it. -->
+        <Style Selector="RadioButton.source">
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border x:Name="Card" Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Line}" BorderThickness="2" CornerRadius="12" Padding="14,12" Cursor="Hand">
+                        <ContentPresenter Content="{TemplateBinding Content}" />
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="RadioButton.source:pointerover /template/ Border#Card">
+            <Setter Property="Background" Value="{DynamicResource Hover}" />
+        </Style>
+        <Style Selector="RadioButton.source:checked /template/ Border#Card">
+            <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
+        </Style>
+        <Style Selector="TextBlock.section">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="LetterSpacing" Value="0.6" />
+            <Setter Property="Foreground" Value="{DynamicResource Muted}" />
+            <Setter Property="Margin" Value="0,10,0,0" />
+        </Style>
+        <Style Selector="TextBlock.section.first">
+            <Setter Property="Margin" Value="0" />
+        </Style>
+    </Window.Styles>
+    <StackPanel Margin="22,20,22,18" Spacing="14">
+        <StackPanel Orientation="Horizontal" Spacing="14">
+            <Border Width="48" Height="48" CornerRadius="14" Background="{DynamicResource Accent}">
+                <TextBlock x:Name="HeadIcon" Text="🖥" FontSize="24" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <StackPanel VerticalAlignment="Center" Spacing="1">
+                <TextBlock x:Name="HeadTitle" Text="Share" FontSize="20" FontWeight="SemiBold" />
+                <TextBlock x:Name="HeadSub" Classes="muted" Text="Everyone in the room can watch." />
+            </StackPanel>
+        </StackPanel>
+
+        <!-- Shown when a Jellyfin server is signed in (see OfferFilm). -->
+        <Grid x:Name="SourceCards" ColumnDefinitions="*,*" IsVisible="False">
+            <RadioButton x:Name="ScreenCard" Classes="source" GroupName="source" IsChecked="True" Margin="0,0,6,0" AutomationProperties.Name="Share a screen or a window">
+                <StackPanel Spacing="2">
+                    <TextBlock Text="🖥  Screen or window" FontWeight="SemiBold" />
+                    <TextBlock Classes="muted small" Text="Your monitor or one program" />
+                </StackPanel>
+            </RadioButton>
+            <RadioButton x:Name="FilmCard" Grid.Column="1" Classes="source" GroupName="source" Margin="6,0,0,0" AutomationProperties.Name="Play a film from Jellyfin">
+                <StackPanel Spacing="2">
+                    <TextBlock Text="🎬  Jellyfin" FontWeight="SemiBold" />
+                    <TextBlock x:Name="FilmCardText" Classes="muted small" Text="A film or show from your server" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+            </RadioButton>
+        </Grid>
+
+        <Border x:Name="ScreenPanel" Classes="card" Padding="16,14">
+            <StackPanel Spacing="4">
+                <TextBlock Classes="section first" Text="WHAT TO SHARE" />
+                <ComboBox x:Name="WhatBox" HorizontalAlignment="Stretch" />
+                <TextBlock x:Name="WindowsNote" Classes="muted small" TextWrapping="Wrap"
+                           Text="A window is shared even when other windows are on top of it." />
+                <Button x:Name="RefreshButton" Content="Refresh the list of windows" HorizontalAlignment="Left" Margin="0,2,0,0" Click="Refresh_Click" />
+                <TextBlock x:Name="QualityLabel" Classes="section" Text="QUALITY" />
+                <ComboBox x:Name="QualityBox" HorizontalAlignment="Stretch" SelectionChanged="QualityBox_SelectionChanged" />
+                <TextBlock x:Name="QualityHint" Classes="muted small" TextWrapping="Wrap" IsVisible="False" />
+                <TextBlock x:Name="FormatLabel" Classes="section" Text="VIDEO FORMAT" />
+                <ComboBox x:Name="FormatBox" HorizontalAlignment="Stretch" SelectedIndex="0" SelectionChanged="FormatBox_SelectionChanged">
+                    <ComboBoxItem Content="Automatic (H.265 if the graphics card can, else H.264)" />
+                    <ComboBoxItem Content="AV1 (sharper at the same speed, newer graphics cards)" />
+                    <ComboBoxItem Content="H.265 (sharper at the same speed, graphics cards)" />
+                </ComboBox>
+                <TextBlock x:Name="FormatHint" Classes="muted small" TextWrapping="Wrap" IsVisible="False"
+                           Text="AV1 and H.265 need a newer graphics card. If yours cannot, Yaparr shares in H.264." />
+                <CheckBox x:Name="AdaptBox" IsChecked="True" Margin="0,8,0,0" Content="Lower the quality when viewers cannot keep up" />
+                <TextBlock x:Name="AdaptHint" Classes="muted small" TextWrapping="Wrap"
+                           Text="Sends a lower bitrate while most of the room is losing frames." />
+                <TextBlock x:Name="SoundNote" Classes="muted small" TextWrapping="Wrap" Margin="0,6,0,0"
+                           Text="The sound is shared too, except Yaparr's own." />
+                <ComboBox x:Name="SoundBox" HorizontalAlignment="Stretch" IsVisible="False" DropDownOpened="SoundBox_DropDownOpened" />
+            </StackPanel>
+        </Border>
+
+        <!-- The Jellyfin side: what to watch (filled in by ShareDialog.Film.cs). -->
+        <Border x:Name="FilmPanel" Classes="card" Padding="16,14" IsVisible="False">
+            <StackPanel x:Name="FilmBody" Spacing="8" />
+        </Border>
+
+        <StackPanel Spacing="2">
+            <TextBlock x:Name="Note" Classes="muted small" TextWrapping="Wrap"
+                       Text="Higher quality needs a faster upload." />
+            <local:LearnMoreLink x:Name="LearnMore" Topic="screen-share" Text="Learn more about sharing a screen" Foreground="{DynamicResource Accent}" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+            <Button x:Name="ShareButton" Content="Share" Classes="primary" MinWidth="90" HorizontalContentAlignment="Center" IsDefault="True" Click="Share_Click" />
+            <Button Content="Cancel" IsCancel="True" MinWidth="76" HorizontalContentAlignment="Center" Click="Cancel_Click" />
         </StackPanel>
     </StackPanel>
 </Window>

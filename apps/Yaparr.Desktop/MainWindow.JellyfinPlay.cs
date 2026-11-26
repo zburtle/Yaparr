@@ -24,34 +24,19 @@ public partial class MainWindow
     private string _filmTitle = "";
     private int _filmTicks;
 
-    private async Task PlayFilmAsync(JellyfinItem item)
+    // The film picked in the Share window (see ShareDialog), played into the room that is open. The checks that it can be done (a room, voice, FFmpeg's libraries) were made before
+    // the window was shown.
+    private async Task StartFilmAsync(ConversationVm conv, ChatRoom room, FilmPlay film)
     {
         if (_node == null || !_jellyfin.SignedIn || !Uri.TryCreate(_jellyfin.Url, UriKind.Absolute, out var server)) return;
-        if (_film != null) { await Dialogs.MessageAsync(this, "Play in a room", $"“{_filmTitle}” is already playing. Stop it first."); return; }
-        if (_sharer != null) { await Dialogs.MessageAsync(this, "Play in a room", "You are sharing your screen. Stop that first."); return; }
-        if (ScreenGate.Instance.Blocked) { StatusText.Text = ScreenGate.Why; return; }
-        if (_selected is not { IsRoom: true } conv || _roomConversations.FirstOrDefault(kv => kv.Value == conv).Key is not { } room)
-        {
-            await Dialogs.MessageAsync(this, "Play in a room", "Open the room to play in first (pick it in the list on the left), and join its voice channel.");
-            return;
-        }
-        if (!room.CanShareScreen) { await Dialogs.MessageAsync(this, "Play in a room", $"Join the voice channel of “{conv.Name}” first, on one of your devices."); return; }
-        if (!await GetFfmpegLibrariesAsync()) return;
-        if (!AacDecoder.IsAvailable)
-        {
-            await Dialogs.MessageAsync(this, "Play in a room", "The FFmpeg libraries on this computer cannot read a film's sound. Update Yaparr, which brings newer ones.");
-            return;
-        }
-
+        if (_film != null || _sharer != null) return;   // something started while the window was open
+        var item = film.Item;
+        var info = film.Info;
+        var choice = film.Choice;
+        var title = film.Title;
         var client = new JellyfinClient(server, JellyfinDeviceId(), _jellyfin.Token, _jellyfin.UserId);
         try
         {
-            var title = item.Kind == JellyfinKind.Episode && item.SeriesName.Length > 0 ? $"{item.SeriesName}: {item.Name}" : item.Name;
-            var info = await client.GetPlaybackInfoAsync(item.Id);
-            long resume = item.PlayedPercent is > 1 and < 95 && item.RuntimeTicks > 0 ? (long)(item.RuntimeTicks * item.PlayedPercent / 100) : 0;
-            if (await FilmOptionsDialog.AskAsync(this, title, info, resume, _node.MeasuredUploadBytesPerSecond ?? 0, viewersHint: 2) is not { } choice) { client.Dispose(); return; }
-            if (_film != null || _sharer != null) { client.Dispose(); return; }   // something started while the dialog was open
-
             var request = new JellyfinStreamRequest(item.Id, info.SourceId, Guid.NewGuid().ToString("N"), choice.Kbps, choice.Height, choice.AudioIndex, choice.SubtitleIndex, choice.StartTicks);
             var sharer = JellyfinSharer.Start(_node, room, title, choice.Kbps, async ct =>
             {

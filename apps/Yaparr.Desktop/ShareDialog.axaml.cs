@@ -60,6 +60,8 @@ public partial class ShareDialog : Window
         if (current != null)
         {
             Title = "Change what is shared";
+            HeadTitle.Text = Title;
+            HeadSub.Text = "Watchers keep watching and see the new picture.";
             QualityLabel.IsVisible = QualityBox.IsVisible = FormatLabel.IsVisible = FormatBox.IsVisible = AdaptBox.IsVisible = AdaptHint.IsVisible = SoundNote.IsVisible = SoundBox.IsVisible = Note.IsVisible = false;
             ShareButton.Content = "Switch";
         }
@@ -221,6 +223,12 @@ public partial class ShareDialog : Window
 
     private void Share_Click(object? sender, RoutedEventArgs e)
     {
+        // The Jellyfin card: what was picked, and how it is to be played.
+        if (_offer != null && FilmCard.IsChecked == true)
+        {
+            if (TakeFilm()) Close(true);
+            return;
+        }
         int what = WhatBox.SelectedIndex;
         PortalWindow = ScreenCapture.UsesPortal ? what == 1 : _portalChoiceAt >= 0 && what == _portalChoiceAt;
         int windowAt = what - _displays.Count;
