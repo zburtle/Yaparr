@@ -84,7 +84,7 @@ public partial class ScreenViewControl : UserControl
     {
         _name = name;
         _viewer = new ScreenViewer(frames);
-        StopButton.Content = "Stop the film";   // there is no setting it aside: closing this view ends the film
+        StopButton.Content = "Stop Stream";   // there is no setting it aside: closing this view ends the film
         _viewer.PictureReceived += OnPicture;
         _viewer.Failed += ex =>
         {
@@ -402,7 +402,7 @@ public partial class ScreenViewControl : UserControl
     }
 
     // What the sharer's own film sound is held back by beyond the picture's wait in the queue: the decoder and the drawing. YAPARR_FILM_SOUND_DELAY sets the whole delay in ms, to find what suits.
-    private const int SoundAllowanceMs = 80;
+    private const int SoundAllowanceMs = 40;
     private static readonly int? SoundDelayOverride = int.TryParse(Environment.GetEnvironmentVariable("YAPARR_FILM_SOUND_DELAY"), out int ms) ? ms : null;
 
     private void UpdateInfo()
