@@ -101,6 +101,17 @@ public partial class ScreenViewControl : UserControl
 
     private LocalSound? _localSound;
 
+    /// <summary>The line at the bottom left, which says what is playing when the player is shown (the figures of a watch are not kept for the sharer's own view).</summary>
+    public TextBlock CaptionBlock => Info;
+
+    /// <summary>Takes the sound controls out of the bar of buttons, to be put where the caller wants them (beside the player's buttons).</summary>
+    public StackPanel TakeSoundPanel()
+    {
+        (SoundPanel.Parent as Panel)?.Children.Remove(SoundPanel);
+        SoundPanel.Margin = new Thickness(0);
+        return SoundPanel;
+    }
+
     /// <summary>The player of the film the sharer plays (pause, jump, next episode), shown above the buttons like a video player's.</summary>
     public void AttachPlayer(Control player)
     {
