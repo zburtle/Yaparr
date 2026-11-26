@@ -197,7 +197,7 @@ public partial class MainWindow
             // The server no longer accepts the sign-in.
             ForgetJellyfinSignIn();
             JellyfinSay("Jellyfin signed you out. Sign in again to browse.", bad: true);
-        }), PlayFilmAsync);
+        }));
         window.Show(this);
     }
 }

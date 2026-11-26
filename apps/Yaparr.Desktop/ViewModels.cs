@@ -826,7 +826,7 @@ public sealed class ConversationVm : Observable
     /// <summary>The tip of the share button changes when screens are turned off or on (see <c>ScreenGate</c>).</summary>
     public void RefreshShareTip() => Raise(nameof(ShareTip));
 
-    public string ShareTip => Yaparr.AppCore.ScreenGate.Instance.Reason ?? (_inVoice ? "Share your screen" : "Share this device's screen in the call you are in on your other device");
+    public string ShareTip => Yaparr.AppCore.ScreenGate.Instance.Reason ?? "Share";
     public bool CanStopSharing => _sharing;
 
     public string MuteGlyph => _muted ? "🔇" : "🎤";

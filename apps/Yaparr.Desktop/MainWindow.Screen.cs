@@ -116,7 +116,12 @@ public partial class MainWindow
         dialog.PreferAv1(_settings.ScreenShareAv1);
         dialog.PreferH265(_settings.ScreenShareH265);
         dialog.PreferAdaptQuality(_settings.ScreenShareAdaptQuality);
-        if (!await dialog.ShowDialog<bool>(this) || dialog.Result == null) return;
+        // With a Jellyfin server signed in, a film or an episode from it can be shared too (it needs the libraries that can read a film's sound).
+        if (_jellyfin.SignedIn && AacDecoder.IsAvailable && Uri.TryCreate(_jellyfin.Url, UriKind.Absolute, out var jellyfin))
+            dialog.OfferFilm(new JellyfinOffer(() => new JellyfinClient(jellyfin, JellyfinDeviceId(), _jellyfin.Token, _jellyfin.UserId), _jellyfin.ServerName, _node.MeasuredUploadBytesPerSecond ?? 0));
+        if (!await dialog.ShowDialog<bool>(this)) return;
+        if (dialog.Film is { } film) { await StartFilmAsync(conv, room, film); return; }
+        if (dialog.Result == null) return;
         var options = dialog.Result;
         if (_settings.ScreenShareAv1 != dialog.Av1Picked || _settings.ScreenShareH265 != dialog.H265Picked || _settings.ScreenShareAdaptQuality != dialog.AdaptPicked)
         {
