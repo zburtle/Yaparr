@@ -182,4 +182,15 @@ public class DhtSpeedTests
         // A short interval (tests) is never stretched.
         Assert.Equal(TimeSpan.FromSeconds(1), ChatNode.NextDiscoveryDelay(TimeSpan.FromSeconds(1), alone: true, quickSoFar: 0));
     }
+
+    [Fact]
+    public void Someone_alone_announces_again_every_few_minutes_and_with_company_every_time()
+    {
+        var every = TimeSpan.FromMinutes(3);
+        long minute = 60_000;
+        Assert.True(ChatNode.ShouldAnnounce(alone: true, quickSoFar: 0, msSinceLastAnnounce: long.MaxValue, every));   // the first search
+        Assert.False(ChatNode.ShouldAnnounce(alone: true, quickSoFar: 3, msSinceLastAnnounce: 2 * minute, every));
+        Assert.True(ChatNode.ShouldAnnounce(alone: true, quickSoFar: 12, msSinceLastAnnounce: 3 * minute, every));
+        Assert.True(ChatNode.ShouldAnnounce(alone: false, quickSoFar: 0, msSinceLastAnnounce: 1000, every));
+    }
 }
