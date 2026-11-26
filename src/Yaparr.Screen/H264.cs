@@ -319,7 +319,7 @@ public sealed class H264Reader
         }
     }
 
-    private byte[] WithParameterSets(byte[] unit)
+    internal byte[] WithParameterSets(byte[] unit)
     {
         bool idr = false, hasSps = false, hasPps = false;
         int afterDelimiter = 0;

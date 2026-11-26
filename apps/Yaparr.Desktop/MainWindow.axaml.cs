@@ -571,6 +571,7 @@ public partial class MainWindow : Window
         if (ScreenGate.Instance.Update(gateway) && ScreenGate.Instance.Blocked)
         {
             if (_sharer != null) { StatusText.Text = ScreenGate.Why; StopSharingCore(); }
+            if (_film != null) { StatusText.Text = ScreenGate.Why; StopFilm(); }
             StopAllWatches();
         }
         foreach (var conversation in _conversations) conversation.RefreshShareTip();

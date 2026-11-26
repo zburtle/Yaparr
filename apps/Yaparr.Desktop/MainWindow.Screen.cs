@@ -103,7 +103,7 @@ public partial class MainWindow
 
     private async void ShareScreen_Click(object? sender, RoutedEventArgs e)
     {
-        if (_node == null || _selected is not { IsRoom: true } conv || _sharer != null) return;
+        if (_node == null || _selected is not { IsRoom: true } conv || _sharer != null || _film != null) return;
         if (ScreenGate.Instance.Blocked) { StatusText.Text = ScreenGate.Why; return; }
         var room = _roomConversations.FirstOrDefault(kv => kv.Value == conv).Key;
         if (room == null) return;
@@ -500,11 +500,16 @@ public partial class MainWindow
     }
 
     // The readout of your own share shows in the room you share to.
-    private void UpdateSharerPanel() => SharerPanel.IsVisible = SharePreview.IsVisible = _sharerStats != null && _selected == _sharerConv;
+    private void UpdateSharerPanel()
+    {
+        SharePreview.IsVisible = _sharerStats != null && _selected == _sharerConv;
+        SharerPanel.IsVisible = SharePreview.IsVisible || (_filmPanel != null && _selected == _filmConv);
+    }
 
     private void CloseScreens()
     {
         StopSharingCore();
+        StopFilm();
         StopAllWatches();
     }
 }

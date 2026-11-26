@@ -23,6 +23,9 @@ public sealed class JellyfinWindow : Window
 
     private readonly JellyfinClient _client;
     private readonly Action _signedOut;
+    private readonly Func<JellyfinItem, Task>? _play;
+    private JellyfinItem? _shown;
+    private readonly Button _playButton = new() { Content = "Play in the room…", Classes = { "primary" }, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 6, 0, 0), IsVisible = false };
     private readonly CancellationTokenSource _cts = new();
     private readonly Dictionary<string, Bitmap> _posters = new();
 
@@ -48,10 +51,11 @@ public sealed class JellyfinWindow : Window
     private string? _seriesId;
     private bool _closing;
 
-    public JellyfinWindow(JellyfinClient client, string serverName, Action signedOut)
+    public JellyfinWindow(JellyfinClient client, string serverName, Action signedOut, Func<JellyfinItem, Task>? play = null)
     {
         _client = client;
         _signedOut = signedOut;
+        _play = play;
         Title = serverName.Length > 0 ? "Jellyfin · " + serverName : "Jellyfin";
         Width = 920;
         Height = 700;
@@ -92,7 +96,8 @@ public sealed class JellyfinWindow : Window
         Grid.SetRow(_episodes, 1);
         _seriesView.Children.Add(_episodes);
 
-        _detail.Child = new StackPanel { Spacing = 2, Children = { _detailTitle, _detailLine, _detailText } };
+        _playButton.Click += async (_, _) => { if (_shown is { } item && _play != null) await _play(item); };
+        _detail.Child = new StackPanel { Spacing = 2, Children = { _detailTitle, _detailLine, _detailText, _playButton } };
 
         var content = new Panel { Children = { _gridView, _seriesView } };
         var rows = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto") };
@@ -305,6 +310,8 @@ public sealed class JellyfinWindow : Window
 
     private void ShowDetail(JellyfinItem item)
     {
+        _shown = item;
+        _playButton.IsVisible = _play != null && item.Kind is JellyfinKind.Movie or JellyfinKind.Episode;
         _detailTitle.Text = item.Kind == JellyfinKind.Episode ? item.Name + (item.SeriesName.Length > 0 ? " · " + item.SeriesName : "") : item.Name;
         var line = new List<string>();
         if (item.Kind == JellyfinKind.Episode && item.SeasonNumber is { } s && item.Number is { } n) line.Add($"Season {s}, episode {n}");
