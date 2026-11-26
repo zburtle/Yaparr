@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Styling;
 using Avalonia.Threading;
 using Yaparr.AppCore;
 using Yaparr.Chat;
@@ -152,27 +153,67 @@ public partial class MainWindow
         UI(UpdateFilmPanel);
     }
 
+    // The drawings of the player's buttons, in a 24 by 24 box and all filled shapes, so that they are one family.
+    private const string PlayPath = "M8,5 L19,12 L8,19 Z";
+    private const string PausePath = "M7,5 H11 V19 H7 Z M13,5 H17 V19 H13 Z";
+    private const string NextPath = "M6,6 L15,12 L6,18 Z M16,6 H18.5 V18 H16 Z";
+    private const string StopPath = "M7,7 H17 V17 H7 Z";
+    private bool _filmShowsPlay;
+
+    // A drawing in the colour of the button it is in.
+    private static Control FilmGlyph(string data, int size)
+    {
+        var shape = new Avalonia.Controls.Shapes.Path { Data = Geometry.Parse(data) };
+        shape.Bind(Avalonia.Controls.Shapes.Shape.FillProperty, new Avalonia.Data.Binding
+        {
+            Path = nameof(Button.Foreground),
+            RelativeSource = new Avalonia.Data.RelativeSource(Avalonia.Data.RelativeSourceMode.FindAncestor) { AncestorType = typeof(Button) },
+        });
+        return new Viewbox { Width = size, Height = size, Child = new Canvas { Width = 24, Height = 24, Children = { shape } } };
+    }
+
+    // Takes the border and the background off the buttons that have the class "flat", and dims them a little under the pointer or when pressed.
+    private static Avalonia.Styling.Style FlatButtonStyle(string? state = null, double opacity = 1)
+    {
+        if (state == null)
+            return new Avalonia.Styling.Style(x => x.OfType<Button>().Class("flat"))
+            {
+                Setters = { new Avalonia.Styling.Setter(Button.BackgroundProperty, Brushes.Transparent), new Avalonia.Styling.Setter(Button.BorderThicknessProperty, new Thickness(0)) },
+            };
+        return new Avalonia.Styling.Style(x => x.OfType<Button>().Class("flat").Class(state).Template().OfType<Avalonia.Controls.Presenters.ContentPresenter>().Name("PART_ContentPresenter"))
+        {
+            Setters = { new Avalonia.Styling.Setter(Avalonia.Controls.Presenters.ContentPresenter.BackgroundProperty, Brushes.Transparent), new Avalonia.Styling.Setter(Visual.OpacityProperty, opacity) },
+        };
+    }
+
     private void BuildFilmPanel(JellyfinSharer sharer, ConversationVm conv, ChatRoom room)
     {
         // Laid out as a video player is: the position with the times at its ends, and under it the buttons (back, play or pause, forward, next) with what is playing beside them.
-        Button Icon(string glyph, string tip, int size = 18)
+        // In the view of the film, what is playing is the line at the bottom left and the sound controls are beside the buttons; without the view it is all in the panel.
+        _screenViews.TryGetValue(sharer.Source.Info.Id, out var view);
+        // Flat, as a video player's are: no border and no background, just the drawing (all of one family, see FilmGlyph), a little dimmer under the pointer.
+        IBrush? ink = view != null ? Brushes.White : null;   // the bar under the picture is black, whatever the theme
+        Button Icon(string data, string tip, int size = 24, int width = 56)
         {
-            var button = new Button { Content = glyph, FontSize = size, Width = 44, Height = 34, Padding = new Thickness(0), HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center };
+            var button = new Button { Content = FilmGlyph(data, size), Classes = { "flat" }, Width = width, Height = 40, Padding = new Thickness(0), HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center };
+            if (ink != null) button.Foreground = ink;
             ToolTip.SetTip(button, tip);
             AutomationProperties.SetName(button, tip);
             return button;
         }
         Button Seconds(string text, string tip)
         {
-            var button = new Button { Content = text, Height = 34, Padding = new Thickness(10, 0), FontSize = 12, VerticalContentAlignment = VerticalAlignment.Center };
+            var button = new Button { Content = text, Classes = { "flat" }, Width = 56, Height = 40, Padding = new Thickness(0), HorizontalContentAlignment = HorizontalAlignment.Center, FontSize = 13, VerticalContentAlignment = VerticalAlignment.Center };
+            if (ink != null) button.Foreground = ink;
             ToolTip.SetTip(button, tip);
             return button;
         }
 
-        _filmText = new TextBlock { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(14, 0) };
+        _filmText = view != null ? view.Control.CaptionBlock : new TextBlock { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
         _filmElapsed = new TextBlock { VerticalAlignment = VerticalAlignment.Center, FontSize = 12, MinWidth = 52, TextAlignment = TextAlignment.Right };
         _filmLength = new TextBlock { VerticalAlignment = VerticalAlignment.Center, FontSize = 12, MinWidth = 52 };
-        _filmPause = Icon("⏸", "Pause", 20);
+        _filmPause = Icon(PausePath, "Pause", 28);
+        _filmShowsPlay = false;
         _filmPause.Click += (_, _) =>
         {
             if (sharer.Paused) sharer.Resume(); else sharer.Pause();
@@ -202,32 +243,48 @@ public partial class MainWindow
         position.Children.Add(_filmSlider);
         position.Children.Add(_filmLength);
 
-        _filmNext = Icon("⏭", "Next episode");
+        _filmNext = Icon(NextPath, "Next episode", 20);
         _filmNext.IsVisible = false;
         _filmNext.Click += (_, _) => sharer.Next();
         var auto = new CheckBox { Content = "Autoplay next", IsChecked = sharer.Autoplay, FontSize = 12, VerticalAlignment = VerticalAlignment.Center, IsVisible = _filmSeriesId != null };
         auto.IsCheckedChanged += (_, _) => sharer.Autoplay = auto.IsChecked == true;
         ToolTip.SetTip(auto, "Play the next episode by itself when this one ends");
-        var transport = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = { back, _filmPause, forward, _filmNext } };
-        var controls = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(0, 4, 0, 0) };
-        Grid.SetColumn(_filmText, 1);
+        // The buttons are in the middle under the position, the sound at the left of the same line, the autoplay box at the right.
+        var transport = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, HorizontalAlignment = HorizontalAlignment.Center, Children = { back, _filmPause, forward, _filmNext } };
+        var controls = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,*"), Margin = new Thickness(0, 4, 0, 0) };
+        Grid.SetColumn(transport, 1);
         Grid.SetColumn(auto, 2);
+        auto.HorizontalAlignment = HorizontalAlignment.Right;
         controls.Children.Add(transport);
-        controls.Children.Add(_filmText);
         controls.Children.Add(auto);
+        if (view != null)
+        {
+            var sound = view.Control.TakeSoundPanel();
+            sound.HorizontalAlignment = HorizontalAlignment.Left;
+            sound.VerticalAlignment = VerticalAlignment.Center;
+            controls.Children.Add(sound);
+        }
+        else
+        {
+            _filmText.Margin = new Thickness(0, 0, 10, 0);
+            controls.Children.Add(_filmText);
+        }
         _filmNote = new TextBlock { FontSize = 12, TextWrapping = TextWrapping.Wrap, IsVisible = false, Text = "Subtitles are off after a jump: the server cannot put them into the picture from part-way in." };
         _filmNote.Classes.Add("muted");
 
         var panel = new StackPanel { Spacing = 0, Children = { position, controls, _filmNote } };
-        if (_screenViews.TryGetValue(sharer.Source.Info.Id, out var view))
+        panel.Styles.Add(FlatButtonStyle());
+        panel.Styles.Add(FlatButtonStyle(":pointerover", 0.7));
+        panel.Styles.Add(FlatButtonStyle(":pressed", 0.5));
+        if (view != null)
         {
-            _filmText.Foreground = Brushes.White; _filmElapsed.Foreground = Brushes.White; _filmLength.Foreground = Brushes.White; _filmNote.Foreground = Brushes.LightGray; auto.Foreground = Brushes.White;
+            _filmText.Foreground = Brushes.LightGray; _filmElapsed.Foreground = Brushes.White; _filmLength.Foreground = Brushes.White; _filmNote.Foreground = Brushes.LightGray; auto.Foreground = Brushes.White;
             view.Control.AttachPlayer(panel);   // under the picture, like a video player
         }
         else
         {
             // The view could not be shown: the player goes where the sharing panel is, so that the film can still be controlled and stopped.
-            var stop = Icon("⏹", "Stop Stream");
+            var stop = Icon(StopPath, "Stop Stream", 20);
             stop.Click += (_, _) =>
             {
                 var title = _filmTitle;
@@ -278,7 +335,11 @@ public partial class MainWindow
         _filmText.Text = $"{sharer.Target.Title}   ·   {viewers} watching";
         if (_filmElapsed != null) _filmElapsed.Text = Clock(at);
         if (_filmLength != null) _filmLength.Text = length > TimeSpan.Zero ? Clock(length) : "";
-        _filmPause.Content = sharer.Paused ? "▶" : "⏸";
+        if (_filmShowsPlay != sharer.Paused)
+        {
+            _filmShowsPlay = sharer.Paused;
+            _filmPause.Content = FilmGlyph(sharer.Paused ? PlayPath : PausePath, 28);
+        }
         ToolTip.SetTip(_filmPause, sharer.Paused ? "Resume" : "Pause");
         if (_filmSlider != null && !_filmDragging && length > TimeSpan.Zero)
         {
