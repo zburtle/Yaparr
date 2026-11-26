@@ -345,6 +345,12 @@ public partial class MainWindow
                 try { control.AttachSound(_node.WatchMedia(room, sound.Id), _settings.VoiceOutput); }
                 catch (Exception ex) { _log.Write("could not watch the sound of the screen: " + ex.Message); }
             }
+            // A film played from Jellyfin has a status stream that names the share too: what it is, how far it is, whether it is paused.
+            if (room.MediaGroups.FirstOrDefault(g => g.Kind == FilmStatus.Kind && g.Name == FilmStatus.NameFor(share.Id)) is { } filmStatus)
+            {
+                try { control.AttachFilmStatus(_node.WatchMedia(room, filmStatus.Id)); }
+                catch (Exception ex) { _log.Write("could not watch the status of the film: " + ex.Message); }
+            }
             control.ConnectionLost += () => { _log.Write($"lost the connection to the screen {share.Name}"); _sounds.ConnectionLost(); };
             control.ConnectionRestored += () => { _log.Write($"connection to the screen {share.Name} restored"); _sounds.ConnectionBack(); };
             control.StreamInterrupted += seconds => _log.Write($"the picture of the screen {share.Name} has stopped for {seconds:0.0} s, the viewer says it is reconnecting");

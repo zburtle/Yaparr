@@ -165,43 +165,110 @@ public class JellyfinPlaybackTests
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
-    // Needs a transport stream made by a Jellyfin server (tools/Yaparr.JellyfinSpike --dump), named in YAPARR_FILM_TS, and FFmpeg's libraries with the AAC decoder.
-    // Plays 10 seconds of it into a room of two and checks that the pictures and the sound go out at the speed of the film, and reach the viewer.
     [Fact]
-    public async Task A_recorded_film_goes_out_at_its_own_speed_and_reaches_a_viewer()
+    public void A_status_survives_the_trip_and_a_stray_packet_is_not_taken_for_one()
+    {
+        var status = new FilmStatus("Severance: Hello, Ms. Cobel — “first”", TimeSpan.FromSeconds(754.5), TimeSpan.FromMinutes(52), Paused: true);
+        Assert.True(FilmStatus.TryDecode(status.Encode(), out var back));
+        Assert.Equal(status, back);
+        Assert.False(FilmStatus.TryDecode(new byte[] { 0 }, out _));            // the one-byte packet a stream sends after its last frame
+        Assert.False(FilmStatus.TryDecode(new byte[40], out _));                // another version
+        // A title that is too long is cut between characters.
+        var tooLong = new FilmStatus(new string('é', 300), TimeSpan.Zero, TimeSpan.Zero, false);
+        Assert.True(FilmStatus.TryDecode(tooLong.Encode(), out var cut));
+        Assert.All(cut.Title, c => Assert.Equal('é', c));
+        Assert.True(cut.Title.Length is > 50 and <= 80);
+    }
+
+    [Fact]
+    public void The_next_episode_gets_the_sound_and_subtitles_most_like_the_last_ones()
+    {
+        var english = new JellyfinTrack(1, "English / DD+ 5.1", "eng", "eac3", true, false);
+        var commentary = new JellyfinTrack(2, "Commentary", "eng", "ac3", false, false);
+        var nextEnglish = new JellyfinTrack(7, "English 5.1", "eng", "eac3", true, false);
+        var nextCommentary = new JellyfinTrack(8, "Director commentary", "eng", "ac3", false, false);
+        var nextFrench = new JellyfinTrack(9, "French", "fra", "eac3", false, false);
+        var next = new[] { nextFrench, nextCommentary, nextEnglish };
+        Assert.Equal(7, JellyfinClient.TrackLike(next, english)?.Index);
+        Assert.Equal(8, JellyfinClient.TrackLike(next, commentary)?.Index);          // a commentary stays one
+        Assert.Null(JellyfinClient.TrackLike(new[] { nextFrench }, english));       // no such language: the server's own choice
+        Assert.Null(JellyfinClient.TrackLike(next, null));
+    }
+
+    // Needs a transport stream made by a Jellyfin server (tools/Yaparr.JellyfinSpike --dump), named in YAPARR_FILM_TS, and FFmpeg's libraries with the AAC decoder.
+    // Plays it into a room of two and checks that the pictures and the sound go out at the speed of the film and reach the viewer; that pausing and a jump work; that the next
+    // episode starts on the same stream; and that the viewer is told what is playing and how far it is.
+    [Fact]
+    public async Task A_recorded_film_goes_out_at_its_own_speed_and_can_be_paused_jumped_in_and_followed_by_the_next()
     {
         var file = Environment.GetEnvironmentVariable("YAPARR_FILM_TS");
         if (file == null || !File.Exists(file) || !AacDecoder.IsAvailable) return;
 
+        var opened = new List<(string Id, TimeSpan Start)>();
+        var first = new FilmTarget("e1", "Show: One", TimeSpan.FromMinutes(40));
+        var second = new FilmTarget("e2", "Show: Two", TimeSpan.FromMinutes(41));
         using var c = await MediaTreeTests.Cluster.StartAsync(2, fanout: 2, rootFanout: 2);
-        using var sharer = JellyfinSharer.Start(c.Root, c.Rooms[0], "film", 3000, _ => Task.FromResult<(Stream, IAsyncDisposable)>((File.OpenRead(file), new Nothing())));
+        using var sharer = JellyfinSharer.Start(c.Root, c.Rooms[0], "Show: One", 3000, first, TimeSpan.Zero,
+            (target, start, _) => { lock (opened) opened.Add((target.Id, start)); return Task.FromResult<(Stream, IAsyncDisposable)>((File.OpenRead(file), new Nothing())); },
+            (current, _) => Task.FromResult<FilmTarget?>(current.Id == "e1" ? second : null));
         var views = await c.WatchAllAsync(sharer.Source.Info.Id);
+        var statusGroup = c.Rooms[0].MediaGroups.First(g => g.Kind == FilmStatus.Kind).Id;
+        var statusViews = await c.WatchAllAsync(statusGroup);
         try
         {
             int pictures = 0;
             views[0].FrameReceived += _ => Interlocked.Increment(ref pictures);
+            var statuses = new List<FilmStatus>();
+            statusViews[0].Received += p => { if (FilmStatus.TryDecode(p.Payload.Span, out var s)) lock (statuses) statuses.Add(s); };
             var started = System.Diagnostics.Stopwatch.StartNew();
-            await Task.Delay(TimeSpan.FromSeconds(10));
+            await Task.Delay(TimeSpan.FromSeconds(8));
             double seconds = started.Elapsed.TotalSeconds;
 
             // The file holds about 25 s and goes out at its own speed, 24 pictures and 46.9 sound frames a second (the first half second is the lead).
             double expectedPictures = (seconds + 0.5 + 1.0) * 24, expectedSound = (seconds + 0.5 + 1.0) * 46.875;   // the viewer joined a second after the start
             Assert.InRange(sharer.Pictures, expectedPictures * 0.8 - 40, expectedPictures * 1.1 + 40);
             Assert.InRange(sharer.SoundFrames, expectedSound * 0.8 - 40, expectedSound * 1.1 + 40);
-            Assert.True(pictures > 120, $"the viewer got {pictures} pictures");
-            Assert.True(sharer.Position.TotalSeconds is > 8 and < 13, $"the film is at {sharer.Position}");
+            Assert.True(pictures > 100, $"the viewer got {pictures} pictures");
+            Assert.True(sharer.Position.TotalSeconds is > 6 and < 11, $"the film is at {sharer.Position}");
+            await TestUtil.WaitFor(() => { lock (statuses) return statuses.Any(s => s.Title == "Show: One" && s.Position > TimeSpan.FromSeconds(3) && s.Duration == first.Duration); }, 5000);
 
-            // Paused, it stops; resumed, it goes on from there.
+            // Paused, it stops and the viewer is told; resumed, it goes on from there.
             sharer.Pause();
             await Task.Delay(500);
             long during = sharer.Pictures;
             await Task.Delay(1500);
             Assert.True(sharer.Pictures - during <= 30, "pictures kept going while paused");
             Assert.True(sharer.Paused);
+            await TestUtil.WaitFor(() => { lock (statuses) return statuses.Count > 0 && statuses[^1].Paused; }, 5000);
             sharer.Resume();
             await Task.Delay(1000);
             Assert.True(sharer.Pictures - during > 10, "it did not go on after being resumed");
+
+            // A jump starts a new transcode at that time, and the film goes on from there.
+            long beforeJump = sharer.Pictures;
+            sharer.Seek(TimeSpan.FromMinutes(20));
+            await TestUtil.WaitFor(() => { lock (opened) return opened.Any(o => o.Start == TimeSpan.FromMinutes(20)); }, 10_000);
+            await Task.Delay(3000);
+            Assert.InRange(sharer.Position.TotalSeconds, 20 * 60 + 1, 20 * 60 + 8);
+            Assert.True(sharer.Pictures - beforeJump > 30, "no pictures after the jump");
+            Assert.Equal("Show: One", sharer.Target.Title);
+
+            // The next episode starts on the same stream, at its beginning, and is announced.
+            FilmTarget? changed = null;
+            sharer.TargetChanged += t => changed = t;
+            sharer.Next();
+            await TestUtil.WaitFor(() => changed != null, 10_000);
+            Assert.Equal("e2", changed!.Id);
+            await TestUtil.WaitFor(() => { lock (opened) return opened.Any(o => o.Id == "e2" && o.Start == TimeSpan.Zero); }, 10_000);
+            await Task.Delay(2500);
+            Assert.True(sharer.Position.TotalSeconds < 6, $"the next episode is at {sharer.Position}");
+            await TestUtil.WaitFor(() => { lock (statuses) return statuses.Any(s => s.Title == "Show: Two"); }, 5000);
+            Assert.Equal(sharer.Source.Info.Id, c.Rooms[0].MediaGroups.First(g => g.Kind == "screen").Id);   // still the one share
         }
-        finally { foreach (var v in views) v.Dispose(); }
+        finally
+        {
+            foreach (var v in views) v.Dispose();
+            foreach (var v in statusViews) v.Dispose();
+        }
     }
 }

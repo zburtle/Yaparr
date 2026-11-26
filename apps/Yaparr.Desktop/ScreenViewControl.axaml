@@ -14,6 +14,20 @@
             <TextBlock Foreground="White" FontSize="14" TextWrapping="Wrap" TextAlignment="Center"
                        Text="The picture is struggling on your connection. The others are fine." />
         </Border>
+        <!-- A film played from Jellyfin says what it is, how far it is, and when it is paused (see FilmStatus). -->
+        <Border x:Name="FilmPaused" HorizontalAlignment="Center" VerticalAlignment="Center" Padding="24,12" CornerRadius="12"
+                Background="#99000000" IsHitTestVisible="False" IsVisible="False">
+            <TextBlock Text="⏸  Paused" Foreground="White" FontSize="22" />
+        </Border>
+        <Border x:Name="FilmBar" VerticalAlignment="Bottom" Background="#B0000000" Padding="14,8,14,8" IsHitTestVisible="False" IsVisible="False">
+            <StackPanel Spacing="5">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock x:Name="FilmTitle" Foreground="White" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                    <TextBlock x:Name="FilmTimes" Grid.Column="1" Foreground="#CCFFFFFF" FontSize="13" Margin="12,0,0,0" />
+                </Grid>
+                <ProgressBar x:Name="FilmProgress" Minimum="0" Maximum="1000" Height="4" MinHeight="4" />
+            </StackPanel>
+        </Border>
         <Border x:Name="LowNotice" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="8" Padding="8,3" CornerRadius="4"
                 Background="#99000000" IsHitTestVisible="False" IsVisible="False">
             <TextBlock x:Name="LowNoticeText" Foreground="#DDFFFFFF" FontSize="12" TextWrapping="Wrap" MaxWidth="520" Text="Watching a lower-quality stream" />

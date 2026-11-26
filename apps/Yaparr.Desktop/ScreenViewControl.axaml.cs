@@ -161,6 +161,44 @@ public partial class ScreenViewControl : UserControl
     /// <summary>Raised when watching ends, so the owner can mark the share as not watched any more.</summary>
     public event Action? Stopped;
 
+    private MediaView? _statusView;
+    private long _filmStatusAt;
+
+    /// <summary>
+    /// Shows what a film played into the room says about itself (what it is, how far it is, whether it is paused) over the picture. The status comes once a second; when it stops coming
+    /// (the film is over, or the sharer went away) what it showed goes after a few seconds.
+    /// </summary>
+    public void AttachFilmStatus(MediaView statusView)
+    {
+        _statusView = statusView;
+        statusView.Received += packet =>
+        {
+            if (!FilmStatus.TryDecode(packet.Payload.Span, out var status)) return;
+            Dispatcher.UIThread.Post(() => ShowFilm(status));
+        };
+    }
+
+    private void ShowFilm(FilmStatus status)
+    {
+        if (_released) return;
+        _filmStatusAt = Environment.TickCount64;
+        FilmTitle.Text = status.Title;
+        string Clock(TimeSpan t) => t.ToString(t.TotalHours >= 1 ? @"h\:mm\:ss" : @"m\:ss");
+        FilmTimes.Text = status.Duration > TimeSpan.Zero ? Clock(status.Position) + " / " + Clock(status.Duration) : Clock(status.Position);
+        FilmProgress.IsVisible = status.Duration > TimeSpan.Zero;
+        FilmProgress.Value = status.Duration > TimeSpan.Zero ? Math.Clamp(status.Position.TotalSeconds / status.Duration.TotalSeconds * 1000, 0, 1000) : 0;
+        FilmBar.IsVisible = true;
+        FilmPaused.IsVisible = status.Paused;
+    }
+
+    private void HideStaleFilmStatus()
+    {
+        if (_filmStatusAt == 0 || Environment.TickCount64 - _filmStatusAt < 6000) return;
+        _filmStatusAt = 0;
+        FilmBar.IsVisible = false;
+        FilmPaused.IsVisible = false;
+    }
+
     private MediaView? _soundView;
     private StreamAudioReceiver? _sound;
     private IDisposable? _speaker;
@@ -318,6 +356,7 @@ public partial class ScreenViewControl : UserControl
 
     private void UpdateInfo()
     {
+        HideStaleFilmStatus();
         if (_view == null) return;
         var st = _view.Status;
         // "Lost" frames could not be put together even after asking for the missing packets again; "recovered" packets were
@@ -405,6 +444,7 @@ public partial class ScreenViewControl : UserControl
         _speaker?.Dispose();
         _sound?.Dispose();
         _soundView?.Dispose();
+        _statusView?.Dispose();
     }
 
     /// <summary>Ends the watching: the stream, the decoder and the sound are released. Safe to call more than once.</summary>
