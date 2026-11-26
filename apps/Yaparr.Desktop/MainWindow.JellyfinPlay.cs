@@ -25,7 +25,7 @@ public partial class MainWindow
     private JellyfinClient? _filmClient;
     private ConversationVm? _filmConv;
     private Border? _filmPanel;
-    private TextBlock? _filmText, _filmNote;
+    private TextBlock? _filmText, _filmNote, _filmElapsed, _filmLength;
     private Button? _filmPause, _filmNext;
     private Slider? _filmSlider;
     private DispatcherTimer? _filmTimer;
@@ -154,23 +154,35 @@ public partial class MainWindow
 
     private void BuildFilmPanel(JellyfinSharer sharer, ConversationVm conv, ChatRoom room)
     {
-        _filmText = new TextBlock { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
-        _filmPause = new Button { Content = "Pause", MinWidth = 70, HorizontalContentAlignment = HorizontalAlignment.Center };
+        // Laid out as a video player is: the position with the times at its ends, and under it the buttons (back, play or pause, forward, next) with what is playing beside them.
+        Button Icon(string glyph, string tip, int size = 18)
+        {
+            var button = new Button { Content = glyph, FontSize = size, Width = 44, Height = 34, Padding = new Thickness(0), HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center };
+            ToolTip.SetTip(button, tip);
+            AutomationProperties.SetName(button, tip);
+            return button;
+        }
+        Button Seconds(string text, string tip)
+        {
+            var button = new Button { Content = text, Height = 34, Padding = new Thickness(10, 0), FontSize = 12, VerticalContentAlignment = VerticalAlignment.Center };
+            ToolTip.SetTip(button, tip);
+            return button;
+        }
+
+        _filmText = new TextBlock { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(14, 0) };
+        _filmElapsed = new TextBlock { VerticalAlignment = VerticalAlignment.Center, FontSize = 12, MinWidth = 52, TextAlignment = TextAlignment.Right };
+        _filmLength = new TextBlock { VerticalAlignment = VerticalAlignment.Center, FontSize = 12, MinWidth = 52 };
+        _filmPause = Icon("⏸", "Pause", 20);
         _filmPause.Click += (_, _) =>
         {
             if (sharer.Paused) sharer.Resume(); else sharer.Pause();
             UpdateFilmPanel();
         };
-        var top = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { _filmPause } };
-        Grid.SetColumn(buttons, 1);
-        top.Children.Add(_filmText);
-        top.Children.Add(buttons);
 
-        // The position: drag to jump, or take 30 seconds back or forward. A jump starts the film again at that time on the server, which takes a moment.
-        var back = new Button { Content = "−30 s", Padding = new Thickness(8, 2), FontSize = 12 };
+        // The position: drag or click to jump, or take 30 seconds back or forward. A jump starts the film again at that time on the server, which takes a moment.
+        var back = Seconds("−30 s", "Back 30 seconds");
         back.Click += (_, _) => sharer.Seek(sharer.Position - TimeSpan.FromSeconds(30));
-        var forward = new Button { Content = "+30 s", Padding = new Thickness(8, 2), FontSize = 12 };
+        var forward = Seconds("+30 s", "Forward 30 seconds");
         forward.Click += (_, _) => sharer.Seek(sharer.Position + TimeSpan.FromSeconds(30));
         _filmSlider = new Slider { Minimum = 0, Maximum = Math.Max(1, sharer.Target.Duration.TotalSeconds), IsEnabled = sharer.Target.Duration > TimeSpan.Zero, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0) };
         AutomationProperties.SetName(_filmSlider, "Position in the film");
@@ -183,34 +195,46 @@ public partial class MainWindow
         }
         _filmSlider.AddHandler(PointerReleasedEvent, (_, _) => Release(), handledEventsToo: true);
         _filmSlider.PointerCaptureLost += (_, _) => Release();
-        var position = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(0, 6, 0, 0) };
+        var position = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
         Grid.SetColumn(_filmSlider, 1);
-        Grid.SetColumn(forward, 2);
-        position.Children.Add(back);
+        Grid.SetColumn(_filmLength, 2);
+        position.Children.Add(_filmElapsed);
         position.Children.Add(_filmSlider);
-        position.Children.Add(forward);
+        position.Children.Add(_filmLength);
 
-        _filmNext = new Button { Content = "Next episode ⏭", Padding = new Thickness(8, 2), FontSize = 12, IsVisible = false };
+        _filmNext = Icon("⏭", "Next episode");
+        _filmNext.IsVisible = false;
         _filmNext.Click += (_, _) => sharer.Next();
-        var auto = new CheckBox { Content = "Play the next episode by itself", IsChecked = sharer.Autoplay, FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
+        var auto = new CheckBox { Content = "Autoplay next", IsChecked = sharer.Autoplay, FontSize = 12, VerticalAlignment = VerticalAlignment.Center, IsVisible = _filmSeriesId != null };
         auto.IsCheckedChanged += (_, _) => sharer.Autoplay = auto.IsChecked == true;
+        ToolTip.SetTip(auto, "Play the next episode by itself when this one ends");
+        var transport = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = { back, _filmPause, forward, _filmNext } };
+        var controls = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(0, 4, 0, 0) };
+        Grid.SetColumn(_filmText, 1);
+        Grid.SetColumn(auto, 2);
+        controls.Children.Add(transport);
+        controls.Children.Add(_filmText);
+        controls.Children.Add(auto);
         _filmNote = new TextBlock { FontSize = 12, TextWrapping = TextWrapping.Wrap, IsVisible = false, Text = "Subtitles are off after a jump: the server cannot put them into the picture from part-way in." };
         _filmNote.Classes.Add("muted");
-        var episode = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Margin = new Thickness(0, 6, 0, 0), IsVisible = _filmSeriesId != null, Children = { _filmNext, auto } };
 
-        var panel = new StackPanel { Spacing = 0, Children = { top, position, episode, _filmNote } };
-        if (_screenViews.TryGetValue(sharer.Source.Info.Id, out var view)) { _filmText.Foreground = Brushes.White; _filmNote.Foreground = Brushes.LightGray; auto.Foreground = Brushes.White; view.Control.AttachPlayer(panel); }   // under the picture, like a video player
+        var panel = new StackPanel { Spacing = 0, Children = { position, controls, _filmNote } };
+        if (_screenViews.TryGetValue(sharer.Source.Info.Id, out var view))
+        {
+            _filmText.Foreground = Brushes.White; _filmElapsed.Foreground = Brushes.White; _filmLength.Foreground = Brushes.White; _filmNote.Foreground = Brushes.LightGray; auto.Foreground = Brushes.White;
+            view.Control.AttachPlayer(panel);   // under the picture, like a video player
+        }
         else
         {
             // The view could not be shown: the player goes where the sharing panel is, so that the film can still be controlled and stopped.
-            var stop = new Button { Content = "Stop", MinWidth = 70, HorizontalContentAlignment = HorizontalAlignment.Center };
+            var stop = Icon("⏹", "Stop Stream");
             stop.Click += (_, _) =>
             {
                 var title = _filmTitle;
                 StopFilm();
                 conv.Add(MessageVm.System($"You stopped “{title}”."));
             };
-            buttons.Children.Add(stop);
+            transport.Children.Add(stop);
             panel.Margin = new Thickness(10, 8);
             _filmPanel = new Border { Classes = { "details" }, Margin = new Thickness(0, 0, 0, 6), Child = panel };
             SharerPanel.Child = _filmPanel;
@@ -250,8 +274,12 @@ public partial class MainWindow
         var viewers = sharer.Source.Viewers.Count;
         var at = sharer.Position;
         var length = sharer.Target.Duration;
-        _filmText.Text = $"{(sharer.Paused ? "Paused" : "Playing")}: {sharer.Target.Title}   ·   {at:h\\:mm\\:ss}{(length > TimeSpan.Zero ? " / " + length.ToString(@"h\:mm\:ss") : "")}   ·   {viewers} watching";
-        _filmPause.Content = sharer.Paused ? "Resume" : "Pause";
+        static string Clock(TimeSpan t) => t.ToString(t.TotalHours >= 1 ? @"h\:mm\:ss" : @"m\:ss");
+        _filmText.Text = $"{sharer.Target.Title}   ·   {viewers} watching";
+        if (_filmElapsed != null) _filmElapsed.Text = Clock(at);
+        if (_filmLength != null) _filmLength.Text = length > TimeSpan.Zero ? Clock(length) : "";
+        _filmPause.Content = sharer.Paused ? "▶" : "⏸";
+        ToolTip.SetTip(_filmPause, sharer.Paused ? "Resume" : "Pause");
         if (_filmSlider != null && !_filmDragging && length > TimeSpan.Zero)
         {
             _filmSlider.Maximum = Math.Max(1, length.TotalSeconds);
@@ -287,6 +315,8 @@ public partial class MainWindow
         _filmTimer = null;
         _filmPanel = null;
         _filmText = null;
+        _filmElapsed = null;
+        _filmLength = null;
         _filmNote = null;
         _filmNext = null;
         _filmSlider = null;
