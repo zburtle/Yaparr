@@ -10,6 +10,14 @@ public sealed class LocalSound
     private int _start, _count;
     private readonly object _lock = new();
     private volatile float _gain = 1f;
+    private volatile int _delayMs;
+    private bool _primed;
+
+    /// <summary>
+    /// How far behind it is held, so that it stays with a picture that is itself shown late (the viewer's smoothing queue and the decoder). It takes effect when the sound starts
+    /// (or starts again after running dry); if it falls later, the surplus is caught up on gently, a little each time it is pulled.
+    /// </summary>
+    public int DelayMs { get => _delayMs; set => _delayMs = Math.Clamp(value, 0, 1500); }
 
     /// <summary>How loud it is, 0 to 2 (1 is as decoded).</summary>
     public float Gain { get => _gain; set => _gain = Math.Clamp(value, 0f, 2f); }
@@ -36,6 +44,17 @@ public sealed class LocalSound
         float gain = _gain;
         lock (_lock)
         {
+            int wanted = _delayMs * 48 * StreamAudioSender.Channels;
+            if (_count == 0) _primed = false;
+            else if (!_primed && _count >= wanted) _primed = true;
+            if (!_primed) { output.Clear(); return; }
+            // More is held than wanted by over 100 ms (the delay fell): drop 10 ms of it each time.
+            if (_count - wanted > 4800 * StreamAudioSender.Channels)
+            {
+                int drop = Math.Min(480 * StreamAudioSender.Channels, _count - wanted);
+                _start = (_start + drop) % _ring.Length;
+                _count -= drop;
+            }
             int n = Math.Min(output.Length, _count);
             for (int i = 0; i < n; i++)
             {

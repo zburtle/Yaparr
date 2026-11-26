@@ -394,8 +394,13 @@ public partial class ScreenViewControl : UserControl
         StreamChanged?.Invoke(_watched, reason);
     }
 
+    // What the sharer's own film sound is held back by beyond the picture's wait in the queue: the decoder and the drawing. YAPARR_FILM_SOUND_DELAY sets the whole delay in ms, to find what suits.
+    private const int SoundAllowanceMs = 80;
+    private static readonly int? SoundDelayOverride = int.TryParse(Environment.GetEnvironmentVariable("YAPARR_FILM_SOUND_DELAY"), out int ms) ? ms : null;
+
     private void UpdateInfo()
     {
+        if (_localSound != null) _localSound.DelayMs = SoundDelayOverride ?? (int)(_playout.Count * _playout.IntervalMs) + SoundAllowanceMs;
         HideStaleFilmStatus();
         if (_view == null) return;
         var st = _view.Status;

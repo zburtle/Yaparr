@@ -24,6 +24,21 @@ public class LocalSoundTests
         sound.Push(big);
         var output = new float[48000 * 2 * 2];
         sound.Pull(output);
-        Assert.Equal(new[] { 0.4f, 0.3f, 0.2f, 0.1f }, output[^4..]);
+        // The ring holds two seconds; 10 ms of it was dropped to catch up, and the last four values pushed are the last it has.
+        int played = 48000 * 2 * 2 - 960;
+        Assert.Equal(new[] { 0.4f, 0.3f, 0.2f, 0.1f }, output[(played - 4)..played]);
+    }
+
+    [Fact]
+    public void A_delayed_sound_is_silent_until_that_much_has_arrived()
+    {
+        var sound = new LocalSound { DelayMs = 10 };   // 960 values of stereo
+        var output = new float[10];
+        sound.Push(Enumerable.Repeat(0.5f, 100).ToArray());
+        sound.Pull(output);
+        Assert.All(output, v => Assert.Equal(0f, v));
+        sound.Push(Enumerable.Repeat(0.5f, 900).ToArray());
+        sound.Pull(output);
+        Assert.All(output, v => Assert.Equal(0.5f, v));
     }
 }
