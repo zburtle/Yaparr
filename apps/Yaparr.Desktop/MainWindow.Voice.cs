@@ -291,6 +291,7 @@ public partial class MainWindow
         StopWatchingCall();
         // Sharing a screen and watching one go with being in voice.
         if (_sharer != null && _sharerConv == conv) StopSharingCore();
+        if (_film != null && _filmConv == conv) StopFilm();
         StopAllWatches();
         CloseSoundboard();
         _voiceAudio?.Dispose();
