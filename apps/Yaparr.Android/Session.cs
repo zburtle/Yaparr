@@ -195,6 +195,7 @@ public sealed partial class Session : IDisposable
             DirectHistoryDirectory = Path.Combine(_data.Directory, "direct"),
             AttachmentDirectory = Path.Combine(_data.Directory, "attachments"),
             FilesDirectory = Path.Combine(_data.Directory, "files"),
+            SoundboardDirectory = Path.Combine(_data.Directory, "soundboards"),
             OpenSharedFile = MainActivity.OpenContent,
             SaveReceivedFile = MainActivity.WriteReceivedFile,
             Traversal = traversal,
