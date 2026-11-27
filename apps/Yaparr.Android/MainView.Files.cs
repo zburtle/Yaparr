@@ -14,7 +14,7 @@ public sealed partial class MainView
         if (_current == null || _session == null) return;
         ActionTitle.Text = "Add to the message";
         ActionList.Children.Clear();
-        AddAction("Picture or GIF", async () => await SendPictureFromChooserAsync());
+        AddAction("Image", async () => await SendPictureFromChooserAsync());
         AddAction("File of any size", async () => await SendFileFromChooserAsync());
         AddAction("Poll", ShowPollForm);
         ActionPanel.IsVisible = true;
