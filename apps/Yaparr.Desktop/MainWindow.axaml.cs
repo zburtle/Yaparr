@@ -1133,6 +1133,7 @@ public partial class MainWindow : Window
     {
         conv.Add(message);
         RefreshPins();   // the conversation with the newest message goes first, below the pinned ones
+        if (message.Channel != null && RoomFor(conv) is { } arrivedIn && ChannelPrefs.RecentFirst(_settings, arrivedIn.RoomId)) ApplyChannelLayout(conv, arrivedIn);
         // A message in another channel of the open room waits like one in another room.
         bool viewing = conv == _selected && (message.Channel == null || message.Channel == conv.CurrentChannel);
         if (viewing)

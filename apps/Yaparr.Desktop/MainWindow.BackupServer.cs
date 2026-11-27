@@ -77,6 +77,7 @@ public partial class MainWindow
         node.MailboxLeaving = _settings.LeaveForAbsent;
         LeaveForAbsentCheck.IsChecked = _settings.LeaveForAbsent;
         GatewayCheck.IsChecked = _settings.GatewayWhenUdpBlocked;
+        ApplyChannelLayoutEverywhere();
     }
 
     // The mailbox of each room on the server (MailboxSync): what was written here is left there, locked, for members who are away, and what others left for this device

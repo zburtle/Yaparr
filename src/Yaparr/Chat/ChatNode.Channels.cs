@@ -78,7 +78,7 @@ public sealed partial class ChatNode
                 if (word.Deleted && !isDefault) { channels.Remove(word.Id); continue; }
                 // A default channel keeps its kind and place whatever a statement says; only its name can change.
                 if (isDefault) channels[word.Id] = channels[word.Id] with { Name = word.Deleted ? channels[word.Id].Name : word.Name };
-                else channels[word.Id] = new ChannelInfo(word.Id, word.Name, word.Kind == "voice" ? ChannelKind.Voice : ChannelKind.Text, word.Order, IsDefault: false);
+                else channels[word.Id] = new ChannelInfo(word.Id, word.Name, word.Kind == "voice" ? ChannelKind.Voice : ChannelKind.Text, word.Order, IsDefault: false, word.Category ?? "");
             }
         }
         var list = channels.Values.OrderBy(c => c.Order).ThenBy(c => c.Name, StringComparer.CurrentCultureIgnoreCase).ThenBy(c => c.Id, StringComparer.Ordinal)
@@ -90,16 +90,17 @@ public sealed partial class ChatNode
 
     internal ChannelInfo? FindChannel(ChatRoom room, string id) => GetChannels(room).FirstOrDefault(c => c.Id == id);
 
-    internal ChannelInfo CreateChannel(ChatRoom room, string name, ChannelKind kind)
+    internal ChannelInfo CreateChannel(ChatRoom room, string name, ChannelKind kind, string category = "")
     {
         RequireAdmin(room);
         name = CleanChannelName(name);
         var existing = GetChannels(room);
+        category = CanonicalCategory(existing, category);
         if (existing.Count >= RoomChannels.MaxChannels) throw new InvalidOperationException($"A room can have at most {RoomChannels.MaxChannels} channels.");
         if (existing.Any(c => c.Kind == kind && string.Equals(c.Name, name, StringComparison.CurrentCultureIgnoreCase)))
             throw new InvalidOperationException("There is already a channel with that name.");
         var id = SignedChannel.NewId();
-        PublishChannel(room, id, name, kind, order: existing.Max(c => c.Order) + 1, deleted: false);
+        PublishChannel(room, id, name, kind, order: OrderAtEndOf(existing, category), deleted: false, category);
         return FindChannel(room, id)!;
     }
 
@@ -110,7 +111,7 @@ public sealed partial class ChatNode
         var channel = FindChannel(room, id) ?? throw new KeyNotFoundException("There is no such channel.");
         if (GetChannels(room).Any(c => c.Id != id && c.Kind == channel.Kind && string.Equals(c.Name, name, StringComparison.CurrentCultureIgnoreCase)))
             throw new InvalidOperationException("There is already a channel with that name.");
-        PublishChannel(room, id, name, channel.Kind, channel.Order, deleted: false);
+        PublishChannel(room, id, name, channel.Kind, channel.Order, deleted: false, channel.Category);
     }
 
     internal void DeleteChannel(ChatRoom room, string id)
@@ -118,7 +119,7 @@ public sealed partial class ChatNode
         RequireAdmin(room);
         var channel = FindChannel(room, id) ?? throw new KeyNotFoundException("There is no such channel.");
         if (channel.IsDefault) throw new InvalidOperationException("The first text channel and the first voice channel are always there.");
-        PublishChannel(room, id, channel.Name, channel.Kind, channel.Order, deleted: true);
+        PublishChannel(room, id, channel.Name, channel.Kind, channel.Order, deleted: true, channel.Category);
     }
 
     // A channel moves up or down among the channels of its kind. Every statement already carries the place of its channel, and every version
@@ -130,7 +131,7 @@ public sealed partial class ChatNode
         RequireAdmin(room);
         var channel = FindChannel(room, id) ?? throw new KeyNotFoundException("There is no such channel.");
         if (channel.IsDefault) throw new InvalidOperationException("The first text channel and the first voice channel stay where they are.");
-        var sameKind = GetChannels(room).Where(c => c.Kind == channel.Kind && !c.IsDefault).ToList();
+        var sameKind = GetChannels(room).Where(c => c.Kind == channel.Kind && !c.IsDefault && string.Equals(c.Category, channel.Category, StringComparison.CurrentCultureIgnoreCase)).ToList();
         int at = sameKind.FindIndex(c => c.Id == id), to = up ? at - 1 : at + 1;
         if (to < 0 || to >= sameKind.Count) return;
 
@@ -139,7 +140,81 @@ public sealed partial class ChatNode
         (wanted[at], wanted[to]) = (wanted[to], wanted[at]);
         for (int i = 0; i < wanted.Count; i++)
             if (wanted[i].Order != first + i)
-                PublishChannel(room, wanted[i].Id, wanted[i].Name, wanted[i].Kind, first + i, deleted: false);
+                PublishChannel(room, wanted[i].Id, wanted[i].Name, wanted[i].Kind, first + i, deleted: false, wanted[i].Category);
+    }
+
+    // ---- categories: a name the admins give to a group of channels. A category is nothing but that name on its channels (it is there while a channel is in it),
+    // so making, renaming and removing one are statements about the channels in it. Categories show in the order of their first channel; the channels outside
+    // any category come first. The first text and voice channels are never in one. ----
+
+    // The spelling the room already uses for this name (a name is the same category whatever its capitals); the name cleaned up when it is new.
+    private static string CanonicalCategory(IReadOnlyList<ChannelInfo> channels, string? name)
+    {
+        var clean = RoomChannels.CleanCategory(name);
+        return channels.FirstOrDefault(c => string.Equals(c.Category, clean, StringComparison.CurrentCultureIgnoreCase))?.Category ?? clean;
+    }
+
+    // A place after the last channel of the category (after the last channel at all for one that is new), so that putting a channel in a category
+    // neither moves the category nor any other.
+    private static int OrderAtEndOf(IReadOnlyList<ChannelInfo> channels, string category)
+    {
+        var inCategory = category.Length == 0 ? channels : channels.Where(c => string.Equals(c.Category, category, StringComparison.CurrentCultureIgnoreCase)).ToList();
+        return (inCategory.Count > 0 ? inCategory : channels).Max(c => c.Order) + 1;
+    }
+
+    internal IReadOnlyList<string> GetCategories(ChatRoom room) => RoomChannels.CategoriesOf(GetChannels(room));
+
+    /// <summary>Puts a channel in a category (made if it is new), or out of any (an empty name).</summary>
+    internal void SetChannelCategory(ChatRoom room, string id, string? category)
+    {
+        RequireAdmin(room);
+        var all = GetChannels(room);
+        var channel = all.FirstOrDefault(c => c.Id == id) ?? throw new KeyNotFoundException("There is no such channel.");
+        if (channel.IsDefault) throw new InvalidOperationException("The first text channel and the first voice channel stay at the top, outside any category.");
+        var name = CanonicalCategory(all, category);
+        if (string.Equals(name, channel.Category, StringComparison.CurrentCultureIgnoreCase) && name == channel.Category) return;
+        PublishChannel(room, id, channel.Name, channel.Kind, name.Length == 0 ? channel.Order : OrderAtEndOf(all.Where(c => c.Id != id).ToList(), name), deleted: false, name);
+    }
+
+    internal void RenameCategory(ChatRoom room, string oldName, string newName)
+    {
+        RequireAdmin(room);
+        var all = GetChannels(room);
+        var members = all.Where(c => string.Equals(c.Category, oldName, StringComparison.CurrentCultureIgnoreCase)).ToList();
+        if (members.Count == 0) throw new KeyNotFoundException("There is no such category.");
+        var clean = RoomChannels.CleanCategory(newName);
+        if (clean.Length == 0) throw new ArgumentException("A category needs a name.");
+        if (all.Any(c => string.Equals(c.Category, clean, StringComparison.CurrentCultureIgnoreCase) && !string.Equals(c.Category, oldName, StringComparison.CurrentCultureIgnoreCase)))
+            throw new InvalidOperationException("There is already a category with that name.");
+        foreach (var c in members.Where(c => c.Category != clean))
+            PublishChannel(room, c.Id, c.Name, c.Kind, c.Order, deleted: false, clean);
+    }
+
+    /// <summary>Takes a category away; its channels stay, outside any category.</summary>
+    internal void DeleteCategory(ChatRoom room, string name)
+    {
+        RequireAdmin(room);
+        var members = GetChannels(room).Where(c => string.Equals(c.Category, name, StringComparison.CurrentCultureIgnoreCase)).ToList();
+        if (members.Count == 0) throw new KeyNotFoundException("There is no such category.");
+        foreach (var c in members) PublishChannel(room, c.Id, c.Name, c.Kind, c.Order, deleted: false, "");
+    }
+
+    // The places of all the channels are handed out again so that each category is one run, in the new order of the categories; only a channel whose place
+    // changed gets a new statement.
+    internal void MoveCategory(ChatRoom room, string name, bool up)
+    {
+        RequireAdmin(room);
+        var all = GetChannels(room);
+        var order = RoomChannels.CategoriesOf(all);
+        int at = order.FindIndex(n => string.Equals(n, name, StringComparison.CurrentCultureIgnoreCase)), to = up ? at - 1 : at + 1;
+        if (at < 0) throw new KeyNotFoundException("There is no such category.");
+        if (to < 0 || to >= order.Count) return;
+        (order[at], order[to]) = (order[to], order[at]);
+        var loose = all.Where(c => !c.IsDefault && c.Category.Length == 0).OrderBy(c => c.Order);
+        var sequence = loose.Concat(order.SelectMany(n => all.Where(c => !c.IsDefault && string.Equals(c.Category, n, StringComparison.CurrentCultureIgnoreCase)).OrderBy(c => c.Order))).ToList();
+        for (int i = 0; i < sequence.Count; i++)
+            if (sequence[i].Order != 2 + i)
+                PublishChannel(room, sequence[i].Id, sequence[i].Name, sequence[i].Kind, 2 + i, deleted: false, sequence[i].Category);
     }
 
     // The voice channel you are in is gone (removed here or by another admin, or its admin lost the role): you leave it, instead of the
@@ -160,7 +235,7 @@ public sealed partial class ChatNode
         return name.Length <= 64 ? name : name[..64];
     }
 
-    private void PublishChannel(ChatRoom room, string id, string name, ChannelKind kind, int order, bool deleted)
+    private void PublishChannel(ChatRoom room, string id, string name, ChannelKind kind, int order, bool deleted, string category = "")
     {
         long ts;
         lock (room.ChannelGate)
@@ -170,7 +245,7 @@ public sealed partial class ChatNode
             long seen = room.ChannelEntries.Values.Where(c => c.Id == id).Select(c => c.Ts).DefaultIfEmpty(0).Max();
             ts = Math.Max(NextTimestamp(), seen + 1);
         }
-        var entry = SignedChannel.Create(_identity, room.Key, id, name, kind, order, deleted, ts);
+        var entry = SignedChannel.Create(_identity, room.Key, id, name, kind, order, deleted, ts, category);
         lock (room.ChannelGate) room.ChannelEntries[id + ":" + AccountId.Value] = entry;
         Interlocked.Increment(ref room.ChannelVersion);
         SaveChannels(room);

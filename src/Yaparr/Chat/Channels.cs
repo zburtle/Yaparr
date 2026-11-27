@@ -6,8 +6,11 @@ namespace Yaparr.Chat;
 
 public enum ChannelKind { Text, Voice }
 
-/// <summary>A channel of a room, text or voice. Every room has one of each from the start (<see cref="RoomChannels"/>).</summary>
-public sealed record ChannelInfo(string Id, string Name, ChannelKind Kind, int Order, bool IsDefault);
+/// <summary>
+/// A channel of a room, text or voice. Every room has one of each from the start (<see cref="RoomChannels"/>). <paramref name="Category"/> is the name of the group the
+/// admins put it in, empty for none (the two first channels are never in a category).
+/// </summary>
+public sealed record ChannelInfo(string Id, string Name, ChannelKind Kind, int Order, bool IsDefault, string Category = "");
 
 public static class RoomChannels
 {
@@ -26,7 +29,26 @@ public static class RoomChannels
     /// <summary>How many channels a room can have, the two it starts with included.</summary>
     public const int MaxChannels = 32;
 
+    /// <summary>How long the name of a category can be.</summary>
+    public const int MaxCategoryName = 32;
+
     public static string Normalize(string? id) => string.IsNullOrEmpty(id) ? DefaultText : id;
+
+    /// <summary>A category name as it is kept: one line, single spaces, at most <see cref="MaxCategoryName"/> letters. Empty for none.</summary>
+    public static string CleanCategory(string? name)
+    {
+        name = string.Join(' ', (name ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        return name.Length <= MaxCategoryName ? name : name[..MaxCategoryName].TrimEnd();
+    }
+
+    /// <summary>
+    /// The categories of these channels, in the order they are shown: by the place of the first channel in each, then by name. A name is the same category whatever its capitals.
+    /// </summary>
+    public static List<string> CategoriesOf(IEnumerable<ChannelInfo> channels) =>
+        channels.Where(c => c.Category.Length > 0)
+            .GroupBy(c => c.Category, StringComparer.CurrentCultureIgnoreCase)
+            .OrderBy(g => g.Min(c => c.Order)).ThenBy(g => g.Key, StringComparer.CurrentCultureIgnoreCase)
+            .Select(g => g.First().Category).ToList();
 
     internal static bool IsDefault(string id) => id is DefaultText or DefaultVoice;
 }
@@ -34,9 +56,10 @@ public static class RoomChannels
 /// <summary>
 /// An owner's or admin's signed statement that a channel exists with this name, or no longer does. The newest statement about
 /// a channel from a current admin wins, as with the admin list. The two default channels exist without any statement, and can be
-/// renamed but not removed.
+/// renamed but not removed. A statement that puts the channel in a category carries its name (and signs it); one without is as it always was,
+/// so versions that do not know categories read it, and drop the ones that have one.
 /// </summary>
-public sealed record StoredChannel(string Pub, string Acct, string Cert, string Id, string Name, string Kind, int Order, bool Deleted, long Ts, string Sig);
+public sealed record StoredChannel(string Pub, string Acct, string Cert, string Id, string Name, string Kind, int Order, bool Deleted, long Ts, string Sig, string? Category = null);
 
 internal static class SignedChannel
 {
@@ -54,13 +77,13 @@ internal static class SignedChannel
 
     public static string KindText(ChannelKind kind) => kind == ChannelKind.Voice ? "voice" : "text";
 
-    public static StoredChannel Create(PeerIdentity identity, string roomKey, string id, string name, ChannelKind kind, int order, bool deleted, long timestamp)
+    public static StoredChannel Create(PeerIdentity identity, string roomKey, string id, string name, ChannelKind kind, int order, bool deleted, long timestamp, string category = "")
     {
         bool linked = identity.DeviceCertificate != null;
         var unsigned = new StoredChannel(Convert.ToBase64String(identity.PublicKey),
             linked ? Convert.ToBase64String(identity.AccountPublicKey) : "",
             linked ? Convert.ToBase64String(identity.DeviceCertificate!) : "",
-            id, name.Length <= MaxName ? name : name[..MaxName], KindText(kind), order, deleted, timestamp, "");
+            id, name.Length <= MaxName ? name : name[..MaxName], KindText(kind), order, deleted, timestamp, "", category.Length > 0 ? category : null);
         return unsigned with { Sig = Convert.ToBase64String(identity.Sign(Payload(roomKey, identity.Id, unsigned))) };
     }
 
@@ -72,6 +95,7 @@ internal static class SignedChannel
         if (c.Id.Length != 16 || !c.Id.All(ch => ch is (>= '0' and <= '9') or (>= 'a' and <= 'f'))) return false;
         if (c.Kind is not ("text" or "voice") || c.Name.Length > MaxName || c.Order is < 0 or > 10_000) return false;
         if (!c.Deleted && c.Name.Trim().Length == 0) return false;
+        if (c.Category is { } category && (category.Length is 0 or > RoomChannels.MaxCategoryName || category.Any(char.IsControl) || RoomChannels.CleanCategory(category) != category)) return false;
         if (c.Ts > DateTimeOffset.UtcNow.Add(MaxFutureSkew).ToUnixTimeMilliseconds()) return false;
         try
         {
@@ -93,6 +117,7 @@ internal static class SignedChannel
         {
             w.Write("yaparr-channel-v1"); w.Write(roomKey); w.Write(device.Value); w.Write(c.Id); w.Write(c.Name);
             w.Write(c.Kind); w.Write(c.Order); w.Write(c.Deleted); w.Write(c.Ts);
+            if (!string.IsNullOrEmpty(c.Category)) { w.Write("category"); w.Write(c.Category); }
         }
         return ms.ToArray();
     }

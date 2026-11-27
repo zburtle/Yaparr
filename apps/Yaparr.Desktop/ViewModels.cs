@@ -1072,8 +1072,9 @@ public sealed class ConversationVm : Observable
         foreach (var c in Channels) c.Selected = c.IsText && c.Id == id;
         if (Channels.FirstOrDefault(c => c.IsText && c.Id == id) is { } shown)
         {
-            Unread = Math.Max(0, Unread - shown.Unread);
+            Unread = Math.Max(0, Unread - shown.Counted);
             shown.Unread = 0;
+            shown.Counted = 0;
         }
         Raise(nameof(CurrentChannel));
         Raise(nameof(CurrentChannelName));
@@ -1082,15 +1083,33 @@ public sealed class ConversationVm : Observable
     /// <summary>The room was opened: what is on show is read, and what waits in other channels still counts.</summary>
     public void Opened()
     {
-        foreach (var c in Channels.Where(c => c.Id == CurrentChannel)) c.Unread = 0;
-        Unread = Channels.Where(c => c.IsText && c.Id != CurrentChannel).Sum(c => c.Unread);
+        foreach (var c in Channels.Where(c => c.Id == CurrentChannel)) { c.Unread = 0; c.Counted = 0; }
+        Unread = Channels.Where(c => c.IsText && c.Id != CurrentChannel).Sum(c => c.Counted);
     }
 
     public void NoteUnread(string? channel, bool mentioned = false)
     {
-        Unread++;
+        // A muted channel shows its own count but adds nothing to the room's, unless the message names you.
+        bool counts = true;
+        if (channel != null && Channels.FirstOrDefault(c => c.IsText && c.Id == channel) is { } c)
+        {
+            c.Unread++;
+            counts = !c.Muted || mentioned;
+            if (counts) c.Counted++;
+        }
+        if (counts) Unread++;
         if (mentioned) Mentioned = true;
-        if (channel != null && Channels.FirstOrDefault(c => c.IsText && c.Id == channel) is { } c) c.Unread++;
+    }
+
+    /// <summary>When the last message of a text channel was sent (milliseconds since 1970), 0 for none: what "most recent first" goes by.</summary>
+    public long ChannelLastActivity(string channel) =>
+        _stored.TryGetValue(channel, out var list) && list.Count > 0 ? list.Max(m => m.Time).ToUnixTimeMilliseconds() : 0;
+
+    /// <summary>After a channel was muted or unmuted: what the room counts is worked out again from what each channel holds.</summary>
+    public void RecountUnread()
+    {
+        foreach (var c in Channels.Where(c => c.IsText)) c.Counted = c.Muted ? 0 : c.Unread;
+        Unread = Channels.Where(c => c.IsText && c.Id != CurrentChannel).Sum(c => c.Counted);
     }
 
     /// <summary>Makes the buttons match the room's channels, keeping the one on show unless it is gone.</summary>
@@ -1105,6 +1124,7 @@ public sealed class ConversationVm : Observable
             if (existing.TryGetValue(info.Id, out var vm) && Channels.Contains(vm))
             {
                 vm.Name = info.Name;
+                vm.Category = info.Category;
                 int at = Channels.IndexOf(vm);
                 if (at != i) Channels.Move(at, i);
             }
@@ -1112,12 +1132,41 @@ public sealed class ConversationVm : Observable
             vm.Selected = vm.IsText && vm.Id == CurrentChannel;
         }
         if (!Channels.Any(c => c.IsText && c.Id == CurrentChannel)) SelectChannel(RoomChannels.DefaultText);
-        Regroup(TextChannels, Channels.Where(c => c.IsText));
-        Regroup(VoiceChannels, Channels.Where(c => c.IsVoice));
         Raise(nameof(CurrentChannelName));
     }
 
-    private static void Regroup(ObservableCollection<ChannelVm> group, IEnumerable<ChannelVm> channels)
+    /// <summary>The categories of the room, each with the channels in it: folded ones keep their header only.</summary>
+    public ObservableCollection<CategoryVm> CategoryGroups { get; } = new();
+
+    public bool ShowCategories => CategoryGroups.Count > 0;
+
+    /// <summary>What a category shows under its header.</summary>
+    public sealed record CategoryLayout(string Name, bool Open, IReadOnlyList<ChannelVm> Channels);
+
+    /// <summary>Lays the list out: the text and voice channels that are in no category, then each category with its channels (see the person's choices in <c>ChannelPrefs</c>).</summary>
+    public void ApplyLayout(IReadOnlyList<ChannelVm> text, IReadOnlyList<ChannelVm> voice, IReadOnlyList<CategoryLayout> categories)
+    {
+        Regroup(TextChannels, text);
+        Regroup(VoiceChannels, voice);
+        var existing = CategoryGroups.ToDictionary(g => g.Name, StringComparer.CurrentCultureIgnoreCase);
+        var wanted = new List<CategoryVm>();
+        foreach (var layout in categories)
+        {
+            if (!existing.TryGetValue(layout.Name, out var group)) group = new CategoryVm(layout.Name);
+            group.Name = layout.Name;
+            group.Open = layout.Open;
+            group.SetChannels(layout.Channels);
+            wanted.Add(group);
+        }
+        if (!CategoryGroups.SequenceEqual(wanted))
+        {
+            CategoryGroups.Clear();
+            foreach (var g in wanted) CategoryGroups.Add(g);
+        }
+        Raise(nameof(ShowCategories));
+    }
+
+    internal static void Regroup(ObservableCollection<ChannelVm> group, IEnumerable<ChannelVm> channels)
     {
         var wanted = channels.ToList();
         if (group.SequenceEqual(wanted)) return;
@@ -1384,15 +1433,59 @@ public sealed class VoiceMemberVm : Observable
 }
 
 /// <summary>A text or voice channel of a room, shown as a button.</summary>
+/// <summary>A category of a room in the list: its name as a header you can fold away, and the channels in it.</summary>
+public sealed class CategoryVm : Observable
+{
+    private string _name;
+    private bool _open = true;
+
+    public CategoryVm(string name) => _name = name;
+
+    public ObservableCollection<ChannelVm> Channels { get; } = new();
+
+    public string Name
+    {
+        get => _name;
+        set { if (_name == value) return; _name = value; Raise(); Raise(nameof(Header)); }
+    }
+
+    /// <summary>Whether the channels are listed under the header (a person's choice, the same on all their devices).</summary>
+    public bool Open
+    {
+        get => _open;
+        set { if (_open == value) return; _open = value; Raise(); Raise(nameof(Header)); }
+    }
+
+    /// <summary>Messages waiting in the channels that count (not the muted ones).</summary>
+    public int Unread => Channels.Where(c => c.IsText && !c.Muted).Sum(c => c.Unread);
+
+    /// <summary>The name with an arrow; what is waiting in it shows only while it is folded away, since it is on the channels otherwise.</summary>
+    public string Header => (_open ? "▾ " : "▸ ") + _name.ToUpperInvariant() + (!_open && Unread > 0 ? $"  ({Unread})" : "");
+
+    public void SetChannels(IReadOnlyList<ChannelVm> channels)
+    {
+        foreach (var c in Channels) c.PropertyChanged -= ChannelChanged;
+        ConversationVm.Regroup(Channels, channels);
+        foreach (var c in Channels) c.PropertyChanged += ChannelChanged;
+        Raise(nameof(Header));
+    }
+
+    private void ChannelChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(ChannelVm.Unread) or nameof(ChannelVm.Muted)) Raise(nameof(Header));
+    }
+}
+
 public sealed class ChannelVm : Observable
 {
     private string _name;
     private int _unread, _people;
-    private bool _selected, _mine;
+    private bool _selected, _mine, _pinned, _muted;
+    private string _category = "";
 
     public ChannelVm(ChannelInfo info)
     {
-        Id = info.Id; _name = info.Name; Kind = info.Kind; IsDefault = info.IsDefault;
+        Id = info.Id; _name = info.Name; Kind = info.Kind; IsDefault = info.IsDefault; _category = info.Category;
         Members.CollectionChanged += (_, _) => Raise(nameof(HasMembers));
     }
 
@@ -1420,6 +1513,33 @@ public sealed class ChannelVm : Observable
         set { if (_unread == value) return; _unread = value; Raise(); Raise(nameof(Label)); }
     }
 
+    /// <summary>How many of those the room's own count holds: a muted channel adds to its own count but not to the room's, except for a message that names you.</summary>
+    public int Counted { get; set; }
+
+    /// <summary>Kept at the top of the room's list (your choice, the same on all your devices).</summary>
+    public bool Pinned
+    {
+        get => _pinned;
+        set { if (_pinned == value) return; _pinned = value; Raise(); Raise(nameof(Label)); }
+    }
+
+    /// <summary>No notifications and no count in the room for this channel (your choice).</summary>
+    public bool Muted
+    {
+        get => _muted;
+        set { if (_muted == value) return; _muted = value; Raise(); Raise(nameof(Label)); Raise(nameof(Fade)); }
+    }
+
+    /// <summary>The name of the category the admins put the channel in; empty for none.</summary>
+    public string Category
+    {
+        get => _category;
+        set { if (_category == value) return; _category = value; Raise(); }
+    }
+
+    /// <summary>A muted channel is dimmed unless it is the one on show.</summary>
+    public double Fade => _muted && !_selected ? 0.55 : 1;
+
     /// <summary>People in a voice channel.</summary>
     public int People
     {
@@ -1431,7 +1551,7 @@ public sealed class ChannelVm : Observable
     public bool Selected
     {
         get => _selected;
-        set { if (_selected == value) return; _selected = value; Raise(); Raise(nameof(Highlight)); }
+        set { if (_selected == value) return; _selected = value; Raise(); Raise(nameof(Highlight)); Raise(nameof(Fade)); }
     }
 
     /// <summary>The voice channel you are in.</summary>
@@ -1443,5 +1563,6 @@ public sealed class ChannelVm : Observable
 
     public bool Highlight => _selected || _mine;
 
-    public string Label => (IsText ? "# " : "\U0001F50A ") + _name + (IsText ? (_unread > 0 ? $"  ({_unread})" : "") : (_people > 0 ? $"  ({_people})" : ""));
+    public string Label => (_pinned ? "\U0001F4CC " : "") + (IsText ? "# " : "\U0001F50A ") + _name
+        + (IsText ? (_unread > 0 ? (_muted ? "  \u2022" : $"  ({_unread})") : "") : (_people > 0 ? $"  ({_people})" : ""));
 }

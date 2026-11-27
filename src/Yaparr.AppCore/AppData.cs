@@ -146,6 +146,18 @@ public sealed class AppSettings
     /// <summary>The phone app and the computer app: the rooms (by id) that never notify, not even for a mention or a reply (their messages still count as unread).</summary>
     public List<string> MutedRooms { get; set; } = new();
 
+    /// <summary>Text channels the person keeps at the top of their group in the room's list, each as the room's id, a slash and the channel's id (see <c>ChannelPrefs</c>). Kept the same on every device.</summary>
+    public List<string> PinnedChannels { get; set; } = new();
+
+    /// <summary>Categories the person folded away, each as the room's id, a slash and a short hash of the category's name (see <c>ChannelPrefs</c>). Kept the same on every device.</summary>
+    public List<string> CollapsedCategories { get; set; } = new();
+
+    /// <summary>Text channels that do not notify and do not add to the room's unread count unless a message names the person. Kept the same on every device.</summary>
+    public List<string> MutedChannels { get; set; } = new();
+
+    /// <summary>Rooms (by id) whose channels are listed most recently active first instead of in the room's order. Kept the same on every device.</summary>
+    public List<string> RecentFirstRooms { get; set; } = new();
+
     /// <summary>The computer app: a message sound of a room's own (a name in <c>UiSounds.MessageStyles</c>), by room id; a room that is not here uses <see cref="MessageSound"/>.</summary>
     public Dictionary<string, string> RoomSounds { get; set; } = new();
 

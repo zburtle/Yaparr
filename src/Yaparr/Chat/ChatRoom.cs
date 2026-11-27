@@ -302,7 +302,22 @@ public sealed class ChatRoom
     public IReadOnlyList<ChannelInfo> Channels => _node.GetChannels(this);
 
     /// <summary>Adds a channel (owner or admin only).</summary>
-    public ChannelInfo CreateChannel(string name, ChannelKind kind) => _node.CreateChannel(this, name, kind);
+    public ChannelInfo CreateChannel(string name, ChannelKind kind, string category = "") => _node.CreateChannel(this, name, kind, category);
+
+    /// <summary>The names of the room's categories (groups of channels), in the order they are shown.</summary>
+    public IReadOnlyList<string> Categories => _node.GetCategories(this);
+
+    /// <summary>Puts a channel in a category, made if it is new, or out of any with an empty name (owner or admin only). The first text and voice channels stay outside any.</summary>
+    public void SetChannelCategory(string id, string? category) => _node.SetChannelCategory(this, id, category);
+
+    /// <summary>Renames a category (owner or admin only).</summary>
+    public void RenameCategory(string name, string newName) => _node.RenameCategory(this, name, newName);
+
+    /// <summary>Takes a category away, leaving its channels outside any category (owner or admin only).</summary>
+    public void DeleteCategory(string name) => _node.DeleteCategory(this, name);
+
+    /// <summary>Moves a category up or down among the categories (owner or admin only). Does nothing when it is already at that end.</summary>
+    public void MoveCategory(string name, bool up) => _node.MoveCategory(this, name, up);
 
     /// <summary>Renames a channel, the first text and voice channels included (owner or admin only).</summary>
     public void RenameChannel(string id, string name) => _node.RenameChannel(this, id, name);
