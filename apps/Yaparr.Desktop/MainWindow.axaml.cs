@@ -36,6 +36,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        WirePlusPicker();
         WireMessageScroll();
         ShipPanel.IsVisible = EmptyPanel.IsVisible && FitzgeraldShip.IsHerDay(DateTime.Now);
         Ship.ShipClicked += () => _ = OpenLinkAsync(FitzgeraldShip.SongUrl);
@@ -1001,7 +1002,7 @@ public partial class MainWindow : Window
         var invite = m.Invite;
         var vm = new MessageVm(m.Timestamp, m.From.DisplayName, invite != null ? "" : m.File != null ? m.FileCaption : parts.Body, m.IsCatchUp, isMine: mine, id: m.Id, attachment: m.Attachment)
         {
-            Invite = invite, File = m.File, Source = m, Account = m.From.Account.Value, Key = m.Key, ReplyKey = parts.ReplyTo, Mentions = parts.Mentions, Card = parts.Preview, Emoji = parts.Emoji,
+            Poll = parts.Poll, Invite = invite, File = m.File, Source = m, Account = m.From.Account.Value, Key = m.Key, ReplyKey = parts.ReplyTo, Mentions = parts.Mentions, Card = parts.Preview, Emoji = parts.Emoji,
             MentionsMe = _node != null && NamesMe(m),
             Channel = m.Channel,
         };
@@ -1369,7 +1370,8 @@ public partial class MainWindow : Window
         UpdateInlineScreen();
         UpdateSharerPanel();
         bool has = _selected != null;
-        InputBox.IsEnabled = SendButton.IsEnabled = AttachButton.IsEnabled = FileButton.IsEnabled = ShelfButton.IsEnabled = ComposerEmojiButton.IsEnabled = has;
+        InputBox.IsEnabled = SendButton.IsEnabled = PlusButton.IsEnabled = has;
+        if (!has) PlusPopup.IsOpen = false;
         MessageList.ItemsSource = _selected?.Messages;
         HeaderText.Text = _selected?.Name ?? "Welcome to Yaparr";
         HeaderSubtitle.Text = _selected?.Subtitle ?? "Serverless chat between friends";

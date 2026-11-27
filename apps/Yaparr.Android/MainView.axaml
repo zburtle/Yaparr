@@ -577,7 +577,26 @@
                                         </WrapPanel>
                                     </StackPanel>
                                 </Border>
-                                <local:LinkText Body="{Binding Text}" EmojiImages="{Binding EmojiImages}" Classes.bigemoji="{Binding IsBigEmoji}" TextWrapping="Wrap" Foreground="{Binding Ink}" IsVisible="{Binding HasText}" LinkTapped="MessageLinkTapped" />
+                                <Border IsVisible="{Binding HasPoll}" Padding="2">
+                                    <StackPanel Spacing="2" MinWidth="240" MaxWidth="290">
+                                        <TextBlock Text="{Binding PollQuestion}" FontWeight="SemiBold" TextWrapping="Wrap" Foreground="{Binding Ink}" />
+                                        <TextBlock Text="{Binding PollHint}" FontSize="11" Opacity="0.75" Foreground="{Binding Ink}" />
+                                        <ItemsControl ItemsSource="{Binding PollOptions}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="local:PollOption">
+                                                    <Panel Margin="0,3,0,0" Background="Transparent" Tapped="PollOptionTapped">
+                                                        <ProgressBar Value="{Binding Percent}" Maximum="100" Height="40" MinHeight="40" CornerRadius="8" ShowProgressText="False" Foreground="#55808080" Background="#22000000" />
+                                                        <Grid ColumnDefinitions="*,Auto" Margin="12,0" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding Label}" TextWrapping="Wrap" VerticalAlignment="Center" FontWeight="{Binding LabelWeight}" Foreground="{Binding Ink}" />
+                                                            <TextBlock Grid.Column="1" Text="{Binding CountText}" FontSize="13" Margin="8,0,0,0" VerticalAlignment="Center" Foreground="{Binding Ink}" />
+                                                        </Grid>
+                                                    </Panel>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+                                <local:LinkText Body="{Binding Text}" EmojiImages="{Binding EmojiImages}" Classes.bigemoji="{Binding IsBigEmoji}" TextWrapping="Wrap" Foreground="{Binding Ink}" IsVisible="{Binding HasPlainText}" LinkTapped="MessageLinkTapped" />
                                 <Border IsVisible="{Binding HasCard}" Background="#22000000" CornerRadius="8" Padding="8" Margin="0,2,0,0" Tapped="CardTapped">
                                     <Grid ColumnDefinitions="Auto,*">
                                         <Image Source="{Binding CardImage}" IsVisible="{Binding HasCardImage}" Width="56" Height="56" Margin="0,0,8,0" Stretch="UniformToFill" VerticalAlignment="Top" />
@@ -857,6 +876,23 @@
         </Border>
 
         <!-- A line of text to answer. -->
+        <!-- Asking a poll: the question, two to ten answers, and whether more than one can be chosen (reached from the + button). -->
+        <Border x:Name="PollPanel" IsVisible="False" Background="#99000000" PointerPressed="OverlayBackdropPressed">
+            <ScrollViewer VerticalAlignment="Center">
+                <Border Background="{DynamicResource Surface}" CornerRadius="16" Margin="20" Padding="16" MaxWidth="440">
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="Create a poll" FontWeight="Bold" FontSize="20" Foreground="{DynamicResource Ink}" />
+                        <TextBox x:Name="PollQuestionBox" PlaceholderText="Ask a question" MaxLength="200" />
+                        <StackPanel x:Name="PollAnswers" Spacing="8" />
+                        <Button x:Name="PollAddButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Add an answer" Click="PollAddClicked" />
+                        <CheckBox x:Name="PollManyCheck" Content="Allow more than one answer" />
+                        <Button x:Name="PollCreateButton" Classes="primary" IsEnabled="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Create poll" Click="PollCreateClicked" />
+                        <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Cancel" Click="PollCancelClicked" />
+                    </StackPanel>
+                </Border>
+            </ScrollViewer>
+        </Border>
+
         <Border x:Name="PromptPanel" IsVisible="False" Background="#99000000" PointerPressed="OverlayBackdropPressed">
             <Border Background="{DynamicResource Surface}" CornerRadius="16" Margin="20" Padding="16" MaxWidth="440" VerticalAlignment="Center">
                 <StackPanel Spacing="12">

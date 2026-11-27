@@ -717,7 +717,28 @@
                                                     </StackPanel>
                                                 </StackPanel>
                                             </Border>
-                                            <local:MessageText Classes="body" Classes.bigemoji="{Binding IsBigEmoji}" EmojiImages="{Binding EmojiImages}" IsVisible="{Binding HasText}" Body="{Binding Text}" Marks="{Binding MentionMarks}" TextWrapping="Wrap" LinkClicked="MessageLink_Clicked" />
+                                            <Border IsVisible="{Binding HasPoll}" Padding="2" HorizontalAlignment="Left">
+                                                <StackPanel Spacing="4" MinWidth="260" MaxWidth="380">
+                                                    <TextBlock Text="{Binding PollQuestion}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                                    <TextBlock Text="{Binding PollHint}" FontSize="11" Opacity="0.75" />
+                                                    <ItemsControl ItemsSource="{Binding PollOptions}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate x:DataType="local:PollOptionVm">
+                                                                <Button Click="PollOption_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Background="Transparent" Padding="0" Margin="0,2,0,0" ToolTip.Tip="{Binding Tooltip}">
+                                                                    <Panel>
+                                                                        <ProgressBar Value="{Binding Percent}" Maximum="100" Height="34" MinHeight="34" CornerRadius="8" ShowProgressText="False" />
+                                                                        <Grid ColumnDefinitions="*,Auto" Margin="10,0" VerticalAlignment="Center">
+                                                                            <TextBlock Text="{Binding Label}" TextWrapping="Wrap" VerticalAlignment="Center" FontWeight="{Binding LabelWeight}" />
+                                                                            <TextBlock Grid.Column="1" Text="{Binding CountText}" FontSize="12" Margin="8,0,0,0" VerticalAlignment="Center" />
+                                                                        </Grid>
+                                                                    </Panel>
+                                                                </Button>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </StackPanel>
+                                            </Border>
+                                            <local:MessageText Classes="body" Classes.bigemoji="{Binding IsBigEmoji}" EmojiImages="{Binding EmojiImages}" IsVisible="{Binding HasPlainText}" Body="{Binding Text}" Marks="{Binding MentionMarks}" TextWrapping="Wrap" LinkClicked="MessageLink_Clicked" />
                                             <Border Classes="linkpreview" IsVisible="{Binding HasPreview}" PointerReleased="PreviewCard_PointerReleased" ToolTip.Tip="{Binding Card.Url}">
                                                 <Grid ColumnDefinitions="Auto,*">
                                                     <Image Source="{Binding PreviewImage}" IsVisible="{Binding HasPreviewImage}" Width="64" Height="64" Margin="0,0,8,0" Stretch="UniformToFill" VerticalAlignment="Top" />
@@ -832,7 +853,7 @@
                             </StackPanel>
                         </Border>
                     </Popup>
-                    <Popup x:Name="ShelfPopup" PlacementTarget="{Binding #ShelfButton}" Placement="TopEdgeAlignedLeft" IsLightDismissEnabled="True" Closed="ShelfPopup_Closed">
+                    <Popup x:Name="ShelfPopup" PlacementTarget="{Binding #PlusButton}" Placement="TopEdgeAlignedLeft" IsLightDismissEnabled="True" Closed="ShelfPopup_Closed">
                         <Border Padding="8" CornerRadius="12" Width="372" Background="{DynamicResource AppBg}" BorderBrush="{DynamicResource Line}" BorderThickness="1">
                             <DockPanel>
                                 <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto" Margin="4,0,0,6">
@@ -877,19 +898,43 @@
                             </ListBox>
                         </Border>
                     </Popup>
+                    <Popup x:Name="PlusPopup" PlacementTarget="{Binding #PlusButton}" Placement="TopEdgeAlignedLeft" IsLightDismissEnabled="True">
+                        <Border Padding="4" CornerRadius="12" MinWidth="190" Background="{DynamicResource AppBg}" BorderBrush="{DynamicResource Line}" BorderThickness="1">
+                            <Border.Styles>
+                                <Style Selector="Button.pick">
+                                    <Setter Property="Background" Value="Transparent" />
+                                    <Setter Property="HorizontalAlignment" Value="Stretch" />
+                                    <Setter Property="HorizontalContentAlignment" Value="Left" />
+                                    <Setter Property="Padding" Value="8,7" />
+                                    <Setter Property="CornerRadius" Value="8" />
+                                </Style>
+                            </Border.Styles>
+                            <StackPanel>
+                                <Button x:Name="AttachButton" Classes="pick" Click="Attach_Click" ToolTip.Tip="Send a picture or GIF">
+                                    <Grid ColumnDefinitions="30,*"><TextBlock Text="&#128247;" FontSize="18" HorizontalAlignment="Center" FontFamily="Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji, Twemoji Mozilla" /><TextBlock Grid.Column="1" Text="Picture or GIF" VerticalAlignment="Center" /></Grid>
+                                </Button>
+                                <Button x:Name="FileButton" Classes="pick" Click="SendFileButton_Click" ToolTip.Tip="Send a file of any size. It is only sent to people who download it, from where it is on your computer.">
+                                    <Grid ColumnDefinitions="30,*"><TextBlock Text="&#128196;" FontSize="18" HorizontalAlignment="Center" FontFamily="Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji, Twemoji Mozilla" /><TextBlock Grid.Column="1" Text="File" VerticalAlignment="Center" /></Grid>
+                                </Button>
+                                <Button x:Name="ShelfButton" Classes="pick" Click="Shelf_Click" ToolTip.Tip="Your GIF shelf">
+                                    <Grid ColumnDefinitions="30,*"><TextBlock Text="GIF" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" /><TextBlock Grid.Column="1" Text="GIF shelf" VerticalAlignment="Center" /></Grid>
+                                </Button>
+                                <Button x:Name="ComposerEmojiButton" Classes="pick" Click="ComposerEmoji_Click" ToolTip.Tip="Emoji (or type : and a name, like :thumbs_up:)">
+                                    <Grid ColumnDefinitions="30,*"><TextBlock Text="&#128512;" FontSize="18" HorizontalAlignment="Center" FontFamily="Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji, Twemoji Mozilla" /><TextBlock Grid.Column="1" Text="Emoji" VerticalAlignment="Center" /></Grid>
+                                </Button>
+                                <Button x:Name="PollButton" Classes="pick" Click="Poll_Click" ToolTip.Tip="Ask a question with answers to vote on">
+                                    <Grid ColumnDefinitions="30,*"><TextBlock Text="&#128202;" FontSize="18" HorizontalAlignment="Center" FontFamily="Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji, Twemoji Mozilla" /><TextBlock Grid.Column="1" Text="Poll" VerticalAlignment="Center" /></Grid>
+                                </Button>
+                            </StackPanel>
+                        </Border>
+                    </Popup>
                     <Border Margin="14,4,14,14" Padding="14,2,6,2" CornerRadius="22"
                             Background="{DynamicResource AppBg}" BorderBrush="{DynamicResource Line}" BorderThickness="1">
                         <DockPanel>
                             <Button x:Name="SendButton" DockPanel.Dock="Right" VerticalAlignment="Bottom" Content="Send" Classes="primary" CornerRadius="18" Padding="18,7"
                                     Margin="6,4,0,4" IsEnabled="False" Click="Send_Click" />
-                            <Button x:Name="AttachButton" DockPanel.Dock="Left" VerticalAlignment="Bottom" Content="📎" Width="36" Height="36" Padding="0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Margin="0,4,2,4" CornerRadius="18"
-                                    Background="Transparent" IsEnabled="False" ToolTip.Tip="Send a picture or GIF" Click="Attach_Click" />
-                            <Button x:Name="FileButton" DockPanel.Dock="Left" VerticalAlignment="Bottom" Content="&#128196;" Width="36" Height="36" Padding="0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Margin="0,4,2,4" CornerRadius="18"
-                                    Background="Transparent" IsEnabled="False" ToolTip.Tip="Send a file of any size. It is only sent to people who download it, from where it is on your computer." Click="SendFileButton_Click" />
-                            <Button x:Name="ShelfButton" DockPanel.Dock="Left" VerticalAlignment="Bottom" Content="GIF" FontSize="11" FontWeight="SemiBold" Width="36" Height="36" Padding="0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Margin="0,4,2,4" CornerRadius="18"
-                                    Background="Transparent" IsEnabled="False" ToolTip.Tip="Your GIF shelf" Click="Shelf_Click" />
-                            <Button x:Name="ComposerEmojiButton" DockPanel.Dock="Left" VerticalAlignment="Bottom" Content="😀" Width="36" Height="36" Padding="0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Margin="0,4,2,4" CornerRadius="18"
-                                    Background="Transparent" IsEnabled="False" ToolTip.Tip="Emoji (or type : and a name, like :thumbs_up:)" Click="ComposerEmoji_Click" />
+                            <Button x:Name="PlusButton" DockPanel.Dock="Left" VerticalAlignment="Bottom" Content="+" FontSize="22" Width="36" Height="36" Padding="0,0,0,2" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Margin="0,4,6,4" CornerRadius="18"
+                                    Background="Transparent" IsEnabled="False" ToolTip.Tip="Add a picture, file, GIF, emoji or poll" AutomationProperties.Name="Add to the message" Click="Plus_Click" />
                             <Grid>
                                 <TextBox x:Name="InputBox" Classes="composer" PlaceholderText="Write a message" IsEnabled="False" AcceptsReturn="True" TextWrapping="Wrap" MaxHeight="150"
                                          ToolTip.Tip="Enter sends the message; Shift+Enter starts a new line" />

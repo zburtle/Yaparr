@@ -126,6 +126,12 @@ public sealed class MessageVm : Observable
         var signature = string.Join("|", reactions.Select(r => r.Emoji + ":" + string.Join(",", r.Accounts.Select(a => a.Value)))) + "/" + me.Value;
         if (signature == _reactionSignature) return;
         _reactionSignature = signature;
+        if (Poll != null)
+        {
+            // The votes are shown in the poll itself; only the other reactions are chips.
+            SetPoll(reactions, me, nameOf);
+            reactions = reactions.Where(r => !Yaparr.Chat.Poll.Keycaps.Contains(r.Emoji)).ToList();
+        }
         Reactions.Clear();
         foreach (var r in reactions)
         {
@@ -171,6 +177,8 @@ public sealed class MessageVm : Observable
     public string? Channel { get; init; }
     public bool HasAttachment => Attachment != null;
     public bool HasText => Text.Length > 0;
+    /// <summary>The words are shown as they are unless the message asks a poll (that is shown as its question and answers).</summary>
+    public bool HasPlainText => HasText && Poll == null;
 
     /// <summary>A message of nothing but one to three emoji (standard or custom), shown large.</summary>
     public bool IsBigEmoji => !IsSystem && Attachment == null && File == null
@@ -233,6 +241,29 @@ public sealed class MessageVm : Observable
     public FileOffer? File { get; init; }
     public bool HasFile => File != null;
     public string FileName => File?.Name ?? "";
+
+    /// <summary>The poll this message asks, or null.</summary>
+    public Yaparr.Chat.Poll? Poll { get; init; }
+    public bool HasPoll => Poll != null;
+    public string PollQuestion => Poll?.Question ?? "";
+    public System.Collections.ObjectModel.ObservableCollection<PollOptionVm> PollOptions { get; } = new();
+    private string _pollHint = "";
+    public string PollHint { get => _pollHint; private set { if (_pollHint == value) return; _pollHint = value; Raise(); } }
+
+    /// <summary>The poll as the votes stand: each answer with how many chose it, and which are yours.</summary>
+    public void SetPoll(IReadOnlyList<ReactionSummary> reactions, PeerId me, Func<PeerId, string> nameOf)
+    {
+        if (Poll == null) return;
+        var result = Poll.Tally(reactions);
+        PollOptions.Clear();
+        foreach (var o in result.Options)
+        {
+            var names = o.Accounts.Select(nameOf).OrderBy(n => n, StringComparer.CurrentCultureIgnoreCase).ToList();
+            var who = names.Count == 0 ? "No votes yet" : names.Count <= 8 ? string.Join(", ", names) : string.Join(", ", names.Take(8)) + " and " + (names.Count - 8) + " more";
+            PollOptions.Add(new PollOptionVm(this, o.Index, o.Text, o.Count, result.Voters == 0 ? 0 : 100.0 * o.Count / result.Voters, o.Accounts.Contains(me), who));
+        }
+        PollHint = (Poll.Multiple ? "Choose any number" : "Choose one") + " · " + (result.Voters == 1 ? "1 person has voted" : result.Voters + " people have voted");
+    }
 
     /// <summary>The room this message invites to (it came in a direct chat), or null.</summary>
     public Yaparr.Chat.RoomInvite? Invite { get; init; }
@@ -444,6 +475,26 @@ public sealed record PeerVm(string Id, string Name, bool Online, DateTimeOffset 
     public bool HasTipSeen => !Blocked && !BannedHere && PeerStatus.HasSeen(Link, Online);
     public string TipSeen => PeerStatus.Seen(LastSeen);
     public string IdLines => PeerStatus.IdLines(Id);
+}
+
+/// <summary>One answer of a poll in a message: its words, how many chose it, the share of the people who voted, and whether you did.</summary>
+public sealed class PollOptionVm
+{
+    public PollOptionVm(MessageVm owner, int index, string text, int count, double percent, bool mine, string who)
+    {
+        Owner = owner; Index = index; Text = text; Count = count; Percent = percent; Mine = mine; Tooltip = who;
+    }
+
+    public MessageVm Owner { get; }
+    public int Index { get; }
+    public string Text { get; }
+    public int Count { get; }
+    public double Percent { get; }
+    public bool Mine { get; }
+    public string Tooltip { get; }
+    public string Label => Mine ? "✓ " + Text : Text;
+    public Avalonia.Media.FontWeight LabelWeight => Mine ? Avalonia.Media.FontWeight.SemiBold : Avalonia.Media.FontWeight.Normal;
+    public string CountText => Count == 0 ? "" : Count.ToString();
 }
 
 /// <summary>One emoji under a message: the emoji, how many put it there, whether you did, and who (for the tooltip). The last chip, <see cref="IsMore"/>, counts the ones that did not fit in the row ("+4") and opens the rest.</summary>

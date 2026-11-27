@@ -786,7 +786,7 @@ public sealed partial class Session : IDisposable
         {
             Invite = invite,
             SentHere = _node != null && m.From.Id == _node.Id,
-            ReplyKey = parts.ReplyTo, Mentions = parts.Mentions, Card = parts.Preview, Emoji = parts.Emoji,
+            Poll = parts.Poll, ReplyKey = parts.ReplyTo, Mentions = parts.Mentions, Card = parts.Preview, Emoji = parts.Emoji,
             MentionsMe = _node != null && !mine && (m.Room != null && _rooms.Keys.FirstOrDefault(r => r.Name == m.Room) is { } named
                 ? named.Names(m, _node.AccountId)
                 : parts.Mentions.Any(x => x.Account == _node.AccountId)),
@@ -1100,6 +1100,26 @@ public sealed partial class Session : IDisposable
         else id = await chat.Direct!.SendAsync(text, replyKey, preview, emoji);
         chat.Add(new Line(ChatMessage.KeyOf(_node.Id, id), _node.DisplayName, text, DateTimeOffset.Now, mine: true, channel, OwnMessage(chat, id, text, channel, null))
             { ReplyKey = replyKey, Mentions = mentions?.ToList() ?? new List<Mention>(), Card = preview, Emoji = emoji.Count == 0 ? null : emoji });
+        Resort(chat);
+    }
+
+    /// <summary>Asks a poll in the chat, in the channel on show.</summary>
+    public async Task SendPollAsync(Chat chat, Poll poll, string? replyKey = null)
+    {
+        if (_node == null) return;
+        var text = MessageEnvelope.Wrap("", replyKey, null, poll: poll);
+        string id;
+        string? channel = null;
+        if (chat.Room is { } room)
+        {
+            channel = chat.CurrentChannel;
+            // The text is already wrapped (it carries the poll), so it goes as it is.
+            id = channel == RoomChannels.DefaultText ? await room.SendAsync(text) : await room.SendAsync(text, channel);
+        }
+        else id = await chat.Direct!.SendAsync(text);
+        var line = new Line(ChatMessage.KeyOf(_node.Id, id), _node.DisplayName, poll.Words, DateTimeOffset.Now, mine: true, channel, OwnMessage(chat, id, text, channel, null)) { ReplyKey = replyKey, Poll = poll };
+        chat.Add(line);
+        line.SetReactions(Array.Empty<ReactionSummary>(), _node.AccountId);
         Resort(chat);
     }
 

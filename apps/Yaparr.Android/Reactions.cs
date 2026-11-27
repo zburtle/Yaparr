@@ -74,6 +74,12 @@ public sealed partial class Line
         var signature = string.Join("|", reactions.Select(r => r.Emoji + ":" + r.Count + ":" + r.Accounts.Contains(me)));
         if (signature == _reactionSignature) return;
         _reactionSignature = signature;
+        if (Poll != null)
+        {
+            // The votes are shown in the poll itself; only the other reactions are chips.
+            SetPoll(reactions, me);
+            reactions = reactions.Where(r => !Yaparr.Chat.Poll.Keycaps.Contains(r.Emoji)).ToList();
+        }
         Reactions.Clear();
         foreach (var r in reactions) Reactions.Add(new ReactionChip(this, r.Emoji, r.Count, r.Accounts.Contains(me), custom: r.Custom));
         if (reactions.Count > 0) Reactions.Add(new ReactionChip(this, "☺️", 0, mine: false, isAdd: true));
