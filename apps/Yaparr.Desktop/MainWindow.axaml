@@ -911,19 +911,19 @@
                             </Border.Styles>
                             <StackPanel>
                                 <Button x:Name="AttachButton" Classes="pick" Click="Attach_Click" ToolTip.Tip="Send a picture or GIF">
-                                    <Grid ColumnDefinitions="30,*"><TextBlock Text="&#128247;" FontSize="18" HorizontalAlignment="Center" FontFamily="Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji, Twemoji Mozilla" /><TextBlock Grid.Column="1" Text="Picture or GIF" VerticalAlignment="Center" /></Grid>
+                                    <Grid ColumnDefinitions="30,*"><TextBlock Text="&#128247;" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center" FontFamily="Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji, Twemoji Mozilla" /><TextBlock Grid.Column="1" Text="Picture or GIF" VerticalAlignment="Center" /></Grid>
                                 </Button>
                                 <Button x:Name="FileButton" Classes="pick" Click="SendFileButton_Click" ToolTip.Tip="Send a file of any size. It is only sent to people who download it, from where it is on your computer.">
-                                    <Grid ColumnDefinitions="30,*"><TextBlock Text="&#128196;" FontSize="18" HorizontalAlignment="Center" FontFamily="Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji, Twemoji Mozilla" /><TextBlock Grid.Column="1" Text="File" VerticalAlignment="Center" /></Grid>
+                                    <Grid ColumnDefinitions="30,*"><TextBlock Text="&#128196;" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center" FontFamily="Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji, Twemoji Mozilla" /><TextBlock Grid.Column="1" Text="File" VerticalAlignment="Center" /></Grid>
                                 </Button>
                                 <Button x:Name="ShelfButton" Classes="pick" Click="Shelf_Click" ToolTip.Tip="Your GIF shelf">
                                     <Grid ColumnDefinitions="30,*"><TextBlock Text="GIF" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" /><TextBlock Grid.Column="1" Text="GIF shelf" VerticalAlignment="Center" /></Grid>
                                 </Button>
                                 <Button x:Name="ComposerEmojiButton" Classes="pick" Click="ComposerEmoji_Click" ToolTip.Tip="Emoji (or type : and a name, like :thumbs_up:)">
-                                    <Grid ColumnDefinitions="30,*"><TextBlock Text="&#128512;" FontSize="18" HorizontalAlignment="Center" FontFamily="Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji, Twemoji Mozilla" /><TextBlock Grid.Column="1" Text="Emoji" VerticalAlignment="Center" /></Grid>
+                                    <Grid ColumnDefinitions="30,*"><TextBlock Text="&#128512;" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center" FontFamily="Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji, Twemoji Mozilla" /><TextBlock Grid.Column="1" Text="Emoji" VerticalAlignment="Center" /></Grid>
                                 </Button>
                                 <Button x:Name="PollButton" Classes="pick" Click="Poll_Click" ToolTip.Tip="Ask a question with answers to vote on">
-                                    <Grid ColumnDefinitions="30,*"><TextBlock Text="&#128202;" FontSize="18" HorizontalAlignment="Center" FontFamily="Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji, Twemoji Mozilla" /><TextBlock Grid.Column="1" Text="Poll" VerticalAlignment="Center" /></Grid>
+                                    <Grid ColumnDefinitions="30,*"><TextBlock Text="&#128202;" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center" FontFamily="Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji, Twemoji Mozilla" /><TextBlock Grid.Column="1" Text="Poll" VerticalAlignment="Center" /></Grid>
                                 </Button>
                             </StackPanel>
                         </Border>
