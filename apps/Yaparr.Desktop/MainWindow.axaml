@@ -911,7 +911,7 @@
                             </Border.Styles>
                             <StackPanel>
                                 <Button x:Name="AttachButton" Classes="pick" Click="Attach_Click" ToolTip.Tip="Send a picture or GIF">
-                                    <Grid ColumnDefinitions="30,*"><TextBlock Text="&#128247;" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center" FontFamily="Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji, Twemoji Mozilla" /><TextBlock Grid.Column="1" Text="Picture or GIF" VerticalAlignment="Center" /></Grid>
+                                    <Grid ColumnDefinitions="30,*"><TextBlock Text="&#128247;" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center" FontFamily="Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji, Twemoji Mozilla" /><TextBlock Grid.Column="1" Text="Image" VerticalAlignment="Center" /></Grid>
                                 </Button>
                                 <Button x:Name="FileButton" Classes="pick" Click="SendFileButton_Click" ToolTip.Tip="Send a file of any size. It is only sent to people who download it, from where it is on your computer.">
                                     <Grid ColumnDefinitions="30,*"><TextBlock Text="&#128196;" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center" FontFamily="Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji, Twemoji Mozilla" /><TextBlock Grid.Column="1" Text="File" VerticalAlignment="Center" /></Grid>
