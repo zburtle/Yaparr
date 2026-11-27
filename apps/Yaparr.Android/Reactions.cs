@@ -55,7 +55,7 @@ public sealed class ReactionChip : Observable
 
 public sealed partial class Line
 {
-    private string _reactionSignature = "";
+    private string? _reactionSignature;
 
     /// <summary>The emoji on this message; the last one, when there are any, is the button to add another.</summary>
     public ObservableCollection<ReactionChip> Reactions { get; } = new();

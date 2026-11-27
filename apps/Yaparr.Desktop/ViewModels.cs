@@ -98,7 +98,7 @@ public sealed class MessageVm : Observable
 
     // ---- reactions ----
 
-    private string _reactionSignature = "";
+    private string? _reactionSignature;
 
     /// <summary>The emoji on this message, with how many put them there; the last one, when there are any, is the button to add another.</summary>
     public System.Collections.ObjectModel.ObservableCollection<ReactionChipVm> Reactions { get; } = new();
