@@ -931,7 +931,7 @@
                     <Border Margin="14,4,14,14" Padding="14,2,6,2" CornerRadius="22"
                             Background="{DynamicResource AppBg}" BorderBrush="{DynamicResource Line}" BorderThickness="1">
                         <DockPanel>
-                            <Button x:Name="SendButton" DockPanel.Dock="Right" VerticalAlignment="Bottom" Content="Send" Classes="primary" CornerRadius="18" Padding="18,7"
+                            <Button x:Name="SendButton" DockPanel.Dock="Right" VerticalAlignment="Center" Content="Send" Classes="primary" CornerRadius="18" Padding="18,7"
                                     Margin="6,4,0,4" IsEnabled="False" Click="Send_Click" />
                             <Button x:Name="PlusButton" DockPanel.Dock="Left" VerticalAlignment="Bottom" Content="+" FontSize="22" Width="36" Height="36" Padding="0,0,0,2" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Margin="0,4,6,4" CornerRadius="18"
                                     Background="Transparent" IsEnabled="False" ToolTip.Tip="Add a picture, file, GIF, emoji or poll" AutomationProperties.Name="Add to the message" Click="Plus_Click" />
