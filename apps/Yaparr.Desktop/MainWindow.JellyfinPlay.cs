@@ -239,8 +239,8 @@ public partial class MainWindow
         }
 
         _filmText = view != null ? view.Control.CaptionBlock : new TextBlock { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
-        _filmElapsed = new TextBlock { VerticalAlignment = VerticalAlignment.Center, FontSize = 12, MinWidth = 52, TextAlignment = TextAlignment.Right };
-        _filmLength = new TextBlock { VerticalAlignment = VerticalAlignment.Center, FontSize = 12, MinWidth = 52 };
+        _filmElapsed = new TextBlock { VerticalAlignment = VerticalAlignment.Center, FontSize = 12, Width = 56, TextAlignment = TextAlignment.Left };
+        _filmLength = new TextBlock { VerticalAlignment = VerticalAlignment.Center, FontSize = 12, Width = 56, TextAlignment = TextAlignment.Right };
         _filmPause = Icon(PausePath, "Pause", 28);
         _filmShowsPlay = false;
         _filmPause.Click += (_, _) =>
