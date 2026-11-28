@@ -15,6 +15,9 @@ public sealed class LocalSound
     private readonly object _lock = new();
     private volatile float _gain = 1f;
     private volatile int _delayMs;
+    private volatile int _maxDelayMs;
+    private int _targetMs;
+    private long _cleanFrames;   // frames played since it last ran dry or was eased down
     private bool _primed;
     private float _ramp = 1f;
     private int _underruns, _trims;
@@ -29,7 +32,16 @@ public sealed class LocalSound
     /// How much is held back before it plays, which is what smooths out the pieces arriving unevenly. It takes effect when the sound starts (or starts again after running dry);
     /// afterwards the speed of playing is eased so that the level held comes back to it.
     /// </summary>
-    public int DelayMs { get => _delayMs; set => _delayMs = Math.Clamp(value, 0, 1500); }
+    public int DelayMs { get => _delayMs; set { _delayMs = Math.Clamp(value, 0, 1500); _targetMs = Math.Max(_targetMs, _delayMs); } }
+
+    /// <summary>
+    /// When above <see cref="DelayMs"/>, what is held back adapts: it is DelayMs while the sound keeps up, and each time it runs dry it is raised (by 20 ms, up to this) so it does not
+    /// again; after half a minute without running dry it is eased back down. The delay is then only as long as this computer and the film's pieces make necessary.
+    /// </summary>
+    public int MaxDelayMs { get => _maxDelayMs; set => _maxDelayMs = Math.Clamp(value, 0, 1500); }
+
+    /// <summary>What is held back now, in milliseconds (between DelayMs and MaxDelayMs).</summary>
+    public int TargetMs { get { lock (_lock) return Math.Max(_targetMs, _delayMs); } }
 
     /// <summary>How loud it is, 0 to 2 (1 is as decoded).</summary>
     public float Gain { get => _gain; set => _gain = Math.Clamp(value, 0f, 2f); }
@@ -65,7 +77,9 @@ public sealed class LocalSound
         float gain = _gain;
         lock (_lock)
         {
-            int wanted = _delayMs * 48 * Channels;
+            int target = Math.Clamp(_targetMs, _delayMs, Math.Max(_delayMs, _maxDelayMs));
+            _targetMs = target;
+            int wanted = target * 48 * Channels;
             if (_count == 0) _primed = false;
             else if (!_primed && _count >= wanted) { _primed = true; _ramp = 0f; _pos = 0; }
             if (!_primed) { output.Clear(); return; }
@@ -99,6 +113,11 @@ public sealed class LocalSound
                 }
                 _pos += step;
             }
+            if (_maxDelayMs > _delayMs)
+            {
+                _cleanFrames += made;
+                if (_cleanFrames > 48000L * 30 && _targetMs > _delayMs) { _targetMs = Math.Max(_delayMs, _targetMs - 10); _cleanFrames = 0; }
+            }
             int used = (int)_pos;
             _start = (_start + used * Channels) % _ring.Length;
             _count -= used * Channels;
@@ -117,6 +136,8 @@ public sealed class LocalSound
                 _primed = false;
                 _pos = 0;
                 Interlocked.Increment(ref _underruns);
+                _cleanFrames = 0;
+                if (_maxDelayMs > _delayMs) _targetMs = Math.Min(_maxDelayMs, _targetMs + 20);
             }
         }
     }
