@@ -5,7 +5,7 @@
     <UserControl.Styles>
         <!-- A sound: a coloured badge with its first letter, the name, and who added it and how long it is. -->
         <Style Selector="Button.tile">
-            <Setter Property="Width" Value="160" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
             <Setter Property="Height" Value="76" />
             <Setter Property="Margin" Value="0,0,10,10" />
             <Setter Property="Padding" Value="12,10" />
@@ -83,7 +83,7 @@
                  AutomationProperties.Name="Search sounds" TextChanged="Search_Changed" />
 
         <!-- Your ten number keys: drag a sound onto one, or one key onto another to swap them. Only you see this arrangement. -->
-        <ItemsControl x:Name="SlotBar" Grid.Row="2" Margin="0,0,0,12">
+        <ItemsControl x:Name="SlotBar" Grid.Row="2" Margin="0,0,-6,12">
             <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate><UniformGrid Rows="1" Columns="10" /></ItemsPanelTemplate>
             </ItemsControl.ItemsPanel>
@@ -103,10 +103,7 @@
 
         <Grid Grid.Row="3" MinHeight="150">
             <ScrollViewer x:Name="TileScroll" VerticalScrollBarVisibility="Auto">
-                <ItemsControl x:Name="Tiles">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
+                <ItemsControl x:Name="Tiles" Margin="0,0,-10,0">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="local:SoundVm">
                             <Button Classes="tile" Classes.playing="{Binding Playing}" IsEnabled="{Binding Available}"
