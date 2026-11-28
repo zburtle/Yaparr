@@ -169,6 +169,12 @@ public partial class MainWindow
             if (NotificationsOverlay.IsVisible) CloseNotificationList(); else ShowNotificationList();
             return;
         }
+        if (e.KeyModifiers == KeyModifiers.Control && e.Key == Key.K)
+        {
+            e.Handled = true;
+            _ = ShowChannelSwitcherAsync();
+            return;
+        }
         if (e.KeyModifiers != KeyModifiers.Control || e.Key != Key.OemComma) return;
         e.Handled = true;
         if (SettingsOverlay.IsVisible) CloseSettings(); else ShowSettings();

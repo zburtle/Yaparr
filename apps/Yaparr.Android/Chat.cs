@@ -8,7 +8,7 @@ namespace Yaparr.AndroidApp;
 /// <summary>A text channel of a room, as a button over the messages.</summary>
 public sealed class ChannelChip : Observable
 {
-    private bool _selected, _unread;
+    private bool _selected, _unread, _pinned, _muted;
 
     public ChannelChip(string id, string name)
     {
@@ -22,7 +22,7 @@ public sealed class ChannelChip : Observable
     public bool Selected
     {
         get => _selected;
-        set { if (_selected == value) return; _selected = value; Raise(); Raise(nameof(Fill)); Raise(nameof(Ink)); }
+        set { if (_selected == value) return; _selected = value; Raise(); Raise(nameof(Fill)); Raise(nameof(Ink)); Raise(nameof(Fade)); }
     }
 
     public bool Unread
@@ -31,8 +31,32 @@ public sealed class ChannelChip : Observable
         set { if (_unread == value) return; _unread = value; Raise(); Raise(nameof(Label)); }
     }
 
-    /// <summary>The name, with a dot after it when something in the channel has not been read.</summary>
-    public string Label => _unread ? "# " + Name + " •" : "# " + Name;
+    /// <summary>Kept at the front of the room's channels (your choice, the same on all your devices).</summary>
+    public bool Pinned
+    {
+        get => _pinned;
+        set { if (_pinned == value) return; _pinned = value; Raise(); Raise(nameof(Label)); Raise(nameof(PinText)); Raise(nameof(Notes)); }
+    }
+
+    /// <summary>The category the admins put the channel in; empty for none.</summary>
+    public string Category { get; set; } = "";
+
+    /// <summary>No notifications and no count in the room for this channel (your choice).</summary>
+    public bool Muted
+    {
+        get => _muted;
+        set { if (_muted == value) return; _muted = value; Raise(); Raise(nameof(Fade)); Raise(nameof(MuteText)); Raise(nameof(Notes)); }
+    }
+
+    /// <summary>The name, with a dot after it when something in the channel has not been read, and a pin before it when it is pinned.</summary>
+    public string Label => (_pinned ? "\U0001F4CC " : "") + (_unread ? "# " + Name + " •" : "# " + Name);
+
+    /// <summary>A muted channel is dimmed unless it is the one on show.</summary>
+    public double Fade => _muted && !_selected ? 0.55 : 1;
+
+    public string PinText => _pinned ? "Unpin" : "Pin";
+    public string MuteText => _muted ? "Unmute" : "Mute";
+    public string Notes => string.Join(", ", new[] { Category.Length > 0 ? Category : null, _pinned ? "pinned" : null, _muted ? "muted" : null }.OfType<string>());
 
     public IBrush Fill => Selected ? Theme.Brush("Accent") : Theme.Brush("BubbleOther");
     public IBrush Ink => Selected ? Brushes.White : Theme.Brush("Ink");
@@ -45,6 +69,9 @@ public sealed class Chat : Observable
     private readonly HashSet<string> _ids = new();
     private readonly Dictionary<string, Line> _byKey = new();
     private readonly Dictionary<string, int> _unread = new();
+    private readonly Dictionary<string, int> _loud = new();   // of those, the ones that name you: a muted channel still counts these
+    private List<ChannelInfo> _textChannels = new();
+    private List<string> _categoryOrder = new();
     private string _title, _preview = "", _status = "", _syncText = "";
     private bool _syncing;
     private string _channel = RoomChannels.DefaultText;
@@ -134,7 +161,7 @@ public sealed class Chat : Observable
     public ObservableCollection<ChannelChip> Channels { get; } = new();
 
     /// <summary>More than one text channel: the buttons are worth showing.</summary>
-    public bool ShowChannels => Channels.Count > 1;
+    public bool ShowChannels => _textChannels.Count > 1;
 
     public string CurrentChannel => _channel;
 
@@ -306,7 +333,13 @@ public sealed class Chat : Observable
 
     public DateTimeOffset LastActivity { get; private set; } = DateTimeOffset.MinValue;
 
-    public int Unread => _unread.Values.Sum();
+    /// <summary>Your own choices for the room's channels (muted, pinned, hidden, order); set once the room is shown.</summary>
+    public AppSettings? Prefs { get; set; }
+
+    private bool ChannelMuted(string channel) => Prefs != null && Room != null && ChannelPrefs.Has(Prefs, Room.RoomId, channel, ChannelFlag.Muted);
+
+    // A muted channel adds nothing to the room's count except the messages that name you.
+    public int Unread => _unread.Sum(p => ChannelMuted(p.Key) ? _loud.GetValueOrDefault(p.Key) : p.Value);
     public bool HasUnread => Unread > 0;
     public string UnreadText => Unread > 99 ? "99+" : Unread.ToString();
 
@@ -315,17 +348,60 @@ public sealed class Chat : Observable
         Raise(nameof(Unread));
         Raise(nameof(HasUnread));
         Raise(nameof(UnreadText));
-        foreach (var chip in Channels) chip.Unread = _unread.GetValueOrDefault(chip.Id) > 0;
+        foreach (var chip in EveryChannel) chip.Unread = _unread.GetValueOrDefault(chip.Id) > 0;
     }
 
     /// <summary>The text channels of the room, in order. The one on show stays on show if it still exists.</summary>
     public void SetChannels(IEnumerable<ChannelInfo> channels)
     {
-        var text = channels.Where(c => c.Kind == ChannelKind.Text).OrderBy(c => c.Order).ToList();
-        Channels.Clear();
-        foreach (var c in text) Channels.Add(new ChannelChip(c.Id, c.Name) { Selected = c.Id == _channel, Unread = _unread.GetValueOrDefault(c.Id) > 0 });
+        var everything = channels.ToList();
+        _categoryOrder = RoomChannels.CategoriesOf(everything);
+        var text = _textChannels = everything.Where(c => c.Kind == ChannelKind.Text).OrderBy(c => c.Order).ToList();
+        EveryChannel = text.Select(c => new ChannelChip(c.Id, c.Name) { Category = c.Category, Selected = c.Id == _channel, Unread = _unread.GetValueOrDefault(c.Id) > 0 }).ToList();
         if (text.Count > 0 && text.All(c => c.Id != _channel)) SelectChannel(text[0].Id);
+        Relayout();
         Raise(nameof(ShowChannels));
+    }
+
+    /// <summary>Every text channel of the room, in the room's order, with your choices on each (the row of channels leaves out the hidden ones).</summary>
+    public List<ChannelChip> EveryChannel { get; private set; } = new();
+
+    /// <summary>The categories of the room, in the order they are shown.</summary>
+    public IReadOnlyList<string> Categories => _categoryOrder;
+
+    /// <summary>Lays the row of channels out: the ones in no category, then each category's; in each group the pinned ones first, and the most recent first when you chose that.</summary>
+    public void Relayout()
+    {
+        if (Room == null) return;
+        var prefs = Prefs;
+        var last = new Dictionary<string, long>();
+        if (prefs != null && ChannelPrefs.RecentFirst(prefs, Room.RoomId))
+            foreach (var line in _all)
+            {
+                var key = line.Channel ?? RoomChannels.DefaultText;
+                long at = line.When.ToUnixTimeMilliseconds();
+                if (at > last.GetValueOrDefault(key)) last[key] = at;
+            }
+        foreach (var chip in EveryChannel)
+        {
+            chip.Pinned = prefs != null && ChannelPrefs.Has(prefs, Room.RoomId, chip.Id, ChannelFlag.Pinned);
+            chip.Muted = prefs != null && ChannelPrefs.Has(prefs, Room.RoomId, chip.Id, ChannelFlag.Muted);
+        }
+        var wanted = new List<ChannelChip>();
+        if (prefs == null) wanted.AddRange(EveryChannel);
+        else
+        {
+            List<ChannelChip> Group(string category) => ChannelPrefs.Arrange(prefs, Room.RoomId,
+                EveryChannel.Where(c => string.Equals(c.Category, category, StringComparison.CurrentCultureIgnoreCase)), c => c.Id, c => last.GetValueOrDefault(c.Id));
+            wanted.AddRange(Group(""));
+            foreach (var name in _categoryOrder) wanted.AddRange(Group(name));
+        }
+        if (!Channels.SequenceEqual(wanted))
+        {
+            Channels.Clear();
+            foreach (var chip in wanted) Channels.Add(chip);
+        }
+        RaiseUnread();
     }
 
     /// <summary>Shows another text channel of the room.</summary>
@@ -429,10 +505,11 @@ public sealed class Chat : Observable
     }
 
     /// <summary>Counts a message as unread in its channel.</summary>
-    public void NoteUnread(string? channel)
+    public void NoteUnread(string? channel, bool mentioned = false)
     {
         var key = channel ?? RoomChannels.DefaultText;
         _unread[key] = _unread.GetValueOrDefault(key) + 1;
+        if (mentioned) _loud[key] = _loud.GetValueOrDefault(key) + 1;
         RaiseUnread();
     }
 
@@ -440,6 +517,7 @@ public sealed class Chat : Observable
     public void ClearUnread(string? channel = null)
     {
         var key = channel ?? (IsRoom ? _channel : RoomChannels.DefaultText);
+        _loud.Remove(key);
         if (_unread.Remove(key)) RaiseUnread();
     }
 
@@ -447,6 +525,7 @@ public sealed class Chat : Observable
     {
         if (_unread.Count == 0) return;
         _unread.Clear();
+        _loud.Clear();
         RaiseUnread();
     }
 }

@@ -471,19 +471,23 @@
             </Border>
             </StackPanel>
 
-            <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled" IsVisible="{Binding ShowChannels}">
-                <ItemsControl ItemsSource="{Binding Channels}" Margin="8,6">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="6" /></ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="local:ChannelChip">
-                            <Button Content="{Binding Label}" Background="{Binding Fill}" Foreground="{Binding Ink}" Padding="14,6" CornerRadius="16"
-                                    Click="ChannelClicked" />
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </ScrollViewer>
+            <!-- The row of channels, with a button in front that lists all of them (search, pin, mute, hide). -->
+            <Grid Grid.Row="1" ColumnDefinitions="Auto,*" IsVisible="{Binding ShowChannels}">
+                <Button Margin="8,6,0,6" Padding="14,6" CornerRadius="16" Content="#" FontWeight="Bold" VerticalAlignment="Center" Click="ChannelListClicked" AutomationProperties.Name="All channels" />
+                <ScrollViewer Grid.Column="1" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled">
+                    <ItemsControl ItemsSource="{Binding Channels}" Margin="8,6">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="6" /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="local:ChannelChip">
+                                <Button Content="{Binding Label}" Background="{Binding Fill}" Foreground="{Binding Ink}" Opacity="{Binding Fade}" Padding="14,6" CornerRadius="16"
+                                        Click="ChannelClicked" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Grid>
 
             <ListBox x:Name="Messages" Grid.Row="2" Background="Transparent" Padding="8,8" ItemsSource="{Binding Shown}">
                 <!-- A message is not "picked" from the list (a press does something: a long press opens the actions, a tap on an emoji reacts), so the list's own highlight
@@ -876,6 +880,38 @@
         </Border>
 
         <!-- A line of text to answer. -->
+        <!-- Every channel of the room: find one by typing, and choose for yourself which to pin, mute or hide (reached from the # button in front of the channels). -->
+        <Border x:Name="ChannelPanel" IsVisible="False" Background="#99000000" PointerPressed="OverlayBackdropPressed">
+            <Border Background="{DynamicResource Surface}" CornerRadius="16" Margin="16,40" Padding="16" MaxWidth="460" VerticalAlignment="Stretch">
+                <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" RowSpacing="8">
+                    <TextBlock Text="Channels" FontWeight="Bold" FontSize="20" Foreground="{DynamicResource Ink}" />
+                    <TextBox x:Name="ChannelSearchBox" Grid.Row="1" PlaceholderText="Search channels" />
+                    <CheckBox x:Name="ChannelRecentCheck" Grid.Row="2" Content="Most recent first" />
+                    <ScrollViewer Grid.Row="3">
+                        <ItemsControl x:Name="ChannelRows">
+                            <ItemsControl.DataTemplates>
+                                <!-- A category's header folds its channels away or opens them again. -->
+                                <DataTemplate DataType="local:CategoryHeader" x:DataType="local:CategoryHeader">
+                                    <Button Content="{Binding Label}" Background="Transparent" FontWeight="SemiBold" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="6,12,6,6" Click="ChannelCategoryClicked" />
+                                </DataTemplate>
+                                <DataTemplate DataType="local:ChannelChip" x:DataType="local:ChannelChip">
+                                    <StackPanel Spacing="4" Margin="0,0,0,10">
+                                        <Button Content="{Binding Label}" Opacity="{Binding Fade}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="14,10" Click="ChannelRowClicked" />
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <Button Content="{Binding PinText}" Padding="12,4" Click="ChannelPinClicked" />
+                                            <Button Content="{Binding MuteText}" Padding="12,4" Click="ChannelMuteClicked" />
+                                            <TextBlock Text="{Binding Notes}" FontSize="12" Opacity="0.6" VerticalAlignment="Center" Foreground="{DynamicResource Ink}" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.DataTemplates>
+                        </ItemsControl>
+                    </ScrollViewer>
+                    <Button Grid.Row="4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Done" Click="ChannelPanelDone" />
+                </Grid>
+            </Border>
+        </Border>
+
         <!-- Asking a poll: the question, two to ten answers, and whether more than one can be chosen (reached from the + button). -->
         <Border x:Name="PollPanel" IsVisible="False" Background="#99000000" PointerPressed="OverlayBackdropPressed">
             <ScrollViewer VerticalAlignment="Center">

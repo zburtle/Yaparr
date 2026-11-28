@@ -11,6 +11,7 @@ namespace Yaparr.AppCore;
 public static class SettingsSync
 {
     private const string Muted = "muted:", NotifyAll = "notify-all:", RoomSound = "room-sound:";
+    private const string PinnedChannel = "cp:", CollapsedCategory = "cc:", MutedChannel = "cm:", RecentFirst = "cr:";
     private const string MessageSoundName = "message-sound", OnlyMentions = "only-mentions", NotifyMessages = "notify-messages", LinkPreviews = "link-previews", LeaveForAbsent = "leave-for-absent";
 
     private static readonly AppSettings Defaults = new();
@@ -22,6 +23,10 @@ public static class SettingsSync
         foreach (var room in s.MutedRooms) all[Muted + room] = "1";
         foreach (var room in s.NotifyAllRooms) all[NotifyAll + room] = "1";
         foreach (var (room, sound) in s.RoomSounds) all[RoomSound + room] = sound;
+        foreach (var channel in s.PinnedChannels) all[PinnedChannel + channel] = "1";
+        foreach (var category in s.CollapsedCategories) all[CollapsedCategory + category] = "1";
+        foreach (var channel in s.MutedChannels) all[MutedChannel + channel] = "1";
+        foreach (var room in s.RecentFirstRooms) all[RecentFirst + room] = "1";
         if (s.MessageSound != Defaults.MessageSound) all[MessageSoundName] = s.MessageSound;
         if (s.NotifyOnlyMentions != Defaults.NotifyOnlyMentions) all[OnlyMentions] = Flag(s.NotifyOnlyMentions);
         if (s.NotifyMessages != Defaults.NotifyMessages) all[NotifyMessages] = Flag(s.NotifyMessages);
@@ -35,6 +40,10 @@ public static class SettingsSync
     {
         if (name.StartsWith(Muted, StringComparison.Ordinal)) return Toggle(s.MutedRooms, name[Muted.Length..], value != null);
         if (name.StartsWith(NotifyAll, StringComparison.Ordinal)) return Toggle(s.NotifyAllRooms, name[NotifyAll.Length..], value != null);
+        if (name.StartsWith(PinnedChannel, StringComparison.Ordinal)) return Toggle(s.PinnedChannels, name[PinnedChannel.Length..], value != null);
+        if (name.StartsWith(CollapsedCategory, StringComparison.Ordinal)) return Toggle(s.CollapsedCategories, name[CollapsedCategory.Length..], value != null);
+        if (name.StartsWith(MutedChannel, StringComparison.Ordinal)) return Toggle(s.MutedChannels, name[MutedChannel.Length..], value != null);
+        if (name.StartsWith(RecentFirst, StringComparison.Ordinal)) return Toggle(s.RecentFirstRooms, name[RecentFirst.Length..], value != null);
         if (name.StartsWith(RoomSound, StringComparison.Ordinal))
         {
             var room = name[RoomSound.Length..];

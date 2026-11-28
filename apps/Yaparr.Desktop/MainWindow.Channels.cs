@@ -25,6 +25,7 @@ public partial class MainWindow
         UpdateVoiceChannels(conv, room);
         // The channel that was on show last time, once it is known; not while you are looking at the room.
         if (conv != _selected) RestoreChannel(conv, room);
+        ApplyChannelLayout(conv, room);
         if (conv == _selected) UpdateComposer();
     }
 
@@ -80,13 +81,7 @@ public partial class MainWindow
             JoinVoiceIn(conv, room, channel.Id);
             return;
         }
-        conv.SelectChannel(channel.Id);
-        conv.PendingChannel = null;
-        RememberChannel(room, channel.Id);
-        MarkShownRead(conv);
-        UpdateComposer();
-        ScrollToEnd();
-        InputBox.Focus();
+        OpenTextChannel(conv, room, channel.Id);
     }
 
     private void ToggleChannels_Click(object? sender, RoutedEventArgs e)
@@ -96,12 +91,23 @@ public partial class MainWindow
 
     private void Channel_ContextRequested(object? sender, ContextRequestedEventArgs e)
     {
-        if (sender is not Button { DataContext: ChannelVm channel } button || RoomOf(channel) is not var (_, room) || room.MyRole < RoomRole.Admin) return;
+        if (sender is not Button { DataContext: ChannelVm channel } button || RoomOf(channel) is not var (conv, room)) return;
+        var items = new List<Control>();
+        if (channel.IsText) AddChannelChoices(items, conv, room, channel);
+        if (room.MyRole < RoomRole.Admin)
+        {
+            if (items.Count == 0) return;
+            new ContextMenu { ItemsSource = items }.Open(button);
+            e.Handled = true;
+            return;
+        }
+        if (items.Count > 0) items.Add(new Separator());
         var rename = new MenuItem { Header = "Rename…" };
         rename.Click += async (_, _) => await RenameChannelAsync(room, channel);
-        var items = new List<Control> { rename };
+        items.Add(rename);
         if (!channel.IsDefault)
         {
+            items.Add(CategoryMenuFor(room, channel));
             var up = new MenuItem { Header = "Move up" };
             up.Click += (_, _) => MoveChannel(room, channel, up: true);
             var down = new MenuItem { Header = "Move down" };

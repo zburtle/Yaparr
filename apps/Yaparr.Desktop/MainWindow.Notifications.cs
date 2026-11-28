@@ -99,7 +99,7 @@ public partial class MainWindow
         if (watching) return;
         var room = RoomFor(conv);
         // A muted room is silent: no sound, no flash, no pop-up, not even for a mention. Its messages still count as unread.
-        if (room != null && IsMuted(room)) return;
+        if (room != null && (IsMuted(room) || ChannelMuted(room, message))) return;
         // Listed in the notifications as soon as it is one the system would tell you about (what it says, whether or not the sound or pop-up is on, and however long it waits below).
         // (An invitation has its own entry, with buttons: see RecordInvite.)
         if (message.Invite == null && (message.Highlight || conv.IsDirect || !_settings.NotifyOnlyMentions)) RecordNotification(conv, message);
@@ -127,7 +127,7 @@ public partial class MainWindow
             if (room != null ? !(message.Channel is { } ch && Marks.IsUnread(room.RoomId, ch, message.Time.ToUnixTimeMilliseconds()))
                              : conv.Unread == 0) return;
             if (_node is { } node && (room != null ? node.SiblingIsViewing(room.RoomId, message.Channel, null) : false)) return;
-            if (room != null && IsMuted(room)) return;
+            if (room != null && (IsMuted(room) || ChannelMuted(room, message))) return;
             Announce(conv, message);
         });
     }

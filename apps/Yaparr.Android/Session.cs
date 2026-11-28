@@ -366,7 +366,49 @@ public sealed partial class Session : IDisposable
         return chat;
     }
 
-    private void RefreshChannels(Chat chat, ChatRoom room) => chat.SetChannels(room.Channels);
+    private void RefreshChannels(Chat chat, ChatRoom room)
+    {
+        chat.Prefs = _settings;
+        chat.SetChannels(room.Channels);
+    }
+
+    // ---- your own choices for a room's channels (the same on all your devices, see ChannelPrefs) ----
+
+    public bool RecentFirst(Chat chat) => chat.Room is { } room && ChannelPrefs.RecentFirst(_settings, room.RoomId);
+
+    public void SetChannelFlag(Chat chat, string channel, ChannelFlag flag, bool on)
+    {
+        if (chat.Room is not { } room || !ChannelPrefs.Set(_settings, room.RoomId, channel, flag, on)) return;
+        SaveChannelChoices();
+        chat.Relayout();
+    }
+
+    public bool IsCategoryCollapsed(Chat chat, string category) => chat.Room is { } room && ChannelPrefs.IsCollapsed(_settings, room.RoomId, category);
+
+    public void SetCategoryCollapsed(Chat chat, string category, bool on)
+    {
+        if (chat.Room is not { } room || !ChannelPrefs.SetCollapsed(_settings, room.RoomId, category, on)) return;
+        SaveChannelChoices();
+    }
+
+    public void SetRecentFirst(Chat chat, bool on)
+    {
+        if (chat.Room is not { } room || !ChannelPrefs.SetRecentFirst(_settings, room.RoomId, on)) return;
+        SaveChannelChoices();
+        chat.Relayout();
+    }
+
+    private void SaveChannelChoices()
+    {
+        try { _data.SaveSettings(_settings); }
+        catch (IOException) { }
+    }
+
+    // After another device changed a choice: every room again.
+    private void RelayoutAll()
+    {
+        foreach (var chat in Chats) if (chat.IsRoom) chat.Relayout();
+    }
 
     // ---- voice ----
 
@@ -803,7 +845,7 @@ public sealed partial class Session : IDisposable
         TrackPicture(line);
         TrackFile(line);
         if (!counted || line.Mine || m.Channel is not { } channel) return;
-        if (_marks.IsUnread(roomId, channel, m.Timestamp.ToUnixTimeMilliseconds())) chat.NoteUnread(channel);
+        if (_marks.IsUnread(roomId, channel, m.Timestamp.ToUnixTimeMilliseconds())) chat.NoteUnread(channel, line.MentionsMe);
     }
 
     private void OnMessage(Chat chat, ChatMessage m)
@@ -814,8 +856,9 @@ public sealed partial class Session : IDisposable
         TrackFile(line);
         bool shown = _open == chat && (!chat.IsRoom || (m.Channel ?? RoomChannels.DefaultText) == chat.CurrentChannel);
         if (shown) MarkRead(chat);
-        else if (!line.Mine) chat.NoteUnread(m.Channel);
+        else if (!line.Mine) chat.NoteUnread(m.Channel, line.MentionsMe);
         Resort(chat);
+        if (chat.Room is { } arrivedIn && ChannelPrefs.RecentFirst(_settings, arrivedIn.RoomId)) chat.Relayout();
         Notify(chat, line, m);
     }
 
@@ -858,7 +901,8 @@ public sealed partial class Session : IDisposable
         bool replyToMe = line.ReplyKey is { } key && chat.FindByKey(key) is { Mine: true };
         // A chat that another of your devices (the computer) has open in front of you needs no notification here.
         bool shownElsewhere = _node is { } node && (chat.Room is { } room ? node.SiblingIsViewing(room.RoomId, m.Channel, null) : chat.Direct is { } direct && node.SiblingIsViewing(null, null, direct.PeerId));
-        var facts = new NotificationPolicy.Message(!chat.IsRoom, line.Mine, line.MentionsMe, replyToMe, NotifiesAll(chat), DateTimeOffset.UtcNow - m.Timestamp, shownElsewhere, IsMuted(chat));
+        var facts = new NotificationPolicy.Message(!chat.IsRoom, line.Mine, line.MentionsMe, replyToMe, NotifiesAll(chat), DateTimeOffset.UtcNow - m.Timestamp, shownElsewhere,
+            IsMuted(chat) || (chat.Room is { } inRoom && m.Channel is { } inChannel && !ChannelPrefs.Counts(_settings, inRoom.RoomId, inChannel, line.MentionsMe)));
         // The list of notifications keeps what would have been one, whether or not Android is allowed to show it (the setting, the permission).
         if (!NotificationPolicy.ShouldNotify(facts, AppHost.InForeground, notificationsOn: true)) return;
         bool gif = line.Attachment?.Mime == "image/gif";
@@ -1307,6 +1351,7 @@ public sealed partial class Session : IDisposable
             if (!push.Remote(_settings, name, value)) return;
             _data.SaveSettings(_settings);
             node.MailboxLeaving = _settings.LeaveForAbsent;
+            RelayoutAll();
         });
     }
 
