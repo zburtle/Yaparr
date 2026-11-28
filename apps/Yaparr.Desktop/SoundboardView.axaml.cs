@@ -2,6 +2,8 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Controls.Templates;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
@@ -159,7 +161,15 @@ public partial class SoundboardView : UserControl
         AddHandler(DragDrop.DragOverEvent, OnDragOver);
         AddHandler(DragDrop.DropEvent, OnDrop);
         DragDrop.SetAllowDrop(TileScroll, true);
+
+        // The tiles fill the width in equal columns, as many as fit, so their edges meet the search box and the number keys above (the tiles' right margin is taken back by the list).
+        Tiles.ItemsPanel = new FuncTemplate<Panel?>(() => _tileGrid = new UniformGrid { Columns = TileColumns(TileScroll.Bounds.Width) });
+        TileScroll.SizeChanged += (_, e) => { if (_tileGrid != null) _tileGrid.Columns = TileColumns(e.NewSize.Width); };
     }
+
+    private UniformGrid? _tileGrid;
+
+    private static int TileColumns(double width) => Math.Max(1, (int)((width + 10) / 170));
 
     /// <summary>Starts showing a room's sounds. <paramref name="togglePlace"/> moves the board between the window and a window of its own.</summary>
     internal void Attach(ChatRoom room, PeerId me, AppSettings settings, Action save, Func<VoiceSession?> voice, Func<string?> output,
