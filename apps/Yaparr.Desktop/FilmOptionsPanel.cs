@@ -28,7 +28,23 @@ public sealed class FilmOptionsPanel : StackPanel
         ("Smooth for a slow connection · 480p, 1.5 Mbit/s", 1500, 480),
         ("Standard · 720p, 3 Mbit/s", 3000, 720),
         ("Sharp · 1080p, 6 Mbit/s", 6000, 1080),
+        ("Sharper · 1080p, 10 Mbit/s", 10000, 1080),
+        ("Best · 1080p, 16 Mbit/s", 16000, 1080),
     };
+
+    /// <summary>
+    /// Which quality starts picked: the sharpest one that the upload speed carries for each viewer (a sixth more than the picture's bitrate, for the sound and the repairs of lost pieces),
+    /// and Standard when the upload speed is not known.
+    /// </summary>
+    internal static int DefaultQuality(double uploadBytesPerSecond, int viewersHint)
+    {
+        if (uploadBytesPerSecond <= 0) return 1;
+        double kbpsPerViewer = uploadBytesPerSecond * 8 / 1000 / Math.Max(1, viewersHint);
+        int pick = 0;
+        for (int i = 0; i < Qualities.Length; i++)
+            if (Qualities[i].Kbps * 7.0 / 6 <= kbpsPerViewer) pick = i;
+        return pick;
+    }
 
     public FilmOptionsPanel(JellyfinPlaybackInfo info, long resumeTicks, double uploadBytesPerSecond, int viewersHint)
     {
@@ -53,8 +69,7 @@ public sealed class FilmOptionsPanel : StackPanel
         _start.SelectionChanged += (_, _) => Check();
 
         _quality.ItemsSource = Qualities.Select(q => q.Label).ToList();
-        double kbpsPerViewer = uploadBytesPerSecond * 8 / 1000 / Math.Max(1, viewersHint);
-        _quality.SelectedIndex = uploadBytesPerSecond <= 0 ? 1 : kbpsPerViewer >= 7000 ? 2 : kbpsPerViewer >= 3500 ? 1 : 0;
+        _quality.SelectedIndex = DefaultQuality(uploadBytesPerSecond, viewersHint);
 
         Control Row(string label, Control box)
         {

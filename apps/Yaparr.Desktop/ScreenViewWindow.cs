@@ -11,7 +11,12 @@ namespace Yaparr.Desktop;
 /// </summary>
 public sealed class ScreenViewWindow : Window
 {
+    private const double SideWidth = 300;
+
     private readonly ScreenViewControl _view;
+    private readonly Grid _layout = new() { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+    private readonly Border _side = new() { Width = SideWidth, IsVisible = false };
+    private bool _hasSide;
 
     public ScreenViewWindow(ScreenViewControl view)
     {
@@ -22,8 +27,43 @@ public sealed class ScreenViewWindow : Window
         MinWidth = 320;
         MinHeight = 200;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        Content = view;
+        _side.BorderThickness = new Avalonia.Thickness(1, 0, 0, 0);
+        _side[!Border.BorderBrushProperty] = new Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension("Line");
+        _side[!Border.BackgroundProperty] = new Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension("AppBg");
+        Grid.SetColumn(_side, 1);
+        _layout.Children.Add(view);
+        _layout.Children.Add(_side);
+        Content = _layout;
+        // The space bar pauses the film you play, unless it is being typed somewhere (and it works whatever has the focus, a button that was just clicked included).
+        AddHandler(KeyDownEvent, (_, e) =>
+        {
+            if (e.Key != Key.Space || e.KeyModifiers != KeyModifiers.None || !_view.CanTogglePause || TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() is TextBox) return;
+            _view.RequestPauseToggle();
+            e.Handled = true;
+        }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         Closed += (_, _) => { if (!HandedBack) view.StopWatching(); view.IsFullScreen = false; };
+    }
+
+    /// <summary>
+    /// Puts something to the right of the picture (the room's playlist), or takes it away with null. It is out of the way in full screen. The window grows by its width the
+    /// first time, so that the picture keeps the room it had.
+    /// </summary>
+    public void SetSide(Control? panel)
+    {
+        _side.Child = panel;
+        if (panel != null && !_hasSide && WindowState == WindowState.Normal) Width += SideWidth;
+        else if (panel == null && _hasSide && WindowState == WindowState.Normal) Width = Math.Max(MinWidth, Width - SideWidth);
+        _hasSide = panel != null;
+        _side.IsVisible = _hasSide && WindowState != WindowState.FullScreen;
+    }
+
+    /// <summary>The picture goes back into the main window: it is taken out of this one first.</summary>
+    public void ReleaseView()
+    {
+        HandedBack = true;
+        _layout.Children.Remove(_view);
+        _side.Child = null;
+        Content = null;
     }
 
     /// <summary>Set before closing when the picture goes back into the main window, so closing does not end the watching.</summary>
@@ -37,6 +77,7 @@ public sealed class ScreenViewWindow : Window
         base.OnPropertyChanged(change);
         if (change.Property != WindowStateProperty) return;
         bool full = WindowState == WindowState.FullScreen;
+        _side.IsVisible = _hasSide && !full;
         if (full == _view.IsFullScreen) return;
         _view.IsFullScreen = full;
         FullScreenChanged?.Invoke(full);

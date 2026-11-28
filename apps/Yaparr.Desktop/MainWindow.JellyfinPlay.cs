@@ -40,6 +40,13 @@ public partial class MainWindow
     private bool _filmDragging;
     private string _filmTitle = "";
     private int _filmTicks;
+    private int _soundUnderruns, _soundTrims;
+    private volatile bool _filmSwitching;   // what plays was changed by hand: the one it replaces was not watched to its end
+    private ChatRoom? _filmRoom;
+    private string _filmServerId = "";
+    private readonly ConcurrentDictionary<string, string> _filmEntries = new();   // the Jellyfin id of what was started from the playlist, and its entry there
+    private Action<PlaylistBrowseRequest>? _filmBrowse;
+    private Action? _filmPlaylistChanged;
 
     // The film picked in the Share window (see ShareDialog), played into the room that is open. The checks that it can be done (a room, voice, FFmpeg's libraries) were made before
     // the window was shown.
@@ -53,7 +60,13 @@ public partial class MainWindow
         var client = new JellyfinClient(server, JellyfinDeviceId(), _jellyfin.Token, _jellyfin.UserId);
         try
         {
+            // Which server this is: what is in the room's playlist is named by it, since an id means something on one server only.
+            string serverId = "";
+            try { serverId = (await client.GetPublicInfoAsync()).Id; }
+            catch (Exception ex) when (ex is JellyfinException or HttpRequestException or TaskCanceledException) { }
+            if (serverId.Length == 0) serverId = server.Host;
             _filmPlans.Clear();
+            _filmEntries.Clear();
             _filmPlans[item.Id] = new FilmPlan(info.SourceId, choice.AudioIndex, choice.SubtitleIndex);
             _filmAudioLike = info.Audio.FirstOrDefault(t => t.Index == choice.AudioIndex);
             _filmSubtitleLike = info.Subtitles.FirstOrDefault(t => t.Index == choice.SubtitleIndex);
@@ -76,6 +89,9 @@ public partial class MainWindow
             };
             FilmNext next = async (current, ct) =>
             {
+                // What was playing is done with (watched, or skipped): it leaves the playlist. What is queued there plays before the next episode of a show.
+                FinishPlaylistEntry(current.Id);
+                if (await NextFromPlaylistAsync(room, client, ct) is { } queued) return queued;
                 if (_filmSeriesId == null) return null;
                 var after = (await client.GetEpisodesAfterAsync(_filmSeriesId, current.Id, 1, ct)).FirstOrDefault();
                 if (after == null) return null;
@@ -92,10 +108,20 @@ public partial class MainWindow
             _filmConv = conv;
             _filmTitle = film.Title;
             _filmTicks = 0;
+            // This device keeps the room's playlist while it streams; others who may add look through the library by asking this app.
+            _filmRoom = room;
+            _filmServerId = serverId;
+            room.StartHostingPlaylist(serverId);
+            sharer.PlaylistHasNext = () => PlaylistNextFor(room) != null;
+            _filmBrowse = request => _ = AnswerLibraryQuestionAsync(client, request);
+            room.PlaylistBrowseRequested += _filmBrowse;
+            _filmPlaylistChanged = () => UI(() => { if (_film == sharer) _ = RefreshFilmNextAsync(sharer); });
+            room.PlaylistChanged += _filmPlaylistChanged;
             _log.Write($"playing “{film.Title}” from Jellyfin in the room {conv.Name}: {choice.Height}p, {choice.Kbps} kbit/s, sound #{choice.AudioIndex?.ToString() ?? "default"}, subtitles {(choice.SubtitleIndex is { } s ? "#" + s : "off")}, from {TimeSpan.FromTicks(choice.StartTicks):h\\:mm\\:ss}");
             sharer.Ended += ex => UI(() =>
             {
                 if (_film != sharer) return;
+                if (ex == null && _filmNow is { } last) FinishPlaylistEntry(last.ItemId);
                 _log.Write(ex == null ? "the film ended" : $"the film stopped: {ex.Message} ({ex.GetType().Name})");
                 var text = ex == null ? $"“{_filmTitle}” has ended." : "The film stopped: " + (ex is JellyfinException { Unauthorized: true } ? "Jellyfin no longer accepts the sign-in." : ex.Message);
                 StopFilm();
@@ -109,7 +135,8 @@ public partial class MainWindow
                 // Jellyfin is told that the last one was watched to its end and the next has begun.
                 if (_filmNow is { } now && _filmClient is { } c)
                 {
-                    _ = c.ReportPlaybackAsync("stop", previous.Id, _filmPlans.TryGetValue(previous.Id, out var old) ? old.SourceId : now.SourceId, now.Session, previous.Duration.Ticks);
+                    if (!_filmSwitching) _ = c.ReportPlaybackAsync("stop", previous.Id, _filmPlans.TryGetValue(previous.Id, out var old) ? old.SourceId : now.SourceId, now.Session, previous.Duration.Ticks);
+                    _filmSwitching = false;
                     if (_filmPlans.TryGetValue(target.Id, out var plan)) _ = c.ReportPlaybackAsync("start", target.Id, plan.SourceId, now.Session, 0);
                 }
                 previous = target;
@@ -123,6 +150,7 @@ public partial class MainWindow
             // The film is seen (and heard) by you too, as soon as it starts, with its player under the picture.
             WatchOwnFilm(new ShareVm(sharer.Source.Info.Id, film.Title, isMine: true, sharer.Source.Info.Root.Value), conv);
             BuildFilmPanel(sharer, conv, room);
+            if (_screenViews.TryGetValue(sharer.Source.Info.Id, out var own)) EnablePlaylistUi(own.Control, room, isHost: true, _node.Id);
             _ = RefreshFilmNextAsync(sharer);
             conv.Add(MessageVm.System(conv.InVoice
                 ? $"You are playing “{film.Title}”. Everyone in the room can watch it."
@@ -141,7 +169,8 @@ public partial class MainWindow
     private async Task RefreshFilmNextAsync(JellyfinSharer sharer)
     {
         _filmNextTitle = null;
-        if (_filmSeriesId is { } series && _filmClient is { } client)
+        if (_filmRoom is { } queuedRoom && PlaylistNextFor(queuedRoom) is { } queuedItem) _filmNextTitle = queuedItem.Title;
+        else if (_filmSeriesId is { } series && _filmClient is { } client)
         {
             try
             {
@@ -282,6 +311,7 @@ public partial class MainWindow
         {
             _filmText.Foreground = Brushes.LightGray; _filmElapsed.Foreground = Brushes.White; _filmLength.Foreground = Brushes.White; _filmNote.Foreground = Brushes.LightGray; auto.Foreground = Brushes.White;
             view.Control.AttachPlayer(panel);   // under the picture, like a video player
+            view.Control.ShowChangeButton(() => _ = ChangeFilmAsync());   // among the buttons of the view: Full screen, Pop out, Stop watching
         }
         else
         {
@@ -294,6 +324,10 @@ public partial class MainWindow
                 conv.Add(MessageVm.System($"You stopped “{title}”."));
             };
             transport.Children.Add(stop);
+            var change = new Button { Content = "Change…", Classes = { "flat" }, Width = 76, Height = 40, Padding = new Thickness(0), FontSize = 13, HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center };
+            ToolTip.SetTip(change, "Pick something else to play now");
+            change.Click += async (_, _) => await ChangeFilmAsync();
+            transport.Children.Add(change);
             panel.Margin = new Thickness(10, 8);
             _filmPanel = new Border { Classes = { "details" }, Margin = new Thickness(0, 0, 0, 6), Child = panel };
             SharerPanel.Child = _filmPanel;
@@ -320,11 +354,37 @@ public partial class MainWindow
                     return;
                 }
             }
+            // What happens to the sound you hear goes to the log when it changes (every ten seconds at most), to find what makes it pop.
+            if (_filmTicks % 10 == 0 && sharer.LocalSound is { } heard && (heard.Underruns != _soundUnderruns || heard.Trims != _soundTrims))
+            {
+                _soundUnderruns = heard.Underruns;
+                _soundTrims = heard.Trims;
+                _log.Write($"film sound you hear: {heard.BufferedMs} ms held, ran dry {heard.Underruns} times, cut back {heard.Trims} times");
+            }
             // Jellyfin is told where the film is every ten seconds, so that "continue watching" follows along.
             if (_filmTicks % 10 == 0 && _filmClient is { } client && _filmNow is { } now)
                 _ = client.ReportPlaybackAsync("progress", now.ItemId, now.SourceId, now.Session, sharer.Position.Ticks);
         };
         _filmTimer.Start();
+    }
+
+    // The space bar, or a click on the picture: the film you play is paused, or goes on.
+    private void ToggleFilmPause()
+    {
+        if (_film is not { } sharer) return;
+        if (sharer.Paused) sharer.Resume(); else sharer.Pause();
+        UpdateFilmPanel();
+    }
+
+    // The space bar in the main window pauses the film you play when its picture is the one in front of you, and it is not being typed (in the message box, say).
+    private void OnPauseKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Space || e.KeyModifiers != KeyModifiers.None || !IsActive || _film == null) return;
+        if (_inlineWatch is not { } watch || !watch.Control.CanTogglePause || !ScreenOverlay.IsVisible) return;
+        if (SettingsOverlay.IsVisible || NotificationsOverlay.IsVisible || RoomSettingsOverlay.IsVisible || SoundboardOverlay.IsVisible || PictureOverlay.IsVisible) return;
+        if (FocusManager?.GetFocusedElement() is TextBox) return;
+        ToggleFilmPause();
+        e.Handled = true;
     }
 
     private void UpdateFilmPanel()
@@ -365,6 +425,17 @@ public partial class MainWindow
         var now = _filmNow;
         var position = sharer.Position.Ticks;
         _film = null;
+        // The playlist stays as it is, for the next stream in the room.
+        if (_filmRoom is { } hosted)
+        {
+            if (_filmBrowse != null) hosted.PlaylistBrowseRequested -= _filmBrowse;
+            if (_filmPlaylistChanged != null) hosted.PlaylistChanged -= _filmPlaylistChanged;
+            hosted.StopHostingPlaylist();
+        }
+        _filmRoom = null;
+        _filmBrowse = null;
+        _filmPlaylistChanged = null;
+        _filmEntries.Clear();
         // The view of it that you have closes with it (it does not stop the film again: that is over).
         if (_screenViews.TryGetValue(viewId, out var own)) EndWatch(own);
         _filmClient = null;

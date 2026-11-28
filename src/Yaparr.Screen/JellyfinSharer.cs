@@ -32,7 +32,7 @@ public sealed class JellyfinSharer : IDisposable
 
     private const long NoPts = long.MinValue;
 
-    private sealed record Request(bool Next, TimeSpan Start);
+    private sealed record Request(bool Next, TimeSpan Start, FilmTarget? Target = null);
 
     private readonly MediaSource _source;
     private readonly MediaSource? _soundSource;
@@ -91,6 +91,9 @@ public sealed class JellyfinSharer : IDisposable
 
     /// <summary>Whether the next episode starts by itself when one ends (on unless turned off).</summary>
     public bool Autoplay { get; set; } = true;
+
+    /// <summary>Says whether something is queued in the room's playlist: that goes on by itself when a film ends, whether or not <see cref="Autoplay"/> is on.</summary>
+    public Func<bool>? PlaylistHasNext { get; set; }
 
     public bool Paused => _pause != null;
 
@@ -174,6 +177,12 @@ public sealed class JellyfinSharer : IDisposable
     /// <summary>Goes on to what follows (the next episode); when nothing does, the film ends.</summary>
     public void Next() => Ask(new Request(true, TimeSpan.Zero));
 
+    /// <summary>
+    /// Plays something else now, in place of what is playing: a new transcode starts on the same stream (<see cref="TargetChanged"/> is raised), so the room goes on watching the
+    /// same share. The opener has to know how to play <paramref name="target"/>.
+    /// </summary>
+    public void PlayNow(FilmTarget target, TimeSpan start) => Ask(new Request(false, start, target));
+
     private void Ask(Request request)
     {
         lock (_segmentGate)
@@ -212,6 +221,13 @@ public sealed class JellyfinSharer : IDisposable
                 lock (_segmentGate) { request = _request; _request = null; _segment = null; }
                 if (request != null)
                 {
+                    if (request.Target != null)
+                    {
+                        target = request.Target;
+                        start = request.Start;
+                        TargetChanged?.Invoke(target);
+                        continue;
+                    }
                     if (!request.Next) { start = request.Start; continue; }
                     var following = _next == null ? null : await _next(target, ct).ConfigureAwait(false);
                     if (following == null) break;
@@ -222,7 +238,7 @@ public sealed class JellyfinSharer : IDisposable
                 }
                 if (!ended) break;
                 // The film ended by itself: on to the next episode, if there is one and it is wanted.
-                if (Autoplay && _next != null && await _next(target, ct).ConfigureAwait(false) is { } after)
+                if ((Autoplay || PlaylistHasNext?.Invoke() == true) && _next != null && await _next(target, ct).ConfigureAwait(false) is { } after)
                 {
                     target = after;
                     start = TimeSpan.Zero;

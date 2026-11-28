@@ -57,6 +57,7 @@ public partial class MainWindow : Window
         AddHandler(KeyDownEvent, OnPushToTalkKey, RoutingStrategies.Tunnel);
         AddHandler(KeyUpEvent, OnPushToTalkKey, RoutingStrategies.Tunnel);
         AddHandler(KeyDownEvent, OnSettingsKey, RoutingStrategies.Tunnel);
+        AddHandler(KeyDownEvent, OnPauseKey, RoutingStrategies.Tunnel);
         // The tree items handle a press themselves (to select), so this has to look on the way down, before they do.
         SettingsTree.AddHandler(PointerPressedEvent, SettingsTree_PointerPressed, RoutingStrategies.Tunnel);
         AddHandler(PointerPressedEvent, OnPushToTalkPointer, RoutingStrategies.Tunnel);
@@ -854,6 +855,7 @@ public partial class MainWindow : Window
         // The list is the people of the room that is open. For a direct chat there is no list, and the panel is closed.
         var open = SelectedRoom;
         PeoplePanel.IsVisible = open != null;
+        UpdateSidebarPlaylist(open);
         if (open == null)
         {
             PeopleList.ItemsSource = null;

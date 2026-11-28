@@ -21,7 +21,7 @@ public sealed class JellyfinWindow : Window
     private const int PageSize = 60;
     private const int PosterWidth = 130, PosterHeight = 195;
 
-    private readonly JellyfinClient _client;
+    private readonly IJellyfinLibrary _client;
     private readonly Action _signedOut;
     private readonly Func<JellyfinItem, Task>? _play;
     private JellyfinItem? _shown;
@@ -67,7 +67,7 @@ public sealed class JellyfinWindow : Window
         if (x != Position.X || y != Position.Y) Position = new PixelPoint(x, y);
     }
 
-    public JellyfinWindow(JellyfinClient client, string serverName, Action signedOut, Func<JellyfinItem, Task>? play = null, string playLabel = "Choose this")
+    public JellyfinWindow(IJellyfinLibrary client, string serverName, Action signedOut, Func<JellyfinItem, Task>? play = null, string playLabel = "Choose this")
     {
         _playButton.Content = playLabel;
         _client = client;
@@ -158,6 +158,9 @@ public sealed class JellyfinWindow : Window
         }
         catch (Exception ex) { Fail(ex); }
     }
+
+    /// <summary>Says something above the list (for instance that an item was added), until the next thing is loaded.</summary>
+    public void Note(string text) => Say(text);
 
     private void Say(string text)
     {
