@@ -94,6 +94,26 @@ public class LocalSoundTests
         }
     }
 
+    [Fact]
+    public void An_adaptive_delay_grows_when_the_sound_runs_dry_and_comes_back_down_when_it_does_not()
+    {
+        var sound = new LocalSound { DelayMs = 20, MaxDelayMs = 100 };
+        var block = new float[960];
+        Assert.Equal(20, sound.TargetMs);
+        for (int i = 0; i < 3; i++)   // pieces of 30 ms with 40 ms of playing between them: it runs dry each time
+        {
+            sound.Push(new float[2880]);
+            for (int k = 0; k < 4; k++) sound.Pull(block);
+        }
+        Assert.True(sound.TargetMs >= 40, $"target {sound.TargetMs}");
+        for (int i = 0; i < 100; i++) sound.Pull(block);   // silence: runs dry, grows to the limit
+        Assert.True(sound.TargetMs <= 100);
+        // Steady supply for a long while: it eases back.
+        int before = sound.TargetMs;
+        for (int round = 0; round < 4 * 6000; round++) { sound.Push(new float[960]); sound.Pull(block); }
+        Assert.True(sound.TargetMs < before, $"{sound.TargetMs} vs {before}");
+    }
+
     private static float BiggestStep(IReadOnlyList<float> played)
     {
         float biggest = 0;
