@@ -116,10 +116,8 @@ public partial class ScreenViewControl : UserControl
         (SoundPanel.Parent as Panel)?.Children.Remove(SoundPanel);
         var label = SoundPanel.Children.OfType<TextBlock>().First();
         SoundPanel.Children.Clear();
-        SoundBox.Width = double.NaN;
-        SoundBox.MinWidth = 40;
-        SoundBox.MaxWidth = 120;
-        SoundBox.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch;
+        SoundBox.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left;
+        SoundBox.Width = 120;
         label.Margin = new Thickness(0, 0, 6, 0);
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), IsVisible = SoundPanel.IsVisible, Margin = new Thickness(0, 0, 8, 0) };
         Grid.SetColumn(SoundBox, 1);
