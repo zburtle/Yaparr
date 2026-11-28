@@ -68,7 +68,7 @@ public sealed class JellyfinException : Exception
 /// Connect), the libraries, and what is in them. Talking to the server is done by this device only; nothing here goes to Yaparr's servers or to the people in a
 /// room. A certificate that does not check out is refused, as in any browser.
 /// </summary>
-public sealed partial class JellyfinClient : IDisposable
+public sealed partial class JellyfinClient : IJellyfinLibrary
 {
     private readonly HttpClient _http;
     private readonly bool _ownsHttp;

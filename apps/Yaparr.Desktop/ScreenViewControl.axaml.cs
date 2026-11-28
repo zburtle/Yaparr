@@ -28,8 +28,11 @@ public partial class ScreenViewControl : UserControl
         InitializeComponent();
         _playout = new PlayoutQueue<Picture>(picture => _viewer?.Return(picture));
         FullScreenButton.Click += (_, _) => FullScreenToggleRequested?.Invoke();
-        Picture.DoubleTapped += (_, _) => FullScreenToggleRequested?.Invoke();
-        Waiting.DoubleTapped += (_, _) => FullScreenToggleRequested?.Invoke();
+        Picture.DoubleTapped += (_, _) => { _pauseClick.Stop(); FullScreenToggleRequested?.Invoke(); };
+        Waiting.DoubleTapped += (_, _) => { _pauseClick.Stop(); FullScreenToggleRequested?.Invoke(); };
+        // A click on the picture pauses the film (for the one who plays it), after a moment: a double-click, which is full screen, must not pause it twice on the way.
+        _pauseClick.Tick += (_, _) => { _pauseClick.Stop(); PauseToggleRequested?.Invoke(); };
+        Picture.Tapped += (_, _) => { if (PauseToggleRequested != null) { _pauseClick.Stop(); _pauseClick.Start(); } };
         _hideControls.Tick += (_, _) => HideControlsWhileIdle();
         PointerMoved += (_, _) => ShowControlsForAWhile();
     }
@@ -146,6 +149,26 @@ public partial class ScreenViewControl : UserControl
             };
         }
         catch (Exception) { _localSound = null; }
+    }
+
+    private readonly DispatcherTimer _pauseClick = new() { Interval = TimeSpan.FromMilliseconds(300) };
+
+    /// <summary>
+    /// Pause or resume was asked for (the space bar, or a click on the picture). Only the view of a film you play has anyone to hear it: for a film someone else plays it is
+    /// not set, and neither key nor click does anything.
+    /// </summary>
+    public event Action? PauseToggleRequested;
+
+    /// <summary>Whether this is the view of a film you play, which the space bar and a click on the picture pause.</summary>
+    public bool CanTogglePause => PauseToggleRequested != null;
+
+    public void RequestPauseToggle() => PauseToggleRequested?.Invoke();
+
+    /// <summary>Shows the Change… button among the others (Full screen, Pop out, Stop watching), for the film you play: it picks something else to play now.</summary>
+    public void ShowChangeButton(Action changed)
+    {
+        ChangeButton.IsVisible = true;
+        ChangeButton.Click += (_, _) => changed();
     }
 
     /// <summary>The full screen button, a double-click on the picture or F11 asks for full screen, or for leaving it.</summary>
@@ -425,13 +448,14 @@ public partial class ScreenViewControl : UserControl
         StreamChanged?.Invoke(_watched, reason);
     }
 
-    // What the sharer's own film sound is held back by beyond the picture's wait in the queue: the decoder and the drawing. YAPARR_FILM_SOUND_DELAY sets the whole delay in ms, to find what suits.
-    private const int SoundAllowanceMs = 40;
+    // The sharer's own film sound is held back only by a small buffer. It cannot be none: the speakers ask for sound in short pieces and the decoder delivers it in pieces of its own, so
+    // with nothing held back the sound runs dry between them and stutters. YAPARR_FILM_SOUND_DELAY sets the delay in ms, to find what suits.
+    private const int SoundBufferMs = 100;
     private static readonly int? SoundDelayOverride = int.TryParse(Environment.GetEnvironmentVariable("YAPARR_FILM_SOUND_DELAY"), out int ms) ? ms : null;
 
     private void UpdateInfo()
     {
-        if (_localSound != null) _localSound.DelayMs = SoundDelayOverride ?? (int)(_playout.Count * _playout.IntervalMs) + SoundAllowanceMs;
+        if (_localSound != null) _localSound.DelayMs = SoundDelayOverride ?? SoundBufferMs;
         HideStaleFilmStatus();
         if (_view == null) return;
         var st = _view.Status;

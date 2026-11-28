@@ -2,25 +2,46 @@ namespace Yaparr.Voice;
 
 /// <summary>
 /// Sound put in by hand, for the sharer who plays a film in the room and hears it too: the decoded sound is pushed here as it is sent, and the speakers pull it out.
-/// A little over a second is kept; what does not fit is dropped (the oldest first), and silence is played when it runs dry.
+/// The film is paced by one clock and the sound card consumes by another, so the two drift apart a little; the sound is played a hair faster or slower (a fraction of a percent,
+/// which cannot be heard) to keep what is held at the level wanted, instead of letting it run dry or cutting some of it out, either of which clicks. Silence is played when it does
+/// run dry, with a short fade at each edge.
 /// </summary>
 public sealed class LocalSound
 {
-    private readonly float[] _ring = new float[48000 * StreamAudioSender.Channels * 2];
+    private const int Channels = StreamAudioSender.Channels;
+    private readonly float[] _ring = new float[48000 * Channels * 2];
     private int _start, _count;
+    private double _pos;   // how far into the first frame held the next one to play is (a part of a frame, between frames)
     private readonly object _lock = new();
     private volatile float _gain = 1f;
     private volatile int _delayMs;
     private bool _primed;
+    private float _ramp = 1f;
+    private int _underruns, _trims;
+
+    // A gap in the sound would click if it began or ended on a loud sample: what plays just before a gap fades out, and what plays after one fades in.
+    private const int FadeOutFrames = 96, FadeInFrames = 240;   // 2 ms and 5 ms at 48 kHz
+
+    // How much faster or slower it is played, at most, when what is held is a hundred milliseconds off what is wanted.
+    private const double MaxSpeedChange = 0.004;
 
     /// <summary>
-    /// How far behind it is held, so that it stays with a picture that is itself shown late (the viewer's smoothing queue and the decoder). It takes effect when the sound starts
-    /// (or starts again after running dry); if it falls later, the surplus is caught up on gently, a little each time it is pulled.
+    /// How much is held back before it plays, which is what smooths out the pieces arriving unevenly. It takes effect when the sound starts (or starts again after running dry);
+    /// afterwards the speed of playing is eased so that the level held comes back to it.
     /// </summary>
     public int DelayMs { get => _delayMs; set => _delayMs = Math.Clamp(value, 0, 1500); }
 
     /// <summary>How loud it is, 0 to 2 (1 is as decoded).</summary>
     public float Gain { get => _gain; set => _gain = Math.Clamp(value, 0f, 2f); }
+
+    /// <summary>How much sound is held now, in milliseconds.</summary>
+    public int BufferedMs { get { lock (_lock) return (int)(((_count / Channels) - _pos) / 48.0); } }
+
+    /// <summary>How many times it ran dry (the pieces came too late to keep up).</summary>
+    public int Underruns => Volatile.Read(ref _underruns);
+
+    /// <summary>How many times far too much had built up and some had to be cut out.</summary>
+    public int Trims => Volatile.Read(ref _trims);
 
     /// <summary>Interleaved stereo samples at 48 kHz.</summary>
     public void Push(ReadOnlySpan<float> samples)
@@ -44,26 +65,59 @@ public sealed class LocalSound
         float gain = _gain;
         lock (_lock)
         {
-            int wanted = _delayMs * 48 * StreamAudioSender.Channels;
+            int wanted = _delayMs * 48 * Channels;
             if (_count == 0) _primed = false;
-            else if (!_primed && _count >= wanted) _primed = true;
+            else if (!_primed && _count >= wanted) { _primed = true; _ramp = 0f; _pos = 0; }
             if (!_primed) { output.Clear(); return; }
-            // More is held than wanted by over 100 ms (the delay fell): drop 10 ms of it each time.
-            if (_count - wanted > 4800 * StreamAudioSender.Channels)
+
+            int heldFrames = _count / Channels, wantedFrames = wanted / Channels;
+            // Far more is held than wanted (the player stalled and caught up): some is cut out, 10 ms each time.
+            if (heldFrames - wantedFrames > 19_200)
             {
-                int drop = Math.Min(480 * StreamAudioSender.Channels, _count - wanted);
+                int drop = Math.Min(480, heldFrames - wantedFrames) * Channels;
                 _start = (_start + drop) % _ring.Length;
                 _count -= drop;
+                heldFrames -= drop / Channels;
+                Interlocked.Increment(ref _trims);
             }
-            int n = Math.Min(output.Length, _count);
-            for (int i = 0; i < n; i++)
+            // A little more held than wanted: play a little faster, to come back to it; a little less: a little slower.
+            double error = Math.Clamp((heldFrames - wantedFrames) / 4800.0, -1.0, 1.0);
+            double step = 1.0 + error * MaxSpeedChange;
+
+            int outFrames = output.Length / Channels, made = 0;
+            for (; made < outFrames; made++)
             {
-                float s = _ring[(_start + i) % _ring.Length] * gain;
-                output[i] = s > 1f ? 1f : s < -1f ? -1f : s;
+                int at = (int)_pos;
+                if ((at + 2) * Channels > _count) break;   // the frame after this one is needed to play between the two
+                float part = (float)(_pos - at);
+                if (_ramp < 1f) _ramp = Math.Min(1f, _ramp + 1f / FadeInFrames);
+                for (int c = 0; c < Channels; c++)
+                {
+                    float a = _ring[(_start + at * Channels + c) % _ring.Length], b = _ring[(_start + (at + 1) * Channels + c) % _ring.Length];
+                    float s = (a + (b - a) * part) * gain * _ramp;
+                    output[made * Channels + c] = s > 1f ? 1f : s < -1f ? -1f : s;
+                }
+                _pos += step;
             }
-            _start = (_start + n) % _ring.Length;
-            _count -= n;
-            output[n..].Clear();
+            int used = (int)_pos;
+            _start = (_start + used * Channels) % _ring.Length;
+            _count -= used * Channels;
+            _pos -= used;
+
+            if (made < outFrames)
+            {
+                // It ran dry: the end of what there was fades out, so the silence that follows starts without a click, and it waits until enough is held again.
+                int tail = Math.Min(made, FadeOutFrames);
+                for (int j = 0; j < tail; j++)
+                {
+                    float k = (tail - 1 - j) / (float)tail;
+                    for (int c = 0; c < Channels; c++) output[(made - tail + j) * Channels + c] *= k;
+                }
+                output[(made * Channels)..].Clear();
+                _primed = false;
+                _pos = 0;
+                Interlocked.Increment(ref _underruns);
+            }
         }
     }
 }

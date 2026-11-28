@@ -39,6 +39,10 @@ public sealed class PeerLimits
     public int ModListsBurst { get; init; } = 30;
     public double ModListsPerSecond { get; init; } = 5;
 
+    /// <summary>The watch playlist and what goes with it (requests to the streamer and their answers): a few at a time, and people browse a library quickly.</summary>
+    public int PlaylistBurst { get; init; } = 60;
+    public double PlaylistPerSecond { get; init; } = 10;
+
     /// <summary>A peer that has this many frames dropped within <see cref="DropWindow"/> is disconnected.</summary>
     public int DropsBeforeClose { get; init; } = 500;
     public TimeSpan DropWindow { get; init; } = TimeSpan.FromSeconds(10);
@@ -91,7 +95,7 @@ internal sealed class TokenBucket
 internal sealed class PeerRate
 {
     private readonly PeerLimits _limits;
-    private readonly TokenBucket _frames, _bytes, _messages, _plays, _soundLists, _gifLists, _roleLists, _modLists;
+    private readonly TokenBucket _frames, _bytes, _messages, _plays, _soundLists, _gifLists, _roleLists, _modLists, _playlist;
     private readonly object _gate = new();
     private long _windowStart;
     private int _dropped;
@@ -107,6 +111,7 @@ internal sealed class PeerRate
         _gifLists = new(limits.GifListsBurst, limits.GifListsPerSecond);
         _roleLists = new(limits.RoleListsBurst, limits.RoleListsPerSecond);
         _modLists = new(limits.ModListsBurst, limits.ModListsPerSecond);
+        _playlist = new(limits.PlaylistBurst, limits.PlaylistPerSecond);
     }
 
     public bool AdmitFrame(int bytes) => _frames.TryTake() && _bytes.TryTake(bytes);
@@ -116,6 +121,7 @@ internal sealed class PeerRate
     public bool AdmitGifList() => _gifLists.TryTake();
     public bool AdmitRoleList() => _roleLists.TryTake();
     public bool AdmitModList() => _modLists.TryTake();
+    public bool AdmitPlaylist() => _playlist.TryTake();
 
     /// <summary>Notes a dropped frame. Returns true once the peer has dropped so many in a short time that it should be disconnected.</summary>
     public bool RecordDrop(out int total)

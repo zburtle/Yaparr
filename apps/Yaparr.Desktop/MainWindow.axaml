@@ -1005,6 +1005,8 @@
                         <TextBlock x:Name="VpnIcon" FontSize="15" Text="🔒" Foreground="{DynamicResource Muted}" />
                         <TextBlock x:Name="InfoIcon" FontSize="15" Text="ⓘ" Foreground="{DynamicResource Muted}" />
                     </StackPanel>
+                    <!-- The people, and under them (when the room has a playlist) the playlist, about half of what there is. -->
+                    <Grid x:Name="PeopleGrid" RowDefinitions="*,0">
                     <ListBox x:Name="PeopleList" Classes="flat people" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                         <ListBox.ContextMenu>
                             <ContextMenu Opening="PeopleMenu_Opening">
@@ -1050,6 +1052,8 @@
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
+                    <Border x:Name="SidebarPlaylist" Grid.Row="1" IsVisible="False" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource Line}" />
+                    </Grid>
                 </DockPanel>
             </Border>
         </Grid>

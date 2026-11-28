@@ -167,6 +167,10 @@ public sealed class ChatRoom
     internal readonly object IndirectGate = new();
     internal readonly Dictionary<string, StoredSound> SoundEntries = new();
     internal readonly object SoundGate = new();
+    internal StoredPlaylist? PlaylistState;
+    internal readonly object PlaylistGate = new();
+    internal readonly System.Collections.Concurrent.ConcurrentDictionary<string, TaskCompletionSource<string>> PlaylistAnswers = new();
+    internal volatile string? HostedServerId;
     internal readonly Dictionary<string, StoredGif> GifEntries = new();
     internal readonly object GifGate = new();
     internal readonly Dictionary<string, StoredRole> RoleEntries = new();
@@ -386,6 +390,52 @@ public sealed class ChatRoom
 
     /// <summary>Starts downloading the shelf's pictures that are not here yet; <see cref="GifsChanged"/> is raised as each arrives. Call it when the shelf is opened.</summary>
     public void RequestGifs() => _node.RequestGifs(this);
+
+    // ---- the watch playlist (see ChatNode.Playlist) ----
+
+    /// <summary>The room's watch playlist: what is to be played next when someone streams a film into the room, in order, kept for the next stream.</summary>
+    public PlaylistSnapshot Playlist => _node.GetPlaylist(this);
+
+    /// <summary>The playlist changed (by you, or heard from the one who is streaming). Raised on another thread.</summary>
+    public event Action? PlaylistChanged;
+    internal void RaisePlaylistChanged() => PlaylistChanged?.Invoke();
+
+    /// <summary>Whether this device is streaming into the room and so keeps the playlist.</summary>
+    public bool HostsPlaylist => HostedServerId != null;
+
+    /// <summary>This device starts streaming from the Jellyfin server <paramref name="serverId"/> and keeps the playlist (others may not add until it is allowed).</summary>
+    public void StartHostingPlaylist(string serverId) => _node.StartHostingPlaylist(this, serverId);
+
+    /// <summary>The streaming ended: the playlist stays as it is, for the next stream.</summary>
+    public void StopHostingPlaylist() => _node.StopHostingPlaylist(this);
+
+    /// <summary>Adds something to the end (only the streamer).</summary>
+    public PlaylistItem AddToPlaylist(PlaylistDraft draft) => _node.AddToPlaylist(this, draft);
+
+    /// <summary>Removes any item (only the streamer).</summary>
+    public void RemoveFromPlaylist(string entryId) => _node.RemoveFromPlaylist(this, entryId);
+
+    /// <summary>Moves an item one place up or down (only the streamer).</summary>
+    public void MoveInPlaylist(string entryId, bool up) => _node.MoveInPlaylist(this, entryId, up);
+
+    /// <summary>Takes everything off the playlist (only the streamer).</summary>
+    public void ClearPlaylist() => _node.ClearPlaylist(this);
+
+    /// <summary>Whether others may add to the playlist and browse the streamer's library to do it (only the streamer).</summary>
+    public void SetOthersMayAddToPlaylist(bool allowed) => _node.SetOthersMayAdd(this, allowed);
+
+    /// <summary>Asks the streamer to add something (they must allow it). <paramref name="host"/> is the device that streams.</summary>
+    public void AskToAdd(PeerId host, PlaylistDraft draft) => _node.AskPlaylistAdd(this, host, draft);
+
+    /// <summary>Asks the streamer to remove something this person added.</summary>
+    public void AskToRemove(PeerId host, string entryId) => _node.AskPlaylistRemove(this, host, entryId);
+
+    /// <summary>Asks the streamer's app a question about their library (the answer is what their app sends back). Fails after a while when nothing answers.</summary>
+    public Task<string> AskLibraryAsync(PeerId host, string question, CancellationToken ct = default) => _node.BrowsePlaylistAsync(this, host, question, ct);
+
+    /// <summary>Someone who may add to the playlist asks about the library you stream from (only while you stream). Answer it with <see cref="PlaylistBrowseRequest.Respond"/>. Raised on another thread.</summary>
+    public event Action<PlaylistBrowseRequest>? PlaylistBrowseRequested;
+    internal void RaisePlaylistBrowse(PlaylistBrowseRequest request) => PlaylistBrowseRequested?.Invoke(request);
 
     /// <summary>A sound is being played into the voice channel you are in (possibly by you).</summary>
     public event Action<PeerId, SoundInfo>? SoundPlayed;

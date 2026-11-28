@@ -126,6 +126,12 @@ internal sealed class Wire
     /// <summary>The owner's statements appointing or removing admins of a room.</summary>
     public StoredRole[]? Rol { get; set; }
 
+    /// <summary>The streamer's watch playlist of a room (the whole list, signed), a request to the streamer (<see cref="Ask"/>), and where it or its answer is going and how many steps it may still be passed on.</summary>
+    public StoredPlaylist[]? Pls { get; set; }
+    public StoredAsk? Ask { get; set; }
+    public string? To { get; set; }
+    public int Ttl { get; set; }
+
     /// <summary>The owner's order to replace the room's secret, with the new secret for the people it is for.</summary>
     public StoredRekey? Rk { get; set; }
 
@@ -170,6 +176,9 @@ internal sealed class Wire
 
     /// <summary>A request for the direct messages before a time (<c>Text</c> is the other person's account, <c>Ts</c> the time, <c>N</c> how many), and the answer (<c>Dm</c>, in the order of the asker's side of the conversation).</summary>
     public const string DirectBack = "dmback";
+
+    /// <summary>The watch playlist; a request to the streamer about it; and the answer to a question about their library.</summary>
+    public const string Playlist = "plist", PlaylistAsk = "plask", PlaylistAnswer = "plans";
 
     public const string Caps = "caps", Rename = "name", Account = "acct", Media = "media", Sound = "snd", Gif = "gif", Play = "play", Roles = "roles", Moderate = "mod", Channels = "chan", Rekey = "rekey", Takeover = "takeover", Speed = "speed", View = "view";
 

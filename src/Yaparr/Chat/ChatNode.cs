@@ -798,6 +798,7 @@ public sealed partial class ChatNode : IDisposable
         }
         LoadSounds(room);
         LoadGifs(room);
+        LoadPlaylist(room);
         LoadRoles(room);
         LoadMods(room);
         LoadChannels(room);
@@ -1579,6 +1580,7 @@ public sealed partial class ChatNode : IDisposable
         SendVoiceStateTo(room, peer);
         SendSoundsTo(room, peer);
         SendGifsTo(room, peer);
+        SendPlaylistTo(room, peer);
         SendRolesTo(room, peer);
         SendModsTo(room, peer);
         SendChannelsTo(room, peer);
@@ -1915,6 +1917,24 @@ public sealed partial class ChatNode : IDisposable
                                && ResolveRoom(peer, wire.Room) is { } gifRoom && gifRoom.MemberStates.ContainsKey(peer.Id):
                 if (!rate.AdmitGifList()) { Dropped(peer, rate, "sent too many GIF lists"); break; }
                 OnGifs(peer, gifRoom, wire.Gf);
+                break;
+
+            case Wire.Playlist when wire.Room != null && wire.Pls != null
+                                    && ResolveRoom(peer, wire.Room) is { } listRoom && listRoom.MemberStates.ContainsKey(peer.Id):
+                if (!rate.AdmitPlaylist()) { Dropped(peer, rate, "sent too many playlists"); break; }
+                OnPlaylist(peer, listRoom, wire.Pls);
+                break;
+
+            case Wire.PlaylistAsk when wire.Room != null && wire.Ask != null
+                                       && ResolveRoom(peer, wire.Room) is { } askRoom && askRoom.MemberStates.ContainsKey(peer.Id):
+                if (!rate.AdmitPlaylist()) { Dropped(peer, rate, "sent too many playlist requests"); break; }
+                OnAsk(peer, askRoom, wire);
+                break;
+
+            case Wire.PlaylistAnswer when wire.Room != null
+                                          && ResolveRoom(peer, wire.Room) is { } answerRoom && answerRoom.MemberStates.ContainsKey(peer.Id):
+                if (!rate.AdmitPlaylist()) { Dropped(peer, rate, "sent too many playlist answers"); break; }
+                OnPlaylistAnswer(peer, answerRoom, wire);
                 break;
 
             case Wire.Roles when wire.Room != null && wire.Rol != null

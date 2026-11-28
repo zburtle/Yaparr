@@ -26,6 +26,8 @@ public partial class MainWindow
         public ScreenViewWindow? Window { get; set; }
         /// <summary>It was in the main window when it went full screen, so it goes back there when it comes out.</summary>
         public bool DockAfterFullScreen { get; set; }
+        /// <summary>The room's playlist beside the picture, while a film's view is in a window of its own.</summary>
+        public PlaylistPanel? SidePlaylist { get; set; }
     }
 
     private readonly Dictionary<string, ScreenWatch> _screenViews = new();
@@ -367,7 +369,12 @@ public partial class MainWindow
             // A film played from Jellyfin has a status stream that names the share too: what it is, how far it is, whether it is paused.
             if (room.MediaGroups.FirstOrDefault(g => g.Kind == FilmStatus.Kind && g.Name == FilmStatus.NameFor(share.Id)) is { } filmStatus)
             {
-                try { control.AttachFilmStatus(_node.WatchMedia(room, filmStatus.Id)); }
+                try
+                {
+                    control.AttachFilmStatus(_node.WatchMedia(room, filmStatus.Id));
+                    // The room's playlist goes with the film, for everyone who watches it.
+                    if (share.Sharer.Length > 0) EnablePlaylistUi(control, room, isHost: false, new Yaparr.Identity.PeerId(share.Sharer));
+                }
                 catch (Exception ex) { _log.Write("could not watch the status of the film: " + ex.Message); }
             }
             control.ConnectionLost += () => { _log.Write($"lost the connection to the screen {share.Name}"); _sounds.ConnectionLost(); };
@@ -417,6 +424,7 @@ public partial class MainWindow
             Action<byte[], bool> feed = (frame, key) => frames.Push(frame, key);
             film.FrameSent += feed;
             var control = new ScreenViewControl(share.Name, frames);
+            control.PauseToggleRequested += ToggleFilmPause;
             control.Stopped += () =>
             {
                 film.FrameSent -= feed;
@@ -470,6 +478,8 @@ public partial class MainWindow
             ScreenHost.Child = null;
         }
         watch.Window = null;   // a window it was in is closed already, or is closing
+        watch.SidePlaylist?.Release();
+        watch.SidePlaylist = null;
         UpdateInlineScreen();
     }
 
@@ -498,6 +508,7 @@ public partial class MainWindow
         window.Position = new Avalonia.PixelPoint(Position.X + 48, Position.Y + 48);
         window.Show();
         UpdateInlineScreen();
+        RefreshPlaylistPlacement();
     }
 
     // Full screen is a window of its own made to fill the screen: a picture in the main window moves to one first, and comes back when it leaves full screen.
@@ -531,14 +542,14 @@ public partial class MainWindow
         if (watch.Window is { } window)
         {
             watch.Window = null;
-            window.HandedBack = true;
-            window.Content = null;
+            window.ReleaseView();
             window.Close();
         }
         _inlineWatch = watch;
         watch.Control.Docked = true;
         ScreenHost.Child = watch.Control;
         UpdateInlineScreen();
+        RefreshPlaylistPlacement();
     }
 
     // The picture over the chat shows while you are looking at the room it belongs to; it keeps playing when you look elsewhere.
