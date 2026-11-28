@@ -448,14 +448,19 @@ public partial class ScreenViewControl : UserControl
         StreamChanged?.Invoke(_watched, reason);
     }
 
-    // The sharer's own film sound is held back only by a small buffer. It cannot be none: the speakers ask for sound in short pieces and the decoder delivers it in pieces of its own, so
-    // with nothing held back the sound runs dry between them and stutters. YAPARR_FILM_SOUND_DELAY sets the delay in ms, to find what suits.
-    private const int SoundBufferMs = 100;
+    // The sharer's own film sound is held back by as little as this computer allows. It cannot be none: the speakers ask for sound in short pieces and the decoder delivers it in
+    // pieces of its own, so with nothing held back the sound runs dry between them and pops. It starts at a small buffer and grows, 20 ms at a time, only when it does run dry,
+    // then eases back down when it has not for a while. YAPARR_FILM_SOUND_DELAY fixes the delay in ms instead, to find what suits.
+    private const int SoundBufferMs = 20, SoundBufferMaxMs = 160;
     private static readonly int? SoundDelayOverride = int.TryParse(Environment.GetEnvironmentVariable("YAPARR_FILM_SOUND_DELAY"), out int ms) ? ms : null;
 
     private void UpdateInfo()
     {
-        if (_localSound != null) _localSound.DelayMs = SoundDelayOverride ?? SoundBufferMs;
+        if (_localSound != null)
+        {
+            _localSound.DelayMs = SoundDelayOverride ?? SoundBufferMs;
+            _localSound.MaxDelayMs = SoundDelayOverride ?? SoundBufferMaxMs;
+        }
         HideStaleFilmStatus();
         if (_view == null) return;
         var st = _view.Status;
